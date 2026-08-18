@@ -1,0 +1,32 @@
+spring:
+  application:
+    name: server
+  datasource:
+    url: jdbc:postgresql://localhost:5432/clientbus
+    username: clientbus
+    password: clientbus
+    hikari:
+      schema: dbo
+
+  session:
+    jdbc:
+      initialize-schema: always
+
+  security:
+    user:
+      name: clientbus
+      password: clientbus
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+
+    open-in-view: false
+
+    properties:
+      hibernate:
+        format_sql: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
