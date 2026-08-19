@@ -9,9 +9,18 @@
         <module name="server" />
         <module name="common" />
         <module name="ui" />
-        <module name="Server" />
         <module name="UI" />
         <module name="Common" />
+      </profile>
+      <profile name="Annotation profile for server" enabled="true">
+        <sourceOutputDir name="target/generated-sources/annotations" />
+        <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
+        <outputRelativeToContentRoot value="true" />
+        <processorPath useClasspath="false">
+          <entry name="$MAVEN_REPOSITORY$/com/github/therapi/therapi-runtime-javadoc-scribe/0.15.0/therapi-runtime-javadoc-scribe-0.15.0.jar" />
+          <entry name="$MAVEN_REPOSITORY$/com/github/therapi/therapi-runtime-javadoc/0.15.0/therapi-runtime-javadoc-0.15.0.jar" />
+        </processorPath>
+        <module name="Server" />
       </profile>
     </annotationProcessing>
     <bytecodeTargetLevel>
