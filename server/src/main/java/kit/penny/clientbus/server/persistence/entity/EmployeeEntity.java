@@ -8,24 +8,32 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "operator",
+@Table(name = "employee",
         uniqueConstraints = {
-                @UniqueConstraint(columnNames = "login", name = "operators_name_uix"),
-                @UniqueConstraint(columnNames = "email", name = "operators_email_uix")
+                @UniqueConstraint(
+                        name = "employee_workspace_email_uix",
+                        columnNames = {"workspaceid", "email"}
+                )
         })
-public class OperatorEntity {
+public class EmployeeEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    @Column(columnDefinition = "UUID DEFAULT gen_random_uuid()", updatable = false)
+    @Column(nullable = false, updatable = false)
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "workspaceid", nullable = false, foreignKey = @ForeignKey(name = "operators_workspace_fk"))
+    @JoinColumn(name = "workspaceid", nullable = false, foreignKey = @ForeignKey(name = "employee_workspace_fk"))
     private WorkspaceEntity workspace;
 
-    @Column(nullable = false, unique = true, length = 50)
-    private String login;
+    @OneToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(
+            name = "userid",
+            nullable = false,
+            unique = true,
+            foreignKey = @ForeignKey(name = "employee_user_fk")
+    )
+    private UserEntity user;
 
     @Column(name = "firstname", nullable = false, length = 50)
     private String firstName;
@@ -36,7 +44,7 @@ public class OperatorEntity {
     @Column(length = 20)
     private String phone;
 
-    @Column(unique = true, length = 100)
+    @Column(length = 100)
     private String email;
 
     @Column(name = "isenabled", nullable = false)
@@ -51,11 +59,10 @@ public class OperatorEntity {
     private Instant updatedAt;
 
     // Конструкторы
-    public OperatorEntity() {
+    public EmployeeEntity() {
     }
 
-    public OperatorEntity(String login, String firstName, String lastName, WorkspaceEntity workspace) {
-        this.login = login;
+    public EmployeeEntity(String firstName, String lastName, WorkspaceEntity workspace) {
         this.firstName = firstName;
         this.lastName = lastName;
         this.workspace = workspace;
@@ -68,14 +75,6 @@ public class OperatorEntity {
 
     public void setId(UUID id) {
         this.id = id;
-    }
-
-    public String getLogin() {
-        return login;
-    }
-
-    public void setLogin(String login) {
-        this.login = login;
     }
 
     public String getFirstName() {
@@ -144,13 +143,20 @@ public class OperatorEntity {
 
     @Override
     public String toString() {
-        return "OperatorEntity{" +
+        return "EmployeeEntity{" +
                 "id=" + id +
-                ", login='" + login + '\'' +
                 ", firstName='" + firstName + '\'' +
                 ", lastName='" + lastName + '\'' +
                 ", workspaceId=" + (workspace != null ? workspace.getId() : null) +
                 ", isEnabled=" + isEnabled +
                 '}';
+    }
+
+    public UserEntity getUser() {
+        return user;
+    }
+
+    public void setUser(UserEntity user) {
+        this.user = user;
     }
 }

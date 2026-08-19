@@ -1,3 +1,56 @@
+clientbus:
+  jwt:
+    # YOUR_BASE64_SECRET_KEY
+    secret: FnQHtz4yCzaBgma1a25xV30mShdAQZx/33msarZ57f0=
+    expiration: 1800000
+
+server:
+#  servlet:
+#    context-path: /clientbus
+
+# logging:
+  # level:
+    # org.springframework.web: DEBUG
+    # org.springdoc: DEBUG
+    # org.springframework.boot.autoconfigure: DEBUG
+
+springdoc:
+  # Основные настройки
+  api-docs:
+    enabled: true
+    path: /v3/api-docs
+    # Формат вывода: json или yaml (по умолчанию json)
+
+  swagger-ui:
+    enabled: true
+    path: /index.html
+
+    # Дополнительные настройки UI
+    display-request-duration: true
+    operations-sorter: method
+    tags-sorter: alpha
+    try-it-out-enabled: true
+    filter: true
+    doc-expansion: none
+
+  # Пакеты для сканирования
+  packages-to-scan:
+    - kit.penny.clientbus.server.controller
+    - kit.penny.clientbus.server.security.controller
+
+  # Пути для сканирования (если нужно)
+  paths-to-match:
+    - /api/**
+    - /v3/**
+
+  # Параметры по умолчанию
+  default-consumes-media-type: application/json
+  default-produces-media-type: application/json
+
+  # Кэширование
+  cache:
+    disabled: false
+
 spring:
   application:
     name: server

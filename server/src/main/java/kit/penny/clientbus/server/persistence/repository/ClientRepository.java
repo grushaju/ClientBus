@@ -20,7 +20,7 @@ public interface ClientRepository extends JpaRepository<ClientEntity, UUID> {
     // Базовые поиски по workspace
     List<ClientEntity> findAllByWorkspaceId(UUID workspaceId);
 
-    Page<ClientEntity> findAllByWorkspaceId(UUID workspaceId, Pageable pageable);
+    Page<ClientEntity> findPagedAllByWorkspaceId(UUID workspaceId, Pageable pageable);
 
     List<ClientEntity> findAllByWorkspaceIdAndIsEnabledTrue(UUID workspaceId);
 
@@ -79,17 +79,6 @@ public interface ClientRepository extends JpaRepository<ClientEntity, UUID> {
     long countByWorkspaceId(UUID workspaceId);
 
     // Обновления
-    @Modifying
-    @Transactional
-    @Query("UPDATE ClientEntity c SET c.isEnabled = :enabled WHERE c.id = :clientId")
-    void updateEnabledStatus(@Param("clientId") UUID clientId,
-                             @Param("enabled") boolean enabled);
-
-    @Modifying
-    @Transactional
-    @Query("UPDATE ClientEntity c SET c.workspace.id = :newWorkspaceId WHERE c.id = :clientId")
-    void transferClientToWorkspace(@Param("clientId") UUID clientId,
-                                   @Param("newWorkspaceId") UUID newWorkspaceId);
 
     @Modifying
     @Transactional

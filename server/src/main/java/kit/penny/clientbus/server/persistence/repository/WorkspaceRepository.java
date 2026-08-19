@@ -11,4 +11,5 @@ import java.util.UUID;
 public interface WorkspaceRepository extends JpaRepository<WorkspaceEntity, UUID> {
     Optional<WorkspaceEntity> findByName(String name);
     boolean existsByName(String name);
+    boolean existsByNameIgnoreCase(String name);
 }

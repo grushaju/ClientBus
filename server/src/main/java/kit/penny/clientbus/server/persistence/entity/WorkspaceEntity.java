@@ -15,7 +15,7 @@ public class WorkspaceEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    @Column(columnDefinition = "UUID DEFAULT gen_random_uuid()")
+    @Column(nullable = false, updatable = false)
     private UUID id;
 
     @Column(nullable = false, length = 100)
