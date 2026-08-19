@@ -54,7 +54,7 @@ public class CurrentUserService {
         return getCurrentUser().getId();
     }
 
-    public String getCurrentLogin() {
+    public String getCurrentUsername() {
         return getCurrentUser().getUsername();
     }
 

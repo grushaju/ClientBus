@@ -12,13 +12,13 @@ import java.util.UUID;
 public class UserPrincipal implements UserDetails {
 
     private final UUID id;
-    private final String login;
+    private final String username;
     private final String passwordHash;
     private final boolean enabled;
 
     public UserPrincipal(UserEntity user) {
         this.id = user.getId();
-        this.login = user.getLogin();
+        this.username = user.getUsername();
         this.passwordHash = user.getPasswordHash();
         this.enabled = user.isEnabled();
     }
@@ -41,7 +41,7 @@ public class UserPrincipal implements UserDetails {
 
     @Override
     public String getUsername() {
-        return login;
+        return username;
     }
 
     @Override

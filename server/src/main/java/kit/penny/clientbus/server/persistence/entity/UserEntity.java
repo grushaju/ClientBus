@@ -9,8 +9,12 @@ import java.util.UUID;
         name = "users",
         uniqueConstraints = {
                 @UniqueConstraint(
-                        name = "users_login_uix",
-                        columnNames = "login"
+                        name = "users_username_uix",
+                        columnNames = "username"
+                ),
+                @UniqueConstraint(
+                        name = "users_email_uix",
+                        columnNames = "email"
                 )
         }
 )
@@ -22,19 +26,34 @@ public class UserEntity {
     private UUID id;
 
     @Column(nullable = false, length = 50)
-    private String login;
+    private String username;
 
-    @Column(name = "passwordhash", nullable = false, length = 100)
+    @Column(nullable = false, length = 100)
+    private String email;
+
+    @Column(
+            name = "passwordhash",
+            nullable = false,
+            length = 100
+    )
     private String passwordHash;
 
-    @Column(name = "isenabled", nullable = false)
+    @Column(
+            name = "isenabled",
+            nullable = false
+    )
     private boolean enabled = true;
 
     public UserEntity() {
     }
 
-    public UserEntity(String login, String passwordHash) {
-        this.login = login;
+    public UserEntity(
+            String username,
+            String email,
+            String passwordHash
+    ) {
+        this.username = username;
+        this.email = email;
         this.passwordHash = passwordHash;
         this.enabled = true;
     }
@@ -47,12 +66,20 @@ public class UserEntity {
         this.id = id;
     }
 
-    public String getLogin() {
-        return login;
+    public String getUsername() {
+        return username;
     }
 
-    public void setLogin(String login) {
-        this.login = login;
+    public void setUsername(String username) {
+        this.username = username;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
     }
 
     public String getPasswordHash() {

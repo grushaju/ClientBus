@@ -6,12 +6,11 @@ import java.util.UUID;
 public record EmployeeDto(
         UUID id,
         UUID workspaceId,
-        UUID userId,
-        String login,
+        String username,
+        String email,
         String firstName,
         String lastName,
         String phone,
-        String email,
         boolean enabled,
         Instant createdAt,
         Instant updatedAt

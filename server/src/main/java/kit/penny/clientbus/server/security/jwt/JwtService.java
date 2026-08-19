@@ -41,7 +41,7 @@ public class JwtService {
 
         return Jwts.builder()
                 .subject(user.getId().toString())
-                .claim("login", user.getLogin())
+                .claim("username", user.getUsername())
                 .issuedAt(now)
                 .expiration(expirationDate)
                 .signWith(secretKey)
@@ -60,12 +60,12 @@ public class JwtService {
     }
 
     /**
-     * Получение login из JWT.
+     * Получение username из JWT.
      */
-    public String getLogin(String token) {
+    public String getUsername(String token) {
 
         return getClaims(token)
-                .get("login", String.class);
+                .get("username", String.class);
     }
 
     /**

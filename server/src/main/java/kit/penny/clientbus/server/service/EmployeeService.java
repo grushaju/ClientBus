@@ -1,14 +1,14 @@
 package kit.penny.clientbus.server.service;
 
-import kit.penny.clientbus.common.dto.employee.CreateEmployeeRequest;
-import kit.penny.clientbus.common.dto.employee.EmployeeDto;
-import kit.penny.clientbus.common.dto.employee.UpdateEmployeeRequest;
+import kit.penny.clientbus.common.dto.employee.*;
 import kit.penny.clientbus.server.mapper.EmployeeMapper;
 import kit.penny.clientbus.server.persistence.entity.EmployeeEntity;
 import kit.penny.clientbus.server.persistence.entity.UserEntity;
 import kit.penny.clientbus.server.persistence.entity.WorkspaceEntity;
 import kit.penny.clientbus.server.persistence.repository.EmployeeRepository;
+import kit.penny.clientbus.server.persistence.repository.UserRepository;
 import kit.penny.clientbus.server.persistence.repository.WorkspaceRepository;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,99 +20,86 @@ import java.util.UUID;
 public class EmployeeService {
 
     private final EmployeeRepository employeeRepository;
+    private final UserRepository userRepository;
     private final WorkspaceRepository workspaceRepository;
     private final EmployeeMapper employeeMapper;
-    private final UserService userService;
+    private final PasswordEncoder passwordEncoder;
 
     public EmployeeService(
             EmployeeRepository employeeRepository,
+            UserRepository userRepository,
             WorkspaceRepository workspaceRepository,
             EmployeeMapper employeeMapper,
-            UserService userService
+            PasswordEncoder passwordEncoder
     ) {
         this.employeeRepository = employeeRepository;
+        this.userRepository = userRepository;
         this.workspaceRepository = workspaceRepository;
         this.employeeMapper = employeeMapper;
-        this.userService = userService;
+        this.passwordEncoder = passwordEncoder;
     }
 
+    /**
+     * Создание Employee + User
+     */
     public EmployeeDto createEmployee(
             CreateEmployeeRequest request
     ) {
+
+        if (userRepository.existsByUsername(
+                request.username()
+        )) {
+            throw new IllegalArgumentException(
+                    "Username already exists"
+            );
+        }
+
+        if (userRepository.existsByEmail(
+                request.email()
+        )) {
+            throw new IllegalArgumentException(
+                    "Email already exists"
+            );
+        }
 
         WorkspaceEntity workspace =
                 workspaceRepository.findById(
                         request.workspaceId()
                 ).orElseThrow(() ->
                         new IllegalArgumentException(
-                                "Workspace not found: "
-                                        + request.workspaceId()
+                                "Workspace not found"
                         )
                 );
 
-        if (request.email() != null &&
-                employeeRepository.existsByWorkspaceIdAndEmail(
-                        request.workspaceId(),
-                        request.email()
-                )) {
-
-            throw new IllegalArgumentException(
-                    "Employee with email already exists in workspace"
-            );
-        }
-
-        /*
-         * UserService отвечает за:
-         * login
-         * password
-         * passwordHash
-         */
-        UserEntity user =
-                userService.createUser(
-                        request.login(),
+        UserEntity user = new UserEntity(
+                request.username(),
+                request.email(),
+                passwordEncoder.encode(
                         request.password()
-                );
+                )
+        );
+
+        user = userRepository.save(user);
 
         EmployeeEntity employee =
-                new EmployeeEntity();
+                new EmployeeEntity(
+                        workspace,
+                        user,
+                        request.firstName(),
+                        request.lastName(),
+                        request.phone()
+                );
 
-        employee.setWorkspace(workspace);
-        employee.setUser(user);
+        employee = employeeRepository.saveAndFlush(employee);
 
-        employee.setFirstName(
-                request.firstName()
-        );
-
-        employee.setLastName(
-                request.lastName()
-        );
-
-        employee.setPhone(
-                request.phone()
-        );
-
-        employee.setEmail(
-                request.email()
-        );
-
-        employee.setEnabled(true);
-
-        EmployeeEntity saved =
-                employeeRepository.save(employee);
-
-        return employeeMapper.toDto(saved);
+        return employeeMapper.toDto(employee);
     }
 
     @Transactional(readOnly = true)
     public EmployeeDto getEmployee(UUID id) {
 
         EmployeeEntity employee =
-                employeeRepository.findById(id)
-                        .orElseThrow(() ->
-                                new IllegalArgumentException(
-                                        "Employee not found: " + id
-                                )
-                        );
+                getEmployeeEntity(id);
 
         return employeeMapper.toDto(employee);
     }
@@ -130,70 +117,179 @@ public class EmployeeService {
     }
 
     @Transactional(readOnly = true)
-    public List<EmployeeDto> getActiveEmployeesByWorkspace(
-            UUID workspaceId
+    public List<EmployeeDto> searchEmployees(
+            UUID workspaceId,
+            String query
     ) {
+        if (query == null || query.isBlank()) {
+            return getEmployeesByWorkspace(workspaceId);
+        }
 
         return employeeRepository
-                .findAllByWorkspaceIdAndIsEnabledTrue(workspaceId)
+                .searchEmployees(workspaceId, query.trim())
                 .stream()
                 .map(employeeMapper::toDto)
                 .toList();
     }
 
+    /**
+     * Изменение бизнес-данных Employee.
+     */
     public EmployeeDto updateEmployee(
-            UUID id,
+            UUID employeeId,
             UpdateEmployeeRequest request
     ) {
 
         EmployeeEntity employee =
-                employeeRepository.findById(id)
-                        .orElseThrow(() ->
-                                new IllegalArgumentException(
-                                        "Employee not found: " + id
-                                )
-                        );
+                getEmployeeEntity(employeeId);
 
-        if (request.email() != null &&
-                !request.email().equalsIgnoreCase(
-                        employee.getEmail()
-                ) &&
-                employeeRepository
-                        .existsByWorkspaceIdAndEmailAndIdNot(
-                                employee.getWorkspace().getId(),
-                                request.email(),
-                                id
-                        )) {
-
-            throw new IllegalArgumentException(
-                    "Employee with email already exists"
+        if (request.firstName() != null) {
+            employee.setFirstName(
+                    request.firstName()
             );
         }
 
-        employeeMapper.updateEntity(
-                employee,
-                request
+        if (request.lastName() != null) {
+            employee.setLastName(
+                    request.lastName()
+            );
+        }
+
+        if (request.phone() != null) {
+            employee.setPhone(
+                    request.phone()
+            );
+        }
+
+        return employeeMapper.toDto(employee);
+    }
+
+    /**
+     * Изменение username/email.
+     */
+    public EmployeeDto updateCredentials(
+            UUID employeeId,
+            UpdateEmployeeCredentialsRequest request
+    ) {
+
+        EmployeeEntity employee =
+                getEmployeeEntity(employeeId);
+
+        UserEntity user =
+                employee.getUser();
+
+        if (request.username() != null &&
+                !request.username().equals(user.getUsername())) {
+
+            if (userRepository.existsByUsername(
+                    request.username()
+            )) {
+                throw new IllegalArgumentException(
+                        "Username already exists"
+                );
+            }
+
+            user.setUsername(request.username());
+        }
+
+        if (request.email() != null &&
+                !request.email().equals(user.getEmail())) {
+
+            if (userRepository.existsByEmail(
+                    request.email()
+            )) {
+                throw new IllegalArgumentException(
+                        "Email already exists"
+                );
+            }
+
+            user.setEmail(request.email());
+        }
+
+        return employeeMapper.toDto(employee);
+    }
+
+    /**
+     * Изменение пароля.
+     */
+    public void changePassword(
+            UUID employeeId,
+            ChangeEmployeePasswordRequest request
+    ) {
+
+        EmployeeEntity employee =
+                getEmployeeEntity(employeeId);
+
+        UserEntity user =
+                employee.getUser();
+
+        if (!passwordEncoder.matches(
+                request.currentPassword(),
+                user.getPasswordHash()
+        )) {
+            throw new IllegalArgumentException(
+                    "Invalid current password"
+            );
+        }
+
+        user.setPasswordHash(
+                passwordEncoder.encode(
+                        request.newPassword()
+                )
+        );
+    }
+
+    /**
+     * Включение / отключение пользователя.
+     */
+    public EmployeeDto setEnabled(
+            UUID employeeId,
+            SetEmployeeEnabledRequest request
+    ) {
+
+        EmployeeEntity employee =
+                getEmployeeEntity(employeeId);
+
+        employee.getUser().setEnabled(
+                request.enabled()
         );
 
         return employeeMapper.toDto(employee);
     }
 
-    public void deleteEmployee(UUID id) {
+    /**
+     * Удаление Employee вместе с User.
+     */
+    public void deleteEmployee(UUID employeeId) {
 
         EmployeeEntity employee =
-                employeeRepository.findById(id)
-                        .orElseThrow(() ->
-                                new IllegalArgumentException(
-                                        "Employee not found: " + id
-                                )
-                        );
+                getEmployeeEntity(employeeId);
+
+        UserEntity user =
+                employee.getUser();
 
         /*
-         * Сейчас физически удаляем Employee.
-         * User пока оставляем.
-         *
-         * Позже здесь лучше сделать soft delete/deactivate.
+         * Сначала Employee,
+         * поскольку на User есть FK.
          */
         employeeRepository.delete(employee);
+
+        /*
+         * Затем User.
+         */
+        userRepository.delete(user);
+    }
+
+    private EmployeeEntity getEmployeeEntity(
+            UUID employeeId
+    ) {
+
+        return employeeRepository.findById(
+                employeeId
+        ).orElseThrow(() ->
+                new IllegalArgumentException(
+                        "Employee not found"
+                )
+        );
     }
 }

@@ -1,4 +1,4 @@
-package kit.penny.clientbus.server.security.service;
+package kit.penny.clientbus.server.service;
 
 import kit.penny.clientbus.common.dto.auth.LoginRequest;
 import kit.penny.clientbus.common.dto.auth.LoginResponse;
@@ -29,13 +29,14 @@ public class AuthService {
 
     public LoginResponse login(LoginRequest request) {
 
-        UserEntity user =
-                userRepository.findByLogin(request.login())
-                        .orElseThrow(() ->
-                                new BadCredentialsException(
-                                        "Invalid login or password"
-                                )
-                        );
+        UserEntity user = userRepository
+                .findByUsername(request.username())
+                .or(() -> userRepository.findByEmail(request.email()))
+                .orElseThrow(() ->
+                        new BadCredentialsException(
+                                "Invalid username or password"
+                        )
+                );
 
         if (!user.isEnabled()) {
             throw new DisabledException(
@@ -48,7 +49,7 @@ public class AuthService {
                 user.getPasswordHash()
         )) {
             throw new BadCredentialsException(
-                    "Invalid login or password"
+                    "Invalid username or password"
             );
         }
 

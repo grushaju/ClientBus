@@ -8,13 +8,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "employee",
-        uniqueConstraints = {
-                @UniqueConstraint(
-                        name = "employee_workspace_email_uix",
-                        columnNames = {"workspaceid", "email"}
-                )
-        })
+@Table(name = "employee")
 public class EmployeeEntity {
 
     @Id
@@ -23,58 +17,97 @@ public class EmployeeEntity {
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "workspaceid", nullable = false, foreignKey = @ForeignKey(name = "employee_workspace_fk"))
+    @JoinColumn(
+            name = "workspaceid",
+            nullable = false,
+            foreignKey = @ForeignKey(
+                    name = "employee_workspace_fk"
+            )
+    )
     private WorkspaceEntity workspace;
 
-    @OneToOne(fetch = FetchType.LAZY, optional = false)
+    @OneToOne(
+            fetch = FetchType.LAZY,
+            optional = false
+    )
     @JoinColumn(
             name = "userid",
             nullable = false,
             unique = true,
-            foreignKey = @ForeignKey(name = "employee_user_fk")
+            foreignKey = @ForeignKey(
+                    name = "employee_user_fk"
+            )
     )
     private UserEntity user;
 
-    @Column(name = "firstname", nullable = false, length = 50)
+    @Column(
+            name = "firstname",
+            nullable = false,
+            length = 50
+    )
     private String firstName;
 
-    @Column(name = "lastname", nullable = false, length = 50)
+    @Column(
+            name = "lastname",
+            nullable = false,
+            length = 50
+    )
     private String lastName;
 
     @Column(length = 20)
     private String phone;
 
-    @Column(length = 100)
-    private String email;
-
-    @Column(name = "isenabled", nullable = false)
-    private boolean isEnabled = true;
-
     @CreationTimestamp
-    @Column(name = "createdat", nullable = false, updatable = false)
+    @Column(
+            name = "createdat",
+            nullable = false,
+            updatable = false
+    )
     private Instant createdAt;
 
     @UpdateTimestamp
     @Column(name = "updatedat")
     private Instant updatedAt;
 
-    // Конструкторы
     public EmployeeEntity() {
     }
 
-    public EmployeeEntity(String firstName, String lastName, WorkspaceEntity workspace) {
+    public EmployeeEntity(
+            WorkspaceEntity workspace,
+            UserEntity user,
+            String firstName,
+            String lastName,
+            String phone
+    ) {
+        this.workspace = workspace;
+        this.user = user;
         this.firstName = firstName;
         this.lastName = lastName;
-        this.workspace = workspace;
+        this.phone = phone;
     }
 
-    // Геттеры и сеттеры
     public UUID getId() {
         return id;
     }
 
     public void setId(UUID id) {
         this.id = id;
+    }
+
+    public WorkspaceEntity getWorkspace() {
+        return workspace;
+    }
+
+    public void setWorkspace(WorkspaceEntity workspace) {
+        this.workspace = workspace;
+    }
+
+    public UserEntity getUser() {
+        return user;
+    }
+
+    public void setUser(UserEntity user) {
+        this.user = user;
     }
 
     public String getFirstName() {
@@ -101,30 +134,6 @@ public class EmployeeEntity {
         this.phone = phone;
     }
 
-    public String getEmail() {
-        return email;
-    }
-
-    public void setEmail(String email) {
-        this.email = email;
-    }
-
-    public WorkspaceEntity getWorkspace() {
-        return workspace;
-    }
-
-    public void setWorkspace(WorkspaceEntity workspace) {
-        this.workspace = workspace;
-    }
-
-    public boolean isEnabled() {
-        return isEnabled;
-    }
-
-    public void setEnabled(boolean enabled) {
-        isEnabled = enabled;
-    }
-
     public Instant getCreatedAt() {
         return createdAt;
     }
@@ -139,24 +148,5 @@ public class EmployeeEntity {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
-    }
-
-    @Override
-    public String toString() {
-        return "EmployeeEntity{" +
-                "id=" + id +
-                ", firstName='" + firstName + '\'' +
-                ", lastName='" + lastName + '\'' +
-                ", workspaceId=" + (workspace != null ? workspace.getId() : null) +
-                ", isEnabled=" + isEnabled +
-                '}';
-    }
-
-    public UserEntity getUser() {
-        return user;
-    }
-
-    public void setUser(UserEntity user) {
-        this.user = user;
     }
 }

@@ -1,9 +1,9 @@
-package kit.penny.clientbus.server.security.controller;
+package kit.penny.clientbus.server.controller;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
 import kit.penny.clientbus.common.dto.auth.LoginRequest;
 import kit.penny.clientbus.common.dto.auth.LoginResponse;
-import kit.penny.clientbus.server.security.service.AuthService;
+import kit.penny.clientbus.server.service.AuthService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
