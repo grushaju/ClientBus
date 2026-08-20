@@ -1,5 +1,6 @@
 package kit.penny.clientbus.server.service;
 
+import jakarta.persistence.EntityNotFoundException;
 import kit.penny.clientbus.common.dto.workspace.CreateWorkspaceRequest;
 import kit.penny.clientbus.common.dto.workspace.UpdateWorkspaceRequest;
 import kit.penny.clientbus.common.dto.workspace.WorkspaceDto;
@@ -53,7 +54,7 @@ public class WorkspaceService {
         WorkspaceEntity entity =
                 workspaceRepository.findById(id)
                         .orElseThrow(() ->
-                                new IllegalArgumentException(
+                                new EntityNotFoundException(
                                         "Workspace not found: " + id
                                 )
                         );
@@ -78,7 +79,7 @@ public class WorkspaceService {
         WorkspaceEntity entity =
                 workspaceRepository.findById(id)
                         .orElseThrow(() ->
-                                new IllegalArgumentException(
+                                new EntityNotFoundException(
                                         "Workspace not found: " + id
                                 )
                         );
@@ -101,7 +102,7 @@ public class WorkspaceService {
     public void deleteWorkspace(UUID id) {
 
         if (!workspaceRepository.existsById(id)) {
-            throw new IllegalArgumentException(
+            throw new EntityNotFoundException(
                     "Workspace not found: " + id
             );
         }

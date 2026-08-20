@@ -1,5 +1,6 @@
 package kit.penny.clientbus.server.service;
 
+import jakarta.persistence.EntityNotFoundException;
 import kit.penny.clientbus.common.dto.employee.*;
 import kit.penny.clientbus.server.mapper.EmployeeMapper;
 import kit.penny.clientbus.server.persistence.entity.EmployeeEntity;
@@ -66,7 +67,7 @@ public class EmployeeService {
                 workspaceRepository.findById(
                         request.workspaceId()
                 ).orElseThrow(() ->
-                        new IllegalArgumentException(
+                        new EntityNotFoundException(
                                 "Workspace not found"
                         )
                 );
@@ -287,7 +288,7 @@ public class EmployeeService {
         return employeeRepository.findById(
                 employeeId
         ).orElseThrow(() ->
-                new IllegalArgumentException(
+                new EntityNotFoundException(
                         "Employee not found"
                 )
         );

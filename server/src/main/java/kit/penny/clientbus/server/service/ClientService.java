@@ -47,7 +47,7 @@ public class ClientService {
         WorkspaceEntity workspace = workspaceRepository
                 .findById(request.workspaceId())
                 .orElseThrow(() ->
-                        new IllegalArgumentException(
+                        new EntityNotFoundException(
                                 "Workspace not found: "
                                         + request.workspaceId()
                         )
@@ -90,7 +90,7 @@ public class ClientService {
 
         ClientEntity entity = clientRepository.findById(id)
                 .orElseThrow(() ->
-                        new IllegalArgumentException(
+                        new EntityNotFoundException(
                                 "Client not found: " + id
                         )
                 );
@@ -106,7 +106,7 @@ public class ClientService {
 
         ClientEntity entity = clientRepository.findById(id)
                 .orElseThrow(() ->
-                        new IllegalArgumentException(
+                        new EntityNotFoundException(
                                 "Client not found: " + id
                         )
                 );
@@ -122,7 +122,7 @@ public class ClientService {
     public void deleteClient(UUID id) {
 
         if (!clientRepository.existsById(id)) {
-            throw new IllegalArgumentException(
+            throw new EntityNotFoundException(
                     "Client not found: " + id
             );
         }
