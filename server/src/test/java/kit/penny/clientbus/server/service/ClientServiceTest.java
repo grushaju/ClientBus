@@ -1,9 +1,12 @@
 package kit.penny.clientbus.server.service;
 
+import jakarta.persistence.EntityNotFoundException;
+import kit.penny.clientbus.common.dto.client.AddClientAccountRequest;
 import kit.penny.clientbus.common.dto.client.ClientDto;
 import kit.penny.clientbus.common.dto.client.CreateClientRequest;
 import kit.penny.clientbus.common.dto.client.UpdateClientRequest;
 import kit.penny.clientbus.common.dto.clientaccount.ClientAccountDto;
+import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.server.mapper.ClientAccountMapper;
 import kit.penny.clientbus.server.mapper.ClientMapper;
 import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
@@ -19,14 +22,12 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import jakarta.persistence.EntityNotFoundException;
-
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -36,10 +37,10 @@ class ClientServiceTest {
     private ClientRepository clientRepository;
 
     @Mock
-    private ClientAccountRepository clientAccountRepository;
+    private WorkspaceRepository workspaceRepository;
 
     @Mock
-    private WorkspaceRepository workspaceRepository;
+    private ClientAccountRepository clientAccountRepository;
 
     @Mock
     private ClientMapper clientMapper;
@@ -54,8 +55,8 @@ class ClientServiceTest {
     private UUID workspaceId;
     private UUID accountId;
 
-    private WorkspaceEntity workspace;
     private ClientEntity client;
+    private WorkspaceEntity workspace;
     private ClientAccountEntity account;
 
     @BeforeEach
@@ -71,18 +72,23 @@ class ClientServiceTest {
 
         client = new ClientEntity();
         client.setId(clientId);
-        client.setWorkspace(workspace);
         client.setFirstName("Ivan");
         client.setLastName("Ivanov");
+        client.setWorkspace(workspace);
         client.setEnabled(true);
 
         account = new ClientAccountEntity();
         account.setId(accountId);
-        account.setClient(null);
+        account.setClient(client);
+        account.setChannelType(ChannelType.TELEGRAM);
+        account.setExternalId("123456789");
+        account.setUsername("ivan");
+        account.setPhone("+79990000000");
+        account.setDisplayName("Ivan");
     }
 
     // =========================================================
-    // CREATE
+    // CREATE CLIENT
     // =========================================================
 
     @Test
@@ -93,7 +99,7 @@ class ClientServiceTest {
                         workspaceId,
                         "Ivan",
                         "Ivanov",
-                        List.of("8901","192", "5665")
+                        List.of("+79990000000")
                 );
 
         ClientDto expectedDto = mock(ClientDto.class);
@@ -101,7 +107,10 @@ class ClientServiceTest {
         when(workspaceRepository.findById(workspaceId))
                 .thenReturn(Optional.of(workspace));
 
-        when(clientRepository.save(any(ClientEntity.class)))
+        when(clientMapper.toEntity(request, workspace))
+                .thenReturn(client);
+
+        when(clientRepository.saveAndFlush(client))
                 .thenReturn(client);
 
         when(clientMapper.toDto(client))
@@ -115,8 +124,11 @@ class ClientServiceTest {
         verify(workspaceRepository)
                 .findById(workspaceId);
 
+        verify(clientMapper)
+                .toEntity(request, workspace);
+
         verify(clientRepository)
-                .save(any(ClientEntity.class));
+                .saveAndFlush(client);
 
         verify(clientMapper)
                 .toDto(client);
@@ -130,26 +142,32 @@ class ClientServiceTest {
                         workspaceId,
                         "Ivan",
                         "Ivanov",
-                        List.of("8901","192", "5665")
+                        List.of()
                 );
 
         when(workspaceRepository.findById(workspaceId))
                 .thenReturn(Optional.empty());
 
-        assertThrows(
-                EntityNotFoundException.class,
-                () -> clientService.createClient(request)
+        EntityNotFoundException exception =
+                assertThrows(
+                        EntityNotFoundException.class,
+                        () -> clientService.createClient(request)
+                );
+
+        assertEquals(
+                "Workspace not found: " + workspaceId,
+                exception.getMessage()
         );
 
-        verify(clientRepository, never())
-                .save(any());
+        verify(workspaceRepository)
+                .findById(workspaceId);
 
-        verify(clientMapper, never())
-                .toDto(any());
+        verifyNoInteractions(clientMapper);
+        verifyNoInteractions(clientRepository);
     }
 
     // =========================================================
-    // GET
+    // GET CLIENT
     // =========================================================
 
     @Test
@@ -181,17 +199,25 @@ class ClientServiceTest {
         when(clientRepository.findById(clientId))
                 .thenReturn(Optional.empty());
 
-        assertThrows(
-                EntityNotFoundException.class,
-                () -> clientService.getClient(clientId)
+        EntityNotFoundException exception =
+                assertThrows(
+                        EntityNotFoundException.class,
+                        () -> clientService.getClient(clientId)
+                );
+
+        assertEquals(
+                "Client not found: " + clientId,
+                exception.getMessage()
         );
 
-        verify(clientMapper, never())
-                .toDto(any());
+        verify(clientRepository)
+                .findById(clientId);
+
+        verifyNoInteractions(clientMapper);
     }
 
     // =========================================================
-    // UPDATE
+    // UPDATE CLIENT
     // =========================================================
 
     @Test
@@ -201,8 +227,8 @@ class ClientServiceTest {
                 new UpdateClientRequest(
                         "Petr",
                         "Petrov",
-                        List.of("8901","192", "5665"),
-                        true
+                        List.of("+79991112233"),
+                        false
                 );
 
         ClientDto expectedDto = mock(ClientDto.class);
@@ -210,7 +236,7 @@ class ClientServiceTest {
         when(clientRepository.findById(clientId))
                 .thenReturn(Optional.of(client));
 
-        when(clientRepository.save(client))
+        when(clientRepository.saveAndFlush(client))
                 .thenReturn(client);
 
         when(clientMapper.toDto(client))
@@ -227,21 +253,14 @@ class ClientServiceTest {
         verify(clientRepository)
                 .findById(clientId);
 
+        verify(clientMapper)
+                .updateEntity(client, request);
+
         verify(clientRepository)
-                .save(client);
+                .saveAndFlush(client);
 
         verify(clientMapper)
                 .toDto(client);
-
-        assertEquals(
-                "Petr",
-                client.getFirstName()
-        );
-
-        assertEquals(
-                "Petrov",
-                client.getLastName()
-        );
     }
 
     @Test
@@ -251,57 +270,74 @@ class ClientServiceTest {
                 new UpdateClientRequest(
                         "Petr",
                         "Petrov",
-                        List.of("8901","192", "5665"),
+                        List.of(),
                         true
                 );
 
         when(clientRepository.findById(clientId))
                 .thenReturn(Optional.empty());
 
-        assertThrows(
-                EntityNotFoundException.class,
-                () -> clientService.updateClient(
-                        clientId,
-                        request
-                )
+        EntityNotFoundException exception =
+                assertThrows(
+                        EntityNotFoundException.class,
+                        () -> clientService.updateClient(
+                                clientId,
+                                request
+                        )
+                );
+
+        assertEquals(
+                "Client not found: " + clientId,
+                exception.getMessage()
         );
 
-        verify(clientRepository, never())
-                .save(any());
+        verify(clientRepository)
+                .findById(clientId);
+
+        verifyNoInteractions(clientMapper);
     }
 
     // =========================================================
-    // DELETE
+    // DELETE CLIENT
     // =========================================================
 
     @Test
     void deleteClient_success() {
 
-        when(clientRepository.findById(clientId))
-                .thenReturn(Optional.of(client));
+        when(clientRepository.existsById(clientId))
+                .thenReturn(true);
 
         clientService.deleteClient(clientId);
 
         verify(clientRepository)
-                .findById(clientId);
+                .existsById(clientId);
 
         verify(clientRepository)
-                .delete(client);
+                .deleteById(clientId);
     }
 
     @Test
     void deleteClient_notFound() {
 
-        when(clientRepository.findById(clientId))
-                .thenReturn(Optional.empty());
+        when(clientRepository.existsById(clientId))
+                .thenReturn(false);
 
-        assertThrows(
-                EntityNotFoundException.class,
-                () -> clientService.deleteClient(clientId)
+        EntityNotFoundException exception =
+                assertThrows(
+                        EntityNotFoundException.class,
+                        () -> clientService.deleteClient(clientId)
+                );
+
+        assertEquals(
+                "Client not found: " + clientId,
+                exception.getMessage()
         );
 
+        verify(clientRepository)
+                .existsById(clientId);
+
         verify(clientRepository, never())
-                .delete(any());
+                .deleteById(any());
     }
 
     // =========================================================
@@ -313,17 +349,15 @@ class ClientServiceTest {
 
         ClientEntity client2 = new ClientEntity();
         client2.setId(UUID.randomUUID());
+        client2.setFirstName("Petr");
+        client2.setLastName("Petrov");
         client2.setWorkspace(workspace);
-
-        List<ClientEntity> clients =
-                List.of(client, client2);
 
         ClientDto dto1 = mock(ClientDto.class);
         ClientDto dto2 = mock(ClientDto.class);
 
-        when(clientRepository
-                .findClientsWithoutAccounts(workspaceId))
-                .thenReturn(clients);
+        when(clientRepository.findClientsWithoutAccounts(workspaceId))
+                .thenReturn(List.of(client, client2));
 
         when(clientMapper.toDto(client))
                 .thenReturn(dto1);
@@ -332,12 +366,9 @@ class ClientServiceTest {
                 .thenReturn(dto2);
 
         List<ClientDto> result =
-                clientService.getClientsWithoutAccounts(
-                        workspaceId
-                );
+                clientService.getClientsWithoutAccounts(workspaceId);
 
         assertEquals(2, result.size());
-
         assertSame(dto1, result.get(0));
         assertSame(dto2, result.get(1));
 
@@ -352,7 +383,7 @@ class ClientServiceTest {
     }
 
     // =========================================================
-    // CLIENT ACCOUNTS
+    // GET CLIENT ACCOUNTS
     // =========================================================
 
     @Test
@@ -363,11 +394,8 @@ class ClientServiceTest {
 
         account2.setId(UUID.randomUUID());
         account2.setClient(client);
-
-        account.setClient(client);
-
-        List<ClientAccountEntity> accounts =
-                List.of(account, account2);
+        account2.setChannelType(ChannelType.VK);
+        account2.setExternalId("vk-123");
 
         ClientAccountDto dto1 =
                 mock(ClientAccountDto.class);
@@ -375,12 +403,11 @@ class ClientServiceTest {
         ClientAccountDto dto2 =
                 mock(ClientAccountDto.class);
 
-        when(clientRepository.findById(clientId))
-                .thenReturn(Optional.of(client));
+        when(clientRepository.existsById(clientId))
+                .thenReturn(true);
 
-        when(clientAccountRepository
-                .findAllByClientId(clientId))
-                .thenReturn(accounts);
+        when(clientAccountRepository.findAllByClientId(clientId))
+                .thenReturn(List.of(account, account2));
 
         when(clientAccountMapper.toDto(account))
                 .thenReturn(dto1);
@@ -397,35 +424,306 @@ class ClientServiceTest {
         assertSame(dto2, result.get(1));
 
         verify(clientRepository)
-                .findById(clientId);
+                .existsById(clientId);
 
         verify(clientAccountRepository)
                 .findAllByClientId(clientId);
+
+        verify(clientAccountMapper)
+                .toDto(account);
+
+        verify(clientAccountMapper)
+                .toDto(account2);
     }
 
     @Test
     void getClientAccounts_clientNotFound() {
 
-        when(clientRepository.findById(clientId))
-                .thenReturn(Optional.empty());
+        when(clientRepository.existsById(clientId))
+                .thenReturn(false);
 
-        assertThrows(
-                EntityNotFoundException.class,
-                () -> clientService.getClientAccounts(clientId)
+        EntityNotFoundException exception =
+                assertThrows(
+                        EntityNotFoundException.class,
+                        () -> clientService.getClientAccounts(clientId)
+                );
+
+        assertEquals(
+                "Client not found: " + clientId,
+                exception.getMessage()
         );
 
-        verify(
-                clientAccountRepository,
-                never()
-        ).findAllByClientId(any());
+        verify(clientRepository)
+                .existsById(clientId);
+
+        verifyNoInteractions(clientAccountRepository);
+        verifyNoInteractions(clientAccountMapper);
     }
 
     // =========================================================
-    // ASSIGN ACCOUNT
+    // ADD CLIENT ACCOUNT
     // =========================================================
 
     @Test
     void addClientAccount_success() {
+
+        AddClientAccountRequest request =
+                new AddClientAccountRequest(
+                        ChannelType.TELEGRAM,
+                        "telegram-123",
+                        "ivan",
+                        "+79990000000",
+                        "Ivan"
+                );
+
+        ClientAccountDto expectedDto =
+                mock(ClientAccountDto.class);
+
+        when(clientRepository.findById(clientId))
+                .thenReturn(Optional.of(client));
+
+        when(clientAccountRepository
+                .existsByChannelTypeAndExternalId(
+                        ChannelType.TELEGRAM,
+                        "telegram-123"
+                ))
+                .thenReturn(false);
+
+        when(clientAccountRepository.saveAndFlush(any(
+                ClientAccountEntity.class
+        ))).thenReturn(account);
+
+        when(clientAccountMapper.toDto(account))
+                .thenReturn(expectedDto);
+
+        ClientAccountDto result =
+                clientService.addClientAccount(
+                        clientId,
+                        request
+                );
+
+        assertSame(expectedDto, result);
+
+        verify(clientRepository)
+                .findById(clientId);
+
+        verify(clientAccountRepository)
+                .existsByChannelTypeAndExternalId(
+                        ChannelType.TELEGRAM,
+                        "telegram-123"
+                );
+
+        verify(clientAccountRepository)
+                .saveAndFlush(any(ClientAccountEntity.class));
+
+        verify(clientAccountMapper)
+                .toDto(account);
+    }
+
+    @Test
+    void addClientAccount_clientNotFound() {
+
+        AddClientAccountRequest request =
+                new AddClientAccountRequest(
+                        ChannelType.TELEGRAM,
+                        "telegram-123",
+                        "ivan",
+                        null,
+                        "Ivan"
+                );
+
+        when(clientRepository.findById(clientId))
+                .thenReturn(Optional.empty());
+
+        EntityNotFoundException exception =
+                assertThrows(
+                        EntityNotFoundException.class,
+                        () -> clientService.addClientAccount(
+                                clientId,
+                                request
+                        )
+                );
+
+        assertEquals(
+                "Client not found: " + clientId,
+                exception.getMessage()
+        );
+
+        verify(clientRepository)
+                .findById(clientId);
+
+        verifyNoInteractions(clientAccountRepository);
+        verifyNoInteractions(clientAccountMapper);
+    }
+
+    @Test
+    void addClientAccount_duplicate() {
+
+        AddClientAccountRequest request =
+                new AddClientAccountRequest(
+                        ChannelType.TELEGRAM,
+                        "telegram-123",
+                        "ivan",
+                        null,
+                        "Ivan"
+                );
+
+        when(clientRepository.findById(clientId))
+                .thenReturn(Optional.of(client));
+
+        when(clientAccountRepository
+                .existsByChannelTypeAndExternalId(
+                        ChannelType.TELEGRAM,
+                        "telegram-123"
+                ))
+                .thenReturn(true);
+
+        IllegalStateException exception =
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> clientService.addClientAccount(
+                                clientId,
+                                request
+                        )
+                );
+
+        assertEquals(
+                "Client account already exists: TELEGRAM / telegram-123",
+                exception.getMessage()
+        );
+
+        verify(clientRepository)
+                .findById(clientId);
+
+        verify(clientAccountRepository)
+                .existsByChannelTypeAndExternalId(
+                        ChannelType.TELEGRAM,
+                        "telegram-123"
+                );
+
+        verify(clientAccountRepository, never())
+                .saveAndFlush(any());
+
+        verifyNoInteractions(clientAccountMapper);
+    }
+
+    // =========================================================
+    // ASSIGN EXISTING ACCOUNT
+    // =========================================================
+
+    @Test
+    void assignClientAccount_success() {
+
+        ClientAccountEntity unassignedAccount =
+                new ClientAccountEntity();
+
+        unassignedAccount.setId(accountId);
+        unassignedAccount.setClient(null);
+        unassignedAccount.setChannelType(
+                ChannelType.TELEGRAM
+        );
+        unassignedAccount.setExternalId(
+                "telegram-123"
+        );
+
+        ClientAccountDto expectedDto =
+                mock(ClientAccountDto.class);
+
+        when(clientRepository.findById(clientId))
+                .thenReturn(Optional.of(client));
+
+        when(clientAccountRepository.findById(accountId))
+                .thenReturn(Optional.of(unassignedAccount));
+
+        when(clientAccountMapper.toDto(unassignedAccount))
+                .thenReturn(expectedDto);
+
+        ClientAccountDto result =
+                clientService.assignClientAccount(
+                        clientId,
+                        accountId
+                );
+
+        assertSame(expectedDto, result);
+
+        assertSame(
+                client,
+                unassignedAccount.getClient()
+        );
+
+        verify(clientRepository)
+                .findById(clientId);
+
+        verify(clientAccountRepository)
+                .findById(accountId);
+
+        verify(clientAccountMapper)
+                .toDto(unassignedAccount);
+
+        verify(clientAccountRepository, never())
+                .save(any());
+    }
+
+    @Test
+    void assignClientAccount_clientNotFound() {
+
+        when(clientRepository.findById(clientId))
+                .thenReturn(Optional.empty());
+
+        EntityNotFoundException exception =
+                assertThrows(
+                        EntityNotFoundException.class,
+                        () -> clientService.assignClientAccount(
+                                clientId,
+                                accountId
+                        )
+                );
+
+        assertEquals(
+                "Client not found: " + clientId,
+                exception.getMessage()
+        );
+
+        verify(clientRepository)
+                .findById(clientId);
+
+        verifyNoInteractions(clientAccountRepository);
+    }
+
+    @Test
+    void assignClientAccount_accountNotFound() {
+
+        when(clientRepository.findById(clientId))
+                .thenReturn(Optional.of(client));
+
+        when(clientAccountRepository.findById(accountId))
+                .thenReturn(Optional.empty());
+
+        EntityNotFoundException exception =
+                assertThrows(
+                        EntityNotFoundException.class,
+                        () -> clientService.assignClientAccount(
+                                clientId,
+                                accountId
+                        )
+                );
+
+        assertEquals(
+                "Client account not found: " + accountId,
+                exception.getMessage()
+        );
+
+        verify(clientRepository)
+                .findById(clientId);
+
+        verify(clientAccountRepository)
+                .findById(accountId);
+
+        verifyNoInteractions(clientAccountMapper);
+    }
+
+    @Test
+    void assignClientAccount_alreadyAssignedToSameClient() {
 
         ClientAccountDto expectedDto =
                 mock(ClientAccountDto.class);
@@ -452,115 +750,19 @@ class ClientServiceTest {
                 account.getClient()
         );
 
-        verify(clientRepository)
-                .findById(clientId);
-
-        verify(clientAccountRepository)
-                .findById(accountId);
-
-        verify(clientAccountMapper)
-                .toDto(account);
-
-        /*
-         * Если метод сервиса делает accountRepository.save(account),
-         * этот verify нужно оставить.
-         */
-        verify(clientAccountRepository)
-                .save(account);
-    }
-
-    @Test
-    void addClientAccount_clientNotFound() {
-
-        when(clientRepository.findById(clientId))
-                .thenReturn(Optional.empty());
-
-        assertThrows(
-                EntityNotFoundException.class,
-                () -> clientService.assignClientAccount(
-                        clientId,
-                        accountId
-                )
-        );
-
-        verify(
-                clientAccountRepository,
-                never()
-        ).findById(any());
-
-        verify(
-                clientAccountRepository,
-                never()
-        ).save(any());
-    }
-
-    @Test
-    void addClientAccount_duplicate() {
-
-        account.setClient(client);
-
-        when(clientRepository.findById(clientId))
-                .thenReturn(Optional.of(client));
-
-        when(clientAccountRepository.findById(accountId))
-                .thenReturn(Optional.of(account));
-
-        ClientAccountDto result =
-                clientService.assignClientAccount(
-                        clientId,
-                        accountId
-                );
-
-        assertNotNull(result);
-
-        verify(clientAccountRepository, never())
-                .save(any());
-
         verify(clientAccountMapper)
                 .toDto(account);
     }
 
     @Test
-    void addClientAccount_alreadyAssignedToSameClient() {
-
-        account.setClient(client);
-
-        ClientAccountDto expectedDto =
-                mock(ClientAccountDto.class);
-
-        when(clientRepository.findById(clientId))
-                .thenReturn(Optional.of(client));
-
-        when(clientAccountRepository.findById(accountId))
-                .thenReturn(Optional.of(account));
-
-        when(clientAccountMapper.toDto(account))
-                .thenReturn(expectedDto);
-
-        ClientAccountDto result =
-                clientService.assignClientAccount(
-                        clientId,
-                        accountId
-                );
-
-        assertSame(expectedDto, result);
-
-        verify(clientAccountRepository, never())
-                .save(any());
-
-        verify(clientAccountMapper)
-                .toDto(account);
-    }
-
-    @Test
-    void addClientAccount_alreadyAssignedToAnotherClient() {
-
-        UUID anotherClientId = UUID.randomUUID();
+    void assignClientAccount_alreadyAssignedToAnotherClient() {
 
         ClientEntity anotherClient =
                 new ClientEntity();
 
-        anotherClient.setId(anotherClientId);
+        anotherClient.setId(
+                UUID.randomUUID()
+        );
 
         account.setClient(anotherClient);
 
@@ -586,8 +788,177 @@ class ClientServiceTest {
 
         verify(clientAccountMapper, never())
                 .toDto(any());
+    }
 
-        verify(clientAccountRepository, never())
-                .save(any());
+    // =========================================================
+    // REASSIGN ACCOUNT
+    // =========================================================
+
+    @Test
+    void reassignClientAccount_success() {
+
+        UUID newClientId =
+                UUID.randomUUID();
+
+        ClientEntity newClient =
+                new ClientEntity();
+
+        newClient.setId(newClientId);
+
+        ClientAccountDto expectedDto =
+                mock(ClientAccountDto.class);
+
+        when(clientAccountRepository.findById(accountId))
+                .thenReturn(Optional.of(account));
+
+        when(clientRepository.findById(newClientId))
+                .thenReturn(Optional.of(newClient));
+
+        when(clientAccountMapper.toDto(account))
+                .thenReturn(expectedDto);
+
+        ClientAccountDto result =
+                clientService.reassignClientAccount(
+                        accountId,
+                        newClientId
+                );
+
+        assertSame(expectedDto, result);
+
+        assertSame(
+                newClient,
+                account.getClient()
+        );
+
+        verify(clientAccountRepository)
+                .findById(accountId);
+
+        verify(clientRepository)
+                .findById(newClientId);
+
+        verify(clientAccountMapper)
+                .toDto(account);
+    }
+
+    @Test
+    void reassignClientAccount_accountNotFound() {
+
+        UUID newClientId =
+                UUID.randomUUID();
+
+        when(clientAccountRepository.findById(accountId))
+                .thenReturn(Optional.empty());
+
+        EntityNotFoundException exception =
+                assertThrows(
+                        EntityNotFoundException.class,
+                        () -> clientService.reassignClientAccount(
+                                accountId,
+                                newClientId
+                        )
+                );
+
+        assertEquals(
+                "Client account not found: " + accountId,
+                exception.getMessage()
+        );
+
+        verify(clientAccountRepository)
+                .findById(accountId);
+
+        verifyNoInteractions(clientRepository);
+    }
+
+    @Test
+    void reassignClientAccount_clientNotFound() {
+
+        UUID newClientId =
+                UUID.randomUUID();
+
+        when(clientAccountRepository.findById(accountId))
+                .thenReturn(Optional.of(account));
+
+        when(clientRepository.findById(newClientId))
+                .thenReturn(Optional.empty());
+
+        EntityNotFoundException exception =
+                assertThrows(
+                        EntityNotFoundException.class,
+                        () -> clientService.reassignClientAccount(
+                                accountId,
+                                newClientId
+                        )
+                );
+
+        assertEquals(
+                "Client not found: " + newClientId,
+                exception.getMessage()
+        );
+
+        verify(clientAccountRepository)
+                .findById(accountId);
+
+        verify(clientRepository)
+                .findById(newClientId);
+
+        verify(clientAccountMapper, never())
+                .toDto(any());
+    }
+
+    // =========================================================
+    // UNASSIGN ACCOUNT
+    // =========================================================
+
+    @Test
+    void unassignClientAccount_success() {
+
+        ClientAccountDto expectedDto =
+                mock(ClientAccountDto.class);
+
+        when(clientAccountRepository.findById(accountId))
+                .thenReturn(Optional.of(account));
+
+        when(clientAccountMapper.toDto(account))
+                .thenReturn(expectedDto);
+
+        ClientAccountDto result =
+                clientService.unassignClientAccount(
+                        accountId
+                );
+
+        assertSame(expectedDto, result);
+
+        assertNull(account.getClient());
+
+        verify(clientAccountRepository)
+                .findById(accountId);
+
+        verify(clientAccountMapper)
+                .toDto(account);
+    }
+
+    @Test
+    void unassignClientAccount_accountNotFound() {
+
+        when(clientAccountRepository.findById(accountId))
+                .thenReturn(Optional.empty());
+
+        EntityNotFoundException exception =
+                assertThrows(
+                        EntityNotFoundException.class,
+                        () -> clientService.unassignClientAccount(
+                                accountId
+                        )
+                );
+
+        assertEquals(
+                "Client account not found: " + accountId,
+                exception.getMessage()
+        );
+
+        verify(clientAccountRepository)
+                .findById(accountId);
+
+        verifyNoInteractions(clientAccountMapper);
     }
 }
