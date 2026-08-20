@@ -158,12 +158,12 @@
             <version>0.12.6</version>
             <scope>runtime</scope>
         </dependency>
-        <dependency>
+        <!--dependency>
             <groupId>com.github.therapi</groupId>
             <artifactId>therapi-runtime-javadoc</artifactId>
             <version>0.15.0</version>
             <scope>runtime</scope>
-        </dependency>
+        </dependency-->
     </dependencies>
 
     <build>
@@ -196,7 +196,7 @@
                     </execution>
                 </executions>
             </plugin>
-            <plugin>
+            <!--plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
@@ -208,7 +208,7 @@
                         </path>
                     </annotationProcessorPaths>
                 </configuration>
-            </plugin>
+            </plugin-->
         </plugins>
     </build>
 

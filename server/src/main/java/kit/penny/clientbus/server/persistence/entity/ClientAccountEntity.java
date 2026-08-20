@@ -7,10 +7,10 @@ import java.util.UUID;
 
 @Entity
 @Table(
-        name = "account",
+        name = "clientaccount",
         uniqueConstraints = {
                 @UniqueConstraint(
-                        name = "account_client_type_external_uix",
+                        name = "clientaccount_client_type_external_uix",
                         columnNames = {
                                 "clientid",
                                 "channeltype",
@@ -19,19 +19,19 @@ import java.util.UUID;
                 )
         }
 )
-public class AccountEntity {
+public class ClientAccountEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     @Column(nullable = false, updatable = false)
     private UUID id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(
             name = "clientid",
-            nullable = false,
+            nullable = true,
             foreignKey = @ForeignKey(
-                    name = "account_client_fk"
+                    name = "clientaccount_client_fk"
             )
     )
     private ClientEntity client;
@@ -63,10 +63,10 @@ public class AccountEntity {
     )
     private String displayName;
 
-    public AccountEntity() {
+    public ClientAccountEntity() {
     }
 
-    public AccountEntity(
+    public ClientAccountEntity(
             ClientEntity client,
             ChannelType channelType,
             String externalId,

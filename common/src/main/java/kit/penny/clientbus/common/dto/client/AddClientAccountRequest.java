@@ -1,16 +1,10 @@
-package kit.penny.clientbus.common.dto.account;
+package kit.penny.clientbus.common.dto.client;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-
-import java.util.UUID;
-
 import kit.penny.clientbus.common.enums.ChannelType;
 
-public record CreateAccountRequest(
-
-        @NotNull
-        UUID clientId,
+public record AddClientAccountRequest(
 
         @NotNull
         ChannelType channelType,

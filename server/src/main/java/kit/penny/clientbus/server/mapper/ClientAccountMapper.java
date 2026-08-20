@@ -1,19 +1,24 @@
 package kit.penny.clientbus.server.mapper;
 
-import kit.penny.clientbus.common.dto.account.AccountDto;
-import kit.penny.clientbus.common.dto.account.CreateAccountRequest;
-import kit.penny.clientbus.common.dto.account.UpdateAccountRequest;
-import kit.penny.clientbus.server.persistence.entity.AccountEntity;
+import kit.penny.clientbus.common.dto.clientaccount.ClientAccountDto;
+import kit.penny.clientbus.common.dto.clientaccount.CreateClientAccountRequest;
+import kit.penny.clientbus.common.dto.clientaccount.UpdateClientAccountRequest;
+import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
 import org.springframework.stereotype.Component;
 
+import java.util.UUID;
+
 @Component
-public class AccountMapper {
+public class ClientAccountMapper {
 
-    public AccountDto toDto(AccountEntity entity) {
-
-        return new AccountDto(
+    public ClientAccountDto toDto(ClientAccountEntity entity) {
+        UUID clientId = null;
+        if (entity.getClient() != null) {
+            clientId = entity.getClient().getId();
+        }
+        return new ClientAccountDto(
                 entity.getId(),
-                entity.getClient().getId(),
+                clientId,
                 entity.getChannelType(),
                 entity.getExternalId(),
                 entity.getUsername(),
@@ -22,11 +27,11 @@ public class AccountMapper {
         );
     }
 
-    public AccountEntity toEntity(
-            CreateAccountRequest request
+    public ClientAccountEntity toEntity(
+            CreateClientAccountRequest request
     ) {
 
-        return new AccountEntity(
+        return new ClientAccountEntity(
                 null,
                 request.channelType(),
                 request.externalId(),
@@ -37,8 +42,8 @@ public class AccountMapper {
     }
 
     public void updateEntity(
-            AccountEntity entity,
-            UpdateAccountRequest request
+            ClientAccountEntity entity,
+            UpdateClientAccountRequest request
     ) {
 
         if (request.username() != null) {

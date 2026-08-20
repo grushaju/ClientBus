@@ -1,9 +1,12 @@
 package kit.penny.clientbus.server.controller;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import kit.penny.clientbus.common.dto.client.AddClientAccountRequest;
 import kit.penny.clientbus.common.dto.client.ClientDto;
 import kit.penny.clientbus.common.dto.client.CreateClientRequest;
 import kit.penny.clientbus.common.dto.client.UpdateClientRequest;
+import kit.penny.clientbus.common.dto.clientaccount.ClientAccountDto;
 import kit.penny.clientbus.server.service.ClientService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -43,6 +46,18 @@ public class ClientController {
 
         return ResponseEntity.ok(
                 clientService.getClientsByWorkspace(workspaceId)
+        );
+    }
+
+    @GetMapping("/workspace/{workspaceId}/without-accounts")
+    public ResponseEntity<List<ClientDto>> getClientsWithoutAccounts(
+            @PathVariable UUID workspaceId
+    ) {
+
+        return ResponseEntity.ok(
+                clientService.getClientsWithoutAccounts(
+                        workspaceId
+                )
         );
     }
 
@@ -86,5 +101,75 @@ public class ClientController {
         clientService.deleteClient(id);
 
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{clientId}/clientaccounts")
+    public ResponseEntity<ClientAccountDto> addClientAccount(
+            @PathVariable UUID clientId,
+            @Valid @RequestBody AddClientAccountRequest request
+    ) {
+
+        ClientAccountDto account =
+                clientService.addClientAccount(
+                        clientId,
+                        request
+                );
+
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(account);
+    }
+
+    @PostMapping("/{clientId}/clientaccounts/{accountId}")
+    public ResponseEntity<ClientAccountDto> assignClientAccount(
+            @PathVariable UUID clientId,
+            @PathVariable UUID accountId
+    ) {
+
+        ClientAccountDto account =
+                clientService.assignClientAccount(
+                        clientId,
+                        accountId
+                );
+
+        return ResponseEntity.ok(account);
+    }
+
+    @PostMapping("/{clientId}/clientaccounts/{accountId}/reassign")
+    public ResponseEntity<ClientAccountDto> reassignClientAccount(
+            @PathVariable UUID accountId,
+            @PathVariable UUID clientId
+    ) {
+
+        ClientAccountDto account =
+                clientService.reassignClientAccount(
+                        accountId,
+                        clientId
+                );
+
+        return ResponseEntity.ok(account);
+    }
+
+    @DeleteMapping("/clientaccounts/{accountId}")
+    public ResponseEntity<ClientAccountDto> unassignClientAccount(
+            @PathVariable UUID accountId
+    ) {
+
+        ClientAccountDto account =
+                clientService.unassignClientAccount(
+                        accountId
+                );
+
+        return ResponseEntity.ok(account);
+    }
+
+    @GetMapping("/{clientId}/clientaccounts")
+    public ResponseEntity<List<ClientAccountDto>> getAccounts(
+            @PathVariable UUID clientId
+    ) {
+
+        return ResponseEntity.ok(
+                clientService.getClientAccounts(clientId)
+        );
     }
 }

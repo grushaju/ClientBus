@@ -1,10 +1,10 @@
-package kit.penny.clientbus.common.dto.account;
+package kit.penny.clientbus.common.dto.clientaccount;
 
 import kit.penny.clientbus.common.enums.ChannelType;
 
 import java.util.UUID;
 
-public record AccountDto(
+public record ClientAccountDto(
         UUID id,
         UUID clientId,
         ChannelType channelType,

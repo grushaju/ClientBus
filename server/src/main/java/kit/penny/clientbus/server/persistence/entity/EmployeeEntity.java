@@ -8,7 +8,10 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "employee")
+@Table(name = "employee",
+        uniqueConstraints = {
+            @UniqueConstraint(name = "uk_employee_user", columnNames = "userid")
+        })
 public class EmployeeEntity {
 
     @Id
@@ -33,7 +36,6 @@ public class EmployeeEntity {
     @JoinColumn(
             name = "userid",
             nullable = false,
-            unique = true,
             foreignKey = @ForeignKey(
                     name = "employee_user_fk"
             )

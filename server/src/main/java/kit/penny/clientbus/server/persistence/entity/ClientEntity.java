@@ -41,6 +41,13 @@ public class ClientEntity {
     @Column(name = "isenabled", nullable = false)
     private boolean isEnabled = true;
 
+    @OneToMany(
+            mappedBy = "client",
+            fetch = FetchType.LAZY
+    )
+    private List<ClientAccountEntity> clientAccounts =
+            new ArrayList<>();
+
     @CreationTimestamp
     @Column(name = "createdat", nullable = false, updatable = false)
     private Instant createdAt;
@@ -116,6 +123,16 @@ public class ClientEntity {
 
     public void setEnabled(boolean enabled) {
         isEnabled = enabled;
+    }
+
+    public List<ClientAccountEntity> getClientAccounts() {
+        return clientAccounts;
+    }
+
+    public void setClientAccounts(
+            List<ClientAccountEntity> clientAccounts
+    ) {
+        this.clientAccounts = clientAccounts;
     }
 
     public Instant getCreatedAt() {

@@ -69,6 +69,25 @@ public interface ClientRepository extends JpaRepository<ClientEntity, UUID> {
     List<ClientEntity> searchActiveClients(@Param("workspaceId") UUID workspaceId,
                                            @Param("query") String query);
 
+    boolean existsByIdAndWorkspaceId(
+            UUID clientId,
+            UUID workspaceId
+    );
+
+    @Query("""
+    SELECT c
+    FROM ClientEntity c
+    WHERE c.workspace.id = :workspaceId
+      AND NOT EXISTS (
+          SELECT ca.id
+          FROM ClientAccountEntity ca
+          WHERE ca.client.id = c.id
+      )
+    """)
+    List<ClientEntity> findClientsWithoutAccounts(
+            @Param("workspaceId") UUID workspaceId
+    );
+
     // Подсчеты
     @Query("SELECT COUNT(c) FROM ClientEntity c WHERE c.workspace.id = :workspaceId AND c.isEnabled = true")
     long countActiveClientsByWorkspace(@Param("workspaceId") UUID workspaceId);
