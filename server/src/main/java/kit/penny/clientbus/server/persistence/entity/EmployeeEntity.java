@@ -8,10 +8,15 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "employee",
+@Table(
+        name = "employee",
         uniqueConstraints = {
-            @UniqueConstraint(name = "uk_employee_user", columnNames = "userid")
-        })
+                @UniqueConstraint(
+                        name = "uk_employee_user",
+                        columnNames = "userid"
+                )
+        }
+)
 public class EmployeeEntity {
 
     @Id
@@ -21,13 +26,13 @@ public class EmployeeEntity {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(
-            name = "workspaceid",
+            name = "organizationid",
             nullable = false,
             foreignKey = @ForeignKey(
-                    name = "employee_workspace_fk"
+                    name = "employee_organization_fk"
             )
     )
-    private WorkspaceEntity workspace;
+    private OrganizationEntity organization;
 
     @OneToOne(
             fetch = FetchType.LAZY,
@@ -75,13 +80,13 @@ public class EmployeeEntity {
     }
 
     public EmployeeEntity(
-            WorkspaceEntity workspace,
+            OrganizationEntity organization,
             UserEntity user,
             String firstName,
             String lastName,
             String phone
     ) {
-        this.workspace = workspace;
+        this.organization = organization;
         this.user = user;
         this.firstName = firstName;
         this.lastName = lastName;
@@ -96,12 +101,14 @@ public class EmployeeEntity {
         this.id = id;
     }
 
-    public WorkspaceEntity getWorkspace() {
-        return workspace;
+    public OrganizationEntity getOrganization() {
+        return organization;
     }
 
-    public void setWorkspace(WorkspaceEntity workspace) {
-        this.workspace = workspace;
+    public void setOrganization(
+            OrganizationEntity organization
+    ) {
+        this.organization = organization;
     }
 
     public UserEntity getUser() {

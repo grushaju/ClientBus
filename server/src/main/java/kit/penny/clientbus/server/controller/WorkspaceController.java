@@ -1,6 +1,7 @@
 package kit.penny.clientbus.server.controller;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import kit.penny.clientbus.common.dto.workspace.CreateWorkspaceRequest;
 import kit.penny.clientbus.common.dto.workspace.UpdateWorkspaceRequest;
 import kit.penny.clientbus.common.dto.workspace.WorkspaceDto;
@@ -14,7 +15,10 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/workspaces")
-@Tag(name = "Рабочие пространства", description = "API для управления рабочими пространствами")
+@Tag(
+        name = "Рабочие пространства",
+        description = "API для управления рабочими пространствами"
+)
 public class WorkspaceController {
 
     private final WorkspaceService workspaceService;
@@ -27,15 +31,17 @@ public class WorkspaceController {
 
     @PostMapping
     public ResponseEntity<WorkspaceDto> createWorkspace(
+            @Valid
             @RequestBody CreateWorkspaceRequest request
     ) {
 
-        WorkspaceDto created =
-                workspaceService.createWorkspace(request);
-
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(created);
+                .body(
+                        workspaceService.createWorkspace(
+                                request
+                        )
+                );
     }
 
     @GetMapping("/{id}")
@@ -49,21 +55,39 @@ public class WorkspaceController {
     }
 
     @GetMapping("/all")
-    public ResponseEntity<List<WorkspaceDto>> getAllWorkspaces() {
+    public ResponseEntity<List<WorkspaceDto>>
+    getAllWorkspaces() {
 
         return ResponseEntity.ok(
                 workspaceService.getAllWorkspaces()
         );
     }
 
+    @GetMapping("/organization/{organizationId}")
+    public ResponseEntity<List<WorkspaceDto>>
+    getWorkspacesByOrganization(
+            @PathVariable UUID organizationId
+    ) {
+
+        return ResponseEntity.ok(
+                workspaceService.getWorkspacesByOrganization(
+                        organizationId
+                )
+        );
+    }
+
     @PutMapping("/{id}")
     public ResponseEntity<WorkspaceDto> updateWorkspace(
             @PathVariable UUID id,
+            @Valid
             @RequestBody UpdateWorkspaceRequest request
     ) {
 
         return ResponseEntity.ok(
-                workspaceService.updateWorkspace(id, request)
+                workspaceService.updateWorkspace(
+                        id,
+                        request
+                )
         );
     }
 

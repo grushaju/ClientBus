@@ -9,7 +9,7 @@ import java.util.UUID;
 public record CreateEmployeeRequest(
 
         @NotNull
-        UUID workspaceId,
+        UUID organizationId,
 
         @NotBlank
         String username,

@@ -2,13 +2,9 @@ package kit.penny.clientbus.server.controller;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import kit.penny.clientbus.common.dto.employee.ChangeEmployeePasswordRequest;
-import kit.penny.clientbus.common.dto.employee.CreateEmployeeRequest;
-import kit.penny.clientbus.common.dto.employee.EmployeeDto;
-import kit.penny.clientbus.common.dto.employee.SetEmployeeEnabledRequest;
-import kit.penny.clientbus.common.dto.employee.UpdateEmployeeCredentialsRequest;
-import kit.penny.clientbus.common.dto.employee.UpdateEmployeeRequest;
+import kit.penny.clientbus.common.dto.employee.*;
 import kit.penny.clientbus.server.service.EmployeeService;
+import kit.penny.clientbus.server.service.EmployeeWorkspaceService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -18,36 +14,40 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/employees")
-@Tag(name = "Сотрудники", description = "API для управления сотрудниками")
+@Tag(
+        name = "Сотрудники",
+        description = "API для управления сотрудниками"
+)
 public class EmployeeController {
 
     private final EmployeeService employeeService;
+    private final EmployeeWorkspaceService
+            employeeWorkspaceService;
 
-    public EmployeeController(EmployeeService employeeService) {
+    public EmployeeController(
+            EmployeeService employeeService,
+            EmployeeWorkspaceService employeeWorkspaceService
+    ) {
         this.employeeService = employeeService;
+        this.employeeWorkspaceService =
+                employeeWorkspaceService;
     }
 
-    /**
-     * Создание сотрудника.
-     * Одновременно создаётся User с username/email/password.
-     */
     @PostMapping
     public ResponseEntity<EmployeeDto> createEmployee(
             @Valid
             @RequestBody CreateEmployeeRequest request
     ) {
 
-        EmployeeDto employee =
-                employeeService.createEmployee(request);
-
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(employee);
+                .body(
+                        employeeService.createEmployee(
+                                request
+                        )
+                );
     }
 
-    /**
-     * Получение сотрудника по ID.
-     */
     @GetMapping("/{id}")
     public ResponseEntity<EmployeeDto> getEmployee(
             @PathVariable UUID id
@@ -58,11 +58,22 @@ public class EmployeeController {
         );
     }
 
-    /**
-     * Получение всех сотрудников Workspace.
-     */
+    @GetMapping("/organization/{organizationId}")
+    public ResponseEntity<List<EmployeeDto>>
+    getEmployeesByOrganization(
+            @PathVariable UUID organizationId
+    ) {
+
+        return ResponseEntity.ok(
+                employeeService.getEmployeesByOrganization(
+                        organizationId
+                )
+        );
+    }
+
     @GetMapping("/workspace/{workspaceId}")
-    public ResponseEntity<List<EmployeeDto>> getEmployeesByWorkspace(
+    public ResponseEntity<List<EmployeeDto>>
+    getEmployeesByWorkspace(
             @PathVariable UUID workspaceId
     ) {
 
@@ -73,16 +84,9 @@ public class EmployeeController {
         );
     }
 
-    /**
-     * Поиск сотрудника по:
-     * - имени
-     * - фамилии
-     * - телефону
-     * - username
-     * - email
-     */
     @GetMapping("/workspace/{workspaceId}/search")
-    public ResponseEntity<List<EmployeeDto>> searchEmployees(
+    public ResponseEntity<List<EmployeeDto>>
+    searchEmployees(
             @PathVariable UUID workspaceId,
             @RequestParam(required = false) String query
     ) {
@@ -95,12 +99,6 @@ public class EmployeeController {
         );
     }
 
-    /**
-     * Изменение бизнес-данных сотрудника:
-     * - firstName
-     * - lastName
-     * - phone
-     */
     @PutMapping("/{id}")
     public ResponseEntity<EmployeeDto> updateEmployee(
             @PathVariable UUID id,
@@ -116,9 +114,6 @@ public class EmployeeController {
         );
     }
 
-    /**
-     * Изменение username/email.
-     */
     @PutMapping("/{id}/credentials")
     public ResponseEntity<EmployeeDto> updateCredentials(
             @PathVariable UUID id,
@@ -134,9 +129,6 @@ public class EmployeeController {
         );
     }
 
-    /**
-     * Изменение пароля.
-     */
     @PutMapping("/{id}/password")
     public ResponseEntity<Void> changePassword(
             @PathVariable UUID id,
@@ -152,9 +144,6 @@ public class EmployeeController {
         return ResponseEntity.noContent().build();
     }
 
-    /**
-     * Включение / отключение пользователя.
-     */
     @PatchMapping("/{id}/enabled")
     public ResponseEntity<EmployeeDto> setEnabled(
             @PathVariable UUID id,
@@ -170,9 +159,51 @@ public class EmployeeController {
         );
     }
 
-    /**
-     * Удаление сотрудника и связанного User.
-     */
+    @GetMapping("/{id}/workspaces")
+    public ResponseEntity<List<EmployeeWorkspaceDto>>
+    getEmployeeWorkspaces(
+            @PathVariable UUID id
+    ) {
+
+        return ResponseEntity.ok(
+                employeeWorkspaceService
+                        .getEmployeeWorkspaces(id)
+        );
+    }
+
+    @PostMapping("/{id}/workspaces")
+    public ResponseEntity<EmployeeWorkspaceDto>
+    assignWorkspace(
+            @PathVariable UUID id,
+            @Valid
+            @RequestBody AssignEmployeeWorkspaceRequest request
+    ) {
+
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(
+                        employeeWorkspaceService
+                                .assignWorkspace(
+                                        id,
+                                        request.workspaceId()
+                                )
+                );
+    }
+
+    @DeleteMapping("/{id}/workspaces/{workspaceId}")
+    public ResponseEntity<Void> removeWorkspace(
+            @PathVariable UUID id,
+            @PathVariable UUID workspaceId
+    ) {
+
+        employeeWorkspaceService.removeWorkspace(
+                id,
+                workspaceId
+        );
+
+        return ResponseEntity.noContent().build();
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteEmployee(
             @PathVariable UUID id

@@ -9,35 +9,22 @@ import java.util.UUID;
 
 @Entity
 @Table(
-        name = "workspace",
+        name = "organization",
         uniqueConstraints = {
                 @UniqueConstraint(
-                        name = "workspace_organization_name_uix",
-                        columnNames = {
-                                "organizationid",
-                                "name"
-                        }
+                        name = "organization_name_uix",
+                        columnNames = "name"
                 )
         }
 )
-public class WorkspaceEntity {
+public class OrganizationEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     @Column(nullable = false, updatable = false)
     private UUID id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(
-            name = "organizationid",
-            nullable = false,
-            foreignKey = @ForeignKey(
-                    name = "workspace_organization_fk"
-            )
-    )
-    private OrganizationEntity organization;
-
-    @Column(nullable = false, length = 100)
+    @Column(nullable = false, length = 200)
     private String name;
 
     @CreationTimestamp
@@ -52,14 +39,10 @@ public class WorkspaceEntity {
     @Column(name = "updatedat")
     private Instant updatedAt;
 
-    public WorkspaceEntity() {
+    public OrganizationEntity() {
     }
 
-    public WorkspaceEntity(
-            OrganizationEntity organization,
-            String name
-    ) {
-        this.organization = organization;
+    public OrganizationEntity(String name) {
         this.name = name;
     }
 
@@ -69,16 +52,6 @@ public class WorkspaceEntity {
 
     public void setId(UUID id) {
         this.id = id;
-    }
-
-    public OrganizationEntity getOrganization() {
-        return organization;
-    }
-
-    public void setOrganization(
-            OrganizationEntity organization
-    ) {
-        this.organization = organization;
     }
 
     public String getName() {
@@ -103,14 +76,5 @@ public class WorkspaceEntity {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
-    }
-
-    @Override
-    public String toString() {
-        return "WorkspaceEntity{" +
-                "id=" + id +
-                ", name='" + name + '\'' +
-                ", createdAt=" + createdAt +
-                '}';
     }
 }

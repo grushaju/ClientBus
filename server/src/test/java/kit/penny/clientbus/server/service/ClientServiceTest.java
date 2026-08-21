@@ -7,6 +7,7 @@ import kit.penny.clientbus.common.dto.client.CreateClientRequest;
 import kit.penny.clientbus.common.dto.client.UpdateClientRequest;
 import kit.penny.clientbus.common.dto.clientaccount.ClientAccountDto;
 import kit.penny.clientbus.common.enums.ChannelType;
+import kit.penny.clientbus.server.integration.AbstractIntegrationTest;
 import kit.penny.clientbus.server.mapper.ClientAccountMapper;
 import kit.penny.clientbus.server.mapper.ClientMapper;
 import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
@@ -31,7 +32,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-class ClientServiceTest {
+class ClientServiceTest extends AbstractIntegrationTest {
 
     @Mock
     private ClientRepository clientRepository;

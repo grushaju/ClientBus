@@ -12,8 +12,8 @@ import java.util.UUID;
 public interface EmployeeRepository
         extends JpaRepository<EmployeeEntity, UUID> {
 
-    List<EmployeeEntity> findAllByWorkspaceId(
-            UUID workspaceId
+    List<EmployeeEntity> findAllByOrganizationId(
+            UUID organizationId
     );
 
     Optional<EmployeeEntity> findByUserId(
@@ -21,18 +21,37 @@ public interface EmployeeRepository
     );
 
     @Query("""
-    SELECT e
-    FROM EmployeeEntity e
-    JOIN e.user u
-    WHERE e.workspace.id = :workspaceId
-      AND (
-           LOWER(e.firstName) LIKE LOWER(CONCAT('%', :query, '%'))
-        OR LOWER(e.lastName) LIKE LOWER(CONCAT('%', :query, '%'))
-        OR LOWER(e.phone) LIKE LOWER(CONCAT('%', :query, '%'))
-        OR LOWER(u.username) LIKE LOWER(CONCAT('%', :query, '%'))
-        OR LOWER(u.email) LIKE LOWER(CONCAT('%', :query, '%'))
-      )
-    """)
+        SELECT DISTINCT e
+        FROM EmployeeEntity e
+        JOIN EmployeeWorkspaceEntity ew
+             ON ew.employee.id = e.id
+        JOIN e.user u
+        WHERE ew.workspace.id = :workspaceId
+        """)
+    List<EmployeeEntity> findAllByWorkspaceId(
+            @Param("workspaceId") UUID workspaceId
+    );
+
+    @Query("""
+        SELECT DISTINCT e
+        FROM EmployeeEntity e
+        JOIN EmployeeWorkspaceEntity ew
+             ON ew.employee.id = e.id
+        JOIN e.user u
+        WHERE ew.workspace.id = :workspaceId
+          AND (
+               LOWER(e.firstName)
+                    LIKE LOWER(CONCAT('%', :query, '%'))
+            OR LOWER(e.lastName)
+                    LIKE LOWER(CONCAT('%', :query, '%'))
+            OR LOWER(e.phone)
+                    LIKE LOWER(CONCAT('%', :query, '%'))
+            OR LOWER(u.username)
+                    LIKE LOWER(CONCAT('%', :query, '%'))
+            OR LOWER(u.email)
+                    LIKE LOWER(CONCAT('%', :query, '%'))
+          )
+        """)
     List<EmployeeEntity> searchEmployees(
             @Param("workspaceId") UUID workspaceId,
             @Param("query") String query

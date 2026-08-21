@@ -6,7 +6,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-@Testcontainers
+//@Testcontainers
 public abstract class AbstractIntegrationTest {
 
     @Container
@@ -14,8 +14,11 @@ public abstract class AbstractIntegrationTest {
             new PostgreSQLContainer<>("postgres:16-alpine")
                     .withDatabaseName("clientbus")
                     .withUsername("clientbus")
-                    .withPassword("clientbus")
-                    .withInitScript("init-test-db.sql");
+                    .withPassword("clientbus");
+
+    static {
+        postgres.start();
+    }
 
     @DynamicPropertySource
     static void configureProperties(

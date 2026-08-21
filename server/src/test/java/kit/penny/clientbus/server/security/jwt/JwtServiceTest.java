@@ -1,5 +1,6 @@
 package kit.penny.clientbus.server.security.jwt;
 
+import kit.penny.clientbus.server.integration.AbstractIntegrationTest;
 import kit.penny.clientbus.server.persistence.entity.UserEntity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -8,7 +9,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class JwtServiceTest {
+class JwtServiceTest extends AbstractIntegrationTest {
 
     private static final String SECRET =
             "FnQHtz4yCzaBgma1a25xV30mShdAQZx/33msarZ57f0=";

@@ -5,7 +5,7 @@ import java.util.UUID;
 
 public record EmployeeDto(
         UUID id,
-        UUID workspaceId,
+        UUID organizationId,
         String username,
         String email,
         String firstName,

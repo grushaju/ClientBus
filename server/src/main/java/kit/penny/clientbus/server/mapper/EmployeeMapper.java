@@ -7,29 +7,22 @@ import org.springframework.stereotype.Component;
 @Component
 public class EmployeeMapper {
 
-    public EmployeeDto toDto(EmployeeEntity employee) {
+    public EmployeeDto toDto(
+            EmployeeEntity employee
+    ) {
 
         var user = employee.getUser();
 
         return new EmployeeDto(
                 employee.getId(),
-
-                employee.getWorkspace().getId(),
-
+                employee.getOrganization().getId(),
                 user.getUsername(),
-
                 user.getEmail(),
-
                 employee.getFirstName(),
-
                 employee.getLastName(),
-
                 employee.getPhone(),
-
                 user.isEnabled(),
-
                 employee.getCreatedAt(),
-
                 employee.getUpdatedAt()
         );
     }

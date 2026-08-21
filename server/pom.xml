@@ -28,7 +28,7 @@
     </scm>
     <properties>
         <java.version>21</java.version>
-        <testcontainers.version>1.21.3</testcontainers.version>
+        <testcontainers.version>1.21.4</testcontainers.version>
     </properties>
     <dependencies>
         <dependency>
@@ -189,6 +189,31 @@
 
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <redirectTestOutputToFile>true</redirectTestOutputToFile>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-report-plugin</artifactId>
+                <version>3.5.6</version>
+                <configuration>
+                    <showSuccess>false</showSuccess>   <!-- Показывать только упавшие тесты -->
+                    <aggregate>false</aggregate>        <!-- Объединить отчёты по всем модулям -->
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>generate-test-report</id>
+                        <phase>test</phase> <!-- Отчёт будет генерироваться после тестов -->
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>

@@ -1,11 +1,10 @@
-package kit.penny.clientbus.common.dto.workspace;
+package kit.penny.clientbus.common.dto.organization;
 
 import java.time.Instant;
 import java.util.UUID;
 
-public record WorkspaceDto(
+public record OrganizationDto(
         UUID id,
-        UUID organizationId,
         String name,
         Instant createdAt,
         Instant updatedAt

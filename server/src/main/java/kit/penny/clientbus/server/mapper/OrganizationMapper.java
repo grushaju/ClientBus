@@ -1,52 +1,45 @@
 package kit.penny.clientbus.server.mapper;
 
-import kit.penny.clientbus.common.dto.workspace.CreateWorkspaceRequest;
-import kit.penny.clientbus.common.dto.workspace.UpdateWorkspaceRequest;
-import kit.penny.clientbus.common.dto.workspace.WorkspaceDto;
-import kit.penny.clientbus.server.persistence.entity.WorkspaceEntity;
+import kit.penny.clientbus.common.dto.organization.CreateOrganizationRequest;
+import kit.penny.clientbus.common.dto.organization.OrganizationDto;
+import kit.penny.clientbus.common.dto.organization.UpdateOrganizationRequest;
 import kit.penny.clientbus.server.persistence.entity.OrganizationEntity;
 import org.springframework.stereotype.Component;
 
 @Component
-public class WorkspaceMapper {
+public class OrganizationMapper {
 
-    public WorkspaceDto toDto(
-            WorkspaceEntity entity
+    public OrganizationDto toDto(
+            OrganizationEntity entity
     ) {
-
         if (entity == null) {
             return null;
         }
 
-        return new WorkspaceDto(
+        return new OrganizationDto(
                 entity.getId(),
-                entity.getOrganization().getId(),
                 entity.getName(),
                 entity.getCreatedAt(),
                 entity.getUpdatedAt()
         );
     }
 
-    public WorkspaceEntity toEntity(
-            CreateWorkspaceRequest request,
-            OrganizationEntity organization
+    public OrganizationEntity toEntity(
+            CreateOrganizationRequest request
     ) {
-
         if (request == null) {
             return null;
         }
 
-        return new WorkspaceEntity(
-                organization,
+        return new OrganizationEntity(
                 request.name()
         );
     }
 
     public void updateEntity(
-            WorkspaceEntity entity,
-            UpdateWorkspaceRequest request
+            OrganizationEntity entity,
+            UpdateOrganizationRequest request
     ) {
-
         if (entity == null || request == null) {
             return;
         }

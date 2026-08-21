@@ -44,17 +44,27 @@ public class UserEntity {
     )
     private boolean enabled = true;
 
+    @Enumerated(EnumType.STRING)
+    @Column(
+            name = "role",
+            nullable = false,
+            length = 30
+    )
+    private UserRole role;
+
     public UserEntity() {
     }
 
     public UserEntity(
             String username,
             String email,
-            String passwordHash
+            String passwordHash,
+            UserRole role
     ) {
         this.username = username;
         this.email = email;
         this.passwordHash = passwordHash;
+        this.role = role;
         this.enabled = true;
     }
 
@@ -96,5 +106,21 @@ public class UserEntity {
 
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
+    }
+
+    public UserRole getRole() {
+        return role;
+    }
+
+    public void setRole(UserRole role) {
+        this.role = role;
+    }
+
+    public boolean isSuperAdmin() {
+        return role == UserRole.SUPER_ADMIN;
+    }
+
+    public boolean isEmployee() {
+        return role == UserRole.EMPLOYEE;
     }
 }
