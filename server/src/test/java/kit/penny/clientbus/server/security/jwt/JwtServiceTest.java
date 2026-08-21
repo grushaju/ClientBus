@@ -1,6 +1,6 @@
 package kit.penny.clientbus.server.security.jwt;
 
-import kit.penny.clientbus.server.integration.AbstractIntegrationTest;
+import kit.penny.clientbus.common.enums.UserRole;
 import kit.penny.clientbus.server.persistence.entity.UserEntity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -9,7 +9,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class JwtServiceTest extends AbstractIntegrationTest {
+class JwtServiceTest {
 
     private static final String SECRET =
             "FnQHtz4yCzaBgma1a25xV30mShdAQZx/33msarZ57f0=";
@@ -33,7 +33,8 @@ class JwtServiceTest extends AbstractIntegrationTest {
                 new UserEntity(
                         "testuser",
                         "test@example.com",
-                        "hash"
+                        "hash",
+                        UserRole.EMPLOYEE
                 );
 
         UUID userId = UUID.randomUUID();
@@ -57,7 +58,8 @@ class JwtServiceTest extends AbstractIntegrationTest {
                 new UserEntity(
                         "testuser",
                         "test@example.com",
-                        "hash"
+                        "hash",
+                        UserRole.EMPLOYEE
                 );
 
         UUID userId = UUID.randomUUID();
@@ -78,7 +80,8 @@ class JwtServiceTest extends AbstractIntegrationTest {
                 new UserEntity(
                         "testuser",
                         "test@example.com",
-                        "hash"
+                        "hash",
+                        UserRole.EMPLOYEE
                 );
 
         user.setId(UUID.randomUUID());
@@ -108,7 +111,8 @@ class JwtServiceTest extends AbstractIntegrationTest {
                 new UserEntity(
                         "testuser",
                         "test@example.com",
-                        "hash"
+                        "hash",
+                        UserRole.EMPLOYEE
                 );
 
         user.setId(UUID.randomUUID());
@@ -138,7 +142,8 @@ class JwtServiceTest extends AbstractIntegrationTest {
                 new UserEntity(
                         "testuser",
                         "test@example.com",
-                        "hash"
+                        "hash",
+                        UserRole.EMPLOYEE
                 );
 
         user.setId(UUID.randomUUID());

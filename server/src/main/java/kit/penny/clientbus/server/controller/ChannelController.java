@@ -1,5 +1,6 @@
 package kit.penny.clientbus.server.controller;
 
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import kit.penny.clientbus.common.dto.channel.ChannelAccountDto;
@@ -18,6 +19,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/channels")
+@SecurityRequirement(name = "bearerAuth")
 @Tag(name = "Управление каналами", description = "API для управления каналами сообщений")
 public class ChannelController {
 

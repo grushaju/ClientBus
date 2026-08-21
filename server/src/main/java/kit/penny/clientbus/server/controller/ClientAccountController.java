@@ -1,5 +1,6 @@
 package kit.penny.clientbus.server.controller;
 
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import kit.penny.clientbus.common.dto.clientaccount.ClientAccountDto;
@@ -16,6 +17,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/clientaccounts")
+@SecurityRequirement(name = "bearerAuth")
 @Tag(name = "Аккаунты клиентов", description = "API для управления аккаунтами клиентов")
 public class ClientAccountController {
 

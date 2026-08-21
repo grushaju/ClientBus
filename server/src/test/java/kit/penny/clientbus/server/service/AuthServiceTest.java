@@ -2,7 +2,7 @@ package kit.penny.clientbus.server.service;
 
 import kit.penny.clientbus.common.dto.auth.LoginRequest;
 import kit.penny.clientbus.common.dto.auth.LoginResponse;
-import kit.penny.clientbus.server.integration.AbstractIntegrationTest;
+import kit.penny.clientbus.common.enums.UserRole;
 import kit.penny.clientbus.server.persistence.entity.UserEntity;
 import kit.penny.clientbus.server.persistence.repository.UserRepository;
 import kit.penny.clientbus.server.security.jwt.JwtService;
@@ -23,7 +23,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-class AuthServiceTest extends AbstractIntegrationTest {
+class AuthServiceTest {
 
     @Mock
     private UserRepository userRepository;
@@ -54,7 +54,8 @@ class AuthServiceTest extends AbstractIntegrationTest {
                 new UserEntity(
                         "ivan",
                         "ivan@example.com",
-                        "HASH"
+                        "HASH",
+                        UserRole.EMPLOYEE
                 );
 
         user.setId(UUID.randomUUID());
@@ -109,7 +110,8 @@ class AuthServiceTest extends AbstractIntegrationTest {
                 new UserEntity(
                         "ivan",
                         "ivan@example.com",
-                        "HASH"
+                        "HASH",
+                        UserRole.EMPLOYEE
                 );
 
         user.setId(UUID.randomUUID());
@@ -186,7 +188,8 @@ class AuthServiceTest extends AbstractIntegrationTest {
                 new UserEntity(
                         "ivan",
                         "ivan@example.com",
-                        "HASH"
+                        "HASH",
+                        UserRole.EMPLOYEE
                 );
 
         user.setId(UUID.randomUUID());
@@ -223,7 +226,8 @@ class AuthServiceTest extends AbstractIntegrationTest {
                 new UserEntity(
                         "ivan",
                         "ivan@example.com",
-                        "HASH"
+                        "HASH",
+                        UserRole.EMPLOYEE
                 );
 
         user.setId(UUID.randomUUID());

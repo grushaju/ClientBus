@@ -4,6 +4,19 @@ clientbus:
     secret: FnQHtz4yCzaBgma1a25xV30mShdAQZx/33msarZ57f0=
     expiration: 1800000
 
+  bootstrap:
+    organization:
+      name: Penny Kit's Company ©
+      email: admin@admin.admin
+      username: admin
+      password: admin
+      firstname: Penny
+      lastname: Kit
+      phone: +12.04.1961(YAG)
+
+
+
+
 server:
 #  servlet:
 #    context-path: /clientbus
@@ -68,10 +81,10 @@ spring:
       initialize-schema: never
       table-name: system.SPRING_SESSION
 
-  security:
-    user:
-      name: clientbus
-      password: clientbus
+#  security:
+#    user:
+#      name: clientbus
+#      password: clientbus
 
   jpa:
     hibernate:

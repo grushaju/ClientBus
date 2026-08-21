@@ -2,14 +2,16 @@ package kit.penny.clientbus.server.service;
 
 import jakarta.persistence.EntityNotFoundException;
 import kit.penny.clientbus.common.dto.employee.*;
+import kit.penny.clientbus.common.enums.UserRole;
 import kit.penny.clientbus.server.mapper.EmployeeMapper;
 import kit.penny.clientbus.server.persistence.entity.EmployeeEntity;
 import kit.penny.clientbus.server.persistence.entity.OrganizationEntity;
 import kit.penny.clientbus.server.persistence.entity.UserEntity;
-import kit.penny.clientbus.server.persistence.entity.UserRole;
 import kit.penny.clientbus.server.persistence.repository.EmployeeRepository;
 import kit.penny.clientbus.server.persistence.repository.OrganizationRepository;
 import kit.penny.clientbus.server.persistence.repository.UserRepository;
+import kit.penny.clientbus.server.security.service.CurrentUserService;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,13 +28,15 @@ public class EmployeeService {
     private final OrganizationRepository organizationRepository;
     private final EmployeeMapper employeeMapper;
     private final PasswordEncoder passwordEncoder;
+    private final CurrentUserService currentUserService;
 
     public EmployeeService(
             EmployeeRepository employeeRepository,
             UserRepository userRepository,
             OrganizationRepository organizationRepository,
             EmployeeMapper employeeMapper,
-            PasswordEncoder passwordEncoder
+            PasswordEncoder passwordEncoder,
+            CurrentUserService currentUserService
     ) {
         this.employeeRepository = employeeRepository;
         this.userRepository = userRepository;
@@ -40,16 +44,19 @@ public class EmployeeService {
                 organizationRepository;
         this.employeeMapper = employeeMapper;
         this.passwordEncoder = passwordEncoder;
+        this.currentUserService = currentUserService;
     }
 
     /**
-     * Создание Employee + User.
-     *
-     * Workspace здесь НЕ назначается.
+     * ADMIN
      */
     public EmployeeDto createEmployee(
             CreateEmployeeRequest request
     ) {
+
+        currentUserService.requireSuperAdminOrganization(
+                request.organizationId()
+        );
 
         if (userRepository.existsByUsername(
                 request.username()
@@ -106,18 +113,47 @@ public class EmployeeService {
         return employeeMapper.toDto(employee);
     }
 
+    /**
+     * ADMIN:
+     * получить другого сотрудника.
+     */
     @Transactional(readOnly = true)
-    public EmployeeDto getEmployee(UUID id) {
+    public EmployeeDto getEmployee(UUID employeeId) {
+
+        currentUserService.requireSuperAdmin();
+
+        EmployeeEntity employee =
+                getEmployeeEntity(employeeId);
+
+        currentUserService.requireEmployeeInCurrentOrganization(
+                employeeId
+        );
+
+        return employeeMapper.toDto(employee);
+    }
+
+    /**
+     * SELF.
+     */
+    @Transactional(readOnly = true)
+    public EmployeeDto getCurrentEmployee() {
 
         return employeeMapper.toDto(
-                getEmployeeEntity(id)
+                currentUserService.getCurrentEmployee()
         );
     }
 
+    /**
+     * ADMIN.
+     */
     @Transactional(readOnly = true)
     public List<EmployeeDto> getEmployeesByOrganization(
             UUID organizationId
     ) {
+
+        currentUserService.requireSuperAdminOrganization(
+                organizationId
+        );
 
         return employeeRepository
                 .findAllByOrganizationId(organizationId)
@@ -126,10 +162,28 @@ public class EmployeeService {
                 .toList();
     }
 
+    /**
+     * ADMIN.
+     */
     @Transactional(readOnly = true)
     public List<EmployeeDto> getEmployeesByWorkspace(
             UUID workspaceId
     ) {
+
+        currentUserService.requireSuperAdmin();
+
+        EmployeeEntity currentEmployee =
+                currentUserService.getCurrentEmployee();
+
+        if (!workspaceBelongsToCurrentOrganization(
+                workspaceId,
+                currentEmployee.getOrganization().getId()
+        )) {
+
+            throw new AccessDeniedException(
+                    "Workspace does not belong to current organization"
+            );
+        }
 
         return employeeRepository
                 .findAllByWorkspaceId(workspaceId)
@@ -138,16 +192,23 @@ public class EmployeeService {
                 .toList();
     }
 
+    /**
+     * ADMIN.
+     */
     @Transactional(readOnly = true)
     public List<EmployeeDto> searchEmployees(
             UUID workspaceId,
             String query
     ) {
 
+        currentUserService.requireSuperAdmin();
+
+        currentUserService.requireWorkspaceAccess(
+                workspaceId
+        );
+
         if (query == null || query.isBlank()) {
-            return getEmployeesByWorkspace(
-                    workspaceId
-            );
+            return getEmployeesByWorkspace(workspaceId);
         }
 
         return employeeRepository
@@ -160,13 +221,211 @@ public class EmployeeService {
                 .toList();
     }
 
+    /**
+     * ADMIN:
+     * изменить произвольного Employee
+     * своей Organization.
+     */
     public EmployeeDto updateEmployee(
             UUID employeeId,
             UpdateEmployeeRequest request
     ) {
 
+        currentUserService.requireSuperAdmin();
+
         EmployeeEntity employee =
                 getEmployeeEntity(employeeId);
+
+        currentUserService.requireEmployeeInCurrentOrganization(
+                employeeId
+        );
+
+        updateProfile(employee, request);
+
+        return employeeMapper.toDto(employee);
+    }
+
+    /**
+     * SELF:
+     * изменить собственные персональные данные.
+     */
+    public EmployeeDto updateCurrentEmployee(
+            UpdateEmployeeRequest request
+    ) {
+
+        EmployeeEntity employee =
+                currentUserService.getCurrentEmployee();
+
+        updateProfile(employee, request);
+
+        return employeeMapper.toDto(employee);
+    }
+
+    /**
+     * ADMIN:
+     * изменить credentials другого Employee
+     * своей Organization.
+     */
+    public EmployeeDto updateCredentials(
+            UUID employeeId,
+            UpdateEmployeeCredentialsRequest request
+    ) {
+
+        currentUserService.requireSuperAdmin();
+
+        EmployeeEntity employee =
+                getEmployeeEntity(employeeId);
+
+        currentUserService.requireEmployeeInCurrentOrganization(
+                employeeId
+        );
+
+        updateUserCredentials(
+                employee.getUser(),
+                request
+        );
+
+        return employeeMapper.toDto(employee);
+    }
+
+    /**
+     * SELF:
+     * изменить собственные credentials.
+     */
+    public EmployeeDto updateCurrentCredentials(
+            UpdateEmployeeCredentialsRequest request
+    ) {
+
+        EmployeeEntity employee =
+                currentUserService.getCurrentEmployee();
+
+        updateUserCredentials(
+                employee.getUser(),
+                request
+        );
+
+        return employeeMapper.toDto(employee);
+    }
+
+    /**
+     * SELF ONLY.
+     *
+     * Изменение пароля требует текущий пароль.
+     */
+    public void changeCurrentPassword(
+            ChangeEmployeePasswordRequest request
+    ) {
+
+        changePasswordForEmployee(
+                currentUserService.getCurrentEmployee(),
+                request
+        );
+    }
+
+    /**
+     * Оставляем этот метод для совместимости,
+     * но он теперь SELF ONLY.
+     */
+    public void changePassword(
+            UUID employeeId,
+            ChangeEmployeePasswordRequest request
+    ) {
+
+        currentUserService.requireSelf(employeeId);
+
+        changePasswordForEmployee(
+                currentUserService.getCurrentEmployee(),
+                request
+        );
+    }
+
+    /**
+     * ADMIN ONLY.
+     */
+    public EmployeeDto setEnabled(
+            UUID employeeId,
+            SetEmployeeEnabledRequest request
+    ) {
+
+        currentUserService.requireSuperAdmin();
+
+        EmployeeEntity employee =
+                getEmployeeEntity(employeeId);
+
+        currentUserService.requireEmployeeInCurrentOrganization(
+                employeeId
+        );
+
+        employee.getUser().setEnabled(
+                request.enabled()
+        );
+
+        return employeeMapper.toDto(employee);
+    }
+
+    /**
+     * SUPER_ADMIN ONLY.
+     *
+     * Сбрасывает пароль другого Employee.
+     * Текущий пароль сотрудника не требуется.
+     */
+    public void resetEmployeePassword(
+            UUID employeeId,
+            ResetEmployeePasswordRequest request
+    ) {
+
+        currentUserService.requireSuperAdmin();
+
+        EmployeeEntity employee =
+                getEmployeeEntity(employeeId);
+
+        currentUserService.requireEmployeeInCurrentOrganization(
+                employeeId
+        );
+
+        employee.getUser().setPasswordHash(
+                passwordEncoder.encode(
+                        request.newPassword()
+                )
+        );
+    }
+
+    public void deleteEmployee(
+            UUID employeeId
+    ) {
+
+        currentUserService.requireSuperAdmin();
+
+        EmployeeEntity employee =
+                getEmployeeEntity(employeeId);
+
+        currentUserService.requireEmployeeInCurrentOrganization(
+                employeeId
+        );
+
+        /*
+         * Дополнительное правило безопасности:
+         * SUPER_ADMIN не должен удалить самого себя.
+         */
+        if (currentUserService.getCurrentEmployeeId()
+                .equals(employeeId)) {
+
+            throw new AccessDeniedException(
+                    "SUPER_ADMIN cannot delete itself"
+            );
+        }
+
+        UserEntity user =
+                employee.getUser();
+
+        employeeRepository.delete(employee);
+        userRepository.delete(user);
+    }
+
+    private void updateProfile(
+            EmployeeEntity employee,
+            UpdateEmployeeRequest request
+    ) {
 
         if (request.firstName() != null) {
             employee.setFirstName(
@@ -185,20 +444,12 @@ public class EmployeeService {
                     request.phone()
             );
         }
-
-        return employeeMapper.toDto(employee);
     }
 
-    public EmployeeDto updateCredentials(
-            UUID employeeId,
+    private void updateUserCredentials(
+            UserEntity user,
             UpdateEmployeeCredentialsRequest request
     ) {
-
-        EmployeeEntity employee =
-                getEmployeeEntity(employeeId);
-
-        UserEntity user =
-                employee.getUser();
 
         if (request.username() != null &&
                 !request.username().equals(
@@ -237,17 +488,12 @@ public class EmployeeService {
                     request.email()
             );
         }
-
-        return employeeMapper.toDto(employee);
     }
 
-    public void changePassword(
-            UUID employeeId,
+    private void changePasswordForEmployee(
+            EmployeeEntity employee,
             ChangeEmployeePasswordRequest request
     ) {
-
-        EmployeeEntity employee =
-                getEmployeeEntity(employeeId);
 
         UserEntity user =
                 employee.getUser();
@@ -269,34 +515,18 @@ public class EmployeeService {
         );
     }
 
-    public EmployeeDto setEnabled(
-            UUID employeeId,
-            SetEmployeeEnabledRequest request
+    private boolean workspaceBelongsToCurrentOrganization(
+            UUID workspaceId,
+            UUID organizationId
     ) {
 
-        EmployeeEntity employee =
-                getEmployeeEntity(employeeId);
-
-        employee.getUser().setEnabled(
-                request.enabled()
-        );
-
-        return employeeMapper.toDto(employee);
-    }
-
-    public void deleteEmployee(
-            UUID employeeId
-    ) {
-
-        EmployeeEntity employee =
-                getEmployeeEntity(employeeId);
-
-        UserEntity user =
-                employee.getUser();
-
-        employeeRepository.delete(employee);
-
-        userRepository.delete(user);
+        return currentUserService
+                .hasWorkspaceAccess(workspaceId)
+                && currentUserService
+                .getCurrentEmployee()
+                .getOrganization()
+                .getId()
+                .equals(organizationId);
     }
 
     private EmployeeEntity getEmployeeEntity(
@@ -307,7 +537,8 @@ public class EmployeeService {
                 employeeId
         ).orElseThrow(() ->
                 new EntityNotFoundException(
-                        "Employee not found"
+                        "Employee not found: "
+                                + employeeId
                 )
         );
     }

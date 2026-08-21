@@ -1,6 +1,7 @@
 package kit.penny.clientbus.server.persistence.entity;
 
 import jakarta.persistence.*;
+import kit.penny.clientbus.common.enums.UserRole;
 
 import java.util.UUID;
 

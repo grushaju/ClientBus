@@ -1,5 +1,6 @@
 package kit.penny.clientbus.server.controller;
 
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import kit.penny.clientbus.common.dto.organization.CreateOrganizationRequest;
@@ -8,6 +9,7 @@ import kit.penny.clientbus.common.dto.organization.UpdateOrganizationRequest;
 import kit.penny.clientbus.server.service.OrganizationService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -15,6 +17,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/organizations")
+@SecurityRequirement(name = "bearerAuth")
 @Tag(
         name = "Организации",
         description = "API для управления организациями"
@@ -30,6 +33,7 @@ public class OrganizationController {
     }
 
     @PostMapping
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     public ResponseEntity<OrganizationDto> createOrganization(
             @Valid
             @RequestBody CreateOrganizationRequest request
@@ -45,6 +49,7 @@ public class OrganizationController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<OrganizationDto> getOrganization(
             @PathVariable UUID id
     ) {
@@ -55,6 +60,7 @@ public class OrganizationController {
     }
 
     @GetMapping("/all")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     public ResponseEntity<List<OrganizationDto>>
     getAllOrganizations() {
 
@@ -64,6 +70,7 @@ public class OrganizationController {
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     public ResponseEntity<OrganizationDto> updateOrganization(
             @PathVariable UUID id,
             @Valid
@@ -78,13 +85,14 @@ public class OrganizationController {
         );
     }
 
-    @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteOrganization(
-            @PathVariable UUID id
-    ) {
-
-        organizationService.deleteOrganization(id);
-
-        return ResponseEntity.noContent().build();
-    }
+//    @DeleteMapping("/{id}")
+//    @PreAuthorize("hasRole('SUPER_ADMIN')")
+//    public ResponseEntity<Void> deleteOrganization(
+//            @PathVariable UUID id
+//    ) {
+//
+//        organizationService.deleteOrganization(id);
+//
+//        return ResponseEntity.noContent().build();
+//    }
 }

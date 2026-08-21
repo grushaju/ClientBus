@@ -5,9 +5,11 @@ import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.integration.AbstractIntegrationTest;
 import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ClientEntity;
+import kit.penny.clientbus.server.persistence.entity.OrganizationEntity;
 import kit.penny.clientbus.server.persistence.entity.WorkspaceEntity;
 import kit.penny.clientbus.server.persistence.repository.ClientAccountRepository;
 import kit.penny.clientbus.server.persistence.repository.ClientRepository;
+import kit.penny.clientbus.server.persistence.repository.OrganizationRepository;
 import kit.penny.clientbus.server.persistence.repository.WorkspaceRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,16 +36,26 @@ class ClientAccountRepositoryTest
     @Autowired
     private WorkspaceRepository workspaceRepository;
 
+    @Autowired
+    private OrganizationRepository organizationRepository;
+
     private WorkspaceEntity workspace;
 
     private ClientEntity client;
 
+    private OrganizationEntity organization;
+
     @BeforeEach
     void setUp() {
 
+        organization =
+                organizationRepository.save(
+                        TestDataFactory.organization()
+                );
+
         workspace =
                 workspaceRepository.save(
-                        TestDataFactory.workspace()
+                        TestDataFactory.workspace(organization)
                 );
 
         client =
@@ -70,7 +82,7 @@ class ClientAccountRepositoryTest
         assertThat(result)
                 .hasSize(1);
 
-        assertThat(result.get(0).getExternalId())
+        assertThat(result.getFirst().getExternalId())
                 .isEqualTo(account.getExternalId());
     }
 
@@ -204,7 +216,7 @@ class ClientAccountRepositoryTest
         assertThat(result)
                 .hasSize(1);
 
-        assertThat(result.get(0).getId())
+        assertThat(result.getFirst().getId())
                 .isEqualTo(account.getId());
     }
 

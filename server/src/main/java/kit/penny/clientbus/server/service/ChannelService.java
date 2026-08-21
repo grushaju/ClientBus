@@ -15,6 +15,7 @@ import kit.penny.clientbus.server.persistence.entity.WorkspaceEntity;
 import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
 import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
 import kit.penny.clientbus.server.persistence.repository.WorkspaceRepository;
+import kit.penny.clientbus.server.security.service.CurrentUserService;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -27,27 +28,30 @@ public class ChannelService {
     private final ChannelAccountRepository channelAccountRepository;
     private final WorkspaceRepository workspaceRepository;
     private final ChannelMapper channelMapper;
+    private final CurrentUserService currentUserService;
 
     public ChannelService(
             ChannelRepository channelRepository,
             ChannelAccountRepository channelAccountRepository,
             WorkspaceRepository workspaceRepository,
-            ChannelMapper channelMapper
+            ChannelMapper channelMapper,
+            CurrentUserService currentUserService
     ) {
         this.channelRepository = channelRepository;
         this.channelAccountRepository = channelAccountRepository;
         this.workspaceRepository = workspaceRepository;
         this.channelMapper = channelMapper;
+        this.currentUserService = currentUserService;
     }
-
-    // =========================================================
-    // CHANNEL
-    // =========================================================
 
     @Transactional
     public ChannelDto createChannel(
             CreateChannelRequest request
     ) {
+
+        currentUserService.requireWorkspaceAccess(
+                request.workspaceId()
+        );
 
         WorkspaceEntity workspace =
                 workspaceRepository.findById(
@@ -86,12 +90,9 @@ public class ChannelService {
     public ChannelDto getChannel(UUID id) {
 
         ChannelEntity channel =
-                channelRepository.findById(id)
-                        .orElseThrow(() ->
-                                new EntityNotFoundException(
-                                        "Channel not found: " + id
-                                )
-                        );
+                findChannel(id);
+
+        requireChannelWorkspaceAccess(channel);
 
         return channelMapper.toDto(channel);
     }
@@ -100,6 +101,10 @@ public class ChannelService {
     public List<ChannelDto> getChannelsByWorkspace(
             UUID workspaceId
     ) {
+
+        currentUserService.requireWorkspaceAccess(
+                workspaceId
+        );
 
         return channelRepository
                 .findAllByWorkspaceId(workspaceId)
@@ -113,6 +118,10 @@ public class ChannelService {
             UUID workspaceId,
             ChannelType type
     ) {
+
+        currentUserService.requireWorkspaceAccess(
+                workspaceId
+        );
 
         return channelRepository
                 .findAllByWorkspaceIdAndType(
@@ -133,6 +142,8 @@ public class ChannelService {
         ChannelEntity channel =
                 findChannel(id);
 
+        requireChannelWorkspaceAccess(channel);
+
         channelMapper.updateEntity(
                 channel,
                 request
@@ -147,17 +158,20 @@ public class ChannelService {
         ChannelEntity channel =
                 findChannel(id);
 
+        requireChannelWorkspaceAccess(channel);
+
         channelRepository.delete(channel);
     }
-
-    // =========================================================
-    // CHANNEL ACCOUNT
-    // =========================================================
 
     @Transactional
     public ChannelAccountDto getChannelAccount(
             UUID channelId
     ) {
+
+        ChannelEntity channel =
+                findChannel(channelId);
+
+        requireChannelWorkspaceAccess(channel);
 
         ChannelAccountEntity account =
                 findChannelAccount(channelId);
@@ -170,6 +184,11 @@ public class ChannelService {
             UUID channelId,
             UpdateChannelAccountRequest request
     ) {
+
+        ChannelEntity channel =
+                findChannel(channelId);
+
+        requireChannelWorkspaceAccess(channel);
 
         ChannelAccountEntity account =
                 findChannelAccount(channelId);
@@ -187,15 +206,16 @@ public class ChannelService {
             UUID channelId
     ) {
 
+        ChannelEntity channel =
+                findChannel(channelId);
+
+        requireChannelWorkspaceAccess(channel);
+
         ChannelAccountEntity account =
                 findChannelAccount(channelId);
 
         channelAccountRepository.delete(account);
     }
-
-    // =========================================================
-    // PRIVATE
-    // =========================================================
 
     private ChannelEntity findChannel(UUID id) {
 
@@ -220,5 +240,21 @@ public class ChannelService {
                                         + channelId
                         )
                 );
+    }
+
+    private void requireChannelWorkspaceAccess(
+            ChannelEntity channel
+    ) {
+
+        if (channel.getWorkspace() == null) {
+            throw new IllegalStateException(
+                    "Channel has no workspace: "
+                            + channel.getId()
+            );
+        }
+
+        currentUserService.requireWorkspaceAccess(
+                channel.getWorkspace().getId()
+        );
     }
 }

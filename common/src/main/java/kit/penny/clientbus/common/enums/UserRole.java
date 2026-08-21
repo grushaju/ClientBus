@@ -1,4 +1,4 @@
-package kit.penny.clientbus.server.persistence.entity;
+package kit.penny.clientbus.common.enums;
 
 public enum UserRole {
     SUPER_ADMIN,

@@ -1,7 +1,7 @@
 package kit.penny.clientbus.server.persistence.repository;
 
 import kit.penny.clientbus.server.persistence.entity.UserEntity;
-import kit.penny.clientbus.server.persistence.entity.UserRole;
+import kit.penny.clientbus.common.enums.UserRole;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
@@ -25,6 +25,10 @@ public interface UserRepository
 
     boolean existsByEmail(
             String email
+    );
+
+    boolean existsByRole(
+            UserRole role
     );
 
     List<UserEntity> findAllByRole(

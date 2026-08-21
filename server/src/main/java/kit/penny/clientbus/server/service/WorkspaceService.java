@@ -9,6 +9,7 @@ import kit.penny.clientbus.server.persistence.entity.OrganizationEntity;
 import kit.penny.clientbus.server.persistence.entity.WorkspaceEntity;
 import kit.penny.clientbus.server.persistence.repository.OrganizationRepository;
 import kit.penny.clientbus.server.persistence.repository.WorkspaceRepository;
+import kit.penny.clientbus.server.security.service.CurrentUserService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,20 +23,30 @@ public class WorkspaceService {
     private final WorkspaceRepository workspaceRepository;
     private final OrganizationRepository organizationRepository;
     private final WorkspaceMapper workspaceMapper;
+    private final CurrentUserService currentUserService;
 
     public WorkspaceService(
             WorkspaceRepository workspaceRepository,
             OrganizationRepository organizationRepository,
-            WorkspaceMapper workspaceMapper
+            WorkspaceMapper workspaceMapper,
+            CurrentUserService currentUserService
     ) {
         this.workspaceRepository = workspaceRepository;
         this.organizationRepository = organizationRepository;
         this.workspaceMapper = workspaceMapper;
+        this.currentUserService = currentUserService;
     }
 
+    /**
+     * SUPER_ADMIN ONLY.
+     */
     public WorkspaceDto createWorkspace(
             CreateWorkspaceRequest request
     ) {
+
+        currentUserService.requireSuperAdminOrganization(
+                request.organizationId()
+        );
 
         OrganizationEntity organization =
                 organizationRepository.findById(
@@ -71,32 +82,60 @@ public class WorkspaceService {
         return workspaceMapper.toDto(saved);
     }
 
+    /**
+     * SUPER_ADMIN + EMPLOYEE.
+     *
+     * EMPLOYEE получает только Workspace,
+     * назначенный ему.
+     */
     @Transactional(readOnly = true)
     public WorkspaceDto getWorkspace(UUID id) {
 
-        WorkspaceEntity entity =
-                getWorkspaceEntity(id);
+        currentUserService.requireWorkspaceAccess(id);
 
-        return workspaceMapper.toDto(entity);
+        return workspaceMapper.toDto(
+                getWorkspaceEntity(id)
+        );
     }
 
+    /**
+     * SUPER_ADMIN ONLY.
+     */
     @Transactional(readOnly = true)
     public List<WorkspaceDto> getAllWorkspaces() {
 
+        currentUserService.requireSuperAdmin();
+
         return workspaceRepository.findAll()
                 .stream()
+                .filter(workspace ->
+                        workspace.getOrganization()
+                                .getId()
+                                .equals(
+                                        currentUserService
+                                                .getCurrentOrganizationId()
+                                )
+                )
                 .map(workspaceMapper::toDto)
                 .toList();
     }
 
+    /**
+     * SUPER_ADMIN ONLY.
+     */
     @Transactional(readOnly = true)
     public List<WorkspaceDto> getWorkspacesByOrganization(
             UUID organizationId
     ) {
 
+        currentUserService.requireSuperAdminOrganization(
+                organizationId
+        );
+
         if (!organizationRepository.existsById(
                 organizationId
         )) {
+
             throw new EntityNotFoundException(
                     "Organization not found: "
                             + organizationId
@@ -110,13 +149,54 @@ public class WorkspaceService {
                 .toList();
     }
 
+    /**
+     * SELF + SUPER_ADMIN.
+     *
+     * Возвращает только Workspace,
+     * доступные текущему пользователю.
+     */
+    @Transactional(readOnly = true)
+    public List<WorkspaceDto>
+    getCurrentUserWorkspaces() {
+
+        UUID organizationId =
+                currentUserService
+                        .getCurrentOrganizationId();
+
+        if (currentUserService.isSuperAdmin()) {
+
+            return workspaceRepository
+                    .findAllByOrganizationId(organizationId)
+                    .stream()
+                    .map(workspaceMapper::toDto)
+                    .toList();
+        }
+
+        UUID employeeId =
+                currentUserService
+                        .getCurrentEmployeeId();
+
+        return workspaceRepository
+                .findAllWorkspacesByEmployeeId(employeeId)
+                .stream()
+                .map(workspaceMapper::toDto)
+                .toList();
+    }
+
+    /**
+     * SUPER_ADMIN ONLY.
+     */
     public WorkspaceDto updateWorkspace(
             UUID id,
             UpdateWorkspaceRequest request
     ) {
 
+        currentUserService.requireSuperAdmin();
+
         WorkspaceEntity entity =
                 getWorkspaceEntity(id);
+
+        currentUserService.requireWorkspaceAccess(id);
 
         if (request.name() != null &&
                 !request.name().equalsIgnoreCase(
@@ -142,10 +222,17 @@ public class WorkspaceService {
         return workspaceMapper.toDto(entity);
     }
 
+    /**
+     * SUPER_ADMIN ONLY.
+     */
     public void deleteWorkspace(UUID id) {
+
+        currentUserService.requireSuperAdmin();
 
         WorkspaceEntity entity =
                 getWorkspaceEntity(id);
+
+        currentUserService.requireWorkspaceAccess(id);
 
         workspaceRepository.delete(entity);
     }

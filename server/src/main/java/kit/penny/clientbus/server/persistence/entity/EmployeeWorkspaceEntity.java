@@ -6,7 +6,7 @@ import java.util.UUID;
 
 @Entity
 @Table(
-        name = "employee_workspace",
+        name = "employeeworkspace",
         uniqueConstraints = {
                 @UniqueConstraint(
                         name = "employee_workspace_uix",

@@ -5,6 +5,7 @@ import kit.penny.clientbus.server.persistence.repository.EmployeeRepository;
 import kit.penny.clientbus.server.persistence.repository.EmployeeWorkspaceRepository;
 import kit.penny.clientbus.server.persistence.repository.WorkspaceRepository;
 import kit.penny.clientbus.server.security.UserPrincipal;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -16,8 +17,7 @@ import java.util.UUID;
 public class CurrentUserService {
 
     private final EmployeeRepository employeeRepository;
-    private final EmployeeWorkspaceRepository
-            employeeWorkspaceRepository;
+    private final EmployeeWorkspaceRepository employeeWorkspaceRepository;
     private final WorkspaceRepository workspaceRepository;
 
     public CurrentUserService(
@@ -46,8 +46,7 @@ public class CurrentUserService {
             );
         }
 
-        Object principal =
-                authentication.getPrincipal();
+        Object principal = authentication.getPrincipal();
 
         if (!(principal instanceof UserPrincipal userPrincipal)) {
 
@@ -89,9 +88,85 @@ public class CurrentUserService {
                 );
     }
 
+    public UUID getCurrentEmployeeId() {
+        return getCurrentEmployee().getId();
+    }
+
+    public UUID getCurrentOrganizationId() {
+        return getCurrentEmployee()
+                .getOrganization()
+                .getId();
+    }
+
     /**
-     * Проверяет, может ли текущий пользователь работать
-     * с указанным Workspace.
+     * Требует роль SUPER_ADMIN.
+     */
+    public void requireSuperAdmin() {
+
+        if (!isSuperAdmin()) {
+            throw new AccessDeniedException(
+                    "SUPER_ADMIN role required"
+            );
+        }
+    }
+
+    /**
+     * Проверяет, что employeeId принадлежит
+     * текущему пользователю.
+     *
+     * Используется для self-service операций.
+     */
+    public void requireSelf(UUID employeeId) {
+
+        if (!getCurrentEmployeeId().equals(employeeId)) {
+
+            throw new AccessDeniedException(
+                    "Access denied: operation is allowed only for current employee"
+            );
+        }
+    }
+
+    /**
+     * Требует SUPER_ADMIN и принадлежность
+     * указанной Organization текущему SUPER_ADMIN.
+     */
+    public void requireSuperAdminOrganization(
+            UUID organizationId
+    ) {
+
+        requireSuperAdmin();
+
+        if (!getCurrentOrganizationId().equals(organizationId)) {
+
+            throw new AccessDeniedException(
+                    "Access denied for organization: "
+                            + organizationId
+            );
+        }
+    }
+
+    /**
+     * Проверяет принадлежность employee
+     * текущей Organization.
+     */
+    public void requireEmployeeInCurrentOrganization(
+            UUID employeeId
+    ) {
+
+        if (!employeeRepository.existsByIdAndOrganizationId(
+                employeeId,
+                getCurrentOrganizationId()
+        )) {
+
+            throw new AccessDeniedException(
+                    "Employee does not belong to current organization"
+            );
+        }
+    }
+
+    /**
+     * Проверяет, может ли текущий пользователь
+     * работать с Workspace.
      */
     public boolean hasWorkspaceAccess(
             UUID workspaceId
@@ -120,7 +195,8 @@ public class CurrentUserService {
     }
 
     /**
-     * Проверяет доступ и возвращает workspaceId.
+     * Требует доступ текущего пользователя
+     * к Workspace.
      */
     public UUID requireWorkspaceAccess(
             UUID workspaceId
@@ -128,7 +204,7 @@ public class CurrentUserService {
 
         if (!hasWorkspaceAccess(workspaceId)) {
 
-            throw new org.springframework.security.access.AccessDeniedException(
+            throw new AccessDeniedException(
                     "Access denied for workspace: "
                             + workspaceId
             );

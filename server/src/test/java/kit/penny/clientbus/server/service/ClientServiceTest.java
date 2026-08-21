@@ -7,7 +7,6 @@ import kit.penny.clientbus.common.dto.client.CreateClientRequest;
 import kit.penny.clientbus.common.dto.client.UpdateClientRequest;
 import kit.penny.clientbus.common.dto.clientaccount.ClientAccountDto;
 import kit.penny.clientbus.common.enums.ChannelType;
-import kit.penny.clientbus.server.integration.AbstractIntegrationTest;
 import kit.penny.clientbus.server.mapper.ClientAccountMapper;
 import kit.penny.clientbus.server.mapper.ClientMapper;
 import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
@@ -16,6 +15,7 @@ import kit.penny.clientbus.server.persistence.entity.WorkspaceEntity;
 import kit.penny.clientbus.server.persistence.repository.ClientAccountRepository;
 import kit.penny.clientbus.server.persistence.repository.ClientRepository;
 import kit.penny.clientbus.server.persistence.repository.WorkspaceRepository;
+import kit.penny.clientbus.server.security.service.CurrentUserService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,7 +32,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-class ClientServiceTest extends AbstractIntegrationTest {
+class ClientServiceTest {
 
     @Mock
     private ClientRepository clientRepository;
@@ -48,6 +48,9 @@ class ClientServiceTest extends AbstractIntegrationTest {
 
     @Mock
     private ClientAccountMapper clientAccountMapper;
+
+    @Mock
+    private CurrentUserService currentUserService;
 
     @InjectMocks
     private ClientService clientService;
@@ -86,6 +89,12 @@ class ClientServiceTest extends AbstractIntegrationTest {
         account.setUsername("ivan");
         account.setPhone("+79990000000");
         account.setDisplayName("Ivan");
+
+        when(currentUserService.requireWorkspaceAccess(any(UUID.class)))
+                .thenAnswer(invocation ->
+                        invocation.getArgument(0)
+                );
+
     }
 
     // =========================================================
@@ -121,6 +130,9 @@ class ClientServiceTest extends AbstractIntegrationTest {
                 clientService.createClient(request);
 
         assertSame(expectedDto, result);
+
+        verify(currentUserService)
+                .requireWorkspaceAccess(workspaceId);
 
         verify(workspaceRepository)
                 .findById(workspaceId);
@@ -160,6 +172,9 @@ class ClientServiceTest extends AbstractIntegrationTest {
                 exception.getMessage()
         );
 
+        verify(currentUserService)
+                .requireWorkspaceAccess(workspaceId);
+
         verify(workspaceRepository)
                 .findById(workspaceId);
 
@@ -190,6 +205,9 @@ class ClientServiceTest extends AbstractIntegrationTest {
         verify(clientRepository)
                 .findById(clientId);
 
+        verify(currentUserService)
+                .requireWorkspaceAccess(workspaceId);
+
         verify(clientMapper)
                 .toDto(client);
     }
@@ -214,6 +232,7 @@ class ClientServiceTest extends AbstractIntegrationTest {
         verify(clientRepository)
                 .findById(clientId);
 
+        verifyNoInteractions(currentUserService);
         verifyNoInteractions(clientMapper);
     }
 
@@ -253,6 +272,9 @@ class ClientServiceTest extends AbstractIntegrationTest {
 
         verify(clientRepository)
                 .findById(clientId);
+
+        verify(currentUserService)
+                .requireWorkspaceAccess(workspaceId);
 
         verify(clientMapper)
                 .updateEntity(client, request);
@@ -295,6 +317,7 @@ class ClientServiceTest extends AbstractIntegrationTest {
         verify(clientRepository)
                 .findById(clientId);
 
+        verifyNoInteractions(currentUserService);
         verifyNoInteractions(clientMapper);
     }
 
@@ -305,23 +328,26 @@ class ClientServiceTest extends AbstractIntegrationTest {
     @Test
     void deleteClient_success() {
 
-        when(clientRepository.existsById(clientId))
-                .thenReturn(true);
+        when(clientRepository.findById(clientId))
+                .thenReturn(Optional.of(client));
 
         clientService.deleteClient(clientId);
 
         verify(clientRepository)
-                .existsById(clientId);
+                .findById(clientId);
+
+        verify(currentUserService)
+                .requireWorkspaceAccess(workspaceId);
 
         verify(clientRepository)
-                .deleteById(clientId);
+                .delete(client);
     }
 
     @Test
     void deleteClient_notFound() {
 
-        when(clientRepository.existsById(clientId))
-                .thenReturn(false);
+        when(clientRepository.findById(clientId))
+                .thenReturn(Optional.empty());
 
         EntityNotFoundException exception =
                 assertThrows(
@@ -335,10 +361,12 @@ class ClientServiceTest extends AbstractIntegrationTest {
         );
 
         verify(clientRepository)
-                .existsById(clientId);
+                .findById(clientId);
+
+        verifyNoInteractions(currentUserService);
 
         verify(clientRepository, never())
-                .deleteById(any());
+                .delete(any());
     }
 
     // =========================================================
@@ -373,6 +401,9 @@ class ClientServiceTest extends AbstractIntegrationTest {
         assertSame(dto1, result.get(0));
         assertSame(dto2, result.get(1));
 
+        verify(currentUserService)
+                .requireWorkspaceAccess(workspaceId);
+
         verify(clientRepository)
                 .findClientsWithoutAccounts(workspaceId);
 
@@ -404,8 +435,8 @@ class ClientServiceTest extends AbstractIntegrationTest {
         ClientAccountDto dto2 =
                 mock(ClientAccountDto.class);
 
-        when(clientRepository.existsById(clientId))
-                .thenReturn(true);
+        when(clientRepository.findById(clientId))
+                .thenReturn(Optional.of(client));
 
         when(clientAccountRepository.findAllByClientId(clientId))
                 .thenReturn(List.of(account, account2));
@@ -425,7 +456,10 @@ class ClientServiceTest extends AbstractIntegrationTest {
         assertSame(dto2, result.get(1));
 
         verify(clientRepository)
-                .existsById(clientId);
+                .findById(clientId);
+
+        verify(currentUserService)
+                .requireWorkspaceAccess(workspaceId);
 
         verify(clientAccountRepository)
                 .findAllByClientId(clientId);
@@ -440,8 +474,8 @@ class ClientServiceTest extends AbstractIntegrationTest {
     @Test
     void getClientAccounts_clientNotFound() {
 
-        when(clientRepository.existsById(clientId))
-                .thenReturn(false);
+        when(clientRepository.findById(clientId))
+                .thenReturn(Optional.empty());
 
         EntityNotFoundException exception =
                 assertThrows(
@@ -455,8 +489,9 @@ class ClientServiceTest extends AbstractIntegrationTest {
         );
 
         verify(clientRepository)
-                .existsById(clientId);
+                .findById(clientId);
 
+        verifyNoInteractions(currentUserService);
         verifyNoInteractions(clientAccountRepository);
         verifyNoInteractions(clientAccountMapper);
     }
@@ -508,6 +543,9 @@ class ClientServiceTest extends AbstractIntegrationTest {
         verify(clientRepository)
                 .findById(clientId);
 
+        verify(currentUserService)
+                .requireWorkspaceAccess(workspaceId);
+
         verify(clientAccountRepository)
                 .existsByChannelTypeAndExternalId(
                         ChannelType.TELEGRAM,
@@ -553,6 +591,7 @@ class ClientServiceTest extends AbstractIntegrationTest {
         verify(clientRepository)
                 .findById(clientId);
 
+        verifyNoInteractions(currentUserService);
         verifyNoInteractions(clientAccountRepository);
         verifyNoInteractions(clientAccountMapper);
     }
@@ -595,6 +634,9 @@ class ClientServiceTest extends AbstractIntegrationTest {
 
         verify(clientRepository)
                 .findById(clientId);
+
+        verify(currentUserService)
+                .requireWorkspaceAccess(workspaceId);
 
         verify(clientAccountRepository)
                 .existsByChannelTypeAndExternalId(
@@ -655,6 +697,9 @@ class ClientServiceTest extends AbstractIntegrationTest {
         verify(clientRepository)
                 .findById(clientId);
 
+        verify(currentUserService)
+                .requireWorkspaceAccess(workspaceId);
+
         verify(clientAccountRepository)
                 .findById(accountId);
 
@@ -688,6 +733,7 @@ class ClientServiceTest extends AbstractIntegrationTest {
         verify(clientRepository)
                 .findById(clientId);
 
+        verifyNoInteractions(currentUserService);
         verifyNoInteractions(clientAccountRepository);
     }
 
@@ -717,6 +763,9 @@ class ClientServiceTest extends AbstractIntegrationTest {
         verify(clientRepository)
                 .findById(clientId);
 
+        verify(currentUserService)
+                .requireWorkspaceAccess(workspaceId);
+
         verify(clientAccountRepository)
                 .findById(accountId);
 
@@ -726,8 +775,8 @@ class ClientServiceTest extends AbstractIntegrationTest {
     @Test
     void assignClientAccount_alreadyAssignedToSameClient() {
 
-        ClientAccountDto expectedDto =
-                mock(ClientAccountDto.class);
+        ClientDto expectedDto =
+                mock(ClientDto.class);
 
         when(clientRepository.findById(clientId))
                 .thenReturn(Optional.of(client));
@@ -735,8 +784,11 @@ class ClientServiceTest extends AbstractIntegrationTest {
         when(clientAccountRepository.findById(accountId))
                 .thenReturn(Optional.of(account));
 
+        ClientAccountDto accountDto =
+                mock(ClientAccountDto.class);
+
         when(clientAccountMapper.toDto(account))
-                .thenReturn(expectedDto);
+                .thenReturn(accountDto);
 
         ClientAccountDto result =
                 clientService.assignClientAccount(
@@ -744,12 +796,15 @@ class ClientServiceTest extends AbstractIntegrationTest {
                         accountId
                 );
 
-        assertSame(expectedDto, result);
+        assertSame(accountDto, result);
 
         assertSame(
                 client,
                 account.getClient()
         );
+
+        verify(currentUserService)
+                .requireWorkspaceAccess(workspaceId);
 
         verify(clientAccountMapper)
                 .toDto(account);
@@ -764,6 +819,7 @@ class ClientServiceTest extends AbstractIntegrationTest {
         anotherClient.setId(
                 UUID.randomUUID()
         );
+        anotherClient.setWorkspace(workspace);
 
         account.setClient(anotherClient);
 
@@ -787,6 +843,9 @@ class ClientServiceTest extends AbstractIntegrationTest {
                 exception.getMessage()
         );
 
+        verify(currentUserService)
+                .requireWorkspaceAccess(workspaceId);
+
         verify(clientAccountMapper, never())
                 .toDto(any());
     }
@@ -805,6 +864,7 @@ class ClientServiceTest extends AbstractIntegrationTest {
                 new ClientEntity();
 
         newClient.setId(newClientId);
+        newClient.setWorkspace(workspace);
 
         ClientAccountDto expectedDto =
                 mock(ClientAccountDto.class);
@@ -837,6 +897,9 @@ class ClientServiceTest extends AbstractIntegrationTest {
         verify(clientRepository)
                 .findById(newClientId);
 
+        verify(currentUserService)
+                .requireWorkspaceAccess(workspaceId);
+
         verify(clientAccountMapper)
                 .toDto(account);
     }
@@ -868,6 +931,7 @@ class ClientServiceTest extends AbstractIntegrationTest {
                 .findById(accountId);
 
         verifyNoInteractions(clientRepository);
+        verifyNoInteractions(currentUserService);
     }
 
     @Test
@@ -902,6 +966,7 @@ class ClientServiceTest extends AbstractIntegrationTest {
         verify(clientRepository)
                 .findById(newClientId);
 
+        verifyNoInteractions(currentUserService);
         verify(clientAccountMapper, never())
                 .toDto(any());
     }
@@ -934,6 +999,9 @@ class ClientServiceTest extends AbstractIntegrationTest {
         verify(clientAccountRepository)
                 .findById(accountId);
 
+        verify(currentUserService)
+                .requireWorkspaceAccess(workspaceId);
+
         verify(clientAccountMapper)
                 .toDto(account);
     }
@@ -960,6 +1028,7 @@ class ClientServiceTest extends AbstractIntegrationTest {
         verify(clientAccountRepository)
                 .findById(accountId);
 
+        verifyNoInteractions(currentUserService);
         verifyNoInteractions(clientAccountMapper);
     }
 }

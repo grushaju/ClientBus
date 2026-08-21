@@ -1,7 +1,7 @@
 package kit.penny.clientbus.server.security;
 
 import kit.penny.clientbus.server.persistence.entity.UserEntity;
-import kit.penny.clientbus.server.persistence.entity.UserRole;
+import kit.penny.clientbus.common.enums.UserRole;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;

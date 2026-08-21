@@ -1,10 +1,8 @@
 package kit.penny.clientbus.server.fixture;
 
 import kit.penny.clientbus.common.enums.ChannelType;
-import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
-import kit.penny.clientbus.server.persistence.entity.ClientEntity;
-import kit.penny.clientbus.server.persistence.entity.UserEntity;
-import kit.penny.clientbus.server.persistence.entity.WorkspaceEntity;
+import kit.penny.clientbus.common.enums.UserRole;
+import kit.penny.clientbus.server.persistence.entity.*;
 
 import java.util.UUID;
 
@@ -13,18 +11,26 @@ public final class TestDataFactory {
     private TestDataFactory() {
     }
 
-    public static WorkspaceEntity workspace() {
+    public static OrganizationEntity organization() {
 
-        return new WorkspaceEntity(
+        return new OrganizationEntity(
+                "Test organization  " + UUID.randomUUID()
+        );
+    }
+
+    public static WorkspaceEntity workspace(OrganizationEntity organization) {
+
+        return new WorkspaceEntity(organization,
                 "Test Workspace " + UUID.randomUUID()
         );
     }
 
     public static WorkspaceEntity workspace(
+            OrganizationEntity organization,
             String name
     ) {
 
-        return new WorkspaceEntity(name);
+        return new WorkspaceEntity(organization, name);
     }
 
     public static ClientEntity client(
@@ -108,7 +114,8 @@ public final class TestDataFactory {
         return new UserEntity(
                 "testuser_" + UUID.randomUUID(),
                 "test@example.com",
-                "$2a$10$test"
+                "$2a$10$test",
+                UserRole.EMPLOYEE
         );
     }
 
@@ -121,7 +128,8 @@ public final class TestDataFactory {
         return new UserEntity(
                 username,
                 email,
-                passwordHash
+                passwordHash,
+                UserRole.EMPLOYEE
         );
     }
 }

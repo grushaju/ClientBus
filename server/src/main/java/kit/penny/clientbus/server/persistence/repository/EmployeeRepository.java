@@ -20,6 +20,11 @@ public interface EmployeeRepository
             UUID userId
     );
 
+    boolean existsByIdAndOrganizationId(
+            UUID employeeId,
+            UUID organizationId
+    );
+
     @Query("""
         SELECT DISTINCT e
         FROM EmployeeEntity e
