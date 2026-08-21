@@ -90,11 +90,6 @@ class ClientServiceTest {
         account.setPhone("+79990000000");
         account.setDisplayName("Ivan");
 
-        when(currentUserService.requireWorkspaceAccess(any(UUID.class)))
-                .thenAnswer(invocation ->
-                        invocation.getArgument(0)
-                );
-
     }
 
     // =========================================================

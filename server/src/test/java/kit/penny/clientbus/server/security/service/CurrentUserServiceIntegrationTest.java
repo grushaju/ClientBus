@@ -1,6 +1,7 @@
 package kit.penny.clientbus.server.security.service;
 
 import kit.penny.clientbus.common.enums.UserRole;
+import kit.penny.clientbus.server.integration.AbstractIntegrationTest;
 import kit.penny.clientbus.server.persistence.entity.EmployeeEntity;
 import kit.penny.clientbus.server.persistence.entity.EmployeeWorkspaceEntity;
 import kit.penny.clientbus.server.persistence.entity.OrganizationEntity;
@@ -11,7 +12,7 @@ import kit.penny.clientbus.server.persistence.repository.EmployeeWorkspaceReposi
 import kit.penny.clientbus.server.persistence.repository.OrganizationRepository;
 import kit.penny.clientbus.server.persistence.repository.UserRepository;
 import kit.penny.clientbus.server.persistence.repository.WorkspaceRepository;
-import kit.penny.clientbus.server.integration.AbstractIntegrationTest;
+import kit.penny.clientbus.server.security.UserPrincipal;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,12 +21,15 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
-import kit.penny.clientbus.server.security.UserPrincipal;
+import org.springframework.transaction.annotation.Transactional;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest
+@Transactional
 class CurrentUserServiceIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
@@ -60,12 +64,6 @@ class CurrentUserServiceIntegrationTest extends AbstractIntegrationTest {
     @BeforeEach
     void setUp() {
 
-        employeeWorkspaceRepository.deleteAll();
-        employeeRepository.deleteAll();
-        userRepository.deleteAll();
-        workspaceRepository.deleteAll();
-        organizationRepository.deleteAll();
-
         organizationA = createOrganization(
                 "Organization A"
         );
@@ -76,18 +74,21 @@ class CurrentUserServiceIntegrationTest extends AbstractIntegrationTest {
 
         superAdminA = createEmployee(
                 "super-admin-a",
+                "super-admin-a@test.local",
                 UserRole.SUPER_ADMIN,
                 organizationA
         );
 
         employeeA1 = createEmployee(
                 "employee-a1",
+                "employee-a1@test.local",
                 UserRole.EMPLOYEE,
                 organizationA
         );
 
         employeeB1 = createEmployee(
                 "employee-b1",
+                "employee-b1@test.local",
                 UserRole.EMPLOYEE,
                 organizationB
         );
@@ -109,8 +110,6 @@ class CurrentUserServiceIntegrationTest extends AbstractIntegrationTest {
 
         /*
          * EMPLOYEE A1 имеет доступ только к A1.
-         *
-         * A2 намеренно НЕ назначаем.
          */
         assignEmployeeToWorkspace(
                 employeeA1,
@@ -119,9 +118,6 @@ class CurrentUserServiceIntegrationTest extends AbstractIntegrationTest {
 
         /*
          * B1 принадлежит Organization B.
-         *
-         * Поэтому A1 не должен получить к нему доступ
-         * независимо от своей роли.
          */
         assignEmployeeToWorkspace(
                 employeeB1,
@@ -202,10 +198,10 @@ class CurrentUserServiceIntegrationTest extends AbstractIntegrationTest {
         authenticate(superAdminA);
 
         /*
-         * A2 НЕ назначен через EmployeeWorkspace.
+         * A2 не назначен через EmployeeWorkspace.
          *
-         * Это принципиальная проверка:
-         * SUPER_ADMIN не нуждается в EmployeeWorkspace.
+         * SUPER_ADMIN получает доступ ко всем Workspace
+         * своей Organization.
          */
         assertDoesNotThrow(() ->
                 currentUserService.requireWorkspaceAccess(
@@ -220,7 +216,7 @@ class CurrentUserServiceIntegrationTest extends AbstractIntegrationTest {
         authenticate(superAdminA);
 
         /*
-         * Даже SUPER_ADMIN не получает глобальный доступ.
+         * SUPER_ADMIN не получает глобальный доступ.
          *
          * Organization A != Organization B.
          */
@@ -242,16 +238,22 @@ class CurrentUserServiceIntegrationTest extends AbstractIntegrationTest {
 
         authenticate(employeeA1);
 
-        assert currentUserService.hasWorkspaceAccess(
-                workspaceA1.getId()
+        assertTrue(
+                currentUserService.hasWorkspaceAccess(
+                        workspaceA1.getId()
+                )
         );
 
-        assert !currentUserService.hasWorkspaceAccess(
-                workspaceA2.getId()
+        assertFalse(
+                currentUserService.hasWorkspaceAccess(
+                        workspaceA2.getId()
+                )
         );
 
-        assert !currentUserService.hasWorkspaceAccess(
-                workspaceB1.getId()
+        assertFalse(
+                currentUserService.hasWorkspaceAccess(
+                        workspaceB1.getId()
+                )
         );
     }
 
@@ -260,16 +262,22 @@ class CurrentUserServiceIntegrationTest extends AbstractIntegrationTest {
 
         authenticate(superAdminA);
 
-        assert currentUserService.hasWorkspaceAccess(
-                workspaceA1.getId()
+        assertTrue(
+                currentUserService.hasWorkspaceAccess(
+                        workspaceA1.getId()
+                )
         );
 
-        assert currentUserService.hasWorkspaceAccess(
-                workspaceA2.getId()
+        assertTrue(
+                currentUserService.hasWorkspaceAccess(
+                        workspaceA2.getId()
+                )
         );
 
-        assert !currentUserService.hasWorkspaceAccess(
-                workspaceB1.getId()
+        assertFalse(
+                currentUserService.hasWorkspaceAccess(
+                        workspaceB1.getId()
+                )
         );
     }
 
@@ -322,6 +330,7 @@ class CurrentUserServiceIntegrationTest extends AbstractIntegrationTest {
 
     private EmployeeEntity createEmployee(
             String username,
+            String email,
             UserRole role,
             OrganizationEntity organization
     ) {
@@ -330,8 +339,8 @@ class CurrentUserServiceIntegrationTest extends AbstractIntegrationTest {
                 new UserEntity();
 
         user.setUsername(username);
+        user.setEmail(email);
         user.setPasswordHash("password");
-        user.setEmail(username + "@test.local");
         user.setRole(role);
         user.setEnabled(true);
 
@@ -342,6 +351,12 @@ class CurrentUserServiceIntegrationTest extends AbstractIntegrationTest {
 
         employee.setUser(user);
         employee.setOrganization(organization);
+
+        /*
+         * EmployeeEntity требует эти поля.
+         */
+        employee.setFirstName(username);
+        employee.setLastName("Test");
 
         return employeeRepository.save(
                 employee
