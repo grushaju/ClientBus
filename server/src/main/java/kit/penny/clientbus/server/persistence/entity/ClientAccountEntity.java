@@ -2,6 +2,7 @@ package kit.penny.clientbus.server.persistence.entity;
 
 import jakarta.persistence.*;
 import kit.penny.clientbus.common.enums.ChannelType;
+import kit.penny.clientbus.common.enums.ClientAccountState;
 
 import java.util.UUID;
 
@@ -43,6 +44,14 @@ public class ClientAccountEntity {
             length = 30
     )
     private ChannelType channelType;
+
+    @Enumerated(EnumType.STRING)
+    @Column(
+            name = "state",
+            nullable = false,
+            length = 20
+    )
+    private ClientAccountState state = ClientAccountState.ACTIVE;
 
     @Column(
             name = "externalid",
@@ -104,6 +113,14 @@ public class ClientAccountEntity {
 
     public void setChannelType(ChannelType channelType) {
         this.channelType = channelType;
+    }
+
+    public ClientAccountState getState() {
+        return state;
+    }
+
+    public void setState(ClientAccountState state) {
+        this.state = state;
     }
 
     public String getExternalId() {

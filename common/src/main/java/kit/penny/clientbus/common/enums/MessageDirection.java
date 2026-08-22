@@ -1,16 +1,16 @@
 package kit.penny.clientbus.common.enums;
 
 public enum MessageDirection {
-    INBOUND (0),
-    OUTBOUND (1);
 
-    private final int code;
+    /**
+     * Сообщение пришло из внешнего канала
+     * в ClientBus.
+     */
+    INBOUND,
 
-    MessageDirection(int code) {
-        this.code = code;
-    }
-
-    public int getCode() {
-        return code;
-    }
+    /**
+     * Сообщение отправлено из ClientBus
+     * во внешний канал.
+     */
+    OUTBOUND
 }

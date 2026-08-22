@@ -14,6 +14,9 @@ clientbus:
       lastname: Kit
       phone: +12.04.1961(YAG)
 
+  storage:
+    local-path: D:\clientbus\storage
+
 
 
 

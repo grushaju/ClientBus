@@ -1,6 +1,7 @@
 package kit.penny.clientbus.common.enums;
 
 public enum ChannelType {
+
     WHATSAPP (1),
     TELEGRAM (2),
     MAX (3),
