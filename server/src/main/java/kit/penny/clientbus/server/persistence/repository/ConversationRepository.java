@@ -47,6 +47,11 @@ public interface ConversationRepository
             UUID clientAccountId
     );
 
+    List<ConversationEntity>
+    findAllByChannelAccountIdOrderByLastMessageAtDesc(
+            UUID channelAccountId
+    );
+
     long countByWorkspaceIdAndUnreadCountGreaterThan(
             UUID workspaceId,
             int unreadCount

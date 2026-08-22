@@ -1,7 +1,8 @@
 package kit.penny.clientbus.server.persistence.repository;
 
+import kit.penny.clientbus.common.enums.MessageDeliveryStatus;
+import kit.penny.clientbus.common.enums.MessageProcessingStatus;
 import kit.penny.clientbus.server.persistence.entity.MessageEntity;
-//import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
@@ -11,7 +12,8 @@ import java.util.UUID;
 public interface MessageRepository
         extends JpaRepository<MessageEntity, UUID> {
 
-    Optional<MessageEntity> findByConversationIdAndExternalId(
+    Optional<MessageEntity>
+    findByConversationIdAndExternalId(
             UUID conversationId,
             String externalId
     );
@@ -21,18 +23,15 @@ public interface MessageRepository
             String externalId
     );
 
-    List<MessageEntity> findAllByConversationIdOrderBySentAtAscCreatedAtAsc(
+    List<MessageEntity>
+    findAllByConversationIdOrderBySentAtAscCreatedAtAsc(
             UUID conversationId
     );
 
-    List<MessageEntity> findAllByConversationIdOrderBySentAtDescCreatedAtDesc(
+    List<MessageEntity>
+    findAllByConversationIdOrderBySentAtDescCreatedAtDesc(
             UUID conversationId
     );
-
-//    List<MessageEntity> findAllByConversationIdOrderBySentAtDescCreatedAtDesc(
-//            UUID conversationId,
-//            Pageable pageable
-//    );
 
     Optional<MessageEntity>
     findFirstByConversationIdOrderBySentAtDescCreatedAtDesc(
@@ -41,5 +40,20 @@ public interface MessageRepository
 
     long countByConversationId(
             UUID conversationId
+    );
+
+    List<MessageEntity>
+    findAllByProcessingStatus(
+            MessageProcessingStatus status
+    );
+
+    List<MessageEntity>
+    findAllByDeliveryStatus(
+            MessageDeliveryStatus status
+    );
+
+    long countByConversationIdAndDirection(
+            UUID conversationId,
+            kit.penny.clientbus.common.enums.MessageDirection direction
     );
 }

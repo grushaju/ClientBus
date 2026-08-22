@@ -1,7 +1,9 @@
 package kit.penny.clientbus.server.persistence.entity;
 
 import jakarta.persistence.*;
+import kit.penny.clientbus.common.enums.MessageDeliveryStatus;
 import kit.penny.clientbus.common.enums.MessageDirection;
+import kit.penny.clientbus.common.enums.MessageProcessingStatus;
 import kit.penny.clientbus.common.enums.MessageSenderType;
 import kit.penny.clientbus.common.enums.MessageType;
 import org.hibernate.annotations.CreationTimestamp;
@@ -31,6 +33,14 @@ import java.util.UUID;
                 @Index(
                         name = "message_conversation_created_at_idx",
                         columnList = "conversationid,createdat"
+                ),
+                @Index(
+                        name = "message_processing_status_idx",
+                        columnList = "processingstatus"
+                ),
+                @Index(
+                        name = "message_delivery_status_idx",
+                        columnList = "deliverystatus"
                 )
         }
 )
@@ -44,9 +54,6 @@ public class MessageEntity {
     )
     private UUID id;
 
-    /**
-     * Conversation, к которому относится сообщение.
-     */
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(
             name = "conversationid",
@@ -57,13 +64,6 @@ public class MessageEntity {
     )
     private ConversationEntity conversation;
 
-    /**
-     * Тип сообщения.
-     *
-     * Например:
-     * TEXT, IMAGE, VIDEO, AUDIO, DOCUMENT,
-     * STICKER, LOCATION, CONTACT, SYSTEM.
-     */
     @Enumerated(EnumType.STRING)
     @Column(
             name = "type",
@@ -73,7 +73,7 @@ public class MessageEntity {
     private MessageType type;
 
     /**
-     * Направление сообщения относительно ClientBus.
+     * INBOUND / OUTBOUND.
      */
     @Enumerated(EnumType.STRING)
     @Column(
@@ -84,7 +84,7 @@ public class MessageEntity {
     private MessageDirection direction;
 
     /**
-     * Тип отправителя.
+     * CLIENT / EMPLOYEE / SYSTEM.
      */
     @Enumerated(EnumType.STRING)
     @Column(
@@ -125,11 +125,10 @@ public class MessageEntity {
     /**
      * ID сообщения во внешней платформе.
      *
-     * Например:
-     * Telegram message_id,
-     * VK message ID и т.д.
+     * Для входящих сообщений обычно заполняется
+     * Connector'ом.
      *
-     * Для SYSTEM-сообщений может быть null.
+     * Для SYSTEM может быть null.
      */
     @Column(
             name = "externalid",
@@ -138,14 +137,7 @@ public class MessageEntity {
     private String externalId;
 
     /**
-     * Текстовое содержимое сообщения.
-     *
-     * Для TEXT — основной текст.
-     *
-     * Для IMAGE / VIDEO / DOCUMENT и т.д.
-     * может содержать caption.
-     *
-     * Для сообщений без текстового содержимого — null.
+     * Текст сообщения или caption.
      */
     @Column(
             name = "content",
@@ -154,26 +146,7 @@ public class MessageEntity {
     private String content;
 
     /**
-     * Дополнительные структурированные данные сообщения.
-     *
-     * Используется для типов, у которых недостаточно
-     * обычного текстового content.
-     *
-     * Например LOCATION:
-     *
-     * {
-     *   "latitude": 59.9343,
-     *   "longitude": 30.3351,
-     *   "address": "..."
-     * }
-     *
-     * Или CONTACT:
-     *
-     * {
-     *   "name": "Иван",
-     *   "phone": "+7999...",
-     *   "externalId": "..."
-     * }
+     * Дополнительные структурированные данные.
      */
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(
@@ -183,14 +156,19 @@ public class MessageEntity {
     private String metadata;
 
     /**
-     * Время создания сообщения на стороне
-     * внешней платформы.
+     * Время события на внешней платформе.
+     *
+     * Для OUTBOUND — время отправки/создания
+     * сообщения на платформе.
+     *
+     * Для INBOUND — время получения сообщения
+     * пользователем на платформе.
      */
     @Column(name = "sentat")
     private Instant sentAt;
 
     /**
-     * Время сохранения сообщения в ClientBus.
+     * Время создания записи Message в ClientBus.
      */
     @CreationTimestamp
     @Column(
@@ -199,6 +177,49 @@ public class MessageEntity {
             updatable = false
     )
     private Instant createdAt;
+
+    /**
+     * Состояние внутренней обработки сообщения.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(
+            name = "processingstatus",
+            nullable = false,
+            length = 20
+    )
+    private MessageProcessingStatus processingStatus;
+
+    /**
+     * Состояние доставки исходящего сообщения.
+     *
+     * Для INBOUND = null.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(
+            name = "deliverystatus",
+            length = 20
+    )
+    private MessageDeliveryStatus deliveryStatus;
+
+    /**
+     * Время успешного завершения внутренней обработки.
+     */
+    @Column(name = "processedat")
+    private Instant processedAt;
+
+    /**
+     * Время передачи OUTBOUND сообщения
+     * внешней платформе.
+     */
+    @Column(name = "deliveredat")
+    private Instant deliveredAt;
+
+    /**
+     * Время, когда внешняя платформа
+     * подтвердила прочтение.
+     */
+    @Column(name = "readat")
+    private Instant readAt;
 
     public MessageEntity() {
     }
@@ -213,6 +234,14 @@ public class MessageEntity {
         this.type = type;
         this.direction = direction;
         this.senderType = senderType;
+
+        this.processingStatus =
+                MessageProcessingStatus.RECEIVED;
+
+        this.deliveryStatus =
+                direction == MessageDirection.OUTBOUND
+                        ? MessageDeliveryStatus.PENDING
+                        : null;
     }
 
     public UUID getId() {
@@ -319,5 +348,49 @@ public class MessageEntity {
 
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public MessageProcessingStatus getProcessingStatus() {
+        return processingStatus;
+    }
+
+    public void setProcessingStatus(
+            MessageProcessingStatus processingStatus
+    ) {
+        this.processingStatus = processingStatus;
+    }
+
+    public MessageDeliveryStatus getDeliveryStatus() {
+        return deliveryStatus;
+    }
+
+    public void setDeliveryStatus(
+            MessageDeliveryStatus deliveryStatus
+    ) {
+        this.deliveryStatus = deliveryStatus;
+    }
+
+    public Instant getProcessedAt() {
+        return processedAt;
+    }
+
+    public void setProcessedAt(Instant processedAt) {
+        this.processedAt = processedAt;
+    }
+
+    public Instant getDeliveredAt() {
+        return deliveredAt;
+    }
+
+    public void setDeliveredAt(Instant deliveredAt) {
+        this.deliveredAt = deliveredAt;
+    }
+
+    public Instant getReadAt() {
+        return readAt;
+    }
+
+    public void setReadAt(Instant readAt) {
+        this.readAt = readAt;
     }
 }
