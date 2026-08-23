@@ -18,7 +18,7 @@ import java.util.UUID;
 @RequestMapping("/api/conversations")
 @SecurityRequirement(name = "bearerAuth")
 @Tag(
-        name = "Диалоги",
+        name = "Conversations",
         description = "API для работы с диалогами"
 )
 public class ConversationController {
@@ -33,10 +33,9 @@ public class ConversationController {
     }
 
     /**
-     * Создать Conversation для существующих
-     * ClientAccount + ChannelAccount.
+     * Создать Conversation.
      *
-     * SUPER_ADMIN и EMPLOYEE с доступом к Workspace.
+     * SUPER_ADMIN или EMPLOYEE с доступом к Workspace.
      */
     @PostMapping
     @PreAuthorize("isAuthenticated()")
@@ -88,9 +87,6 @@ public class ConversationController {
 
     /**
      * Все Conversation ClientAccount.
-     *
-     * Вернутся только те,
-     * к которым пользователь имеет доступ.
      */
     @GetMapping("/client-account/{clientAccountId}")
     @PreAuthorize("isAuthenticated()")
@@ -126,7 +122,9 @@ public class ConversationController {
     }
 
     /**
-     * Найти Conversation по паре аккаунтов.
+     * Найти Conversation по:
+     *
+     * ClientAccount + ChannelAccount.
      */
     @GetMapping("/by-accounts")
     @PreAuthorize("isAuthenticated()")
@@ -144,10 +142,85 @@ public class ConversationController {
     }
 
     /**
-     * Назначить Conversation сотруднику.
+     * Conversation Employee.
+     *
+     * EMPLOYEE может получить только свои.
+     */
+    @GetMapping("/employee/{employeeId}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<List<ConversationDto>>
+    getEmployeeConversations(
+            @PathVariable UUID employeeId
+    ) {
+
+        return ResponseEntity.ok(
+                conversationService
+                        .getEmployeeConversations(
+                                employeeId
+                        )
+        );
+    }
+
+    /**
+     * Неназначенные Conversation Workspace.
+     */
+    @GetMapping("/workspace/{workspaceId}/unassigned")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<List<ConversationDto>>
+    getUnassignedConversations(
+            @PathVariable UUID workspaceId
+    ) {
+
+        return ResponseEntity.ok(
+                conversationService
+                        .getUnassignedConversations(
+                                workspaceId
+                        )
+        );
+    }
+
+    /**
+     * Количество непрочитанных Conversation Workspace.
+     */
+    @GetMapping("/workspace/{workspaceId}/unread-count")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Long> getWorkspaceUnreadCount(
+            @PathVariable UUID workspaceId
+    ) {
+
+        return ResponseEntity.ok(
+                conversationService
+                        .getWorkspaceUnreadCount(
+                                workspaceId
+                        )
+        );
+    }
+
+    /**
+     * Количество непрочитанных Conversation Employee.
+     */
+    @GetMapping("/employee/{employeeId}/unread-count")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Long> getEmployeeUnreadCount(
+            @PathVariable UUID employeeId
+    ) {
+
+        return ResponseEntity.ok(
+                conversationService
+                        .getEmployeeUnreadCount(
+                                employeeId
+                        )
+        );
+    }
+
+    /**
+     * Административное назначение Conversation
+     * конкретному Employee.
+     *
+     * Только SUPER_ADMIN.
      */
     @PutMapping("/{conversationId}/assignment/{employeeId}")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     public ResponseEntity<ConversationDto> assignEmployee(
             @PathVariable UUID conversationId,
             @PathVariable UUID employeeId
@@ -162,16 +235,59 @@ public class ConversationController {
     }
 
     /**
-     * Снять назначение.
+     * Административное снятие назначения.
+     *
+     * Только SUPER_ADMIN.
      */
     @DeleteMapping("/{conversationId}/assignment")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     public ResponseEntity<ConversationDto> unassignEmployee(
             @PathVariable UUID conversationId
     ) {
 
         return ResponseEntity.ok(
                 conversationService.unassignEmployee(
+                        conversationId
+                )
+        );
+    }
+
+    /**
+     * Взять Conversation на себя.
+     *
+     * EMPLOYEE / SUPER_ADMIN.
+     *
+     * Нельзя забрать Conversation,
+     * назначенный другому Employee.
+     */
+    @PostMapping("/{conversationId}/assignment/me")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ConversationDto> assignmentToMe(
+            @PathVariable UUID conversationId
+    ) {
+
+        return ResponseEntity.ok(
+                conversationService.assignmentToMe(
+                        conversationId
+                )
+        );
+    }
+
+    /**
+     * Снять с себя назначение.
+     *
+     * EMPLOYEE / SUPER_ADMIN.
+     *
+     * Нельзя снять назначение другого Employee.
+     */
+    @DeleteMapping("/{conversationId}/assignment/me")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ConversationDto> unassignmentFromMe(
+            @PathVariable UUID conversationId
+    ) {
+
+        return ResponseEntity.ok(
+                conversationService.unassignmentFromMe(
                         conversationId
                 )
         );

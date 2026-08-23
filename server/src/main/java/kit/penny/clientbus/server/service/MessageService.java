@@ -26,61 +26,39 @@ public class MessageService {
 
     private final MessageRepository messageRepository;
     private final ConversationRepository conversationRepository;
+    private final ConversationService conversationService;
     private final MessageMapper messageMapper;
     private final CurrentUserService currentUserService;
 
     public MessageService(
             MessageRepository messageRepository,
             ConversationRepository conversationRepository,
+            ConversationService conversationService,
             MessageMapper messageMapper,
             CurrentUserService currentUserService
     ) {
         this.messageRepository = messageRepository;
         this.conversationRepository = conversationRepository;
+        this.conversationService = conversationService;
         this.messageMapper = messageMapper;
         this.currentUserService = currentUserService;
     }
 
     /**
      * Creates an inbound message received from a ChannelConnector.
-     *
-     * Lifecycle:
-     *
-     * RECEIVED
-     *     ↓
-     * PROCESSING
-     *     ↓
-     * PROCESSED
-     *
-     * Rules:
-     * - direction = INBOUND
-     * - senderType = CLIENT
-     * - clientAccount = Conversation.clientAccount
-     * - employee = null
-     * - deliveryStatus = null
-     *
-     * externalId is mandatory because inbound messages must be
-     * idempotent.
-     *
-     * This method intentionally does not perform CurrentUserService ACL
-     * validation. It is an internal Message Processing operation invoked
-     * by a trusted ChannelConnector/application flow.
      */
     @Transactional
     public MessageDto createInboundMessage(
             CreateInboundMessageRequest request
     ) {
+
         ConversationEntity conversation =
-                getConversation(request.conversationId());
+                getConversation(
+                        request.conversationId()
+                );
 
         validateInboundRequest(request);
 
-        /*
-         * Idempotency:
-         *
-         * The same external message received twice must not create
-         * two MessageEntity records.
-         */
         MessageEntity existing =
                 messageRepository
                         .findByConversationIdAndExternalId(
@@ -129,59 +107,49 @@ public class MessageService {
                 MessageProcessingStatus.RECEIVED
         );
 
-        /*
-         * Delivery status is not applicable to inbound messages.
-         */
         message.setDeliveryStatus(null);
 
         message = messageRepository.save(message);
 
-        updateConversationForInboundMessage(
+        Instant messageTime =
+                message.getSentAt() != null
+                        ? message.getSentAt()
+                        : message.getCreatedAt();
+
+        conversationService.updateLastMessage(
                 conversation,
-                message
+                messageTime,
+                createPreview(message)
+        );
+
+        conversationService.incrementUnreadCount(
+                conversation
         );
 
         return messageMapper.toDto(message);
     }
 
     /**
-     * Creates an outbound message initiated by the current employee.
-     *
-     * Lifecycle:
-     *
-     * RECEIVED / PENDING
-     *        ↓
-     * PROCESSING / PENDING
-     *        ↓
-     * PROCESSED / PENDING
-     *        ↓
-     * PROCESSED / SENT
-     *        ↓
-     * PROCESSED / DELIVERED
-     *        ↓
-     * PROCESSED / READ
+     * Creates an outbound message initiated by the current Employee.
      */
     @Transactional
     public MessageDto createOutboundMessage(
             CreateOutboundMessageRequest request
     ) {
-        ConversationEntity conversation =
-                getConversation(request.conversationId());
 
-        /*
-         * Object-level ACL:
-         *
-         * Employee can send messages only to a Conversation
-         * belonging to a Workspace accessible to him.
-         */
+        ConversationEntity conversation =
+                getConversation(
+                        request.conversationId()
+                );
+
         currentUserService.requireWorkspaceAccess(
-                conversation.getWorkspace().getId()
+                conversation
+                        .getWorkspace()
+                        .getId()
         );
 
-        /*
-         * Creating an outbound message is an employee operation.
-         */
         if (!currentUserService.isEmployee()) {
+
             throw new AccessDeniedException(
                     "Only EMPLOYEE can create outbound messages"
             );
@@ -223,23 +191,28 @@ public class MessageService {
 
         message = messageRepository.save(message);
 
-        updateConversationForOutboundMessage(
+        Instant messageTime =
+                message.getSentAt() != null
+                        ? message.getSentAt()
+                        : message.getCreatedAt();
+
+        conversationService.updateLastMessage(
                 conversation,
-                message
+                messageTime,
+                createPreview(message)
         );
 
         return messageMapper.toDto(message);
     }
 
     /**
-     * Starts internal message processing.
-     *
-     * RECEIVED -> PROCESSING
+     * RECEIVED -> PROCESSING.
      */
     @Transactional
     public MessageDto startProcessing(
             UUID messageId
     ) {
+
         MessageEntity message =
                 getMessageForProcessing(messageId);
 
@@ -262,14 +235,13 @@ public class MessageService {
     }
 
     /**
-     * Marks internal message processing as successfully completed.
-     *
-     * PROCESSING -> PROCESSED
+     * PROCESSING -> PROCESSED.
      */
     @Transactional
     public MessageDto markProcessed(
             UUID messageId
     ) {
+
         MessageEntity message =
                 getMessageForProcessing(messageId);
 
@@ -296,14 +268,13 @@ public class MessageService {
     }
 
     /**
-     * Marks internal message processing as failed.
-     *
-     * PROCESSING -> FAILED
+     * PROCESSING -> FAILED.
      */
     @Transactional
     public MessageDto markProcessingFailed(
             UUID messageId
     ) {
+
         MessageEntity message =
                 getMessageForProcessing(messageId);
 
@@ -326,18 +297,14 @@ public class MessageService {
     }
 
     /**
-     * Marks an outbound message as accepted by the external platform.
-     *
-     * PROCESSED / PENDING -> PROCESSED / SENT
-     *
-     * externalId is assigned here because it is generated/known
-     * by the external platform only after sending.
+     * PROCESSED/PENDING -> SENT.
      */
     @Transactional
     public MessageDto markSent(
             UUID messageId,
             String externalId
     ) {
+
         MessageEntity message =
                 getMessageForProcessing(messageId);
 
@@ -363,10 +330,6 @@ public class MessageService {
 
         validateExternalId(externalId);
 
-        /*
-         * Prevent assigning an external ID that already belongs
-         * to another message in the same Conversation.
-         */
         messageRepository
                 .findByConversationIdAndExternalId(
                         message.getConversation().getId(),
@@ -374,7 +337,9 @@ public class MessageService {
                 )
                 .ifPresent(existing -> {
 
-                    if (!existing.getId().equals(message.getId())) {
+                    if (!existing.getId()
+                            .equals(message.getId())) {
+
                         throw new IllegalStateException(
                                 "Message with externalId already exists: "
                                         + externalId
@@ -394,14 +359,13 @@ public class MessageService {
     }
 
     /**
-     * Marks an outbound message as delivered by the platform.
-     *
-     * SENT -> DELIVERED
+     * SENT -> DELIVERED.
      */
     @Transactional
     public MessageDto markDelivered(
             UUID messageId
     ) {
+
         MessageEntity message =
                 getMessageForProcessing(messageId);
 
@@ -430,14 +394,13 @@ public class MessageService {
     }
 
     /**
-     * Marks an outbound message as read by the recipient.
-     *
-     * SENT / DELIVERED -> READ
+     * SENT / DELIVERED -> READ.
      */
     @Transactional
     public MessageDto markRead(
             UUID messageId
     ) {
+
         MessageEntity message =
                 getMessageForProcessing(messageId);
 
@@ -469,14 +432,13 @@ public class MessageService {
     }
 
     /**
-     * Marks outbound delivery as failed.
-     *
-     * PENDING / SENT -> FAILED
+     * PENDING / SENT -> FAILED.
      */
     @Transactional
     public MessageDto markDeliveryFailed(
             UUID messageId
     ) {
+
         MessageEntity message =
                 getMessageForProcessing(messageId);
 
@@ -490,7 +452,8 @@ public class MessageService {
 
             throw new IllegalStateException(
                     "Message cannot be marked delivery FAILED "
-                            + "from status: " + status
+                            + "from status: "
+                            + status
             );
         }
 
@@ -504,14 +467,13 @@ public class MessageService {
     }
 
     /**
-     * Returns a message to an authenticated application user.
-     *
-     * Object-level Workspace ACL is enforced.
+     * Получить Message с object-level Workspace ACL.
      */
     @Transactional
     public MessageDto getMessage(
             UUID messageId
     ) {
+
         MessageEntity message =
                 messageRepository.findById(messageId)
                         .orElseThrow(() ->
@@ -533,6 +495,7 @@ public class MessageService {
     private ConversationEntity getConversation(
             UUID conversationId
     ) {
+
         return conversationRepository
                 .findById(conversationId)
                 .orElseThrow(() ->
@@ -543,19 +506,10 @@ public class MessageService {
                 );
     }
 
-    /**
-     * Loads a Message for an internal Message Processing operation.
-     *
-     * IMPORTANT:
-     * No CurrentUserService ACL check is performed here.
-     *
-     * Message Processing is an application-level operation invoked
-     * by trusted infrastructure/Connector flow, not by an employee
-     * directly.
-     */
     private MessageEntity getMessageForProcessing(
             UUID messageId
     ) {
+
         return messageRepository
                 .findById(messageId)
                 .orElseThrow(() ->
@@ -569,6 +523,7 @@ public class MessageService {
     private void requireOutbound(
             MessageEntity message
     ) {
+
         if (message.getDirection()
                 != MessageDirection.OUTBOUND) {
 
@@ -582,18 +537,23 @@ public class MessageService {
     private void validateInboundRequest(
             CreateInboundMessageRequest request
     ) {
+
         if (request.type() == null) {
+
             throw new IllegalArgumentException(
                     "Message type is required"
             );
         }
 
-        validateExternalId(request.externalId());
+        validateExternalId(
+                request.externalId()
+        );
     }
 
     private void validateExternalId(
             String externalId
     ) {
+
         if (externalId == null
                 || externalId.isBlank()) {
 
@@ -603,52 +563,10 @@ public class MessageService {
         }
     }
 
-    private void updateConversationForInboundMessage(
-            ConversationEntity conversation,
-            MessageEntity message
-    ) {
-        Instant messageTime =
-                message.getSentAt() != null
-                        ? message.getSentAt()
-                        : message.getCreatedAt();
-
-        conversation.setLastMessageAt(messageTime);
-
-        conversation.setLastMessagePreview(
-                createPreview(message)
-        );
-
-        conversation.setUnreadCount(
-                conversation.getUnreadCount() + 1
-        );
-
-        conversationRepository.save(conversation);
-    }
-
-    private void updateConversationForOutboundMessage(
-            ConversationEntity conversation,
-            MessageEntity message
-    ) {
-        Instant messageTime =
-                message.getSentAt() != null
-                        ? message.getSentAt()
-                        : message.getCreatedAt();
-
-        conversation.setLastMessageAt(messageTime);
-
-        conversation.setLastMessagePreview(
-                createPreview(message)
-        );
-
-        /*
-         * Outbound message does not increment unreadCount.
-         */
-        conversationRepository.save(conversation);
-    }
-
     private String createPreview(
             MessageEntity message
     ) {
+
         if (message.getContent() != null
                 && !message.getContent().isBlank()) {
 
@@ -663,14 +581,23 @@ public class MessageService {
         }
 
         return switch (message.getType()) {
+
             case TEXT -> "";
+
             case IMAGE -> "[Фото]";
+
             case VIDEO -> "[Видео]";
+
             case AUDIO -> "[Аудио]";
+
             case DOCUMENT -> "[Документ]";
+
             case STICKER -> "[Стикер]";
+
             case LOCATION -> "[Локация]";
+
             case CONTACT -> "[Контакт]";
+
             case SYSTEM -> "[Системное сообщение]";
         };
     }
