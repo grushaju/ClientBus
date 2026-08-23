@@ -1,9 +1,8 @@
 package kit.penny.clientbus.server.storage;
 
-import java.io.IOException;
 import java.io.InputStream;
 
-public interface AttachmentStorage {
+public interface IAttachmentStorage {
 
     /**
      * Сохраняет бинарные данные в Object Storage.

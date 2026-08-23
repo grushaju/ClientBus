@@ -10,7 +10,7 @@ import kit.penny.clientbus.server.persistence.entity.MessageEntity;
 import kit.penny.clientbus.server.persistence.repository.MessageAttachmentRepository;
 import kit.penny.clientbus.server.persistence.repository.MessageRepository;
 import kit.penny.clientbus.server.security.service.CurrentUserService;
-import kit.penny.clientbus.server.storage.AttachmentStorage;
+import kit.penny.clientbus.server.storage.IAttachmentStorage;
 import kit.penny.clientbus.server.storage.StoredAttachment;
 import kit.penny.clientbus.server.storage.StoredAttachmentMetadata;
 import org.springframework.stereotype.Service;
@@ -26,14 +26,14 @@ public class MessageAttachmentService {
     private final MessageAttachmentRepository attachmentRepository;
     private final MessageRepository messageRepository;
     private final MessageAttachmentMapper mapper;
-    private final AttachmentStorage attachmentStorage;
+    private final IAttachmentStorage attachmentStorage;
     private final CurrentUserService currentUserService;
 
     public MessageAttachmentService(
             MessageAttachmentRepository attachmentRepository,
             MessageRepository messageRepository,
             MessageAttachmentMapper mapper,
-            AttachmentStorage attachmentStorage,
+            IAttachmentStorage attachmentStorage,
             CurrentUserService currentUserService
     ) {
         this.attachmentRepository = attachmentRepository;

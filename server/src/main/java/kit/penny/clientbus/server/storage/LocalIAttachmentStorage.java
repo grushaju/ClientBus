@@ -11,11 +11,11 @@ import java.nio.file.Paths;
 import java.util.UUID;
 
 @Component
-public class LocalAttachmentStorage implements AttachmentStorage {
+public class LocalIAttachmentStorage implements IAttachmentStorage {
 
     private final Path rootPath;
 
-    public LocalAttachmentStorage(
+    public LocalIAttachmentStorage(
             @Value("${clientbus.storage.local-path}")
             String localPath
     ) {

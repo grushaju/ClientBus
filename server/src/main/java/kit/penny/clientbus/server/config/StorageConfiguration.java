@@ -1,8 +1,8 @@
 package kit.penny.clientbus.server.config;
 
 import kit.penny.clientbus.server.config.properties.StorageProperties;
-import kit.penny.clientbus.server.storage.AttachmentStorage;
-import kit.penny.clientbus.server.storage.LocalAttachmentStorage;
+import kit.penny.clientbus.server.storage.IAttachmentStorage;
+import kit.penny.clientbus.server.storage.LocalIAttachmentStorage;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -12,10 +12,10 @@ import org.springframework.context.annotation.Configuration;
 public class StorageConfiguration {
 
     @Bean
-    public AttachmentStorage attachmentStorage(
+    public IAttachmentStorage attachmentStorage(
             StorageProperties properties
     ) {
-        return new LocalAttachmentStorage(
+        return new LocalIAttachmentStorage(
                 properties.getLocalPath()
         );
     }
