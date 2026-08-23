@@ -18,7 +18,7 @@ import java.util.UUID;
 @RequestMapping("/api/conversations")
 @SecurityRequirement(name = "bearerAuth")
 @Tag(
-        name = "Conversations",
+        name = "Диалоги",
         description = "API для работы с диалогами"
 )
 public class ConversationController {

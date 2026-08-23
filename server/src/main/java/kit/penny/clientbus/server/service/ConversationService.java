@@ -198,18 +198,31 @@ public class ConversationService {
                         )
                 );
 
-        return conversationRepository
-                .findAllByClientAccountIdOrderByLastMessageAtDesc(
-                        clientAccountId
-                )
+        List<ConversationEntity> conversations;
+
+        if (currentUserService.isSuperAdmin()) {
+
+            conversations =
+                    conversationRepository
+                            .findAllByClientAccountIdAndOrganizationIdOrderByLastMessageAtDesc(
+                                    clientAccountId,
+                                    currentUserService
+                                            .getCurrentOrganizationId()
+                            );
+
+        } else {
+
+            conversations =
+                    conversationRepository
+                            .findAllByClientAccountIdAndEmployeeIdOrderByLastMessageAtDesc(
+                                    clientAccountId,
+                                    currentUserService
+                                            .getCurrentEmployeeId()
+                            );
+        }
+
+        return conversations
                 .stream()
-                .filter(conversation ->
-                        currentUserService.hasWorkspaceAccess(
-                                conversation
-                                        .getWorkspace()
-                                        .getId()
-                        )
-                )
                 .map(conversationMapper::toDto)
                 .toList();
     }
@@ -232,18 +245,31 @@ public class ConversationService {
                         )
                 );
 
-        return conversationRepository
-                .findAllByChannelAccountIdOrderByLastMessageAtDesc(
-                        channelAccountId
-                )
+        List<ConversationEntity> conversations;
+
+        if (currentUserService.isSuperAdmin()) {
+
+            conversations =
+                    conversationRepository
+                            .findAllByChannelAccountIdAndOrganizationIdOrderByLastMessageAtDesc(
+                                    channelAccountId,
+                                    currentUserService
+                                            .getCurrentOrganizationId()
+                            );
+
+        } else {
+
+            conversations =
+                    conversationRepository
+                            .findAllByChannelAccountIdAndEmployeeIdOrderByLastMessageAtDesc(
+                                    channelAccountId,
+                                    currentUserService
+                                            .getCurrentEmployeeId()
+                            );
+        }
+
+        return conversations
                 .stream()
-                .filter(conversation ->
-                        currentUserService.hasWorkspaceAccess(
-                                conversation
-                                        .getWorkspace()
-                                        .getId()
-                        )
-                )
                 .map(conversationMapper::toDto)
                 .toList();
     }
@@ -311,9 +337,17 @@ public class ConversationService {
             UUID employeeId
     ) {
 
+        List<ConversationEntity> conversations;
+
         if (currentUserService.isEmployee()) {
 
             currentUserService.requireSelf(employeeId);
+
+            conversations =
+                    conversationRepository
+                            .findAllByAssignedEmployeeIdAndEmployeeAccessOrderByLastMessageAtDesc(
+                                    employeeId
+                            );
 
         } else {
 
@@ -323,20 +357,18 @@ public class ConversationService {
                     .requireEmployeeInCurrentOrganization(
                             employeeId
                     );
+
+            conversations =
+                    conversationRepository
+                            .findAllByAssignedEmployeeIdAndOrganizationIdOrderByLastMessageAtDesc(
+                                    employeeId,
+                                    currentUserService
+                                            .getCurrentOrganizationId()
+                            );
         }
 
-        return conversationRepository
-                .findAllByAssignedEmployeeIdOrderByLastMessageAtDesc(
-                        employeeId
-                )
+        return conversations
                 .stream()
-                .filter(conversation ->
-                        currentUserService.hasWorkspaceAccess(
-                                conversation
-                                        .getWorkspace()
-                                        .getId()
-                        )
-                )
                 .map(conversationMapper::toDto)
                 .toList();
     }
@@ -596,19 +628,26 @@ public class ConversationService {
 
             currentUserService.requireSelf(employeeId);
 
-        } else {
-
-            currentUserService.requireSuperAdmin();
-
-            currentUserService
-                    .requireEmployeeInCurrentOrganization(
-                            employeeId
+            return conversationRepository
+                    .countAssignedUnreadByEmployeeWithWorkspaceAccess(
+                            employeeId,
+                            0
                     );
+
         }
 
+        currentUserService.requireSuperAdmin();
+
+        currentUserService
+                .requireEmployeeInCurrentOrganization(
+                        employeeId
+                );
+
         return conversationRepository
-                .countByAssignedEmployeeIdAndUnreadCountGreaterThan(
+                .countAssignedUnreadByEmployeeAndOrganization(
                         employeeId,
+                        currentUserService
+                                .getCurrentOrganizationId(),
                         0
                 );
     }

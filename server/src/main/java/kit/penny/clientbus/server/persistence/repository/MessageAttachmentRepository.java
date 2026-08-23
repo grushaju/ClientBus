@@ -7,13 +7,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+
 public interface MessageAttachmentRepository
         extends JpaRepository<MessageAttachmentEntity, UUID> {
 
-    List<MessageAttachmentEntity>
-    findAllByMessageIdOrderBySortOrderAsc(
-            UUID messageId
-    );
 
     Optional<MessageAttachmentEntity>
     findByStorageKey(
