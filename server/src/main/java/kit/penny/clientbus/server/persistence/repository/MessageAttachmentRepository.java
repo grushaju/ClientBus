@@ -31,4 +31,8 @@ public interface MessageAttachmentRepository
     void deleteAllByMessageId(
             UUID messageId
     );
+
+    List<MessageAttachmentEntity> findAllByMessageId(
+            UUID messageId
+    );
 }

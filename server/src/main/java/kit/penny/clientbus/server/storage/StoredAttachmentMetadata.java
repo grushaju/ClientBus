@@ -1,10 +1,8 @@
 package kit.penny.clientbus.server.storage;
 
-import java.io.InputStream;
+public record StoredAttachmentMetadata(
 
-public record StoredAttachment(
-
-        InputStream inputStream,
+        String storageKey,
 
         String fileName,
 

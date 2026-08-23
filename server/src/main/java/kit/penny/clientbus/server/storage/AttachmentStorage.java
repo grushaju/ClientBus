@@ -12,18 +12,19 @@ public interface AttachmentStorage {
      * @param size размер файла в байтах
      * @param contentType MIME type
      */
-    StoredAttachment store(
+    StoredAttachmentMetadata store(
             InputStream inputStream,
+            String fileName,
             long size,
             String contentType
-    ) throws IOException;
+    );
 
     /**
      * Открывает поток чтения объекта.
      */
     InputStream load(
             String storageKey
-    ) throws IOException;
+    );
 
     /**
      * Проверяет существование объекта.
@@ -37,5 +38,5 @@ public interface AttachmentStorage {
      */
     void delete(
             String storageKey
-    ) throws IOException;
+    );
 }

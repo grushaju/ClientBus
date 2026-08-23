@@ -7,188 +7,66 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(
-        name = "message_attachment",
-        indexes = {
-                @Index(
-                        name = "message_attachment_message_idx",
-                        columnList = "messageid"
-                ),
-                @Index(
-                        name = "message_attachment_storage_key_uix",
-                        columnList = "storagekey",
-                        unique = true
-                ),
-                @Index(
-                        name = "message_attachment_message_sort_idx",
-                        columnList = "messageid,sortorder"
-                )
-        }
-)
+@Table(name = "message_attachment")
 public class MessageAttachmentEntity {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    @Column(
-            nullable = false,
-            updatable = false
-    )
+    @GeneratedValue
     private UUID id;
 
-    /**
-     * Сообщение, которому принадлежит вложение.
-     */
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(
             name = "messageid",
-            nullable = false,
-            foreignKey = @ForeignKey(
-                    name = "message_attachment_message_fk"
-            )
+            nullable = false
     )
     private MessageEntity message;
 
-    /**
-     * Тип физического вложения.
-     *
-     * На текущем этапе:
-     * IMAGE
-     * AUDIO
-     */
     @Enumerated(EnumType.STRING)
     @Column(
             name = "type",
             nullable = false,
-            length = 20
+            length = 30
     )
     private MessageAttachmentType type;
 
-    /**
-     * Внутренний ключ объекта в Object Storage.
-     *
-     * Например:
-     *
-     * organizations/{organizationId}/
-     * workspaces/{workspaceId}/
-     * conversations/{conversationId}/
-     * messages/{messageId}/
-     * attachments/{attachmentId}
-     */
-    @Column(
-            name = "storagekey",
-            nullable = false,
-            length = 1000
-    )
-    private String storageKey;
-
-    /**
-     * Оригинальное имя файла.
-     */
     @Column(
             name = "filename",
-            length = 500
+            nullable = false
     )
     private String fileName;
 
-    /**
-     * MIME type.
-     *
-     * Например:
-     * image/jpeg
-     * image/png
-     * audio/mpeg
-     * audio/ogg
-     * audio/wav
-     */
     @Column(
-            name = "mimetype",
-            length = 255
+            name = "contenttype",
+            nullable = false
     )
-    private String mimeType;
+    private String contentType;
 
-    /**
-     * Размер файла в байтах.
-     */
     @Column(
             name = "size",
             nullable = false
     )
     private long size;
 
-    /**
-     * SHA-256 checksum файла.
-     */
     @Column(
-            name = "checksum",
-            length = 128
+            name = "storagekey",
+            nullable = false,
+            unique = true
     )
-    private String checksum;
+    private String storageKey;
 
-    /**
-     * Ширина изображения в пикселях.
-     *
-     * Используется для IMAGE.
-     */
-    @Column(name = "width")
-    private Integer width;
-
-    /**
-     * Высота изображения в пикселях.
-     *
-     * Используется для IMAGE.
-     */
-    @Column(name = "height")
-    private Integer height;
-
-    /**
-     * Продолжительность аудио в миллисекундах.
-     *
-     * Используется для AUDIO.
-     */
-    @Column(name = "durationms")
-    private Long durationMs;
-
-    /**
-     * Порядок вложения внутри сообщения.
-     */
-    @Column(
-            name = "sortorder",
-            nullable = false
-    )
-    private int sortOrder;
-
-    /**
-     * Время создания записи.
-     */
     @Column(
             name = "createdat",
-            nullable = false,
-            updatable = false
+            nullable = false
     )
     private Instant createdAt;
 
-    public MessageAttachmentEntity() {
-    }
-
-    public MessageAttachmentEntity(
-            MessageEntity message,
-            MessageAttachmentType type,
-            String storageKey,
-            int sortOrder
-    ) {
-        this.message = message;
-        this.type = type;
-        this.storageKey = storageKey;
-        this.sortOrder = sortOrder;
-        this.createdAt = Instant.now();
+    @PrePersist
+    protected void onCreate() {
+        createdAt = Instant.now();
     }
 
     public UUID getId() {
         return id;
-    }
-
-    public void setId(UUID id) {
-        this.id = id;
     }
 
     public MessageEntity getMessage() {
@@ -207,14 +85,6 @@ public class MessageAttachmentEntity {
         this.type = type;
     }
 
-    public String getStorageKey() {
-        return storageKey;
-    }
-
-    public void setStorageKey(String storageKey) {
-        this.storageKey = storageKey;
-    }
-
     public String getFileName() {
         return fileName;
     }
@@ -223,12 +93,12 @@ public class MessageAttachmentEntity {
         this.fileName = fileName;
     }
 
-    public String getMimeType() {
-        return mimeType;
+    public String getContentType() {
+        return contentType;
     }
 
-    public void setMimeType(String mimeType) {
-        this.mimeType = mimeType;
+    public void setContentType(String contentType) {
+        this.contentType = contentType;
     }
 
     public long getSize() {
@@ -239,51 +109,15 @@ public class MessageAttachmentEntity {
         this.size = size;
     }
 
-    public String getChecksum() {
-        return checksum;
+    public String getStorageKey() {
+        return storageKey;
     }
 
-    public void setChecksum(String checksum) {
-        this.checksum = checksum;
-    }
-
-    public Integer getWidth() {
-        return width;
-    }
-
-    public void setWidth(Integer width) {
-        this.width = width;
-    }
-
-    public Integer getHeight() {
-        return height;
-    }
-
-    public void setHeight(Integer height) {
-        this.height = height;
-    }
-
-    public Long getDurationMs() {
-        return durationMs;
-    }
-
-    public void setDurationMs(Long durationMs) {
-        this.durationMs = durationMs;
-    }
-
-    public int getSortOrder() {
-        return sortOrder;
-    }
-
-    public void setSortOrder(int sortOrder) {
-        this.sortOrder = sortOrder;
+    public void setStorageKey(String storageKey) {
+        this.storageKey = storageKey;
     }
 
     public Instant getCreatedAt() {
         return createdAt;
-    }
-
-    public void setCreatedAt(Instant createdAt) {
-        this.createdAt = createdAt;
     }
 }
