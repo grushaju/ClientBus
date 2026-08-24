@@ -6,6 +6,7 @@ import kit.penny.clientbus.common.dto.clientaccount.ClientAccountDto;
 import kit.penny.clientbus.common.dto.clientaccount.CreateClientAccountRequest;
 import kit.penny.clientbus.common.dto.clientaccount.UpdateClientAccountRequest;
 import kit.penny.clientbus.common.enums.ChannelType;
+import kit.penny.clientbus.common.enums.ClientAccountState;
 import kit.penny.clientbus.server.mapper.ClientAccountMapper;
 import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ClientEntity;
@@ -83,6 +84,59 @@ public class ClientAccountService {
                 clientAccountRepository.saveAndFlush(entity);
 
         return clientAccountMapper.toDto(entity);
+    }
+
+    @Transactional
+    public ClientAccountEntity getOrCreateForInbound(
+            ChannelType channelType,
+            String externalId,
+            String username,
+            String phone,
+            String displayName
+    ) {
+
+        if (channelType == null) {
+            throw new IllegalArgumentException(
+                    "channelType must not be null"
+            );
+        }
+
+        if (externalId == null || externalId.isBlank()) {
+            throw new IllegalArgumentException(
+                    "externalId must not be blank"
+            );
+        }
+
+        return clientAccountRepository
+                .findByChannelTypeAndExternalId(
+                        channelType,
+                        externalId
+                )
+                .orElseGet(() -> {
+
+                    ClientAccountEntity entity =
+                            new ClientAccountEntity();
+
+                    entity.setChannelType(channelType);
+                    entity.setExternalId(externalId);
+                    entity.setUsername(username);
+                    entity.setPhone(phone);
+                    entity.setDisplayName(displayName);
+
+                    /*
+                     * Client намеренно НЕ устанавливаем.
+                     *
+                     * Client создаётся только сотрудником
+                     * отдельным use case.
+                     */
+                    entity.setClient(null);
+
+                    entity.setState(
+                            ClientAccountState.ACTIVE
+                    );
+
+                    return clientAccountRepository.save(entity);
+                });
     }
 
     @Transactional

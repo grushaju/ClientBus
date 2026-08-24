@@ -144,6 +144,78 @@ public class ConversationService {
     }
 
     /**
+     * Внутреннее создание Conversation
+     * для Message Processing.
+     *
+     * ACL намеренно отсутствует.
+     *
+     * Workspace определяется из ChannelAccount.
+     */
+    @Transactional
+    public ConversationEntity createConversationInternal(
+            ChannelAccountEntity channelAccount,
+            ClientAccountEntity clientAccount
+    ) {
+
+        ConversationEntity existing =
+                conversationRepository
+                        .findByChannelAccountIdAndClientAccountId(
+                                channelAccount.getId(),
+                                clientAccount.getId()
+                        )
+                        .orElse(null);
+
+        if (existing != null) {
+            return existing;
+        }
+
+        WorkspaceEntity workspace =
+                channelAccount
+                        .getChannel()
+                        .getWorkspace();
+
+        if (workspace == null) {
+            throw new IllegalStateException(
+                    "ChannelAccount has no Workspace: "
+                            + channelAccount.getId()
+            );
+        }
+
+        ConversationEntity conversation =
+                new ConversationEntity(
+                        workspace,
+                        channelAccount,
+                        clientAccount
+                );
+
+        try {
+
+            return conversationRepository.saveAndFlush(
+                    conversation
+            );
+
+        } catch (DataIntegrityViolationException e) {
+
+            /*
+             * Возможна гонка:
+             *
+             * webhook #1 ─┐
+             *             ├─ create Conversation
+             * webhook #2 ─┘
+             *
+             * DB unique constraint является
+             * окончательным арбитром.
+             */
+            return conversationRepository
+                    .findByChannelAccountIdAndClientAccountId(
+                            channelAccount.getId(),
+                            clientAccount.getId()
+                    )
+                    .orElseThrow(() -> e);
+        }
+    }
+
+    /**
      * Получить Conversation.
      */
     @Transactional(readOnly = true)

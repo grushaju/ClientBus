@@ -32,9 +32,9 @@ public interface IMessageProcessingService {
      * - передать сообщение Connector'у;
      * - обновить delivery lifecycle.
      */
-    MessageDto processOutbound(
-            OutboundMessageRequest request
-    );
+//    MessageDto processOutbound(
+//            OutboundMessageRequest request
+//    );
 
     /**
      * Обрабатывает событие от внешней платформы.
@@ -45,7 +45,7 @@ public interface IMessageProcessingService {
      * READ
      * FAILED
      */
-    MessageDto processPlatformEvent(
-            PlatformMessageEvent event
-    );
+//    MessageDto processPlatformEvent(
+//            PlatformMessageEvent event
+//    );
 }
