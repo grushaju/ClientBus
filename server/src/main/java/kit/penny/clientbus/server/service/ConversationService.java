@@ -397,6 +397,29 @@ public class ConversationService {
     }
 
     /**
+     * Внутренний поиск Conversation по ID.
+     *
+     * Используется Message Processing.
+     *
+     * ACL намеренно отсутствует:
+     * это не пользовательский application/query use case.
+     */
+    @Transactional(readOnly = true)
+    public ConversationEntity findEntityForProcessing(
+            UUID conversationId
+    ) {
+
+        return conversationRepository
+                .findById(conversationId)
+                .orElseThrow(() ->
+                        new EntityNotFoundException(
+                                "Conversation not found: "
+                                        + conversationId
+                        )
+                );
+    }
+
+    /**
      * Получить Conversation, назначенные Employee.
      *
      * EMPLOYEE может запросить только свои.

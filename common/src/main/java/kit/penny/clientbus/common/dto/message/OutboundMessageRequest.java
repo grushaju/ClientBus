@@ -33,7 +33,14 @@ public record OutboundMessageRequest(
         /**
          * Уже загруженные attachments.
          */
-        List<MessageAttachmentRequest> attachments
+        List<MessageAttachmentRequest> attachments,
+
+        /**
+         * Сообщение, на которое отвечаем.
+         *
+         * Должно находиться в том же Conversation.
+         */
+        UUID replyToMessageId
 
 ) {
 }

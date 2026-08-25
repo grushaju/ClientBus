@@ -15,7 +15,9 @@ public record CreateOutboundMessageRequest(
 
         String content,
 
-        String metadata
+        String metadata,
+
+        UUID replyToMessageId
 
 ) {
 }

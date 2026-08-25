@@ -41,6 +41,14 @@ import java.util.UUID;
                 @Index(
                         name = "message_delivery_status_idx",
                         columnList = "deliverystatus"
+                ),
+                @Index(
+                        name = "message_reply_to_idx",
+                        columnList = "replytomessageid"
+                ),
+                @Index(
+                        name = "message_forwarded_from_idx",
+                        columnList = "forwardedfrommessageid"
                 )
         }
 )
@@ -71,6 +79,35 @@ public class MessageEntity {
             length = 20
     )
     private MessageType type;
+
+    /**
+     * Сообщение, на которое отвечает данное сообщение.
+     *
+     * Для Reply сообщение должно находиться
+     * в том же Conversation.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(
+            name = "replytomessageid",
+            foreignKey = @ForeignKey(
+                    name = "message_reply_to_fk"
+            )
+    )
+    private MessageEntity replyToMessage;
+
+    /**
+     * Сообщение, из которого было сделано Forward.
+     *
+     * Может находиться в любом Conversation.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(
+            name = "forwardedfrommessageid",
+            foreignKey = @ForeignKey(
+                    name = "message_forwarded_from_fk"
+            )
+    )
+    private MessageEntity forwardedFromMessage;
 
     /**
      * INBOUND / OUTBOUND.
@@ -268,6 +305,26 @@ public class MessageEntity {
 
     public void setType(MessageType type) {
         this.type = type;
+    }
+
+    public MessageEntity getReplyToMessage() {
+        return replyToMessage;
+    }
+
+    public void setReplyToMessage(
+            MessageEntity replyToMessage
+    ) {
+        this.replyToMessage = replyToMessage;
+    }
+
+    public MessageEntity getForwardedFromMessage() {
+        return forwardedFromMessage;
+    }
+
+    public void setForwardedFromMessage(
+            MessageEntity forwardedFromMessage
+    ) {
+        this.forwardedFromMessage = forwardedFromMessage;
     }
 
     public MessageDirection getDirection() {

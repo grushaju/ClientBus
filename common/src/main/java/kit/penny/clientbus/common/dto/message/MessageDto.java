@@ -25,6 +25,10 @@ public record MessageDto(
 
         UUID employeeId,
 
+        UUID replyToMessageId,
+
+        UUID forwardedFromMessageId,
+
         String externalId,
 
         String content,

@@ -9,7 +9,9 @@ import java.util.UUID;
 @Component
 public class MessageMapper {
 
-    public MessageDto toDto(MessageEntity entity) {
+    public MessageDto toDto(
+            MessageEntity entity
+    ) {
 
         UUID conversationId =
                 entity.getConversation() != null
@@ -26,6 +28,16 @@ public class MessageMapper {
                         ? entity.getEmployee().getId()
                         : null;
 
+        UUID replyToMessageId =
+                entity.getReplyToMessage() != null
+                        ? entity.getReplyToMessage().getId()
+                        : null;
+
+        UUID forwardedFromMessageId =
+                entity.getForwardedFromMessage() != null
+                        ? entity.getForwardedFromMessage().getId()
+                        : null;
+
         return new MessageDto(
                 entity.getId(),
                 conversationId,
@@ -34,6 +46,8 @@ public class MessageMapper {
                 entity.getSenderType(),
                 clientAccountId,
                 employeeId,
+                replyToMessageId,
+                forwardedFromMessageId,
                 entity.getExternalId(),
                 entity.getContent(),
                 entity.getMetadata(),

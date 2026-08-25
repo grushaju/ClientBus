@@ -131,6 +131,9 @@ public class MessageService {
 
     /**
      * Creates an outbound message initiated by the current Employee.
+     *
+     * If replyToMessageId is specified, the target message must
+     * belong to the same Conversation.
      */
     @Transactional
     public MessageDto createOutboundMessage(
@@ -188,6 +191,42 @@ public class MessageService {
         message.setDeliveryStatus(
                 MessageDeliveryStatus.PENDING
         );
+
+        /*
+         * Reply.
+         *
+         * Reply можно делать только на сообщение
+         * из того же Conversation.
+         */
+        if (request.replyToMessageId() != null) {
+
+            MessageEntity replyToMessage =
+                    messageRepository
+                            .findById(
+                                    request.replyToMessageId()
+                            )
+                            .orElseThrow(() ->
+                                    new EntityNotFoundException(
+                                            "Reply target Message not found: "
+                                                    + request.replyToMessageId()
+                                    )
+                            );
+
+            if (!replyToMessage
+                    .getConversation()
+                    .getId()
+                    .equals(conversation.getId())) {
+
+                throw new IllegalArgumentException(
+                        "Reply target Message must belong "
+                                + "to the same Conversation"
+                );
+            }
+
+            message.setReplyToMessage(
+                    replyToMessage
+            );
+        }
 
         message = messageRepository.save(message);
 
@@ -347,7 +386,9 @@ public class MessageService {
                     }
                 });
 
-        message.setExternalId(externalId);
+        message.setExternalId(
+                externalId
+        );
 
         message.setDeliveryStatus(
                 MessageDeliveryStatus.SENT
