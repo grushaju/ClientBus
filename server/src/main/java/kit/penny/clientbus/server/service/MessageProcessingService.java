@@ -20,6 +20,8 @@ import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepositor
 import kit.penny.clientbus.server.persistence.repository.ClientAccountRepository;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+
 @Service
 public class MessageProcessingService
         implements IMessageProcessingService {
@@ -67,8 +69,13 @@ public class MessageProcessingService
     @Override
     @Transactional
     public MessageDto processInbound(
-            InboundMessageRequest request
+            InboundMessageRequest request,
+            List<AttachmentContent> attachments
     ) {
+
+        attachments = attachments == null
+                ? List.of()
+                : List.copyOf(attachments);
 
         ChannelAccountEntity channelAccount =
                 channelAccountRepository
@@ -149,8 +156,13 @@ public class MessageProcessingService
     @Override
     @Transactional
     public MessageDto processOutbound(
-            OutboundMessageRequest request
+            OutboundMessageRequest request,
+            List<AttachmentContent> attachments
     ) {
+
+        attachments = attachments == null
+                ? List.of()
+                : List.copyOf(attachments);
 
         MessageDto message =
                 messageService

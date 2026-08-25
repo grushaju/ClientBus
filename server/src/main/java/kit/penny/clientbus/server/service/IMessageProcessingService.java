@@ -5,33 +5,34 @@ import kit.penny.clientbus.common.dto.message.InboundMessageRequest;
 import kit.penny.clientbus.common.dto.message.MessageDto;
 import kit.penny.clientbus.common.dto.message.OutboundMessageRequest;
 
+import java.util.List;
+
 public interface IMessageProcessingService {
 
     /**
-     * Обрабатывает входящее сообщение от ChannelConnector.
+     * Обрабатывает входящее сообщение от ChannelConnector
+     * вместе с его вложениями.
      */
     MessageDto processInbound(
-            InboundMessageRequest request
+            InboundMessageRequest request,
+            List<AttachmentContent> attachments
     );
 
     /**
      * Обрабатывает исходящее сообщение
-     * от Employee / API.
+     * вместе с его вложениями.
      */
     MessageDto processOutbound(
-            OutboundMessageRequest request
+            OutboundMessageRequest request,
+            List<AttachmentContent> attachments
     );
 
     /**
      * Форвардит существующее сообщение
      * в другой Conversation.
      *
-     * Target может быть:
-     *
-     * 1. существующий Conversation;
-     * 2. ClientAccount + ChannelAccount,
-     *    для которых Conversation будет найден
-     *    или создан.
+     * Attachments исходного сообщения будут обработаны
+     * внутри orchestration layer.
      */
     MessageDto forwardMessage(
             ForwardMessageRequest request

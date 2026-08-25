@@ -1,4 +1,4 @@
-package kit.penny.clientbus.common.dto.message;
+package kit.penny.clientbus.server.service;
 
 import kit.penny.clientbus.common.enums.MessageType;
 
@@ -17,7 +17,13 @@ public record ChannelSendRequest(
 
         String content,
 
-        List<MessageAttachmentRequest> attachments
+        List<ChannelAttachment> attachments
 
 ) {
+
+    public ChannelSendRequest {
+        attachments = attachments == null
+                ? List.of()
+                : List.copyOf(attachments);
+    }
 }
