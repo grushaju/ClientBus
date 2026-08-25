@@ -7,21 +7,22 @@ import java.util.UUID;
 
 public record ForwardMessageRequest(
 
-        /**
-         * Исходное сообщение.
-         */
         @NotNull
         UUID messageId,
 
         /**
          * Существующий Conversation назначения.
+         *
+         * Взаимоисключающ с
+         * targetClientAccountId + targetChannelAccountId.
          */
         UUID targetConversationId,
 
         /**
          * ClientAccount назначения.
          *
-         * Используется совместно с targetChannelAccountId.
+         * Используется совместно с targetChannelAccountId,
+         * если Conversation ещё не определён.
          */
         UUID targetClientAccountId,
 
@@ -36,18 +37,19 @@ public record ForwardMessageRequest(
 
     @AssertTrue(
             message =
-                    "Specify either targetConversationId or " +
-                            "targetClientAccountId + targetChannelAccountId"
+                    "Specify either targetConversationId or "
+                            + "targetClientAccountId + "
+                            + "targetChannelAccountId"
     )
     public boolean hasValidTarget() {
 
-        boolean conversationTarget =
+        boolean existingConversation =
                 targetConversationId != null;
 
-        boolean accountTarget =
+        boolean accountPair =
                 targetClientAccountId != null
                         && targetChannelAccountId != null;
 
-        return conversationTarget ^ accountTarget;
+        return existingConversation ^ accountPair;
     }
 }

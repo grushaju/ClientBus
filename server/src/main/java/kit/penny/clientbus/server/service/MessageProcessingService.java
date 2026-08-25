@@ -4,12 +4,11 @@ import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
 import kit.penny.clientbus.common.dto.message.CreateInboundMessageRequest;
 import kit.penny.clientbus.common.dto.message.CreateOutboundMessageRequest;
+import kit.penny.clientbus.common.dto.message.ForwardMessageRequest;
 import kit.penny.clientbus.common.dto.message.InboundMessageRequest;
 import kit.penny.clientbus.common.dto.message.MessageDto;
 import kit.penny.clientbus.common.dto.message.OutboundMessageRequest;
 import kit.penny.clientbus.common.enums.ChannelType;
-import kit.penny.clientbus.common.enums.MessageDeliveryStatus;
-import kit.penny.clientbus.common.enums.MessageProcessingStatus;
 import kit.penny.clientbus.server.connector.ConnectorSendResult;
 import kit.penny.clientbus.server.connector.IChannelConnector;
 import kit.penny.clientbus.server.connector.IChannelConnectorRegistry;
@@ -18,6 +17,7 @@ import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ConversationEntity;
 import kit.penny.clientbus.server.persistence.entity.MessageEntity;
 import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
+import kit.penny.clientbus.server.persistence.repository.ClientAccountRepository;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -25,6 +25,7 @@ public class MessageProcessingService
         implements IMessageProcessingService {
 
     private final ChannelAccountRepository channelAccountRepository;
+    private final ClientAccountRepository clientAccountRepository;
     private final ClientAccountService clientAccountService;
     private final ConversationService conversationService;
     private final MessageService messageService;
@@ -32,6 +33,7 @@ public class MessageProcessingService
 
     public MessageProcessingService(
             ChannelAccountRepository channelAccountRepository,
+            ClientAccountRepository clientAccountRepository,
             ClientAccountService clientAccountService,
             ConversationService conversationService,
             MessageService messageService,
@@ -39,6 +41,9 @@ public class MessageProcessingService
     ) {
         this.channelAccountRepository =
                 channelAccountRepository;
+
+        this.clientAccountRepository =
+                clientAccountRepository;
 
         this.clientAccountService =
                 clientAccountService;
@@ -54,17 +59,10 @@ public class MessageProcessingService
     }
 
     /**
-     * Обработка входящего сообщения.
+     * Обрабатывает входящее сообщение от ChannelConnector.
      *
-     * ChannelConnector
-     *      ↓
-     * MessageProcessingService
-     *      ↓
-     * ClientAccount
-     *      ↓
-     * Conversation
-     *      ↓
-     * Message
+     * ClientAccount может быть создан автоматически.
+     * ClientEntity автоматически не создаётся.
      */
     @Override
     @Transactional
@@ -89,129 +87,102 @@ public class MessageProcessingService
                         .getChannel()
                         .getType();
 
-        /*
-         * ClientAccount создаётся автоматически.
-         *
-         * Client при этом НЕ создаётся.
-         */
         ClientAccountEntity clientAccount =
-                clientAccountService.getOrCreateForInbound(
-                        channelType,
-                        request.clientExternalId(),
-                        request.clientUsername(),
-                        request.clientPhone(),
-                        request.clientDisplayName()
-                );
+                clientAccountService
+                        .getOrCreateForInbound(
+                                channelType,
+                                request.clientExternalId(),
+                                request.clientUsername(),
+                                request.clientPhone(),
+                                request.clientDisplayName()
+                        );
 
-        /*
-         * Conversation определяется парой:
-         *
-         * ClientAccount + ChannelAccount.
-         */
         ConversationEntity conversation =
-                conversationService.findEntityByAccounts(
-                        channelAccount.getId(),
-                        clientAccount.getId()
-                );
+                conversationService
+                        .findEntityByAccounts(
+                                channelAccount.getId(),
+                                clientAccount.getId()
+                        );
 
         if (conversation == null) {
 
             conversation =
-                    conversationService.createConversationInternal(
-                            channelAccount,
-                            clientAccount
-                    );
+                    conversationService
+                            .createConversationInternal(
+                                    channelAccount,
+                                    clientAccount
+                            );
         }
 
-        /*
-         * MessageService отвечает за lifecycle самого Message:
-         *
-         * - idempotency по externalId;
-         * - INBOUND;
-         * - CLIENT;
-         * - lastMessage;
-         * - unreadCount.
-         */
-        return messageService.createInboundMessage(
-                new CreateInboundMessageRequest(
-                        conversation.getId(),
-                        request.type(),
-                        request.externalId(),
-                        request.content(),
-                        request.metadata(),
-                        request.sentAt()
-                )
-        );
+        return messageService
+                .createInboundMessage(
+                        new CreateInboundMessageRequest(
+                                conversation.getId(),
+                                request.type(),
+                                request.externalId(),
+                                request.content(),
+                                request.metadata(),
+                                request.sentAt()
+                        )
+                );
     }
 
     /**
-     * Обработка исходящего сообщения.
+     * Обрабатывает исходящее сообщение.
      *
      * Lifecycle:
      *
-     * RECEIVED + PENDING
-     *          ↓
-     *      PROCESSING
-     *          ↓
-     *      PROCESSED
-     *          ↓
-     *   ChannelConnector
-     *       ↙       ↘
-     *   success     failure
-     *      ↓           ↓
-     *    SENT     DELIVERY_FAILED
+     * RECEIVED
+     *     -> PROCESSING
+     *     -> PROCESSED
+     *     -> Connector
+     *     -> SENT
+     *
+     * При ошибке:
+     *
+     * PROCESSING -> FAILED
+     *
+     * или
+     *
+     * PROCESSED/PENDING -> DELIVERY_FAILED
      */
+    @Override
     @Transactional
     public MessageDto processOutbound(
             OutboundMessageRequest request
     ) {
 
-        /*
-         * createOutboundMessage() выполняет:
-         *
-         * - поиск Conversation;
-         * - Workspace ACL;
-         * - проверку EMPLOYEE;
-         * - создание OUTBOUND Message;
-         * - привязку текущего Employee;
-         * - RECEIVED + PENDING;
-         * - обновление Conversation.lastMessage.
-         */
         MessageDto message =
-                messageService.createOutboundMessage(
-                        new CreateOutboundMessageRequest(
-                                request.conversationId(),
-                                request.type(),
-                                request.content(),
-                                request.metadata()
-                        )
-                );
+                messageService
+                        .createOutboundMessage(
+                                new CreateOutboundMessageRequest(
+                                        request.conversationId(),
+                                        request.type(),
+                                        request.content(),
+                                        request.metadata(),
+                                        request.replyToMessageId()
+                                )
+                        );
 
         boolean processingCompleted = false;
 
         try {
 
-            /*
-             * RECEIVED -> PROCESSING
-             */
             message =
-                    messageService.startProcessing(
-                            message.id()
-                    );
+                    messageService
+                            .startProcessing(
+                                    message.id()
+                            );
 
-            /*
-             * Получаем Conversation без повторной ACL-проверки.
-             *
-             * ACL уже был выполнен внутри
-             * createOutboundMessage().
-             */
             ConversationEntity conversation =
-                    conversationService.findEntityForProcessing(
-                            request.conversationId()
-                    );
+                    conversationService
+                            .findEntityForProcessing(
+                                    request.conversationId()
+                            );
 
             ChannelAccountEntity channelAccount =
-                    conversation.getChannelAccount();
+                    conversation
+                            .getChannelAccount();
 
             if (channelAccount == null) {
 
@@ -234,43 +205,27 @@ public class MessageProcessingService
                 );
             }
 
-            /*
-             * Выбираем connector по ChannelType.
-             */
             IChannelConnector connector =
-                    connectorRegistry.getConnector(
-                            channelType
-                    );
+                    connectorRegistry
+                            .getConnector(
+                                    channelType
+                            );
 
-            /*
-             * Внутренняя обработка сообщения завершена.
-             *
-             * PROCESSING -> PROCESSED
-             */
             message =
-                    messageService.markProcessed(
-                            message.id()
-                    );
+                    messageService
+                            .markProcessed(
+                                    message.id()
+                            );
 
             processingCompleted = true;
 
-            /*
-             * Одна попытка отправки во внешнюю платформу.
-             *
-             * Используем существующий контракт:
-             *
-             * send(
-             *     channelAccountId,
-             *     messageId,
-             *     OutboundMessageRequest
-             * )
-             */
             ConnectorSendResult result =
-                    connector.send(
-                            channelAccount.getId(),
-                            message.id(),
-                            request
-                    );
+                    connector
+                            .send(
+                                    channelAccount.getId(),
+                                    message.id(),
+                                    request
+                            );
 
             if (result == null) {
 
@@ -287,28 +242,22 @@ public class MessageProcessingService
                 );
             }
 
-            /*
-             * PROCESSED + PENDING -> SENT
-             */
-            return messageService.markSent(
-                    message.id(),
-                    result.externalId()
-            );
+            return messageService
+                    .markSent(
+                            message.id(),
+                            result.externalId()
+                    );
 
         } catch (RuntimeException e) {
 
             if (!processingCompleted) {
 
-                /*
-                 * Ошибка внутренней обработки ClientBus.
-                 *
-                 * PROCESSING -> FAILED
-                 */
                 try {
 
-                    return messageService.markProcessingFailed(
-                            message.id()
-                    );
+                    messageService
+                            .markProcessingFailed(
+                                    message.id()
+                            );
 
                 } catch (RuntimeException ignored) {
 
@@ -319,21 +268,12 @@ public class MessageProcessingService
 
             } else {
 
-                /*
-                 * Вариант B:
-                 *
-                 * Message уже PROCESSED.
-                 *
-                 * Значит ошибка относится только
-                 * к внешней доставке.
-                 *
-                 * PROCESSED + PENDING -> DELIVERY_FAILED
-                 */
                 try {
 
-                    return messageService.markDeliveryFailed(
-                            message.id()
-                    );
+                    messageService
+                            .markDeliveryFailed(
+                                    message.id()
+                            );
 
                 } catch (RuntimeException ignored) {
 
@@ -345,5 +285,134 @@ public class MessageProcessingService
 
             throw e;
         }
+    }
+
+    /**
+     * Форвардит существующее сообщение в другой Conversation.
+     *
+     * Для EMPLOYEE:
+     *
+     * - source Conversation должен быть доступен;
+     * - target Conversation должен быть назначен этому Employee;
+     * - свободный target недопустим;
+     * - target другого Employee недопустим;
+     * - новый target Conversation автоматически назначается
+     *   текущему Employee.
+     *
+     * Для SUPER_ADMIN:
+     *
+     * - source должен быть доступен;
+     * - target может быть любым доступным Conversation;
+     * - отсутствующий Conversation может быть создан.
+     */
+    @Override
+    @Transactional
+    public MessageDto forwardMessage(
+            ForwardMessageRequest request
+    ) {
+
+        /*
+         * Source Message.
+         *
+         * MessageService выполняет Workspace ACL.
+         */
+        MessageEntity sourceMessage =
+                messageService
+                        .getMessageEntity(
+                                request.messageId()
+                        );
+
+        ConversationEntity targetConversation;
+
+        /*
+         * Target — существующий Conversation.
+         */
+        if (request.targetConversationId() != null) {
+
+            targetConversation =
+                    conversationService
+                            .findEntityForProcessing(
+                                    request.targetConversationId()
+                            );
+
+            /*
+             * EMPLOYEE:
+             * только собственный Conversation.
+             *
+             * SUPER_ADMIN:
+             * любой доступный Conversation.
+             */
+            conversationService
+                    .requireForwardTargetAccess(
+                            targetConversation
+                    );
+
+        } else {
+
+            /*
+             * Target определяется через:
+             *
+             * ClientAccount + ChannelAccount.
+             *
+             * ClientAccount здесь не проходит через
+             * ClientAccountService.getClientAccount(),
+             * поскольку это CRUD ACL ClientAccount.
+             */
+            ClientAccountEntity clientAccount =
+                    clientAccountRepository
+                            .findById(
+                                    request.targetClientAccountId()
+                            )
+                            .orElseThrow(() ->
+                                    new EntityNotFoundException(
+                                            "Target ClientAccount not found: "
+                                                    + request.targetClientAccountId()
+                                    )
+                            );
+
+            ChannelAccountEntity channelAccount =
+                    channelAccountRepository
+                            .findById(
+                                    request.targetChannelAccountId()
+                            )
+                            .orElseThrow(() ->
+                                    new EntityNotFoundException(
+                                            "Target ChannelAccount not found: "
+                                                    + request.targetChannelAccountId()
+                                    )
+                            );
+
+            /*
+             * ConversationService:
+             *
+             * 1. ищет существующий Conversation;
+             * 2. проверяет Forward ACL;
+             * 3. если Conversation отсутствует:
+             *    - проверяет Workspace ACL;
+             *    - создаёт Conversation;
+             *    - для EMPLOYEE назначает его
+             *      текущему Employee.
+             */
+            targetConversation =
+                    conversationService
+                            .findOrCreateForForward(
+                                    channelAccount,
+                                    clientAccount
+                            );
+        }
+
+        /*
+         * Создаём новый OUTBOUND Message.
+         *
+         * forwardedFromMessage = sourceMessage
+         * replyToMessage       = null
+         *
+         * externalId источника НЕ копируется.
+         */
+        return messageService
+                .createForwardedMessage(
+                        targetConversation,
+                        sourceMessage
+                );
     }
 }

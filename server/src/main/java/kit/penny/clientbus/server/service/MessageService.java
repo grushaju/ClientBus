@@ -244,6 +244,112 @@ public class MessageService {
         return messageMapper.toDto(message);
     }
 
+
+    /**
+     * Создаёт OUTBOUND Message как Forward
+     * существующего Message.
+     *
+     * ACL Conversation должен быть проверен
+     * вызывающим application layer.
+     */
+    @Transactional
+    public MessageDto createForwardedMessage(
+            ConversationEntity targetConversation,
+            MessageEntity sourceMessage
+    ) {
+
+        if (targetConversation == null) {
+
+            throw new IllegalArgumentException(
+                    "Target Conversation must not be null"
+            );
+        }
+
+        if (sourceMessage == null) {
+
+            throw new IllegalArgumentException(
+                    "Source Message must not be null"
+            );
+        }
+
+        MessageEntity message =
+                new MessageEntity(
+                        targetConversation,
+                        sourceMessage.getType(),
+                        MessageDirection.OUTBOUND,
+                        MessageSenderType.EMPLOYEE
+                );
+
+        message.setEmployee(
+                currentUserService.getCurrentEmployee()
+        );
+
+        message.setClientAccount(null);
+
+        /*
+         * Forward сохраняет содержимое исходного сообщения.
+         */
+        message.setContent(
+                sourceMessage.getContent()
+        );
+
+        message.setMetadata(
+                sourceMessage.getMetadata()
+        );
+
+        /*
+         * Это принципиально НЕ externalId источника.
+         *
+         * externalId появится только после успешной
+         * отправки через ChannelConnector.
+         */
+        message.setExternalId(null);
+
+        /*
+         * Forward и Reply — разные семантики.
+         *
+         * Сам Forward не является Reply.
+         */
+        message.setReplyToMessage(null);
+
+        /*
+         * Сохраняем происхождение сообщения.
+         */
+        message.setForwardedFromMessage(
+                sourceMessage
+        );
+
+        message.setSentAt(
+                Instant.now()
+        );
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.RECEIVED
+        );
+
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.PENDING
+        );
+
+        message =
+                messageRepository.save(message);
+
+        Instant messageTime =
+                message.getSentAt() != null
+                        ? message.getSentAt()
+                        : message.getCreatedAt();
+
+        conversationService.updateLastMessage(
+                targetConversation,
+                messageTime,
+                createPreview(message)
+        );
+
+        return messageMapper.toDto(
+                message
+        );
+    }
+
     /**
      * RECEIVED -> PROCESSING.
      */
@@ -533,6 +639,58 @@ public class MessageService {
         return messageMapper.toDto(message);
     }
 
+    /**
+     * Получить MessageEntity для application processing.
+     *
+     * ACL не выполняется здесь.
+     * Вызывающий orchestration service обязан
+     * выполнить необходимую ACL.
+     */
+    @Transactional
+    public MessageEntity getMessageEntityForProcessing(
+            UUID messageId
+    ) {
+
+        return messageRepository
+                .findById(messageId)
+                .orElseThrow(() ->
+                        new EntityNotFoundException(
+                                "Message not found: "
+                                        + messageId
+                        )
+                );
+    }
+
+    /**
+     * Получить MessageEntity с Workspace ACL.
+     *
+     * Используется application layer,
+     * когда нужен сам Entity для дальнейшей операции.
+     */
+    @Transactional
+    public MessageEntity getMessageEntity(
+            UUID messageId
+    ) {
+
+        MessageEntity message =
+                messageRepository
+                        .findById(messageId)
+                        .orElseThrow(() ->
+                                new EntityNotFoundException(
+                                        "Message not found: "
+                                                + messageId
+                                )
+                        );
+
+        currentUserService.requireWorkspaceAccess(
+                message.getConversation()
+                        .getWorkspace()
+                        .getId()
+        );
+
+        return message;
+    }
+
     private ConversationEntity getConversation(
             UUID conversationId
     ) {
@@ -551,14 +709,9 @@ public class MessageService {
             UUID messageId
     ) {
 
-        return messageRepository
-                .findById(messageId)
-                .orElseThrow(() ->
-                        new EntityNotFoundException(
-                                "Message not found: "
-                                        + messageId
-                        )
-                );
+        return getMessageEntityForProcessing(
+                messageId
+        );
     }
 
     private void requireOutbound(

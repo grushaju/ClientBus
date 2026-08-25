@@ -420,6 +420,81 @@ public class ConversationService {
     }
 
     /**
+     * Найти или создать Conversation для ForwardTo.
+     *
+     * EMPLOYEE:
+     *   - должен иметь доступ к Workspace ChannelAccount;
+     *   - создаваемый Conversation сразу назначается
+     *     текущему Employee.
+     *
+     * SUPER_ADMIN:
+     *   - может создать Conversation в доступном Workspace;
+     *   - Conversation остаётся неназначенным.
+     */
+    public ConversationEntity findOrCreateForForward(
+            ChannelAccountEntity channelAccount,
+            ClientAccountEntity clientAccount
+    ) {
+
+        ConversationEntity conversation =
+                findEntityByAccounts(
+                        channelAccount.getId(),
+                        clientAccount.getId()
+                );
+
+        if (conversation != null) {
+
+            requireForwardTargetAccess(
+                    conversation
+            );
+
+            return conversation;
+        }
+
+        WorkspaceEntity workspace =
+                channelAccount
+                        .getChannel()
+                        .getWorkspace();
+
+        if (workspace == null) {
+
+            throw new IllegalStateException(
+                    "ChannelAccount has no Workspace: "
+                            + channelAccount.getId()
+            );
+        }
+
+        /*
+         * Сначала проверяем Workspace ACL.
+         *
+         * Это обязательно и для EMPLOYEE,
+         * и для SUPER_ADMIN.
+         */
+        currentUserService.requireWorkspaceAccess(
+                workspace.getId()
+        );
+
+        ConversationEntity created =
+                createConversationInternal(
+                        channelAccount,
+                        clientAccount
+                );
+
+        /*
+         * Для EMPLOYEE новый target сразу
+         * становится его Conversation.
+         */
+        if (currentUserService.isEmployee()) {
+
+            created.setAssignedEmployee(
+                    currentUserService.getCurrentEmployee()
+            );
+        }
+
+        return created;
+    }
+
+    /**
      * Получить Conversation, назначенные Employee.
      *
      * EMPLOYEE может запросить только свои.
@@ -690,6 +765,78 @@ public class ConversationService {
         conversation.setUnreadCount(0);
 
         return conversationMapper.toDto(conversation);
+    }
+
+    /**
+     * Проверяет, может ли текущий пользователь
+     * использовать Conversation как target
+     * для ForwardTo.
+     *
+     * Правила:
+     *
+     * EMPLOYEE:
+     *   только Conversation, назначенный ему самому.
+     *
+     * SUPER_ADMIN:
+     *   любой Conversation, доступный ему
+     *   по Workspace / Organization ACL.
+     */
+    public void requireForwardTargetAccess(
+            ConversationEntity conversation
+    ) {
+
+        if (currentUserService.isSuperAdmin()) {
+
+            requireConversationAccess(
+                    conversation
+            );
+
+            return;
+        }
+
+        if (!currentUserService.isEmployee()) {
+
+            throw new AccessDeniedException(
+                    "Only EMPLOYEE or SUPER_ADMIN can forward messages"
+            );
+        }
+
+        EmployeeEntity currentEmployee =
+                currentUserService.getCurrentEmployee();
+
+        EmployeeEntity assignedEmployee =
+                conversation.getAssignedEmployee();
+
+        if (assignedEmployee == null) {
+
+            throw new AccessDeniedException(
+                    "EMPLOYEE cannot forward messages "
+                            + "to an unassigned Conversation"
+            );
+        }
+
+        if (!assignedEmployee
+                .getId()
+                .equals(currentEmployee.getId())) {
+
+            throw new AccessDeniedException(
+                    "EMPLOYEE can forward messages only "
+                            + "to own Conversations"
+            );
+        }
+
+        /*
+         * Дополнительная Workspace ACL.
+         *
+         * Это защищает случай, когда Conversation
+         * назначен Employee, но сам Workspace ему
+         * больше недоступен.
+         */
+        currentUserService.requireWorkspaceAccess(
+                conversation
+                        .getWorkspace()
+                        .getId()
+        );
     }
 
     /**
