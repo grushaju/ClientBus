@@ -250,6 +250,19 @@ public class MessageAttachmentService {
                 .findAllByMessageId(messageId);
     }
 
+    @Transactional
+    public List<MessageAttachmentDto> getAttachments(
+            UUID messageId
+    ) {
+        getMessageWithAccessCheck(messageId);
+
+        return attachmentRepository
+                .findAllByMessageId(messageId)
+                .stream()
+                .map(mapper::toDto)
+                .toList();
+    }
+
     /**
      * Загружает attachments сообщения
      * в connector-ready представление.
@@ -302,12 +315,36 @@ public class MessageAttachmentService {
 
     @Transactional
     public StoredAttachment downloadAttachment(
+            UUID messageId,
             UUID attachmentId
     ) {
         MessageAttachmentEntity attachment =
-                getAttachmentWithAccessCheck(
-                        attachmentId
-                );
+                attachmentRepository.findById(
+                                attachmentId
+                        )
+                        .orElseThrow(() ->
+                                new EntityNotFoundException(
+                                        "Attachment not found: "
+                                                + attachmentId
+                                )
+                        );
+
+        if (!attachment.getMessage()
+                .getId()
+                .equals(messageId)) {
+
+            throw new EntityNotFoundException(
+                    "Attachment not found: "
+                            + attachmentId
+            );
+        }
+
+        currentUserService.requireWorkspaceAccess(
+                attachment.getMessage()
+                        .getConversation()
+                        .getWorkspace()
+                        .getId()
+        );
 
         InputStream inputStream =
                 attachmentStorage.load(
