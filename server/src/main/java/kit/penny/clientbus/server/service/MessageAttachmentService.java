@@ -64,7 +64,6 @@ public class MessageAttachmentService {
         MessageAttachmentEntity entity =
                 createAttachment(
                         message,
-                        type,
                         content
                 );
 
@@ -81,7 +80,6 @@ public class MessageAttachmentService {
     @Transactional
     public MessageAttachmentEntity createAttachment(
             MessageEntity message,
-            MessageAttachmentType type,
             AttachmentContent content
     ) {
         if (message == null) {
@@ -90,7 +88,7 @@ public class MessageAttachmentService {
             );
         }
 
-        validateAttachmentType(type);
+        validateAttachmentType(content.type());
         validateContent(content);
 
         StoredAttachmentMetadata storedAttachment;
@@ -120,7 +118,7 @@ public class MessageAttachmentService {
                     new MessageAttachmentEntity();
 
             entity.setMessage(message);
-            entity.setType(type);
+            entity.setType(content.type());
 
             entity.setFileName(
                     storedAttachment.fileName()

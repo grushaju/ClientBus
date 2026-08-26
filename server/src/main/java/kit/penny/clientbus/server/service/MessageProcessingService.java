@@ -164,7 +164,6 @@ public class MessageProcessingService
 
                 messageAttachmentService.createAttachment(
                         messageEntity,
-                        attachment.type(),
                         attachment
                 );
             }
@@ -263,7 +262,6 @@ public class MessageProcessingService
 
                 messageAttachmentService.createAttachment(
                         messageEntity,
-                        attachmentType(attachment),
                         attachment
                 );
             }
@@ -487,17 +485,4 @@ public class MessageProcessingService
         return List.copyOf(attachments);
     }
 
-    /*
-     * AttachmentContent сейчас содержит type
-     * на уровне application input.
-     *
-     * Если текущая версия AttachmentContent
-     * ещё не содержит type, этот метод должен
-     * быть заменён после синхронизации DTO.
-     */
-    private MessageAttachmentType attachmentType(
-            AttachmentContent attachment
-    ) {
-        return attachment.type();
-    }
 }
