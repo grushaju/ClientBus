@@ -128,7 +128,6 @@ class MessageAttachmentServiceTest {
         MessageAttachmentEntity result =
                 service.createAttachment(
                         message,
-                        MessageAttachmentType.IMAGE,
                         content
                 );
 
@@ -423,7 +422,6 @@ class MessageAttachmentServiceTest {
                         RuntimeException.class,
                         () -> service.createAttachment(
                                 message,
-                                MessageAttachmentType.IMAGE,
                                 content
                         )
                 );
@@ -490,7 +488,6 @@ class MessageAttachmentServiceTest {
                 IllegalArgumentException.class,
                 () -> service.createAttachment(
                         message,
-                        MessageAttachmentType.IMAGE,
                         null
                 )
         );
@@ -521,7 +518,6 @@ class MessageAttachmentServiceTest {
                 IllegalArgumentException.class,
                 () -> service.createAttachment(
                         message,
-                        null,
                         content
                 )
         );

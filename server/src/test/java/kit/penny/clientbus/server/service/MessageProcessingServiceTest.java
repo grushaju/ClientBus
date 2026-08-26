@@ -1,0 +1,1410 @@
+package kit.penny.clientbus.server.service;
+
+import jakarta.persistence.EntityNotFoundException;
+import kit.penny.clientbus.common.dto.message.CreateInboundMessageRequest;
+import kit.penny.clientbus.common.dto.message.CreateOutboundMessageRequest;
+import kit.penny.clientbus.common.dto.message.ForwardMessageRequest;
+import kit.penny.clientbus.common.dto.message.InboundMessageRequest;
+import kit.penny.clientbus.common.dto.message.MessageDto;
+import kit.penny.clientbus.common.dto.message.OutboundMessageRequest;
+import kit.penny.clientbus.common.enums.ChannelType;
+import kit.penny.clientbus.common.enums.MessageAttachmentType;
+import kit.penny.clientbus.common.enums.MessageDeliveryStatus;
+import kit.penny.clientbus.common.enums.MessageDirection;
+import kit.penny.clientbus.common.enums.MessageProcessingStatus;
+import kit.penny.clientbus.common.enums.MessageSenderType;
+import kit.penny.clientbus.common.enums.MessageType;
+import kit.penny.clientbus.server.connector.ConnectorSendResult;
+import kit.penny.clientbus.server.connector.IChannelConnector;
+import kit.penny.clientbus.server.connector.IChannelConnectorRegistry;
+import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
+import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
+import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
+import kit.penny.clientbus.server.persistence.entity.ConversationEntity;
+import kit.penny.clientbus.server.persistence.entity.MessageAttachmentEntity;
+import kit.penny.clientbus.server.persistence.entity.MessageEntity;
+import kit.penny.clientbus.server.persistence.entity.WorkspaceEntity;
+import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
+import kit.penny.clientbus.server.persistence.repository.ClientAccountRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.io.ByteArrayInputStream;
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class MessageProcessingServiceTest {
+
+    @Mock
+    private ChannelAccountRepository channelAccountRepository;
+
+    @Mock
+    private ClientAccountRepository clientAccountRepository;
+
+    @Mock
+    private ClientAccountService clientAccountService;
+
+    @Mock
+    private ConversationService conversationService;
+
+    @Mock
+    private MessageService messageService;
+
+    @Mock
+    private MessageAttachmentService messageAttachmentService;
+
+    @Mock
+    private IChannelConnectorRegistry connectorRegistry;
+
+    @Mock
+    private IChannelConnector connector;
+
+    @InjectMocks
+    private MessageProcessingService messageProcessingService;
+
+    private UUID channelAccountId;
+    private UUID clientAccountId;
+    private UUID conversationId;
+    private UUID messageId;
+    private UUID sourceMessageId;
+    private UUID targetConversationId;
+
+    private WorkspaceEntity workspace;
+
+    private ChannelEntity channel;
+
+    private ChannelAccountEntity channelAccount;
+
+    private ClientAccountEntity clientAccount;
+
+    private ConversationEntity conversation;
+
+    private ConversationEntity targetConversation;
+
+    private MessageEntity messageEntity;
+
+    private MessageEntity sourceMessageEntity;
+
+    private MessageEntity targetMessageEntity;
+
+    private MessageDto messageDto;
+
+    private MessageDto forwardedMessageDto;
+
+    @BeforeEach
+    void setUp() {
+
+        channelAccountId = UUID.randomUUID();
+        clientAccountId = UUID.randomUUID();
+        conversationId = UUID.randomUUID();
+        messageId = UUID.randomUUID();
+        sourceMessageId = UUID.randomUUID();
+        targetConversationId = UUID.randomUUID();
+
+        workspace = new WorkspaceEntity();
+        workspace.setId(UUID.randomUUID());
+        workspace.setName("Test Workspace");
+
+        channel = new ChannelEntity(
+                workspace,
+                ChannelType.TELEGRAM,
+                "Telegram"
+        );
+
+        channel.setId(UUID.randomUUID());
+
+        channelAccount =
+                new ChannelAccountEntity(
+                        channel,
+                        "company-telegram",
+                        "company",
+                        "+79990000000",
+                        "Company"
+                );
+
+        channelAccount.setId(channelAccountId);
+
+        channel.setAccount(channelAccount);
+
+        clientAccount =
+                new ClientAccountEntity();
+
+        clientAccount.setId(clientAccountId);
+        clientAccount.setChannelType(
+                ChannelType.TELEGRAM
+        );
+        clientAccount.setExternalId(
+                "client-123"
+        );
+        clientAccount.setUsername(
+                "client"
+        );
+        clientAccount.setDisplayName(
+                "Client"
+        );
+
+        conversation =
+                new ConversationEntity(
+                        workspace,
+                        channelAccount,
+                        clientAccount
+                );
+
+        conversation.setId(conversationId);
+
+        messageEntity =
+                new MessageEntity(
+                        conversation,
+                        MessageType.TEXT,
+                        MessageDirection.OUTBOUND,
+                        MessageSenderType.EMPLOYEE
+                );
+
+        messageEntity.setId(messageId);
+        messageEntity.setContent("Hello");
+        messageEntity.setProcessingStatus(
+                MessageProcessingStatus.RECEIVED
+        );
+        messageEntity.setDeliveryStatus(
+                MessageDeliveryStatus.PENDING
+        );
+
+        messageDto =
+                mock(MessageDto.class);
+
+        when(messageDto.id())
+                .thenReturn(messageId);
+
+        when(messageDto.type())
+                .thenReturn(MessageType.TEXT);
+
+        when(messageDto.content())
+                .thenReturn("Hello");
+
+        targetConversation =
+                new ConversationEntity(
+                        workspace,
+                        channelAccount,
+                        clientAccount
+                );
+
+        targetConversation.setId(
+                targetConversationId
+        );
+
+        sourceMessageEntity =
+                new MessageEntity(
+                        conversation,
+                        MessageType.TEXT,
+                        MessageDirection.INBOUND,
+                        MessageSenderType.CLIENT
+                );
+
+        sourceMessageEntity.setId(
+                sourceMessageId
+        );
+
+        sourceMessageEntity.setContent(
+                "Original message"
+        );
+
+        sourceMessageEntity.setMetadata(
+                "{\"source\":\"telegram\"}"
+        );
+
+        forwardedMessageDto =
+                mock(MessageDto.class);
+
+        when(forwardedMessageDto.id())
+                .thenReturn(UUID.randomUUID());
+    }
+
+    // =========================================================
+    // INBOUND
+    // =========================================================
+
+    @Test
+    void processInbound_newMessage_createsAttachments() {
+
+        InboundMessageRequest request =
+                new InboundMessageRequest(
+                        channelAccountId,
+                        "client-123",
+                        "client",
+                        "+79991112233",
+                        "Client",
+                        "external-123",
+                        MessageType.TEXT,
+                        "Hello",
+                        "{\"source\":\"telegram\"}",
+                        Instant.parse(
+                                "2026-08-26T10:00:00Z"
+                        )
+                );
+
+        AttachmentContent attachment =
+                new AttachmentContent(
+                        MessageAttachmentType.IMAGE,
+                        "photo.jpg",
+                        "image/jpeg",
+                        1024,
+                        new ByteArrayInputStream(
+                                new byte[]{1, 2, 3}
+                        )
+                );
+
+        MessageCreationResult creationResult =
+                new MessageCreationResult(
+                        messageDto,
+                        false
+                );
+
+        when(channelAccountRepository.findById(
+                channelAccountId
+        )).thenReturn(
+                Optional.of(channelAccount)
+        );
+
+        when(clientAccountService.getOrCreateForInbound(
+                ChannelType.TELEGRAM,
+                "client-123",
+                "client",
+                "+79991112233",
+                "Client"
+        )).thenReturn(
+                clientAccount
+        );
+
+        when(conversationService.findEntityByAccounts(
+                channelAccountId,
+                clientAccountId
+        )).thenReturn(
+                conversation
+        );
+
+        when(messageService.createInboundMessage(
+                any(CreateInboundMessageRequest.class)
+        )).thenReturn(
+                creationResult
+        );
+
+        when(messageService.getMessageEntityForProcessing(
+                messageId
+        )).thenReturn(
+                messageEntity
+        );
+
+        MessageDto result =
+                messageProcessingService.processInbound(
+                        request,
+                        List.of(attachment)
+                );
+
+        assertSame(
+                messageDto,
+                result
+        );
+
+        verify(channelAccountRepository)
+                .findById(channelAccountId);
+
+        verify(clientAccountService)
+                .getOrCreateForInbound(
+                        ChannelType.TELEGRAM,
+                        "client-123",
+                        "client",
+                        "+79991112233",
+                        "Client"
+                );
+
+        verify(conversationService)
+                .findEntityByAccounts(
+                        channelAccountId,
+                        clientAccountId
+                );
+
+        ArgumentCaptor<CreateInboundMessageRequest>
+                requestCaptor =
+                ArgumentCaptor.forClass(
+                        CreateInboundMessageRequest.class
+                );
+
+        verify(messageService)
+                .createInboundMessage(
+                        requestCaptor.capture()
+                );
+
+        CreateInboundMessageRequest
+                createRequest =
+                requestCaptor.getValue();
+
+        assertEquals(
+                conversationId,
+                createRequest.conversationId()
+        );
+
+        assertEquals(
+                MessageType.TEXT,
+                createRequest.type()
+        );
+
+        assertEquals(
+                "external-123",
+                createRequest.externalId()
+        );
+
+        assertEquals(
+                "Hello",
+                createRequest.content()
+        );
+
+        verify(messageService)
+                .getMessageEntityForProcessing(
+                        messageId
+                );
+
+        verify(messageAttachmentService)
+                .createAttachment(
+                        messageEntity,
+                        attachment
+                );
+    }
+
+    @Test
+    void processInbound_existingMessage_doesNotCreateAttachments() {
+
+        InboundMessageRequest request =
+                new InboundMessageRequest(
+                        channelAccountId,
+                        "client-123",
+                        "client",
+                        null,
+                        "Client",
+                        "external-123",
+                        MessageType.TEXT,
+                        "Hello",
+                        null,
+                        null
+                );
+
+        AttachmentContent attachment =
+                new AttachmentContent(
+                        MessageAttachmentType.IMAGE,
+                        "photo.jpg",
+                        "image/jpeg",
+                        1024,
+                        new ByteArrayInputStream(
+                                new byte[]{1, 2, 3}
+                        )
+                );
+
+        MessageCreationResult creationResult =
+                new MessageCreationResult(
+                        messageDto,
+                        true
+                );
+
+        when(channelAccountRepository.findById(
+                channelAccountId
+        )).thenReturn(
+                Optional.of(channelAccount)
+        );
+
+        when(clientAccountService.getOrCreateForInbound(
+                ChannelType.TELEGRAM,
+                "client-123",
+                "client",
+                null,
+                "Client"
+        )).thenReturn(
+                clientAccount
+        );
+
+        when(conversationService.findEntityByAccounts(
+                channelAccountId,
+                clientAccountId
+        )).thenReturn(
+                conversation
+        );
+
+        when(messageService.createInboundMessage(
+                any(CreateInboundMessageRequest.class)
+        )).thenReturn(
+                creationResult
+        );
+
+        MessageDto result =
+                messageProcessingService.processInbound(
+                        request,
+                        List.of(attachment)
+                );
+
+        assertSame(
+                messageDto,
+                result
+        );
+
+        verify(messageService)
+                .createInboundMessage(
+                        any(CreateInboundMessageRequest.class)
+                );
+
+        verify(
+                messageService,
+                never()
+        ).getMessageEntityForProcessing(any());
+
+        verify(
+                messageAttachmentService,
+                never()
+        ).createAttachment(
+                any(MessageEntity.class),
+                any(AttachmentContent.class)
+        );
+    }
+
+    @Test
+    void processInbound_conversationDoesNotExist_createsConversation() {
+
+        InboundMessageRequest request =
+                new InboundMessageRequest(
+                        channelAccountId,
+                        "client-123",
+                        "client",
+                        null,
+                        "Client",
+                        "external-123",
+                        MessageType.TEXT,
+                        "Hello",
+                        null,
+                        null
+                );
+
+        MessageCreationResult creationResult =
+                new MessageCreationResult(
+                        messageDto,
+                        true
+                );
+
+        when(channelAccountRepository.findById(
+                channelAccountId
+        )).thenReturn(
+                Optional.of(channelAccount)
+        );
+
+        when(clientAccountService.getOrCreateForInbound(
+                any(),
+                anyString(),
+                any(),
+                any(),
+                any()
+        )).thenReturn(
+                clientAccount
+        );
+
+        when(conversationService.findEntityByAccounts(
+                channelAccountId,
+                clientAccountId
+        )).thenReturn(null);
+
+        when(conversationService.createConversationInternal(
+                channelAccount,
+                clientAccount
+        )).thenReturn(
+                conversation
+        );
+
+        when(messageService.createInboundMessage(
+                any(CreateInboundMessageRequest.class)
+        )).thenReturn(
+                creationResult
+        );
+
+        messageProcessingService.processInbound(
+                request,
+                List.of()
+        );
+
+        verify(conversationService)
+                .createConversationInternal(
+                        channelAccount,
+                        clientAccount
+                );
+    }
+
+    // =========================================================
+    // OUTBOUND
+    // =========================================================
+
+    @Test
+    void processOutbound_success_sendsMessageWithAttachments() {
+
+        OutboundMessageRequest request =
+                new OutboundMessageRequest(
+                        conversationId,
+                        MessageType.TEXT,
+                        "Hello",
+                        "{\"source\":\"ui\"}",
+                        null
+                );
+
+        AttachmentContent attachment =
+                new AttachmentContent(
+                        MessageAttachmentType.IMAGE,
+                        "photo.jpg",
+                        "image/jpeg",
+                        1024,
+                        new ByteArrayInputStream(
+                                new byte[]{1, 2, 3}
+                        )
+                );
+
+        ChannelAttachment channelAttachment =
+                new ChannelAttachment(
+                        MessageAttachmentType.IMAGE,
+                        "photo.jpg",
+                        "image/jpeg",
+                        1024,
+                        new ByteArrayInputStream(
+                                new byte[]{1, 2, 3}
+                        )
+                );
+
+        MessageDto processingMessage =
+                mock(MessageDto.class);
+
+        when(processingMessage.id())
+                .thenReturn(messageId);
+
+        MessageDto processedMessage =
+                mock(MessageDto.class);
+
+        when(processedMessage.id())
+                .thenReturn(messageId);
+
+        when(processedMessage.type())
+                .thenReturn(MessageType.TEXT);
+
+        when(processedMessage.content())
+                .thenReturn("Hello");
+
+        MessageDto sentMessage =
+                mock(MessageDto.class);
+
+        when(messageService.createOutboundMessage(
+                any(CreateOutboundMessageRequest.class)
+        )).thenReturn(
+                messageDto
+        );
+
+        when(messageService.startProcessing(
+                messageId
+        )).thenReturn(
+                processingMessage
+        );
+
+        when(conversationService.findEntityForProcessing(
+                conversationId
+        )).thenReturn(
+                conversation
+        );
+
+        when(messageService.getMessageEntityForProcessing(
+                messageId
+        )).thenReturn(
+                messageEntity
+        );
+
+        when(messageService.markProcessed(
+                messageId
+        )).thenReturn(
+                processedMessage
+        );
+
+        when(messageAttachmentService.getChannelAttachments(
+                messageId
+        )).thenReturn(
+                List.of(channelAttachment)
+        );
+
+        when(connectorRegistry.getConnector(
+                ChannelType.TELEGRAM
+        )).thenReturn(
+                connector
+        );
+
+        when(connector.send(
+                any(ChannelSendRequest.class)
+        )).thenReturn(
+                new ConnectorSendResult(
+                        "telegram-message-123"
+                )
+        );
+
+        when(messageService.markSent(
+                messageId,
+                "telegram-message-123"
+        )).thenReturn(
+                sentMessage
+        );
+
+        MessageDto result =
+                messageProcessingService.processOutbound(
+                        request,
+                        List.of(attachment)
+                );
+
+        assertSame(
+                sentMessage,
+                result
+        );
+
+        verify(messageService)
+                .createOutboundMessage(
+                        any(CreateOutboundMessageRequest.class)
+                );
+
+        verify(messageService)
+                .startProcessing(messageId);
+
+        verify(conversationService)
+                .findEntityForProcessing(
+                        conversationId
+                );
+
+        verify(messageService)
+                .getMessageEntityForProcessing(
+                        messageId
+                );
+
+        verify(messageAttachmentService)
+                .createAttachment(
+                        messageEntity,
+                        attachment
+                );
+
+        verify(messageService)
+                .markProcessed(messageId);
+
+        verify(messageAttachmentService)
+                .getChannelAttachments(messageId);
+
+        ArgumentCaptor<ChannelSendRequest>
+                sendRequestCaptor =
+                ArgumentCaptor.forClass(
+                        ChannelSendRequest.class
+                );
+
+        verify(connector)
+                .send(
+                        sendRequestCaptor.capture()
+                );
+
+        ChannelSendRequest sendRequest =
+                sendRequestCaptor.getValue();
+
+        assertEquals(
+                messageId,
+                sendRequest.messageId()
+        );
+
+        assertEquals(
+                channelAccountId,
+                sendRequest.channelAccountId()
+        );
+
+        assertEquals(
+                "client-123",
+                sendRequest.recipientExternalId()
+        );
+
+        assertEquals(
+                MessageType.TEXT,
+                sendRequest.type()
+        );
+
+        assertEquals(
+                "Hello",
+                sendRequest.content()
+        );
+
+        assertEquals(
+                List.of(channelAttachment),
+                sendRequest.attachments()
+        );
+
+        verify(messageService)
+                .markSent(
+                        messageId,
+                        "telegram-message-123"
+                );
+
+        verify(
+                messageService,
+                never()
+        ).markProcessingFailed(any());
+
+        verify(
+                messageService,
+                never()
+        ).markDeliveryFailed(any());
+    }
+
+    @Test
+    void processOutbound_connectorFails_marksDeliveryFailed() {
+
+        OutboundMessageRequest request =
+                new OutboundMessageRequest(
+                        conversationId,
+                        MessageType.TEXT,
+                        "Hello",
+                        null,
+                        null
+                );
+
+        MessageDto processingMessage =
+                mock(MessageDto.class);
+
+        when(processingMessage.id())
+                .thenReturn(messageId);
+
+        MessageDto processedMessage =
+                mock(MessageDto.class);
+
+        when(processedMessage.id())
+                .thenReturn(messageId);
+
+        when(processedMessage.type())
+                .thenReturn(MessageType.TEXT);
+
+        when(processedMessage.content())
+                .thenReturn("Hello");
+
+        RuntimeException connectorException =
+                new RuntimeException(
+                        "Connector failed"
+                );
+
+        when(messageService.createOutboundMessage(
+                any(CreateOutboundMessageRequest.class)
+        )).thenReturn(
+                messageDto
+        );
+
+        when(messageService.startProcessing(
+                messageId
+        )).thenReturn(
+                processingMessage
+        );
+
+        when(conversationService.findEntityForProcessing(
+                conversationId
+        )).thenReturn(
+                conversation
+        );
+
+        when(messageService.getMessageEntityForProcessing(
+                messageId
+        )).thenReturn(
+                messageEntity
+        );
+
+        when(messageService.markProcessed(
+                messageId
+        )).thenReturn(
+                processedMessage
+        );
+
+        when(messageAttachmentService.getChannelAttachments(
+                messageId
+        )).thenReturn(
+                List.of()
+        );
+
+        when(connectorRegistry.getConnector(
+                ChannelType.TELEGRAM
+        )).thenReturn(
+                connector
+        );
+
+        when(connector.send(
+                any(ChannelSendRequest.class)
+        )).thenThrow(
+                connectorException
+        );
+
+        MessageDto deliveryFailedMessage =
+                mock(MessageDto.class);
+
+        when(messageService.markDeliveryFailed(
+                messageId
+        )).thenReturn(
+                deliveryFailedMessage
+        );
+
+        RuntimeException result =
+                assertThrows(
+                        RuntimeException.class,
+                        () ->
+                                messageProcessingService
+                                        .processOutbound(
+                                                request,
+                                                List.of()
+                                        )
+                );
+
+        assertSame(
+                connectorException,
+                result
+        );
+
+        verify(messageService)
+                .markProcessed(messageId);
+
+        verify(messageService)
+                .markDeliveryFailed(messageId);
+
+        verify(
+                messageService,
+                never()
+        ).markProcessingFailed(any());
+
+        verify(
+                messageService,
+                never()
+        ).markSent(
+                any(),
+                anyString()
+        );
+    }
+
+    @Test
+    void processOutbound_connectorReturnsNull_marksDeliveryFailed() {
+
+        OutboundMessageRequest request =
+                new OutboundMessageRequest(
+                        conversationId,
+                        MessageType.TEXT,
+                        "Hello",
+                        null,
+                        null
+                );
+
+        MessageDto processingMessage =
+                mock(MessageDto.class);
+
+        when(processingMessage.id())
+                .thenReturn(messageId);
+
+        MessageDto processedMessage =
+                mock(MessageDto.class);
+
+        when(processedMessage.id())
+                .thenReturn(messageId);
+
+        when(processedMessage.type())
+                .thenReturn(MessageType.TEXT);
+
+        when(processedMessage.content())
+                .thenReturn("Hello");
+
+        when(messageService.createOutboundMessage(
+                any(CreateOutboundMessageRequest.class)
+        )).thenReturn(
+                messageDto
+        );
+
+        when(messageService.startProcessing(
+                messageId
+        )).thenReturn(
+                processingMessage
+        );
+
+        when(conversationService.findEntityForProcessing(
+                conversationId
+        )).thenReturn(
+                conversation
+        );
+
+        when(messageService.getMessageEntityForProcessing(
+                messageId
+        )).thenReturn(
+                messageEntity
+        );
+
+        when(messageService.markProcessed(
+                messageId
+        )).thenReturn(
+                processedMessage
+        );
+
+        when(messageAttachmentService.getChannelAttachments(
+                messageId
+        )).thenReturn(
+                List.of()
+        );
+
+        when(connectorRegistry.getConnector(
+                ChannelType.TELEGRAM
+        )).thenReturn(
+                connector
+        );
+
+        when(connector.send(
+                any(ChannelSendRequest.class)
+        )).thenReturn(null);
+
+        RuntimeException deliveryException =
+                new IllegalStateException(
+                        "ChannelConnector returned null result"
+                );
+
+        when(messageService.markDeliveryFailed(
+                messageId
+        )).thenReturn(
+                mock(MessageDto.class)
+        );
+
+        RuntimeException result =
+                assertThrows(
+                        RuntimeException.class,
+                        () ->
+                                messageProcessingService
+                                        .processOutbound(
+                                                request,
+                                                List.of()
+                                        )
+                );
+
+        assertEquals(
+                deliveryException.getMessage(),
+                result.getMessage()
+        );
+
+        verify(messageService)
+                .markDeliveryFailed(messageId);
+    }
+
+    @Test
+    void processOutbound_connectorReturnsBlankExternalId_marksDeliveryFailed() {
+
+        OutboundMessageRequest request =
+                new OutboundMessageRequest(
+                        conversationId,
+                        MessageType.TEXT,
+                        "Hello",
+                        null,
+                        null
+                );
+
+        MessageDto processingMessage =
+                mock(MessageDto.class);
+
+        when(processingMessage.id())
+                .thenReturn(messageId);
+
+        MessageDto processedMessage =
+                mock(MessageDto.class);
+
+        when(processedMessage.id())
+                .thenReturn(messageId);
+
+        when(processedMessage.type())
+                .thenReturn(MessageType.TEXT);
+
+        when(processedMessage.content())
+                .thenReturn("Hello");
+
+        when(messageService.createOutboundMessage(
+                any(CreateOutboundMessageRequest.class)
+        )).thenReturn(messageDto);
+
+        when(messageService.startProcessing(
+                messageId
+        )).thenReturn(processingMessage);
+
+        when(conversationService.findEntityForProcessing(
+                conversationId
+        )).thenReturn(conversation);
+
+        when(messageService.getMessageEntityForProcessing(
+                messageId
+        )).thenReturn(messageEntity);
+
+        when(messageService.markProcessed(
+                messageId
+        )).thenReturn(processedMessage);
+
+        when(messageAttachmentService.getChannelAttachments(
+                messageId
+        )).thenReturn(List.of());
+
+        when(connectorRegistry.getConnector(
+                ChannelType.TELEGRAM
+        )).thenReturn(connector);
+
+        when(connector.send(
+                any(ChannelSendRequest.class)
+        )).thenReturn(
+                new ConnectorSendResult("")
+        );
+
+        when(messageService.markDeliveryFailed(
+                messageId
+        )).thenReturn(
+                mock(MessageDto.class)
+        );
+
+        RuntimeException result =
+                assertThrows(
+                        RuntimeException.class,
+                        () ->
+                                messageProcessingService
+                                        .processOutbound(
+                                                request,
+                                                List.of()
+                                        )
+                );
+
+        assertEquals(
+                "ChannelConnector returned blank externalId",
+                result.getMessage()
+        );
+
+        verify(messageService)
+                .markDeliveryFailed(messageId);
+
+        verify(
+                messageService,
+                never()
+        ).markSent(
+                any(),
+                anyString()
+        );
+    }
+
+    // =========================================================
+    // FORWARD
+    // =========================================================
+
+    @Test
+    void forwardMessage_existingTargetConversation_forwardsAttachments() {
+
+        ForwardMessageRequest request =
+                new ForwardMessageRequest(
+                        sourceMessageId,
+                        targetConversationId,
+                        null,
+                        null
+                );
+
+        MessageAttachmentEntity sourceAttachment =
+                new MessageAttachmentEntity();
+
+        sourceAttachment.setMessage(
+                sourceMessageEntity
+        );
+
+        sourceAttachment.setType(
+                MessageAttachmentType.IMAGE
+        );
+
+        sourceAttachment.setFileName(
+                "photo.jpg"
+        );
+
+        sourceAttachment.setContentType(
+                "image/jpeg"
+        );
+
+        sourceAttachment.setSize(
+                1024
+        );
+
+        sourceAttachment.setStorageKey(
+                "storage/original-123"
+        );
+
+        sourceAttachment.setForwardFrom(
+                null
+        );
+
+        UUID forwardedId =
+                UUID.randomUUID();
+
+        when(forwardedMessageDto.id())
+                .thenReturn(forwardedId);
+
+        when(messageService.getMessageEntity(
+                sourceMessageId
+        )).thenReturn(
+                sourceMessageEntity
+        );
+
+        when(conversationService.findEntityForProcessing(
+                targetConversationId
+        )).thenReturn(
+                targetConversation
+        );
+
+        when(messageService.createForwardedMessage(
+                targetConversation,
+                sourceMessageEntity
+        )).thenReturn(
+                forwardedMessageDto
+        );
+
+        targetMessageEntity =
+                new MessageEntity(
+                        targetConversation,
+                        MessageType.TEXT,
+                        MessageDirection.OUTBOUND,
+                        MessageSenderType.EMPLOYEE
+                );
+
+        targetMessageEntity.setId(
+                forwardedId
+        );
+
+        when(messageService.getMessageEntityForProcessing(
+                forwardedId
+        )).thenReturn(
+                targetMessageEntity
+        );
+
+        when(messageAttachmentService
+                .getAttachmentsForProcessing(
+                        sourceMessageId
+                ))
+                .thenReturn(
+                        List.of(sourceAttachment)
+                );
+
+        MessageDto result =
+                messageProcessingService.forwardMessage(
+                        request
+                );
+
+        assertSame(
+                forwardedMessageDto,
+                result
+        );
+
+        verify(messageService)
+                .getMessageEntity(
+                        sourceMessageId
+                );
+
+        verify(conversationService)
+                .findEntityForProcessing(
+                        targetConversationId
+                );
+
+        verify(conversationService)
+                .requireForwardTargetAccess(
+                        targetConversation
+                );
+
+        verify(messageService)
+                .createForwardedMessage(
+                        targetConversation,
+                        sourceMessageEntity
+                );
+
+        verify(messageService)
+                .getMessageEntityForProcessing(
+                        forwardedId
+                );
+
+        verify(messageAttachmentService)
+                .getAttachmentsForProcessing(
+                        sourceMessageId
+                );
+
+        verify(messageAttachmentService)
+                .createForwardedAttachment(
+                        targetMessageEntity,
+                        sourceAttachment
+                );
+    }
+
+    @Test
+    void forwardMessage_accountPair_createsOrFindsTargetConversation() {
+
+        UUID targetClientAccountId =
+                UUID.randomUUID();
+
+        UUID targetChannelAccountId =
+                UUID.randomUUID();
+
+        ForwardMessageRequest request =
+                new ForwardMessageRequest(
+                        sourceMessageId,
+                        null,
+                        targetClientAccountId,
+                        targetChannelAccountId
+                );
+
+        ClientAccountEntity targetClientAccount =
+                new ClientAccountEntity();
+
+        targetClientAccount.setId(
+                targetClientAccountId
+        );
+
+        ChannelAccountEntity targetChannelAccount =
+                new ChannelAccountEntity();
+
+        targetChannelAccount.setId(
+                targetChannelAccountId
+        );
+
+        when(messageService.getMessageEntity(
+                sourceMessageId
+        )).thenReturn(
+                sourceMessageEntity
+        );
+
+        when(clientAccountRepository.findById(
+                targetClientAccountId
+        )).thenReturn(
+                Optional.of(targetClientAccount)
+        );
+
+        when(channelAccountRepository.findById(
+                targetChannelAccountId
+        )).thenReturn(
+                Optional.of(targetChannelAccount)
+        );
+
+        when(conversationService.findOrCreateForForward(
+                targetChannelAccount,
+                targetClientAccount
+        )).thenReturn(
+                targetConversation
+        );
+
+        when(messageService.createForwardedMessage(
+                targetConversation,
+                sourceMessageEntity
+        )).thenReturn(
+                forwardedMessageDto
+        );
+
+        UUID forwardedId = UUID.randomUUID();
+
+        when(forwardedMessageDto.id())
+                .thenReturn(forwardedId);
+
+        targetMessageEntity =
+                new MessageEntity(
+                        targetConversation,
+                        MessageType.TEXT,
+                        MessageDirection.OUTBOUND,
+                        MessageSenderType.EMPLOYEE
+                );
+
+        targetMessageEntity.setId(
+                forwardedId
+        );
+
+        when(messageService.getMessageEntityForProcessing(
+                forwardedId
+        )).thenReturn(
+                targetMessageEntity
+        );
+
+        when(messageAttachmentService
+                .getAttachmentsForProcessing(
+                        sourceMessageId
+                ))
+                .thenReturn(
+                        List.of()
+                );
+
+        MessageDto result =
+                messageProcessingService.forwardMessage(
+                        request
+                );
+
+        assertSame(
+                forwardedMessageDto,
+                result
+        );
+
+        verify(clientAccountRepository)
+                .findById(targetClientAccountId);
+
+        verify(channelAccountRepository)
+                .findById(targetChannelAccountId);
+
+        verify(conversationService)
+                .findOrCreateForForward(
+                        targetChannelAccount,
+                        targetClientAccount
+                );
+
+        verify(messageService)
+                .createForwardedMessage(
+                        targetConversation,
+                        sourceMessageEntity
+                );
+
+        verify(messageAttachmentService)
+                .getAttachmentsForProcessing(
+                        sourceMessageId
+                );
+    }
+
+    @Test
+    void forwardMessage_sourceMessageNotFound_throwsException() {
+
+        ForwardMessageRequest request =
+                new ForwardMessageRequest(
+                        sourceMessageId,
+                        targetConversationId,
+                        null,
+                        null
+                );
+
+        when(messageService.getMessageEntity(
+                sourceMessageId
+        )).thenThrow(
+                new EntityNotFoundException(
+                        "Message not found: "
+                                + sourceMessageId
+                )
+        );
+
+        EntityNotFoundException result =
+                assertThrows(
+                        EntityNotFoundException.class,
+                        () ->
+                                messageProcessingService
+                                        .forwardMessage(
+                                                request
+                                        )
+                );
+
+        assertEquals(
+                "Message not found: " + sourceMessageId,
+                result.getMessage()
+        );
+
+        verifyNoInteractions(
+                messageAttachmentService
+        );
+    }
+}
