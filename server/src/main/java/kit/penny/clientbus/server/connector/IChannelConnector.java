@@ -1,9 +1,7 @@
 package kit.penny.clientbus.server.connector;
 
-import kit.penny.clientbus.common.dto.message.OutboundMessageRequest;
 import kit.penny.clientbus.common.enums.ChannelType;
-
-import java.util.UUID;
+import kit.penny.clientbus.server.service.ChannelSendRequest;
 
 public interface IChannelConnector {
 
@@ -12,8 +10,6 @@ public interface IChannelConnector {
     );
 
     ConnectorSendResult send(
-            UUID channelAccountId,
-            UUID messageId,
-            OutboundMessageRequest request
+            ChannelSendRequest request
     );
 }

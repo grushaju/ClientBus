@@ -1,5 +1,7 @@
 package kit.penny.clientbus.server.service;
 
+import kit.penny.clientbus.common.enums.MessageAttachmentType;
+
 import java.io.InputStream;
 
 /**
@@ -12,6 +14,8 @@ import java.io.InputStream;
  */
 public record AttachmentContent(
 
+        MessageAttachmentType type,
+
         String fileName,
 
         String contentType,
@@ -23,6 +27,13 @@ public record AttachmentContent(
 ) {
 
     public AttachmentContent {
+
+        if (type == null) {
+            throw new IllegalArgumentException(
+                    "Attachment type must not be null"
+            );
+        }
+
         if (size < 0) {
             throw new IllegalArgumentException(
                     "Attachment size must not be negative"

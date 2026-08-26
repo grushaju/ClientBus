@@ -9,12 +9,14 @@ import kit.penny.clientbus.common.dto.message.InboundMessageRequest;
 import kit.penny.clientbus.common.dto.message.MessageDto;
 import kit.penny.clientbus.common.dto.message.OutboundMessageRequest;
 import kit.penny.clientbus.common.enums.ChannelType;
+import kit.penny.clientbus.common.enums.MessageAttachmentType;
 import kit.penny.clientbus.server.connector.ConnectorSendResult;
 import kit.penny.clientbus.server.connector.IChannelConnector;
 import kit.penny.clientbus.server.connector.IChannelConnectorRegistry;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ConversationEntity;
+import kit.penny.clientbus.server.persistence.entity.MessageAttachmentEntity;
 import kit.penny.clientbus.server.persistence.entity.MessageEntity;
 import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
 import kit.penny.clientbus.server.persistence.repository.ClientAccountRepository;
@@ -26,12 +28,26 @@ import java.util.List;
 public class MessageProcessingService
         implements IMessageProcessingService {
 
-    private final ChannelAccountRepository channelAccountRepository;
-    private final ClientAccountRepository clientAccountRepository;
-    private final ClientAccountService clientAccountService;
-    private final ConversationService conversationService;
-    private final MessageService messageService;
-    private final IChannelConnectorRegistry connectorRegistry;
+    private final ChannelAccountRepository
+            channelAccountRepository;
+
+    private final ClientAccountRepository
+            clientAccountRepository;
+
+    private final ClientAccountService
+            clientAccountService;
+
+    private final ConversationService
+            conversationService;
+
+    private final MessageService
+            messageService;
+
+    private final MessageAttachmentService
+            messageAttachmentService;
+
+    private final IChannelConnectorRegistry
+            connectorRegistry;
 
     public MessageProcessingService(
             ChannelAccountRepository channelAccountRepository,
@@ -39,6 +55,7 @@ public class MessageProcessingService
             ClientAccountService clientAccountService,
             ConversationService conversationService,
             MessageService messageService,
+            MessageAttachmentService messageAttachmentService,
             IChannelConnectorRegistry connectorRegistry
     ) {
         this.channelAccountRepository =
@@ -56,15 +73,16 @@ public class MessageProcessingService
         this.messageService =
                 messageService;
 
+        this.messageAttachmentService =
+                messageAttachmentService;
+
         this.connectorRegistry =
                 connectorRegistry;
     }
 
     /**
-     * Обрабатывает входящее сообщение от ChannelConnector.
-     *
-     * ClientAccount может быть создан автоматически.
-     * ClientEntity автоматически не создаётся.
+     * Обрабатывает входящее сообщение
+     * вместе с attachments.
      */
     @Override
     @Transactional
@@ -73,9 +91,9 @@ public class MessageProcessingService
             List<AttachmentContent> attachments
     ) {
 
-        attachments = attachments == null
-                ? List.of()
-                : List.copyOf(attachments);
+        attachments = normalizeAttachments(
+                attachments
+        );
 
         ChannelAccountEntity channelAccount =
                 channelAccountRepository
@@ -121,8 +139,8 @@ public class MessageProcessingService
                             );
         }
 
-        return messageService
-                .createInboundMessage(
+        MessageCreationResult result =
+                messageService.createInboundMessage(
                         new CreateInboundMessageRequest(
                                 conversation.getId(),
                                 request.type(),
@@ -132,26 +150,41 @@ public class MessageProcessingService
                                 request.sentAt()
                         )
                 );
+
+        MessageDto message = result.message();
+
+        if (!result.existed()) {
+
+            MessageEntity messageEntity =
+                    messageService.getMessageEntityForProcessing(
+                            message.id()
+                    );
+
+            for (AttachmentContent attachment : attachments) {
+
+                messageAttachmentService.createAttachment(
+                        messageEntity,
+                        attachment.type(),
+                        attachment
+                );
+            }
+        }
+
+        return message;
     }
 
     /**
-     * Обрабатывает исходящее сообщение.
+     * Обрабатывает исходящее сообщение
+     * вместе с attachments.
      *
-     * Lifecycle:
+     * Пока намеренно используется одна транзакция:
      *
-     * RECEIVED
-     *     -> PROCESSING
-     *     -> PROCESSED
-     *     -> Connector
-     *     -> SENT
-     *
-     * При ошибке:
-     *
-     * PROCESSING -> FAILED
-     *
-     * или
-     *
-     * PROCESSED/PENDING -> DELIVERY_FAILED
+     * create Message
+     * -> create Attachments
+     * -> PROCESSING
+     * -> PROCESSED
+     * -> Connector
+     * -> SENT
      */
     @Override
     @Transactional
@@ -160,9 +193,9 @@ public class MessageProcessingService
             List<AttachmentContent> attachments
     ) {
 
-        attachments = attachments == null
-                ? List.of()
-                : List.copyOf(attachments);
+        attachments = normalizeAttachments(
+                attachments
+        );
 
         MessageDto message =
                 messageService
@@ -181,10 +214,9 @@ public class MessageProcessingService
         try {
 
             message =
-                    messageService
-                            .startProcessing(
-                                    message.id()
-                            );
+                    messageService.startProcessing(
+                            message.id()
+                    );
 
             ConversationEntity conversation =
                     conversationService
@@ -193,8 +225,7 @@ public class MessageProcessingService
                             );
 
             ChannelAccountEntity channelAccount =
-                    conversation
-                            .getChannelAccount();
+                    conversation.getChannelAccount();
 
             if (channelAccount == null) {
 
@@ -217,27 +248,70 @@ public class MessageProcessingService
                 );
             }
 
+            /*
+             * Message Entity нужен для создания
+             * оригинальных attachments.
+             */
+            MessageEntity messageEntity =
+                    messageService
+                            .getMessageEntityForProcessing(
+                                    message.id()
+                            );
+
+            for (AttachmentContent attachment :
+                    attachments) {
+
+                messageAttachmentService.createAttachment(
+                        messageEntity,
+                        attachmentType(attachment),
+                        attachment
+                );
+            }
+
+            /*
+             * Только после создания Message +
+             * attachments переводим Message
+             * в PROCESSED.
+             */
+            message =
+                    messageService.markProcessed(
+                            message.id()
+                    );
+
+            processingCompleted = true;
+
+            /*
+             * Формируем connector-level request.
+             */
+            List<ChannelAttachment>
+                    channelAttachments =
+                    messageAttachmentService
+                            .getChannelAttachments(
+                                    message.id()
+                            );
+
+            ChannelSendRequest sendRequest =
+                    new ChannelSendRequest(
+                            message.id(),
+                            channelAccount.getId(),
+                            conversation
+                                    .getClientAccount()
+                                    .getExternalId(),
+                            message.type(),
+                            message.content(),
+                            channelAttachments
+                    );
+
             IChannelConnector connector =
                     connectorRegistry
                             .getConnector(
                                     channelType
                             );
 
-            message =
-                    messageService
-                            .markProcessed(
-                                    message.id()
-                            );
-
-            processingCompleted = true;
-
             ConnectorSendResult result =
-                    connector
-                            .send(
-                                    channelAccount.getId(),
-                                    message.id(),
-                                    request
-                            );
+                    connector.send(
+                            sendRequest
+                    );
 
             if (result == null) {
 
@@ -254,11 +328,10 @@ public class MessageProcessingService
                 );
             }
 
-            return messageService
-                    .markSent(
-                            message.id(),
-                            result.externalId()
-                    );
+            return messageService.markSent(
+                    message.id(),
+                    result.externalId()
+            );
 
         } catch (RuntimeException e) {
 
@@ -300,22 +373,15 @@ public class MessageProcessingService
     }
 
     /**
-     * Форвардит существующее сообщение в другой Conversation.
+     * Форвардит Message вместе с attachments.
      *
-     * Для EMPLOYEE:
+     * Forwarded attachments:
      *
-     * - source Conversation должен быть доступен;
-     * - target Conversation должен быть назначен этому Employee;
-     * - свободный target недопустим;
-     * - target другого Employee недопустим;
-     * - новый target Conversation автоматически назначается
-     *   текущему Employee.
-     *
-     * Для SUPER_ADMIN:
-     *
-     * - source должен быть доступен;
-     * - target может быть любым доступным Conversation;
-     * - отсутствующий Conversation может быть создан.
+     * - получают новый Entity;
+     * - принадлежат новому Message;
+     * - используют тот же storageKey;
+     * - forwardFrom = sourceMessage.id;
+     * - физический файл не копируется.
      */
     @Override
     @Transactional
@@ -323,11 +389,6 @@ public class MessageProcessingService
             ForwardMessageRequest request
     ) {
 
-        /*
-         * Source Message.
-         *
-         * MessageService выполняет Workspace ACL.
-         */
         MessageEntity sourceMessage =
                 messageService
                         .getMessageEntity(
@@ -336,9 +397,6 @@ public class MessageProcessingService
 
         ConversationEntity targetConversation;
 
-        /*
-         * Target — существующий Conversation.
-         */
         if (request.targetConversationId() != null) {
 
             targetConversation =
@@ -347,13 +405,6 @@ public class MessageProcessingService
                                     request.targetConversationId()
                             );
 
-            /*
-             * EMPLOYEE:
-             * только собственный Conversation.
-             *
-             * SUPER_ADMIN:
-             * любой доступный Conversation.
-             */
             conversationService
                     .requireForwardTargetAccess(
                             targetConversation
@@ -361,15 +412,6 @@ public class MessageProcessingService
 
         } else {
 
-            /*
-             * Target определяется через:
-             *
-             * ClientAccount + ChannelAccount.
-             *
-             * ClientAccount здесь не проходит через
-             * ClientAccountService.getClientAccount(),
-             * поскольку это CRUD ACL ClientAccount.
-             */
             ClientAccountEntity clientAccount =
                     clientAccountRepository
                             .findById(
@@ -394,17 +436,6 @@ public class MessageProcessingService
                                     )
                             );
 
-            /*
-             * ConversationService:
-             *
-             * 1. ищет существующий Conversation;
-             * 2. проверяет Forward ACL;
-             * 3. если Conversation отсутствует:
-             *    - проверяет Workspace ACL;
-             *    - создаёт Conversation;
-             *    - для EMPLOYEE назначает его
-             *      текущему Employee.
-             */
             targetConversation =
                     conversationService
                             .findOrCreateForForward(
@@ -413,18 +444,60 @@ public class MessageProcessingService
                             );
         }
 
-        /*
-         * Создаём новый OUTBOUND Message.
-         *
-         * forwardedFromMessage = sourceMessage
-         * replyToMessage       = null
-         *
-         * externalId источника НЕ копируется.
-         */
-        return messageService
-                .createForwardedMessage(
-                        targetConversation,
-                        sourceMessage
-                );
+        MessageDto forwarded =
+                messageService
+                        .createForwardedMessage(
+                                targetConversation,
+                                sourceMessage
+                        );
+
+        MessageEntity targetMessage =
+                messageService
+                        .getMessageEntityForProcessing(
+                                forwarded.id()
+                        );
+
+        List<MessageAttachmentEntity>
+                sourceAttachments =
+                messageAttachmentService
+                        .getAttachmentsForProcessing(
+                                sourceMessage.getId()
+                        );
+
+        for (MessageAttachmentEntity sourceAttachment :
+                sourceAttachments) {
+
+            messageAttachmentService
+                    .createForwardedAttachment(
+                            targetMessage,
+                            sourceAttachment
+                    );
+        }
+
+        return forwarded;
+    }
+
+    private List<AttachmentContent> normalizeAttachments(
+            List<AttachmentContent> attachments
+    ) {
+        if (attachments == null) {
+            return List.of();
+        }
+
+        return List.copyOf(attachments);
+    }
+
+    /*
+     * AttachmentContent сейчас содержит type
+     * на уровне application input.
+     *
+     * Если текущая версия AttachmentContent
+     * ещё не содержит type, этот метод должен
+     * быть заменён после синхронизации DTO.
+     */
+    private MessageAttachmentType attachmentType(
+            AttachmentContent attachment
+    ) {
+        return attachment.type();
     }
 }

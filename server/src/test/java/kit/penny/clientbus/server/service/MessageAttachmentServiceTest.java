@@ -94,6 +94,7 @@ class MessageAttachmentServiceTest {
     void createAttachment_createsOriginalAttachment() {
         AttachmentContent content =
                 new AttachmentContent(
+                        MessageAttachmentType.IMAGE,
                         "photo.jpg",
                         "image/jpeg",
                         1024,
@@ -384,6 +385,7 @@ class MessageAttachmentServiceTest {
     void createAttachment_whenRepositorySaveFails_deletesStoredFile() {
         AttachmentContent content =
                 new AttachmentContent(
+                        MessageAttachmentType.IMAGE,
                         "photo.jpg",
                         "image/jpeg",
                         1024,
@@ -506,6 +508,7 @@ class MessageAttachmentServiceTest {
     void createAttachment_rejectsNullType() {
         AttachmentContent content =
                 new AttachmentContent(
+                        MessageAttachmentType.IMAGE,
                         "photo.jpg",
                         "image/jpeg",
                         1024,

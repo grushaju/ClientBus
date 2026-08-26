@@ -48,7 +48,7 @@ public class MessageService {
      * Creates an inbound message received from a ChannelConnector.
      */
     @Transactional
-    public MessageDto createInboundMessage(
+    public MessageCreationResult createInboundMessage(
             CreateInboundMessageRequest request
     ) {
 
@@ -68,7 +68,10 @@ public class MessageService {
                         .orElse(null);
 
         if (existing != null) {
-            return messageMapper.toDto(existing);
+            return new MessageCreationResult(
+                    messageMapper.toDto(existing),
+                    true
+            );
         }
 
         MessageEntity message =
@@ -126,7 +129,10 @@ public class MessageService {
                 conversation
         );
 
-        return messageMapper.toDto(message);
+        return new MessageCreationResult(
+                messageMapper.toDto(message),
+                false
+        );
     }
 
     /**

@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -35,18 +36,22 @@ public class MessageAttachmentService {
             IAttachmentStorage attachmentStorage,
             CurrentUserService currentUserService
     ) {
-        this.attachmentRepository = attachmentRepository;
-        this.messageRepository = messageRepository;
-        this.mapper = mapper;
-        this.attachmentStorage = attachmentStorage;
-        this.currentUserService = currentUserService;
+        this.attachmentRepository =
+                attachmentRepository;
+
+        this.messageRepository =
+                messageRepository;
+
+        this.mapper =
+                mapper;
+
+        this.attachmentStorage =
+                attachmentStorage;
+
+        this.currentUserService =
+                currentUserService;
     }
 
-    /**
-     * Stores an original attachment and creates its database metadata.
-     *
-     * Original attachments always have forwardFrom == null.
-     */
     @Transactional
     public MessageAttachmentDto uploadAttachment(
             UUID messageId,
@@ -67,10 +72,11 @@ public class MessageAttachmentService {
     }
 
     /**
-     * Creates an original attachment.
+     * Создаёт оригинальное вложение.
      *
-     * Binary data is stored in object storage.
-     * The resulting storageKey is stored in the entity.
+     * forwardFrom == null.
+     *
+     * Файл физически сохраняется в Storage.
      */
     @Transactional
     public MessageAttachmentEntity createAttachment(
@@ -89,14 +95,16 @@ public class MessageAttachmentService {
 
         StoredAttachmentMetadata storedAttachment;
 
-        try (InputStream inputStream = content.inputStream()) {
+        try (InputStream inputStream =
+                     content.inputStream()) {
 
-            storedAttachment = attachmentStorage.store(
-                    inputStream,
-                    content.fileName(),
-                    content.size(),
-                    content.contentType()
-            );
+            storedAttachment =
+                    attachmentStorage.store(
+                            inputStream,
+                            content.fileName(),
+                            content.size(),
+                            content.contentType()
+                    );
 
         } catch (IOException e) {
 
@@ -130,23 +138,20 @@ public class MessageAttachmentService {
                     storedAttachment.storageKey()
             );
 
-            /*
-             * Это оригинальное вложение.
-             */
             entity.setForwardFrom(null);
 
-            return attachmentRepository.save(entity);
+            return attachmentRepository.save(
+                    entity
+            );
 
         } catch (RuntimeException e) {
 
-            /*
-             * Storage object уже создан,
-             * но metadata не удалось сохранить.
-             */
             try {
+
                 attachmentStorage.delete(
                         storedAttachment.storageKey()
                 );
+
             } catch (RuntimeException ignored) {
                 // Preserve original exception.
             }
@@ -156,15 +161,15 @@ public class MessageAttachmentService {
     }
 
     /**
-     * Creates an attachment for a forwarded Message.
+     * Создаёт attachment для forwarded Message.
      *
-     * No binary data is copied.
+     * Физический файл НЕ копируется.
      *
-     * The new attachment:
-     * - gets its own Entity ID;
-     * - belongs to targetMessage;
-     * - reuses source storageKey;
-     * - stores source Message ID in forwardFrom.
+     * Новый Entity получает:
+     *
+     * message      = targetMessage
+     * storageKey   = sourceAttachment.storageKey
+     * forwardFrom  = sourceMessage.id
      */
     @Transactional
     public MessageAttachmentEntity createForwardedAttachment(
@@ -197,7 +202,9 @@ public class MessageAttachmentService {
         MessageAttachmentEntity entity =
                 new MessageAttachmentEntity();
 
-        entity.setMessage(targetMessage);
+        entity.setMessage(
+                targetMessage
+        );
 
         entity.setType(
                 sourceAttachment.getType()
@@ -215,21 +222,72 @@ public class MessageAttachmentService {
                 sourceAttachment.getSize()
         );
 
-        /*
-         * Storage object не копируем.
-         */
         entity.setStorageKey(
                 sourceAttachment.getStorageKey()
         );
 
-        /*
-         * Фиксируем происхождение forwarded attachment.
-         */
         entity.setForwardFrom(
                 sourceMessage.getId()
         );
 
-        return attachmentRepository.save(entity);
+        return attachmentRepository.save(
+                entity
+        );
+    }
+
+    /**
+     * Возвращает attachments сообщения
+     * для Message Processing.
+     *
+     * ACL здесь не выполняется:
+     * MessageProcessingService уже проверяет
+     * доступ к самому Message.
+     */
+    @Transactional
+    public List<MessageAttachmentEntity>
+    getAttachmentsForProcessing(
+            UUID messageId
+    ) {
+        return attachmentRepository
+                .findAllByMessageId(messageId);
+    }
+
+    /**
+     * Загружает attachments сообщения
+     * в connector-ready представление.
+     *
+     * Connector не знает о:
+     *
+     * - MessageAttachmentEntity
+     * - storageKey
+     * - IAttachmentStorage
+     */
+    @Transactional
+    public List<ChannelAttachment>
+    getChannelAttachments(
+            UUID messageId
+    ) {
+        return getAttachmentsForProcessing(messageId)
+                .stream()
+                .map(this::toChannelAttachment)
+                .toList();
+    }
+
+    private ChannelAttachment toChannelAttachment(
+            MessageAttachmentEntity attachment
+    ) {
+        InputStream inputStream =
+                attachmentStorage.load(
+                        attachment.getStorageKey()
+                );
+
+        return new ChannelAttachment(
+                attachment.getType(),
+                attachment.getFileName(),
+                attachment.getContentType(),
+                attachment.getSize(),
+                inputStream
+        );
     }
 
     @Transactional
@@ -267,15 +325,15 @@ public class MessageAttachmentService {
     }
 
     /**
-     * Deletes attachment metadata.
+     * Original attachment:
      *
-     * Original:
-     *     forwardFrom == null
-     *     -> delete Entity + Storage object
+     * forwardFrom == null
+     * -> Storage + Entity
      *
-     * Forwarded:
-     *     forwardFrom != null
-     *     -> delete Entity only
+     * Forwarded attachment:
+     *
+     * forwardFrom != null
+     * -> Entity only
      */
     @Transactional
     public void deleteAttachment(
@@ -293,7 +351,9 @@ public class MessageAttachmentService {
             );
         }
 
-        attachmentRepository.delete(attachment);
+        attachmentRepository.delete(
+                attachment
+        );
     }
 
     private MessageEntity getMessageWithAccessCheck(
@@ -317,11 +377,14 @@ public class MessageAttachmentService {
         return message;
     }
 
-    private MessageAttachmentEntity getAttachmentWithAccessCheck(
+    private MessageAttachmentEntity
+    getAttachmentWithAccessCheck(
             UUID attachmentId
     ) {
         MessageAttachmentEntity attachment =
-                attachmentRepository.findById(attachmentId)
+                attachmentRepository.findById(
+                                attachmentId
+                        )
                         .orElseThrow(() ->
                                 new EntityNotFoundException(
                                         "Attachment not found: "
