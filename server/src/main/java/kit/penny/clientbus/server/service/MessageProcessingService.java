@@ -2,12 +2,7 @@ package kit.penny.clientbus.server.service;
 
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
-import kit.penny.clientbus.common.dto.message.CreateInboundMessageRequest;
-import kit.penny.clientbus.common.dto.message.CreateOutboundMessageRequest;
-import kit.penny.clientbus.common.dto.message.ForwardMessageRequest;
-import kit.penny.clientbus.common.dto.message.InboundMessageRequest;
-import kit.penny.clientbus.common.dto.message.MessageDto;
-import kit.penny.clientbus.common.dto.message.OutboundMessageRequest;
+import kit.penny.clientbus.common.dto.message.*;
 import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.common.enums.MessageAttachmentType;
 import kit.penny.clientbus.server.connector.ConnectorSendResult;
@@ -20,6 +15,7 @@ import kit.penny.clientbus.server.persistence.entity.MessageAttachmentEntity;
 import kit.penny.clientbus.server.persistence.entity.MessageEntity;
 import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
 import kit.penny.clientbus.server.persistence.repository.ClientAccountRepository;
+import kit.penny.clientbus.server.persistence.repository.MessageRepository;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -49,6 +45,9 @@ public class MessageProcessingService
     private final IChannelConnectorRegistry
             connectorRegistry;
 
+    private final MessageRepository
+            messageRepository;
+
     public MessageProcessingService(
             ChannelAccountRepository channelAccountRepository,
             ClientAccountRepository clientAccountRepository,
@@ -56,8 +55,8 @@ public class MessageProcessingService
             ConversationService conversationService,
             MessageService messageService,
             MessageAttachmentService messageAttachmentService,
-            IChannelConnectorRegistry connectorRegistry
-    ) {
+            IChannelConnectorRegistry connectorRegistry,
+            MessageRepository messageRepository) {
         this.channelAccountRepository =
                 channelAccountRepository;
 
@@ -78,6 +77,8 @@ public class MessageProcessingService
 
         this.connectorRegistry =
                 connectorRegistry;
+        this.messageRepository =
+                messageRepository;
     }
 
     /**
@@ -473,6 +474,71 @@ public class MessageProcessingService
         }
 
         return forwarded;
+    }
+
+
+    /**
+     * Обрабатывает lifecycle-событие
+     * от внешней платформы.
+     *
+     * Message идентифицируется по:
+     *
+     * channelAccountId + externalId
+     *
+     * Если Message не найден, новый Message
+     * не создаётся.
+     */
+    @Override
+    @Transactional
+    public MessageDto processPlatformEvent(
+            PlatformMessageEvent event
+    ) {
+
+        if (event == null) {
+            throw new IllegalArgumentException(
+                    "PlatformMessageEvent must not be null"
+            );
+        }
+
+        MessageEntity message =
+                messageRepository
+                        .findByConversationChannelAccountIdAndExternalId(
+                                event.channelAccountId(),
+                                event.externalId()
+                        )
+                        .orElseThrow(() ->
+                                new EntityNotFoundException(
+                                        "Message not found for "
+                                                + "channelAccountId="
+                                                + event.channelAccountId()
+                                                + ", externalId="
+                                                + event.externalId()
+                                )
+                        );
+
+        return switch (event.type()) {
+
+            case SENT ->
+                    throw new IllegalStateException(
+                            "SENT platform events are not processed "
+                                    + "by the current synchronous outbound flow"
+                    );
+
+            case DELIVERED ->
+                    messageService.markDelivered(
+                            message.getId()
+                    );
+
+            case READ ->
+                    messageService.markRead(
+                            message.getId()
+                    );
+
+            case FAILED ->
+                    messageService.markDeliveryFailed(
+                            message.getId()
+                    );
+        };
     }
 
     private List<AttachmentContent> normalizeAttachments(

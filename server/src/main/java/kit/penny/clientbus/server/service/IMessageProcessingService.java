@@ -1,9 +1,6 @@
 package kit.penny.clientbus.server.service;
 
-import kit.penny.clientbus.common.dto.message.ForwardMessageRequest;
-import kit.penny.clientbus.common.dto.message.InboundMessageRequest;
-import kit.penny.clientbus.common.dto.message.MessageDto;
-import kit.penny.clientbus.common.dto.message.OutboundMessageRequest;
+import kit.penny.clientbus.common.dto.message.*;
 
 import java.util.List;
 
@@ -36,5 +33,16 @@ public interface IMessageProcessingService {
      */
     MessageDto forwardMessage(
             ForwardMessageRequest request
+    );
+
+    /**
+     * Обрабатывает lifecycle-событие
+     * от внешней платформы.
+     *
+     * Событие идентифицирует Message
+     * через channelAccountId + externalId.
+     */
+    MessageDto processPlatformEvent(
+            PlatformMessageEvent event
     );
 }

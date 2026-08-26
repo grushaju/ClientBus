@@ -1,6 +1,7 @@
 package kit.penny.clientbus.server.persistence.repository;
 
 import kit.penny.clientbus.common.enums.MessageDeliveryStatus;
+import kit.penny.clientbus.common.enums.MessageDirection;
 import kit.penny.clientbus.common.enums.MessageProcessingStatus;
 import kit.penny.clientbus.server.persistence.entity.MessageEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -54,6 +55,12 @@ public interface MessageRepository
 
     long countByConversationIdAndDirection(
             UUID conversationId,
-            kit.penny.clientbus.common.enums.MessageDirection direction
+            MessageDirection direction
+    );
+
+    Optional<MessageEntity>
+    findByConversationChannelAccountIdAndExternalId(
+            UUID channelAccountId,
+            String externalId
     );
 }
