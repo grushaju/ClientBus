@@ -14,7 +14,6 @@ import kit.penny.clientbus.server.storage.IAttachmentStorage;
 import kit.penny.clientbus.server.storage.StoredAttachment;
 import kit.penny.clientbus.server.storage.StoredAttachmentMetadata;
 import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -44,35 +43,54 @@ public class MessageAttachmentService {
     }
 
     /**
-     * Stores the binary attachment and creates its database metadata.
+     * Создаёт оригинальное вложение сообщения.
      *
-     * The binary content is stored through AttachmentStorage.
-     * PostgreSQL stores only attachment metadata and storageKey.
+     * Binary content сохраняется в Storage.
+     * forwardFrom остаётся NULL.
      */
     @Transactional
     public MessageAttachmentDto uploadAttachment(
             UUID messageId,
             MessageAttachmentType type,
-            MultipartFile file
+            AttachmentContent content
     ) {
+        MessageEntity message = getMessageWithAccessCheck(messageId);
 
-        validateFile(file);
+        MessageAttachmentEntity entity =
+                createAttachment(
+                        message,
+                        type,
+                        content
+                );
+
+        return mapper.toDto(entity);
+    }
+
+    /**
+     * Создаёт оригинальное вложение для уже загруженного Message.
+     *
+     * Физический объект сохраняется в Storage.
+     * forwardFrom = NULL.
+     */
+    @Transactional
+    public MessageAttachmentEntity createAttachment(
+            MessageEntity message,
+            MessageAttachmentType type,
+            AttachmentContent content
+    ) {
         validateAttachmentType(type);
-
-        MessageEntity message =
-                getMessageWithAccessCheck(messageId);
+        validateContent(content);
 
         StoredAttachmentMetadata storedAttachment;
 
-        try (InputStream inputStream = file.getInputStream()) {
+        try (InputStream inputStream = content.inputStream()) {
 
-            storedAttachment =
-                    attachmentStorage.store(
-                            inputStream,
-                            file.getOriginalFilename(),
-                            file.getSize(),
-                            file.getContentType()
-                    );
+            storedAttachment = attachmentStorage.store(
+                    inputStream,
+                    content.fileName(),
+                    content.size(),
+                    content.contentType()
+            );
 
         } catch (IOException e) {
 
@@ -88,7 +106,6 @@ public class MessageAttachmentService {
                     new MessageAttachmentEntity();
 
             entity.setMessage(message);
-
             entity.setType(type);
 
             entity.setFileName(
@@ -107,19 +124,20 @@ public class MessageAttachmentService {
                     storedAttachment.storageKey()
             );
 
-            entity =
-                    attachmentRepository.save(entity);
+            /*
+             * Это оригинальное вложение.
+             */
+            entity.setForwardFrom(null);
 
-            return mapper.toDto(entity);
+            return attachmentRepository.save(entity);
 
         } catch (RuntimeException e) {
 
             /*
-             * The file has already been stored physically,
-             * but the database operation failed.
+             * Storage уже содержит файл, но metadata
+             * сохранить не удалось.
              *
-             * Remove the physical file to avoid an orphaned
-             * object in storage.
+             * Удаляем физический объект, чтобы не оставить orphan.
              */
             try {
 
@@ -130,7 +148,7 @@ public class MessageAttachmentService {
             } catch (RuntimeException ignored) {
 
                 /*
-                 * Do not hide the original database exception.
+                 * Не скрываем первоначальную ошибку.
                  */
             }
 
@@ -139,15 +157,89 @@ public class MessageAttachmentService {
     }
 
     /**
-     * Returns attachment metadata.
+     * Создаёт новое MessageAttachmentEntity для forwarded Message.
      *
-     * Does not load binary data from storage.
+     * Binary content НЕ копируется.
+     *
+     * Новый Entity получает:
+     *
+     * - новый ID;
+     * - target Message;
+     * - metadata исходного attachment;
+     * - тот же storageKey;
+     * - forwardFrom = ID исходного Message.
+     */
+    @Transactional
+    public MessageAttachmentEntity createForwardedAttachment(
+            MessageEntity targetMessage,
+            MessageAttachmentEntity sourceAttachment
+    ) {
+        if (targetMessage == null) {
+            throw new IllegalArgumentException(
+                    "Target message must not be null"
+            );
+        }
+
+        if (sourceAttachment == null) {
+            throw new IllegalArgumentException(
+                    "Source attachment must not be null"
+            );
+        }
+
+        MessageEntity sourceMessage =
+                sourceAttachment.getMessage();
+
+        if (sourceMessage == null || sourceMessage.getId() == null) {
+            throw new IllegalArgumentException(
+                    "Source attachment must belong to a persisted message"
+            );
+        }
+
+        MessageAttachmentEntity entity =
+                new MessageAttachmentEntity();
+
+        entity.setMessage(targetMessage);
+
+        entity.setType(
+                sourceAttachment.getType()
+        );
+
+        entity.setFileName(
+                sourceAttachment.getFileName()
+        );
+
+        entity.setContentType(
+                sourceAttachment.getContentType()
+        );
+
+        entity.setSize(
+                sourceAttachment.getSize()
+        );
+
+        /*
+         * Физический файл НЕ копируем.
+         */
+        entity.setStorageKey(
+                sourceAttachment.getStorageKey()
+        );
+
+        /*
+         * Запоминаем Message, из которого пришёл forward.
+         */
+        entity.setForwardFrom(
+                sourceMessage.getId()
+        );
+
+        return attachmentRepository.save(entity);
+    }
+
+    /**
+     * Возвращает metadata attachment.
      */
     @Transactional
     public MessageAttachmentDto getAttachment(
             UUID attachmentId
     ) {
-
         MessageAttachmentEntity attachment =
                 getAttachmentWithAccessCheck(
                         attachmentId
@@ -157,23 +249,22 @@ public class MessageAttachmentService {
     }
 
     /**
-     * Loads the actual binary content from storage.
-     *
-     * The database is used only to resolve storageKey.
+     * Загружает binary content из Storage.
      */
     @Transactional
     public StoredAttachment downloadAttachment(
             UUID attachmentId
     ) {
-
         MessageAttachmentEntity attachment =
                 getAttachmentWithAccessCheck(
                         attachmentId
                 );
+
         InputStream inputStream =
                 attachmentStorage.load(
                         attachment.getStorageKey()
                 );
+
         return new StoredAttachment(
                 inputStream,
                 attachment.getFileName(),
@@ -183,29 +274,31 @@ public class MessageAttachmentService {
     }
 
     /**
-     * Deletes both the physical file and its database metadata.
+     * Удаляет attachment.
+     *
+     * Оригинальное вложение:
+     *     forwardFrom == NULL
+     *     -> Entity + Storage
+     *
+     * Forwarded вложение:
+     *     forwardFrom != NULL
+     *     -> только Entity
      */
     @Transactional
     public void deleteAttachment(
             UUID attachmentId
     ) {
-
         MessageAttachmentEntity attachment =
                 getAttachmentWithAccessCheck(
                         attachmentId
                 );
 
-        String storageKey =
-                attachment.getStorageKey();
+        if (attachment.getForwardFrom() == null) {
 
-        /*
-         * Remove the physical object first.
-         *
-         * If storage deletion fails, the DB record remains,
-         * which is preferable to having metadata that points
-         * to an object we know was not deleted.
-         */
-        attachmentStorage.delete(storageKey);
+            attachmentStorage.delete(
+                    attachment.getStorageKey()
+            );
+        }
 
         attachmentRepository.delete(attachment);
     }
@@ -213,7 +306,6 @@ public class MessageAttachmentService {
     private MessageEntity getMessageWithAccessCheck(
             UUID messageId
     ) {
-
         MessageEntity message =
                 messageRepository.findById(messageId)
                         .orElseThrow(() ->
@@ -235,7 +327,6 @@ public class MessageAttachmentService {
     private MessageAttachmentEntity getAttachmentWithAccessCheck(
             UUID attachmentId
     ) {
-
         MessageAttachmentEntity attachment =
                 attachmentRepository.findById(attachmentId)
                         .orElseThrow(() ->
@@ -255,13 +346,32 @@ public class MessageAttachmentService {
         return attachment;
     }
 
-    private void validateFile(
-            MultipartFile file
+    private void validateContent(
+            AttachmentContent content
     ) {
-
-        if (file == null || file.isEmpty()) {
+        if (content == null) {
             throw new IllegalArgumentException(
-                    "Attachment file must not be empty"
+                    "Attachment content must not be null"
+            );
+        }
+
+        if (content.fileName() == null
+                || content.fileName().isBlank()) {
+            throw new IllegalArgumentException(
+                    "Attachment file name must not be blank"
+            );
+        }
+
+        if (content.contentType() == null
+                || content.contentType().isBlank()) {
+            throw new IllegalArgumentException(
+                    "Attachment content type must not be blank"
+            );
+        }
+
+        if (content.size() <= 0) {
+            throw new IllegalArgumentException(
+                    "Attachment size must be greater than zero"
             );
         }
     }
@@ -269,7 +379,6 @@ public class MessageAttachmentService {
     private void validateAttachmentType(
             MessageAttachmentType type
     ) {
-
         if (type == null) {
             throw new IllegalArgumentException(
                     "Attachment type must not be null"

@@ -49,10 +49,22 @@ public class MessageAttachmentEntity {
 
     @Column(
             name = "storagekey",
-            nullable = false,
-            unique = true
+            nullable = false
     )
     private String storageKey;
+
+    /**
+     * ID исходного Message, из которого это вложение
+     * было создано при forward.
+     *
+     * NULL  -> оригинальное вложение, Message владеет
+     *          физическим объектом в Storage.
+     *
+     * NOT NULL -> вложение создано при forward и является
+     *             ссылкой на существующий storageKey.
+     */
+    @Column(name = "forwardfrom")
+    private UUID forwardFrom;
 
     @Column(
             name = "createdat",
@@ -115,6 +127,14 @@ public class MessageAttachmentEntity {
 
     public void setStorageKey(String storageKey) {
         this.storageKey = storageKey;
+    }
+
+    public UUID getForwardFrom() {
+        return forwardFrom;
+    }
+
+    public void setForwardFrom(UUID forwardFrom) {
+        this.forwardFrom = forwardFrom;
     }
 
     public Instant getCreatedAt() {
