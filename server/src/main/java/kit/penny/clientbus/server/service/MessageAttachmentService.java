@@ -43,10 +43,9 @@ public class MessageAttachmentService {
     }
 
     /**
-     * Создаёт оригинальное вложение сообщения.
+     * Stores an original attachment and creates its database metadata.
      *
-     * Binary content сохраняется в Storage.
-     * forwardFrom остаётся NULL.
+     * Original attachments always have forwardFrom == null.
      */
     @Transactional
     public MessageAttachmentDto uploadAttachment(
@@ -54,7 +53,8 @@ public class MessageAttachmentService {
             MessageAttachmentType type,
             AttachmentContent content
     ) {
-        MessageEntity message = getMessageWithAccessCheck(messageId);
+        MessageEntity message =
+                getMessageWithAccessCheck(messageId);
 
         MessageAttachmentEntity entity =
                 createAttachment(
@@ -67,10 +67,10 @@ public class MessageAttachmentService {
     }
 
     /**
-     * Создаёт оригинальное вложение для уже загруженного Message.
+     * Creates an original attachment.
      *
-     * Физический объект сохраняется в Storage.
-     * forwardFrom = NULL.
+     * Binary data is stored in object storage.
+     * The resulting storageKey is stored in the entity.
      */
     @Transactional
     public MessageAttachmentEntity createAttachment(
@@ -78,6 +78,12 @@ public class MessageAttachmentService {
             MessageAttachmentType type,
             AttachmentContent content
     ) {
+        if (message == null) {
+            throw new IllegalArgumentException(
+                    "Message must not be null"
+            );
+        }
+
         validateAttachmentType(type);
         validateContent(content);
 
@@ -134,22 +140,15 @@ public class MessageAttachmentService {
         } catch (RuntimeException e) {
 
             /*
-             * Storage уже содержит файл, но metadata
-             * сохранить не удалось.
-             *
-             * Удаляем физический объект, чтобы не оставить orphan.
+             * Storage object уже создан,
+             * но metadata не удалось сохранить.
              */
             try {
-
                 attachmentStorage.delete(
                         storedAttachment.storageKey()
                 );
-
             } catch (RuntimeException ignored) {
-
-                /*
-                 * Не скрываем первоначальную ошибку.
-                 */
+                // Preserve original exception.
             }
 
             throw e;
@@ -157,17 +156,15 @@ public class MessageAttachmentService {
     }
 
     /**
-     * Создаёт новое MessageAttachmentEntity для forwarded Message.
+     * Creates an attachment for a forwarded Message.
      *
-     * Binary content НЕ копируется.
+     * No binary data is copied.
      *
-     * Новый Entity получает:
-     *
-     * - новый ID;
-     * - target Message;
-     * - metadata исходного attachment;
-     * - тот же storageKey;
-     * - forwardFrom = ID исходного Message.
+     * The new attachment:
+     * - gets its own Entity ID;
+     * - belongs to targetMessage;
+     * - reuses source storageKey;
+     * - stores source Message ID in forwardFrom.
      */
     @Transactional
     public MessageAttachmentEntity createForwardedAttachment(
@@ -189,7 +186,9 @@ public class MessageAttachmentService {
         MessageEntity sourceMessage =
                 sourceAttachment.getMessage();
 
-        if (sourceMessage == null || sourceMessage.getId() == null) {
+        if (sourceMessage == null
+                || sourceMessage.getId() == null) {
+
             throw new IllegalArgumentException(
                     "Source attachment must belong to a persisted message"
             );
@@ -217,14 +216,14 @@ public class MessageAttachmentService {
         );
 
         /*
-         * Физический файл НЕ копируем.
+         * Storage object не копируем.
          */
         entity.setStorageKey(
                 sourceAttachment.getStorageKey()
         );
 
         /*
-         * Запоминаем Message, из которого пришёл forward.
+         * Фиксируем происхождение forwarded attachment.
          */
         entity.setForwardFrom(
                 sourceMessage.getId()
@@ -233,9 +232,6 @@ public class MessageAttachmentService {
         return attachmentRepository.save(entity);
     }
 
-    /**
-     * Возвращает metadata attachment.
-     */
     @Transactional
     public MessageAttachmentDto getAttachment(
             UUID attachmentId
@@ -248,9 +244,6 @@ public class MessageAttachmentService {
         return mapper.toDto(attachment);
     }
 
-    /**
-     * Загружает binary content из Storage.
-     */
     @Transactional
     public StoredAttachment downloadAttachment(
             UUID attachmentId
@@ -274,15 +267,15 @@ public class MessageAttachmentService {
     }
 
     /**
-     * Удаляет attachment.
+     * Deletes attachment metadata.
      *
-     * Оригинальное вложение:
-     *     forwardFrom == NULL
-     *     -> Entity + Storage
+     * Original:
+     *     forwardFrom == null
+     *     -> delete Entity + Storage object
      *
-     * Forwarded вложение:
-     *     forwardFrom != NULL
-     *     -> только Entity
+     * Forwarded:
+     *     forwardFrom != null
+     *     -> delete Entity only
      */
     @Transactional
     public void deleteAttachment(
@@ -357,6 +350,7 @@ public class MessageAttachmentService {
 
         if (content.fileName() == null
                 || content.fileName().isBlank()) {
+
             throw new IllegalArgumentException(
                     "Attachment file name must not be blank"
             );
@@ -364,6 +358,7 @@ public class MessageAttachmentService {
 
         if (content.contentType() == null
                 || content.contentType().isBlank()) {
+
             throw new IllegalArgumentException(
                     "Attachment content type must not be blank"
             );
