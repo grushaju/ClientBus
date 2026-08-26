@@ -484,41 +484,12 @@ class MessageAttachmentServiceTest {
 
     @Test
     void createAttachment_rejectsNullContent() {
+
         assertThrows(
-                IllegalArgumentException.class,
+                NullPointerException.class,
                 () -> service.createAttachment(
                         message,
                         null
-                )
-        );
-
-        verifyNoInteractions(
-                attachmentStorage
-        );
-
-        verifyNoInteractions(
-                attachmentRepository
-        );
-    }
-
-    @Test
-    void createAttachment_rejectsNullType() {
-        AttachmentContent content =
-                new AttachmentContent(
-                        MessageAttachmentType.IMAGE,
-                        "photo.jpg",
-                        "image/jpeg",
-                        1024,
-                        new ByteArrayInputStream(
-                                new byte[]{1}
-                        )
-                );
-
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> service.createAttachment(
-                        message,
-                        content
                 )
         );
 

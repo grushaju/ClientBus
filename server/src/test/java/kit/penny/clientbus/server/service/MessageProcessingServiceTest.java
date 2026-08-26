@@ -184,15 +184,6 @@ class MessageProcessingServiceTest {
         messageDto =
                 mock(MessageDto.class);
 
-        when(messageDto.id())
-                .thenReturn(messageId);
-
-        when(messageDto.type())
-                .thenReturn(MessageType.TEXT);
-
-        when(messageDto.content())
-                .thenReturn("Hello");
-
         targetConversation =
                 new ConversationEntity(
                         workspace,
@@ -227,8 +218,6 @@ class MessageProcessingServiceTest {
         forwardedMessageDto =
                 mock(MessageDto.class);
 
-        when(forwardedMessageDto.id())
-                .thenReturn(UUID.randomUUID());
     }
 
     // =========================================================
@@ -270,6 +259,9 @@ class MessageProcessingServiceTest {
                         messageDto,
                         false
                 );
+
+        when(messageDto.id())
+                .thenReturn(messageId);
 
         when(channelAccountRepository.findById(
                 channelAccountId
@@ -603,6 +595,9 @@ class MessageProcessingServiceTest {
         MessageDto sentMessage =
                 mock(MessageDto.class);
 
+        when(messageDto.id())
+                .thenReturn(messageId);
+
         when(messageService.createOutboundMessage(
                 any(CreateOutboundMessageRequest.class)
         )).thenReturn(
@@ -854,6 +849,9 @@ class MessageProcessingServiceTest {
                 deliveryFailedMessage
         );
 
+        when(messageDto.id())
+                .thenReturn(messageId);
+
         RuntimeException result =
                 assertThrows(
                         RuntimeException.class,
@@ -977,6 +975,9 @@ class MessageProcessingServiceTest {
                 mock(MessageDto.class)
         );
 
+        when(messageDto.id())
+                .thenReturn(messageId);
+
         RuntimeException result =
                 assertThrows(
                         RuntimeException.class,
@@ -1026,6 +1027,9 @@ class MessageProcessingServiceTest {
 
         when(processedMessage.content())
                 .thenReturn("Hello");
+
+        when(messageDto.id())
+                .thenReturn(messageId);
 
         when(messageService.createOutboundMessage(
                 any(CreateOutboundMessageRequest.class)

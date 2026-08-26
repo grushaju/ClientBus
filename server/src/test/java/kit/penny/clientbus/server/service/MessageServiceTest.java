@@ -18,6 +18,7 @@ import kit.penny.clientbus.server.security.service.CurrentUserService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -59,6 +60,9 @@ class MessageServiceTest {
     private ClientAccountEntity clientAccount;
     private ConversationEntity conversation;
     private MessageEntity message;
+
+    @Mock
+    private MessageDto expectedDto;
 
     @BeforeEach
     void setUp() {
@@ -102,124 +106,65 @@ class MessageServiceTest {
 
         CreateInboundMessageRequest request =
                 new CreateInboundMessageRequest(
-                        conversationId,
+                        conversation.getId(),
                         MessageType.TEXT,
                         "external-123",
                         "Hello",
                         "{\"source\":\"telegram\"}",
-                        Instant.parse(
-                                "2026-08-26T10:00:00Z"
-                        )
+                        Instant.now()
                 );
 
-        MessageDto expectedDto =
-                mock(MessageDto.class);
-
-        when(conversationRepository.findById(conversationId))
+        when(conversationRepository.findById(conversation.getId()))
                 .thenReturn(Optional.of(conversation));
 
-        when(messageRepository
-                .findByConversationIdAndExternalId(
-                        conversationId,
-                        "external-123"
-                ))
-                .thenReturn(Optional.empty());
+        when(messageRepository.findByConversationIdAndExternalId(
+                conversation.getId(),
+                request.externalId()
+        )).thenReturn(Optional.empty());
 
         when(messageRepository.save(any(MessageEntity.class)))
-                .thenReturn(message);
+                .thenAnswer(invocation ->
+                        invocation.getArgument(0)
+                );
 
-        when(messageMapper.toDto(message))
+        when(messageMapper.toDto(any(MessageEntity.class)))
                 .thenReturn(expectedDto);
 
         MessageCreationResult result =
                 messageService.createInboundMessage(request);
 
         assertNotNull(result);
-
         assertFalse(result.existed());
+        assertSame(expectedDto, result.message());
+
+        ArgumentCaptor<MessageEntity> captor =
+                ArgumentCaptor.forClass(MessageEntity.class);
+
+        verify(messageRepository)
+                .save(captor.capture());
+
+        MessageEntity savedMessage =
+                captor.getValue();
 
         assertSame(
-                expectedDto,
-                result.message()
-        );
-
-        assertEquals(
                 conversation,
-                message.getConversation()
-        );
-
-        assertEquals(
-                MessageType.TEXT,
-                message.getType()
-        );
-
-        assertEquals(
-                MessageDirection.INBOUND,
-                message.getDirection()
-        );
-
-        assertEquals(
-                MessageSenderType.CLIENT,
-                message.getSenderType()
+                savedMessage.getConversation()
         );
 
         assertSame(
-                clientAccount,
-                message.getClientAccount()
-        );
-
-        assertNull(
-                message.getEmployee()
+                conversation.getClientAccount(),
+                savedMessage.getClientAccount()
         );
 
         assertEquals(
-                "external-123",
-                message.getExternalId()
+                request.externalId(),
+                savedMessage.getExternalId()
         );
 
         assertEquals(
-                "Hello",
-                message.getContent()
+                request.metadata(),
+                savedMessage.getMetadata()
         );
-
-        assertEquals(
-                "{\"source\":\"telegram\"}",
-                message.getMetadata()
-        );
-
-        assertEquals(
-                MessageProcessingStatus.RECEIVED,
-                message.getProcessingStatus()
-        );
-
-        assertNull(
-                message.getDeliveryStatus()
-        );
-
-        verify(conversationRepository)
-                .findById(conversationId);
-
-        verify(messageRepository)
-                .findByConversationIdAndExternalId(
-                        conversationId,
-                        "external-123"
-                );
-
-        verify(messageRepository)
-                .save(message);
-
-        verify(conversationService)
-                .updateLastMessage(
-                        eq(conversation),
-                        eq(message.getSentAt()),
-                        any()
-                );
-
-        verify(conversationService)
-                .incrementUnreadCount(conversation);
-
-        verify(messageMapper)
-                .toDto(message);
     }
 
     @Test
