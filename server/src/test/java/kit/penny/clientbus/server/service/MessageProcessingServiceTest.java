@@ -2,13 +2,7 @@ package kit.penny.clientbus.server.service;
 
 import jakarta.persistence.EntityNotFoundException;
 import kit.penny.clientbus.common.dto.message.*;
-import kit.penny.clientbus.common.enums.ChannelType;
-import kit.penny.clientbus.common.enums.MessageAttachmentType;
-import kit.penny.clientbus.common.enums.MessageDeliveryStatus;
-import kit.penny.clientbus.common.enums.MessageDirection;
-import kit.penny.clientbus.common.enums.MessageProcessingStatus;
-import kit.penny.clientbus.common.enums.MessageSenderType;
-import kit.penny.clientbus.common.enums.MessageType;
+import kit.penny.clientbus.common.enums.*;
 import kit.penny.clientbus.server.connector.ConnectorSendResult;
 import kit.penny.clientbus.server.connector.IChannelConnector;
 import kit.penny.clientbus.server.connector.IChannelConnectorRegistry;
@@ -21,6 +15,7 @@ import kit.penny.clientbus.server.persistence.entity.MessageEntity;
 import kit.penny.clientbus.server.persistence.entity.WorkspaceEntity;
 import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
 import kit.penny.clientbus.server.persistence.repository.ClientAccountRepository;
+import kit.penny.clientbus.server.persistence.repository.MessageRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -65,6 +60,9 @@ class MessageProcessingServiceTest {
 
     @Mock
     private IChannelConnector connector;
+
+    @Mock
+    private MessageRepository messageRepository;
 
     @InjectMocks
     private MessageProcessingService messageProcessingService;
@@ -1774,6 +1772,307 @@ class MessageProcessingServiceTest {
 
         verifyNoInteractions(
                 messageAttachmentService
+        );
+    }
+
+    // =========================================================
+    // PLATFORM EVENTS
+    // =========================================================
+
+    @Test
+    void processPlatformEvent_delivered_marksMessageDelivered() {
+
+        PlatformMessageEvent event =
+                new PlatformMessageEvent(
+                        channelAccountId,
+                        "telegram-message-123",
+                        PlatformMessageEventType.DELIVERED,
+                        Instant.parse(
+                                "2026-08-26T10:05:00Z"
+                        ),
+                        null
+                );
+
+        when(messageRepository
+                .findByConversationChannelAccountIdAndExternalId(
+                        channelAccountId,
+                        "telegram-message-123"
+                ))
+                .thenReturn(
+                        Optional.of(messageEntity)
+                );
+
+        when(messageService.markDelivered(
+                messageId
+        )).thenReturn(
+                messageDto
+        );
+
+        MessageDto result =
+                messageProcessingService.processPlatformEvent(
+                        event
+                );
+
+        assertSame(
+                messageDto,
+                result
+        );
+
+        verify(messageRepository)
+                .findByConversationChannelAccountIdAndExternalId(
+                        channelAccountId,
+                        "telegram-message-123"
+                );
+
+        verify(messageService)
+                .markDelivered(messageId);
+
+        verify(messageService, never())
+                .markRead(any());
+
+        verify(messageService, never())
+                .markDeliveryFailed(any());
+    }
+
+    @Test
+    void processPlatformEvent_read_marksMessageRead() {
+
+        PlatformMessageEvent event =
+                new PlatformMessageEvent(
+                        channelAccountId,
+                        "telegram-message-123",
+                        PlatformMessageEventType.READ,
+                        Instant.parse(
+                                "2026-08-26T10:06:00Z"
+                        ),
+                        null
+                );
+
+        when(messageRepository
+                .findByConversationChannelAccountIdAndExternalId(
+                        channelAccountId,
+                        "telegram-message-123"
+                ))
+                .thenReturn(
+                        Optional.of(messageEntity)
+                );
+
+        when(messageService.markRead(
+                messageId
+        )).thenReturn(
+                messageDto
+        );
+
+        MessageDto result =
+                messageProcessingService.processPlatformEvent(
+                        event
+                );
+
+        assertSame(
+                messageDto,
+                result
+        );
+
+        verify(messageRepository)
+                .findByConversationChannelAccountIdAndExternalId(
+                        channelAccountId,
+                        "telegram-message-123"
+                );
+
+        verify(messageService)
+                .markRead(messageId);
+
+        verify(messageService, never())
+                .markDelivered(any());
+
+        verify(messageService, never())
+                .markDeliveryFailed(any());
+    }
+
+    @Test
+    void processPlatformEvent_failed_marksDeliveryFailed() {
+
+        PlatformMessageEvent event =
+                new PlatformMessageEvent(
+                        channelAccountId,
+                        "telegram-message-123",
+                        PlatformMessageEventType.FAILED,
+                        Instant.parse(
+                                "2026-08-26T10:07:00Z"
+                        ),
+                        "{\"error\":\"delivery failed\"}"
+                );
+
+        when(messageRepository
+                .findByConversationChannelAccountIdAndExternalId(
+                        channelAccountId,
+                        "telegram-message-123"
+                ))
+                .thenReturn(
+                        Optional.of(messageEntity)
+                );
+
+        when(messageService.markDeliveryFailed(
+                messageId
+        )).thenReturn(
+                messageDto
+        );
+
+        MessageDto result =
+                messageProcessingService.processPlatformEvent(
+                        event
+                );
+
+        assertSame(
+                messageDto,
+                result
+        );
+
+        verify(messageRepository)
+                .findByConversationChannelAccountIdAndExternalId(
+                        channelAccountId,
+                        "telegram-message-123"
+                );
+
+        verify(messageService)
+                .markDeliveryFailed(messageId);
+
+        verify(messageService, never())
+                .markDelivered(any());
+
+        verify(messageService, never())
+                .markRead(any());
+    }
+
+    @Test
+    void processPlatformEvent_sent_throwsException() {
+
+        PlatformMessageEvent event =
+                new PlatformMessageEvent(
+                        channelAccountId,
+                        "telegram-message-123",
+                        PlatformMessageEventType.SENT,
+                        Instant.parse(
+                                "2026-08-26T10:08:00Z"
+                        ),
+                        null
+                );
+
+        when(messageRepository
+                .findByConversationChannelAccountIdAndExternalId(
+                        channelAccountId,
+                        "telegram-message-123"
+                ))
+                .thenReturn(
+                        Optional.of(messageEntity)
+                );
+
+        IllegalStateException result =
+                assertThrows(
+                        IllegalStateException.class,
+                        () ->
+                                messageProcessingService
+                                        .processPlatformEvent(event)
+                );
+
+        assertEquals(
+                "SENT platform events are not processed "
+                        + "by the current synchronous outbound flow",
+                result.getMessage()
+        );
+
+        verify(messageRepository)
+                .findByConversationChannelAccountIdAndExternalId(
+                        channelAccountId,
+                        "telegram-message-123"
+                );
+
+        verify(messageService, never())
+                .markDelivered(any());
+
+        verify(messageService, never())
+                .markRead(any());
+
+        verify(messageService, never())
+                .markDeliveryFailed(any());
+    }
+
+    @Test
+    void processPlatformEvent_messageNotFound_throwsException() {
+
+        String externalId =
+                "telegram-message-missing";
+
+        PlatformMessageEvent event =
+                new PlatformMessageEvent(
+                        channelAccountId,
+                        externalId,
+                        PlatformMessageEventType.DELIVERED,
+                        Instant.parse(
+                                "2026-08-26T10:09:00Z"
+                        ),
+                        null
+                );
+
+        when(messageRepository
+                .findByConversationChannelAccountIdAndExternalId(
+                        channelAccountId,
+                        externalId
+                ))
+                .thenReturn(
+                        Optional.empty()
+                );
+
+        EntityNotFoundException result =
+                assertThrows(
+                        EntityNotFoundException.class,
+                        () ->
+                                messageProcessingService
+                                        .processPlatformEvent(event)
+                );
+
+        assertEquals(
+                "Message not found for "
+                        + "channelAccountId="
+                        + channelAccountId
+                        + ", externalId="
+                        + externalId,
+                result.getMessage()
+        );
+
+        verify(messageRepository)
+                .findByConversationChannelAccountIdAndExternalId(
+                        channelAccountId,
+                        externalId
+                );
+
+        verifyNoInteractions(
+                messageService
+        );
+    }
+
+    @Test
+    void processPlatformEvent_nullEvent_throwsException() {
+
+        IllegalArgumentException result =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                messageProcessingService
+                                        .processPlatformEvent(null)
+                );
+
+        assertEquals(
+                "PlatformMessageEvent must not be null",
+                result.getMessage()
+        );
+
+        verifyNoInteractions(
+                messageRepository
+        );
+
+        verifyNoInteractions(
+                messageService
         );
     }
 }

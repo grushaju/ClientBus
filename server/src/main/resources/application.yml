@@ -17,6 +17,13 @@ clientbus:
   storage:
     local-path: D:\clientbus\storage
 
+  kafka:
+    outbound:
+      enabled-channels:
+        - TELEGRAM
+        - WHATSAPP
+        - VK
+
 
 
 
