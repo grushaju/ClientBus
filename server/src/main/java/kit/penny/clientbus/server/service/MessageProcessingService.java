@@ -4,7 +4,6 @@ import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
 import kit.penny.clientbus.common.dto.message.*;
 import kit.penny.clientbus.common.enums.ChannelType;
-import kit.penny.clientbus.common.enums.MessageAttachmentType;
 import kit.penny.clientbus.server.connector.ConnectorSendResult;
 import kit.penny.clientbus.server.connector.IChannelConnector;
 import kit.penny.clientbus.server.connector.IChannelConnectorRegistry;
@@ -24,29 +23,14 @@ import java.util.List;
 public class MessageProcessingService
         implements IMessageProcessingService {
 
-    private final ChannelAccountRepository
-            channelAccountRepository;
-
-    private final ClientAccountRepository
-            clientAccountRepository;
-
-    private final ClientAccountService
-            clientAccountService;
-
-    private final ConversationService
-            conversationService;
-
-    private final MessageService
-            messageService;
-
-    private final MessageAttachmentService
-            messageAttachmentService;
-
-    private final IChannelConnectorRegistry
-            connectorRegistry;
-
-    private final MessageRepository
-            messageRepository;
+    private final ChannelAccountRepository channelAccountRepository;
+    private final ClientAccountRepository clientAccountRepository;
+    private final ClientAccountService clientAccountService;
+    private final ConversationService conversationService;
+    private final MessageService messageService;
+    private final MessageAttachmentService messageAttachmentService;
+    private final IChannelConnectorRegistry connectorRegistry;
+    private final MessageRepository messageRepository;
 
     public MessageProcessingService(
             ChannelAccountRepository channelAccountRepository,
@@ -56,51 +40,29 @@ public class MessageProcessingService
             MessageService messageService,
             MessageAttachmentService messageAttachmentService,
             IChannelConnectorRegistry connectorRegistry,
-            MessageRepository messageRepository) {
-        this.channelAccountRepository =
-                channelAccountRepository;
-
-        this.clientAccountRepository =
-                clientAccountRepository;
-
-        this.clientAccountService =
-                clientAccountService;
-
-        this.conversationService =
-                conversationService;
-
-        this.messageService =
-                messageService;
-
-        this.messageAttachmentService =
-                messageAttachmentService;
-
-        this.connectorRegistry =
-                connectorRegistry;
-        this.messageRepository =
-                messageRepository;
+            MessageRepository messageRepository
+    ) {
+        this.channelAccountRepository = channelAccountRepository;
+        this.clientAccountRepository = clientAccountRepository;
+        this.clientAccountService = clientAccountService;
+        this.conversationService = conversationService;
+        this.messageService = messageService;
+        this.messageAttachmentService = messageAttachmentService;
+        this.connectorRegistry = connectorRegistry;
+        this.messageRepository = messageRepository;
     }
 
-    /**
-     * Обрабатывает входящее сообщение
-     * вместе с attachments.
-     */
     @Override
     @Transactional
     public MessageDto processInbound(
             InboundMessageRequest request,
             List<AttachmentContent> attachments
     ) {
-
-        attachments = normalizeAttachments(
-                attachments
-        );
+        attachments = normalizeAttachments(attachments);
 
         ChannelAccountEntity channelAccount =
                 channelAccountRepository
-                        .findById(
-                                request.channelAccountId()
-                        )
+                        .findById(request.channelAccountId())
                         .orElseThrow(() ->
                                 new EntityNotFoundException(
                                         "ChannelAccount not found: "
@@ -109,35 +71,29 @@ public class MessageProcessingService
                         );
 
         ChannelType channelType =
-                channelAccount
-                        .getChannel()
-                        .getType();
+                channelAccount.getChannel().getType();
 
         ClientAccountEntity clientAccount =
-                clientAccountService
-                        .getOrCreateForInbound(
-                                channelType,
-                                request.clientExternalId(),
-                                request.clientUsername(),
-                                request.clientPhone(),
-                                request.clientDisplayName()
-                        );
+                clientAccountService.getOrCreateForInbound(
+                        channelType,
+                        request.clientExternalId(),
+                        request.clientUsername(),
+                        request.clientPhone(),
+                        request.clientDisplayName()
+                );
 
         ConversationEntity conversation =
-                conversationService
-                        .findEntityByAccounts(
-                                channelAccount.getId(),
-                                clientAccount.getId()
-                        );
+                conversationService.findEntityByAccounts(
+                        channelAccount.getId(),
+                        clientAccount.getId()
+                );
 
         if (conversation == null) {
-
             conversation =
-                    conversationService
-                            .createConversationInternal(
-                                    channelAccount,
-                                    clientAccount
-                            );
+                    conversationService.createConversationInternal(
+                            channelAccount,
+                            clientAccount
+                    );
         }
 
         MessageCreationResult result =
@@ -162,7 +118,6 @@ public class MessageProcessingService
                     );
 
             for (AttachmentContent attachment : attachments) {
-
                 messageAttachmentService.createAttachment(
                         messageEntity,
                         attachment
@@ -174,40 +129,139 @@ public class MessageProcessingService
     }
 
     /**
-     * Обрабатывает исходящее сообщение
-     * вместе с attachments.
-     *
-     * Пока намеренно используется одна транзакция:
-     *
-     * create Message
-     * -> create Attachments
-     * -> PROCESSING
-     * -> PROCESSED
-     * -> Connector
-     * -> SENT
+     * Обрабатывает inbound event, в котором attachments
+     * уже сохранены в Storage Connector-ом.
      */
+    @Override
+    @Transactional
+    public MessageDto processInbound(
+            PlatformInboundMessageEvent event
+    ) {
+        if (event == null) {
+            throw new IllegalArgumentException(
+                    "PlatformInboundMessageEvent must not be null"
+            );
+        }
+
+        if (event.message() == null) {
+            throw new IllegalArgumentException(
+                    "Inbound message must not be null"
+            );
+        }
+
+        InboundMessageRequest request =
+                event.message();
+
+        ChannelAccountEntity channelAccount =
+                channelAccountRepository
+                        .findById(request.channelAccountId())
+                        .orElseThrow(() ->
+                                new EntityNotFoundException(
+                                        "ChannelAccount not found: "
+                                                + request.channelAccountId()
+                                )
+                        );
+
+        ChannelType channelType =
+                channelAccount.getChannel()
+                        .getType();
+
+        ClientAccountEntity clientAccount =
+                clientAccountService.getOrCreateForInbound(
+                        channelType,
+                        request.clientExternalId(),
+                        request.clientUsername(),
+                        request.clientPhone(),
+                        request.clientDisplayName()
+                );
+
+        ConversationEntity conversation =
+                conversationService.findEntityByAccounts(
+                        channelAccount.getId(),
+                        clientAccount.getId()
+                );
+
+        if (conversation == null) {
+            conversation =
+                    conversationService.createConversationInternal(
+                            channelAccount,
+                            clientAccount
+                    );
+        }
+
+        MessageCreationResult result =
+                messageService.createInboundMessage(
+                        new CreateInboundMessageRequest(
+                                conversation.getId(),
+                                request.type(),
+                                request.externalId(),
+                                request.content(),
+                                request.metadata(),
+                                request.sentAt()
+                        )
+                );
+
+        MessageDto message = result.message();
+
+        /*
+         * Idempotency:
+         *
+         * если Message уже существовал,
+         * attachments повторно не создаём.
+         */
+        if (result.existed()) {
+            return message;
+        }
+
+        MessageEntity messageEntity =
+                messageService.getMessageEntityForProcessing(
+                        message.id()
+                );
+
+        List<PlatformInboundAttachment> attachments =
+                event.attachments() == null
+                        ? List.of()
+                        : List.copyOf(event.attachments());
+
+        for (PlatformInboundAttachment attachment : attachments) {
+
+            if (attachment == null) {
+                throw new IllegalArgumentException(
+                        "Inbound attachment must not be null"
+                );
+            }
+
+            messageAttachmentService.createAttachmentFromStorage(
+                    messageEntity,
+                    attachment.type(),
+                    attachment.storageKey(),
+                    attachment.fileName(),
+                    attachment.contentType(),
+                    attachment.size()
+            );
+        }
+
+        return message;
+    }
+
     @Override
     @Transactional
     public MessageDto processOutbound(
             OutboundMessageRequest request,
             List<AttachmentContent> attachments
     ) {
-
-        attachments = normalizeAttachments(
-                attachments
-        );
+        attachments = normalizeAttachments(attachments);
 
         MessageDto message =
-                messageService
-                        .createOutboundMessage(
-                                new CreateOutboundMessageRequest(
-                                        request.conversationId(),
-                                        request.type(),
-                                        request.content(),
-                                        request.metadata(),
-                                        request.replyToMessageId()
-                                )
-                        );
+                messageService.createOutboundMessage(
+                        new CreateOutboundMessageRequest(
+                                request.conversationId(),
+                                request.type(),
+                                request.content(),
+                                request.metadata(),
+                                request.replyToMessageId()
+                        )
+                );
 
         boolean processingCompleted = false;
 
@@ -219,16 +273,14 @@ public class MessageProcessingService
                     );
 
             ConversationEntity conversation =
-                    conversationService
-                            .findEntityForProcessing(
-                                    request.conversationId()
-                            );
+                    conversationService.findEntityForProcessing(
+                            request.conversationId()
+                    );
 
             ChannelAccountEntity channelAccount =
                     conversation.getChannelAccount();
 
             if (channelAccount == null) {
-
                 throw new IllegalStateException(
                         "Conversation has no ChannelAccount: "
                                 + conversation.getId()
@@ -236,42 +288,28 @@ public class MessageProcessingService
             }
 
             ChannelType channelType =
-                    channelAccount
-                            .getChannel()
+                    channelAccount.getChannel()
                             .getType();
 
             if (channelType == null) {
-
                 throw new IllegalStateException(
                         "ChannelAccount has no ChannelType: "
                                 + channelAccount.getId()
                 );
             }
 
-            /*
-             * Message Entity нужен для создания
-             * оригинальных attachments.
-             */
             MessageEntity messageEntity =
-                    messageService
-                            .getMessageEntityForProcessing(
-                                    message.id()
-                            );
+                    messageService.getMessageEntityForProcessing(
+                            message.id()
+                    );
 
-            for (AttachmentContent attachment :
-                    attachments) {
-
+            for (AttachmentContent attachment : attachments) {
                 messageAttachmentService.createAttachment(
                         messageEntity,
                         attachment
                 );
             }
 
-            /*
-             * Только после создания Message +
-             * attachments переводим Message
-             * в PROCESSED.
-             */
             message =
                     messageService.markProcessed(
                             message.id()
@@ -279,22 +317,16 @@ public class MessageProcessingService
 
             processingCompleted = true;
 
-            /*
-             * Формируем connector-level request.
-             */
-            List<ChannelAttachment>
-                    channelAttachments =
-                    messageAttachmentService
-                            .getChannelAttachments(
-                                    message.id()
-                            );
+            List<ChannelAttachment> channelAttachments =
+                    messageAttachmentService.getChannelAttachments(
+                            message.id()
+                    );
 
             ChannelSendRequest sendRequest =
                     new ChannelSendRequest(
                             message.id(),
                             channelAccount.getId(),
-                            conversation
-                                    .getClientAccount()
+                            conversation.getClientAccount()
                                     .getExternalId(),
                             message.type(),
                             message.content(),
@@ -302,18 +334,14 @@ public class MessageProcessingService
                     );
 
             IChannelConnector connector =
-                    connectorRegistry
-                            .getConnector(
-                                    channelType
-                            );
-
-            ConnectorSendResult result =
-                    connector.send(
-                            sendRequest
+                    connectorRegistry.getConnector(
+                            channelType
                     );
 
-            if (result == null) {
+            ConnectorSendResult result =
+                    connector.send(sendRequest);
 
+            if (result == null) {
                 throw new IllegalStateException(
                         "ChannelConnector returned null result"
                 );
@@ -337,33 +365,21 @@ public class MessageProcessingService
             if (!processingCompleted) {
 
                 try {
-
-                    messageService
-                            .markProcessingFailed(
-                                    message.id()
-                            );
-
+                    messageService.markProcessingFailed(
+                            message.id()
+                    );
                 } catch (RuntimeException ignored) {
-
-                    /*
-                     * Не скрываем исходную ошибку.
-                     */
+                    // Preserve original exception.
                 }
 
             } else {
 
                 try {
-
-                    messageService
-                            .markDeliveryFailed(
-                                    message.id()
-                            );
-
+                    messageService.markDeliveryFailed(
+                            message.id()
+                    );
                 } catch (RuntimeException ignored) {
-
-                    /*
-                     * Не скрываем исходную ошибку Connector.
-                     */
+                    // Preserve original exception.
                 }
             }
 
@@ -371,49 +387,33 @@ public class MessageProcessingService
         }
     }
 
-    /**
-     * Форвардит Message вместе с attachments.
-     *
-     * Forwarded attachments:
-     *
-     * - получают новый Entity;
-     * - принадлежат новому Message;
-     * - используют тот же storageKey;
-     * - forwardFrom = sourceMessage.id;
-     * - физический файл не копируется.
-     */
     @Override
     @Transactional
     public MessageDto forwardMessage(
             ForwardMessageRequest request
     ) {
-
         MessageEntity sourceMessage =
-                messageService
-                        .getMessageEntity(
-                                request.messageId()
-                        );
+                messageService.getMessageEntity(
+                        request.messageId()
+                );
 
         ConversationEntity targetConversation;
 
         if (request.targetConversationId() != null) {
 
             targetConversation =
-                    conversationService
-                            .findEntityForProcessing(
-                                    request.targetConversationId()
-                            );
-
-            conversationService
-                    .requireForwardTargetAccess(
-                            targetConversation
+                    conversationService.findEntityForProcessing(
+                            request.targetConversationId()
                     );
+
+            conversationService.requireForwardTargetAccess(
+                    targetConversation
+            );
 
         } else {
 
             ClientAccountEntity clientAccount =
-                    clientAccountRepository
-                            .findById(
+                    clientAccountRepository.findById(
                                     request.targetClientAccountId()
                             )
                             .orElseThrow(() ->
@@ -424,8 +424,7 @@ public class MessageProcessingService
                             );
 
             ChannelAccountEntity channelAccount =
-                    channelAccountRepository
-                            .findById(
+                    channelAccountRepository.findById(
                                     request.targetChannelAccountId()
                             )
                             .orElseThrow(() ->
@@ -436,28 +435,24 @@ public class MessageProcessingService
                             );
 
             targetConversation =
-                    conversationService
-                            .findOrCreateForForward(
-                                    channelAccount,
-                                    clientAccount
-                            );
+                    conversationService.findOrCreateForForward(
+                            channelAccount,
+                            clientAccount
+                    );
         }
 
         MessageDto forwarded =
-                messageService
-                        .createForwardedMessage(
-                                targetConversation,
-                                sourceMessage
-                        );
+                messageService.createForwardedMessage(
+                        targetConversation,
+                        sourceMessage
+                );
 
         MessageEntity targetMessage =
-                messageService
-                        .getMessageEntityForProcessing(
-                                forwarded.id()
-                        );
+                messageService.getMessageEntityForProcessing(
+                        forwarded.id()
+                );
 
-        List<MessageAttachmentEntity>
-                sourceAttachments =
+        List<MessageAttachmentEntity> sourceAttachments =
                 messageAttachmentService
                         .getAttachmentsForProcessing(
                                 sourceMessage.getId()
@@ -466,34 +461,20 @@ public class MessageProcessingService
         for (MessageAttachmentEntity sourceAttachment :
                 sourceAttachments) {
 
-            messageAttachmentService
-                    .createForwardedAttachment(
-                            targetMessage,
-                            sourceAttachment
-                    );
+            messageAttachmentService.createForwardedAttachment(
+                    targetMessage,
+                    sourceAttachment
+            );
         }
 
         return forwarded;
     }
 
-
-    /**
-     * Обрабатывает lifecycle-событие
-     * от внешней платформы.
-     *
-     * Message идентифицируется по:
-     *
-     * channelAccountId + externalId
-     *
-     * Если Message не найден, новый Message
-     * не создаётся.
-     */
     @Override
     @Transactional
     public MessageDto processPlatformEvent(
             PlatformMessageEvent event
     ) {
-
         if (event == null) {
             throw new IllegalArgumentException(
                     "PlatformMessageEvent must not be null"
@@ -550,5 +531,4 @@ public class MessageProcessingService
 
         return List.copyOf(attachments);
     }
-
 }

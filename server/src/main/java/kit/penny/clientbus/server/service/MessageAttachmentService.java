@@ -159,6 +159,80 @@ public class MessageAttachmentService {
     }
 
     /**
+     * Регистрирует attachment, который уже был
+     * сохранён в Storage.
+     *
+     * Storage.store() здесь НЕ вызывается.
+     */
+    @Transactional
+    public MessageAttachmentEntity createAttachmentFromStorage(
+            MessageEntity message,
+            MessageAttachmentType type,
+            String storageKey,
+            String fileName,
+            String contentType,
+            long size
+    ) {
+        if (message == null) {
+            throw new IllegalArgumentException(
+                    "Message must not be null"
+            );
+        }
+
+        validateAttachmentType(type);
+
+        if (storageKey == null
+                || storageKey.isBlank()) {
+
+            throw new IllegalArgumentException(
+                    "Attachment storage key must not be blank"
+            );
+        }
+
+        if (fileName == null
+                || fileName.isBlank()) {
+
+            throw new IllegalArgumentException(
+                    "Attachment file name must not be blank"
+            );
+        }
+
+        if (contentType == null
+                || contentType.isBlank()) {
+
+            throw new IllegalArgumentException(
+                    "Attachment content type must not be blank"
+            );
+        }
+
+        if (size <= 0) {
+            throw new IllegalArgumentException(
+                    "Attachment size must be greater than zero"
+            );
+        }
+
+        if (!attachmentStorage.exists(storageKey)) {
+            throw new EntityNotFoundException(
+                    "Attachment storage object not found: "
+                            + storageKey
+            );
+        }
+
+        MessageAttachmentEntity entity =
+                new MessageAttachmentEntity();
+
+        entity.setMessage(message);
+        entity.setType(type);
+        entity.setFileName(fileName);
+        entity.setContentType(contentType);
+        entity.setSize(size);
+        entity.setStorageKey(storageKey);
+        entity.setForwardFrom(null);
+
+        return attachmentRepository.save(entity);
+    }
+
+    /**
      * Создаёт attachment для forwarded Message.
      *
      * Физический файл НЕ копируется.

@@ -1,12 +1,7 @@
 package kit.penny.clientbus.server.service;
 
 import jakarta.persistence.EntityNotFoundException;
-import kit.penny.clientbus.common.dto.message.CreateInboundMessageRequest;
-import kit.penny.clientbus.common.dto.message.CreateOutboundMessageRequest;
-import kit.penny.clientbus.common.dto.message.ForwardMessageRequest;
-import kit.penny.clientbus.common.dto.message.InboundMessageRequest;
-import kit.penny.clientbus.common.dto.message.MessageDto;
-import kit.penny.clientbus.common.dto.message.OutboundMessageRequest;
+import kit.penny.clientbus.common.dto.message.*;
 import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.common.enums.MessageAttachmentType;
 import kit.penny.clientbus.common.enums.MessageDeliveryStatus;
@@ -535,6 +530,376 @@ class MessageProcessingServiceTest {
                         clientAccount
                 );
     }
+
+
+    @Test
+    void processInbound_event_newMessage_createsStoredAttachments() {
+
+        UUID channelAccountId = UUID.randomUUID();
+        UUID clientAccountId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID messageId = UUID.randomUUID();
+
+        ChannelAccountEntity channelAccount =
+                mock(ChannelAccountEntity.class);
+
+        ClientAccountEntity clientAccount =
+                mock(ClientAccountEntity.class);
+
+        ConversationEntity conversation =
+                mock(ConversationEntity.class);
+
+        ChannelEntity channel =
+                mock(ChannelEntity.class);
+
+        MessageDto message =
+                mock(MessageDto.class);
+
+        MessageEntity messageEntity =
+                new MessageEntity();
+
+        InboundMessageRequest request =
+                new InboundMessageRequest(
+                        channelAccountId,
+                        "client-123",
+                        "username",
+                        "+79990000000",
+                        "Test Client",
+                        "external-123",
+                        MessageType.TEXT,
+                        "hello",
+                        null,
+                        Instant.now()
+                );
+
+        PlatformInboundAttachment attachment =
+                new PlatformInboundAttachment(
+                        MessageAttachmentType.IMAGE,
+                        "storage/image.jpg",
+                        "image.jpg",
+                        "image/jpeg",
+                        1024
+                );
+
+        PlatformInboundMessageEvent event =
+                new PlatformInboundMessageEvent(
+                        request,
+                        List.of(attachment)
+                );
+
+        when(channelAccountRepository.findById(channelAccountId))
+                .thenReturn(Optional.of(channelAccount));
+
+        when(channelAccount.getChannel())
+                .thenReturn(channel);
+
+        when(channel.getType())
+                .thenReturn(ChannelType.TELEGRAM);
+
+        when(clientAccountService.getOrCreateForInbound(
+                ChannelType.TELEGRAM,
+                "client-123",
+                "username",
+                "+79990000000",
+                "Test Client"
+        )).thenReturn(clientAccount);
+
+        when(channelAccount.getId())
+                .thenReturn(channelAccountId);
+
+        when(clientAccount.getId())
+                .thenReturn(clientAccountId);
+
+        when(conversationService.findEntityByAccounts(
+                channelAccountId,
+                clientAccountId
+        )).thenReturn(conversation);
+
+        when(conversation.getId())
+                .thenReturn(conversationId);
+
+        MessageCreationResult creationResult =
+                new MessageCreationResult(
+                        message,
+                        false
+                );
+
+        when(messageService.createInboundMessage(
+                any(CreateInboundMessageRequest.class)
+        )).thenReturn(creationResult);
+
+        when(message.id())
+                .thenReturn(messageId);
+
+        when(messageService.getMessageEntityForProcessing(
+                messageId
+        )).thenReturn(messageEntity);
+
+        MessageDto result =
+                messageProcessingService.processInbound(event);
+
+        assertSame(message, result);
+
+        verify(messageAttachmentService)
+                .createAttachmentFromStorage(
+                        messageEntity,
+                        MessageAttachmentType.IMAGE,
+                        "storage/image.jpg",
+                        "image.jpg",
+                        "image/jpeg",
+                        1024
+                );
+    }
+
+    @Test
+    void processInbound_event_existingMessage_doesNotCreateAttachments() {
+
+        UUID channelAccountId = UUID.randomUUID();
+        UUID clientAccountId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+
+        ChannelAccountEntity channelAccount =
+                mock(ChannelAccountEntity.class);
+
+        ClientAccountEntity clientAccount =
+                mock(ClientAccountEntity.class);
+
+        ConversationEntity conversation =
+                mock(ConversationEntity.class);
+
+        ChannelEntity channel =
+                mock(ChannelEntity.class);
+
+        MessageDto message =
+                mock(MessageDto.class);
+
+        InboundMessageRequest request =
+                new InboundMessageRequest(
+                        channelAccountId,
+                        "client-123",
+                        "username",
+                        null,
+                        "Test Client",
+                        "external-123",
+                        MessageType.TEXT,
+                        "hello",
+                        null,
+                        Instant.now()
+                );
+
+        PlatformInboundAttachment attachment =
+                new PlatformInboundAttachment(
+                        MessageAttachmentType.IMAGE,
+                        "storage/image.jpg",
+                        "image.jpg",
+                        "image/jpeg",
+                        1024
+                );
+
+        PlatformInboundMessageEvent event =
+                new PlatformInboundMessageEvent(
+                        request,
+                        List.of(attachment)
+                );
+
+        when(channelAccountRepository.findById(channelAccountId))
+                .thenReturn(Optional.of(channelAccount));
+
+        when(channelAccount.getChannel())
+                .thenReturn(channel);
+
+        when(channel.getType())
+                .thenReturn(ChannelType.TELEGRAM);
+
+        when(clientAccountService.getOrCreateForInbound(
+                ChannelType.TELEGRAM,
+                "client-123",
+                "username",
+                null,
+                "Test Client"
+        )).thenReturn(clientAccount);
+
+        when(channelAccount.getId())
+                .thenReturn(channelAccountId);
+
+        when(clientAccount.getId())
+                .thenReturn(clientAccountId);
+
+        when(conversationService.findEntityByAccounts(
+                channelAccountId,
+                clientAccountId
+        )).thenReturn(conversation);
+
+        when(conversation.getId())
+                .thenReturn(conversationId);
+
+        when(messageService.createInboundMessage(
+                any(CreateInboundMessageRequest.class)
+        )).thenReturn(
+                new MessageCreationResult(
+                        message,
+                        true
+                )
+        );
+
+        MessageDto result =
+                messageProcessingService.processInbound(event);
+
+        assertSame(message, result);
+
+        verify(messageAttachmentService, never())
+                .createAttachmentFromStorage(
+                        any(),
+                        any(),
+                        anyString(),
+                        anyString(),
+                        anyString(),
+                        anyLong()
+                );
+
+        verify(messageService, never())
+                .getMessageEntityForProcessing(
+                        any()
+                );
+    }
+
+    @Test
+    void processInbound_event_newMessage_createsAllStoredAttachments() {
+
+        UUID channelAccountId = UUID.randomUUID();
+        UUID clientAccountId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID messageId = UUID.randomUUID();
+
+        ChannelAccountEntity channelAccount =
+                mock(ChannelAccountEntity.class);
+
+        ClientAccountEntity clientAccount =
+                mock(ClientAccountEntity.class);
+
+        ConversationEntity conversation =
+                mock(ConversationEntity.class);
+
+        ChannelEntity channel =
+                mock(ChannelEntity.class);
+
+        MessageDto message =
+                mock(MessageDto.class);
+
+        MessageEntity messageEntity =
+                new MessageEntity();
+
+        InboundMessageRequest request =
+                new InboundMessageRequest(
+                        channelAccountId,
+                        "client-123",
+                        "username",
+                        null,
+                        "Test Client",
+                        "external-123",
+                        MessageType.TEXT,
+                        "hello",
+                        null,
+                        Instant.now()
+                );
+
+        PlatformInboundAttachment first =
+                new PlatformInboundAttachment(
+                        MessageAttachmentType.IMAGE,
+                        "storage/image.jpg",
+                        "image.jpg",
+                        "image/jpeg",
+                        100
+                );
+
+        PlatformInboundAttachment second =
+                new PlatformInboundAttachment(
+                        MessageAttachmentType.AUDIO,
+                        "storage/audio.mp3",
+                        "audio.mp3",
+                        "audio/mpeg",
+                        200
+                );
+
+        PlatformInboundMessageEvent event =
+                new PlatformInboundMessageEvent(
+                        request,
+                        List.of(first, second)
+                );
+
+        when(channelAccountRepository.findById(channelAccountId))
+                .thenReturn(Optional.of(channelAccount));
+
+        when(channelAccount.getChannel())
+                .thenReturn(channel);
+
+        when(channel.getType())
+                .thenReturn(ChannelType.TELEGRAM);
+
+        when(clientAccountService.getOrCreateForInbound(
+                ChannelType.TELEGRAM,
+                "client-123",
+                "username",
+                null,
+                "Test Client"
+        )).thenReturn(clientAccount);
+
+        when(channelAccount.getId())
+                .thenReturn(channelAccountId);
+
+        when(clientAccount.getId())
+                .thenReturn(clientAccountId);
+
+        when(conversationService.findEntityByAccounts(
+                channelAccountId,
+                clientAccountId
+        )).thenReturn(conversation);
+
+        when(conversation.getId())
+                .thenReturn(conversationId);
+
+        when(messageService.createInboundMessage(
+                any(CreateInboundMessageRequest.class)
+        )).thenReturn(
+                new MessageCreationResult(
+                        message,
+                        false
+                )
+        );
+
+        when(message.id())
+                .thenReturn(messageId);
+
+        when(messageService.getMessageEntityForProcessing(
+                messageId
+        )).thenReturn(messageEntity);
+
+        MessageDto result =
+                messageProcessingService.processInbound(event);
+
+        assertSame(message, result);
+
+        verify(messageAttachmentService)
+                .createAttachmentFromStorage(
+                        messageEntity,
+                        MessageAttachmentType.IMAGE,
+                        "storage/image.jpg",
+                        "image.jpg",
+                        "image/jpeg",
+                        100
+                );
+
+        verify(messageAttachmentService)
+                .createAttachmentFromStorage(
+                        messageEntity,
+                        MessageAttachmentType.AUDIO,
+                        "storage/audio.mp3",
+                        "audio.mp3",
+                        "audio/mpeg",
+                        200
+                );
+    }
+
 
     // =========================================================
     // OUTBOUND

@@ -528,4 +528,198 @@ class MessageAttachmentServiceTest {
                 never()
         ).delete(any());
     }
+
+    // ============================================================
+    // 5A.3 — attachments already stored by connector
+    // ============================================================
+
+    @Test
+    void createAttachmentFromStorage_createsEntityWithoutStoring() {
+
+        when(attachmentStorage.exists(
+                "storage/image-1"
+        )).thenReturn(true);
+
+        when(attachmentRepository.save(
+                any(MessageAttachmentEntity.class)
+        )).thenAnswer(
+                invocation ->
+                        invocation.getArgument(0)
+        );
+
+        MessageAttachmentEntity result =
+                service.createAttachmentFromStorage(
+                        message,
+                        MessageAttachmentType.IMAGE,
+                        "storage/image-1",
+                        "photo.jpg",
+                        "image/jpeg",
+                        1024
+                );
+
+        assertNotNull(result);
+
+        assertSame(
+                message,
+                result.getMessage()
+        );
+
+        assertEquals(
+                MessageAttachmentType.IMAGE,
+                result.getType()
+        );
+
+        assertEquals(
+                "storage/image-1",
+                result.getStorageKey()
+        );
+
+        assertEquals(
+                "photo.jpg",
+                result.getFileName()
+        );
+
+        assertEquals(
+                "image/jpeg",
+                result.getContentType()
+        );
+
+        assertEquals(
+                1024,
+                result.getSize()
+        );
+
+        /*
+         * Это новый original attachment,
+         * поэтому forwardFrom отсутствует.
+         */
+        assertNull(
+                result.getForwardFrom()
+        );
+
+        verify(
+                attachmentStorage
+        ).exists(
+                "storage/image-1"
+        );
+
+        /*
+         * Storage уже содержит файл.
+         * Повторно сохранять его нельзя.
+         */
+        verify(
+                attachmentStorage,
+                never()
+        ).store(
+                any(InputStream.class),
+                anyString(),
+                anyLong(),
+                anyString()
+        );
+
+        verify(
+                attachmentRepository
+        ).save(result);
+    }
+
+    @Test
+    void createAttachmentFromStorage_rejectsMissingStorageObject() {
+
+        when(attachmentStorage.exists(
+                "storage/missing"
+        )).thenReturn(false);
+
+        assertThrows(
+                EntityNotFoundException.class,
+                () ->
+                        service.createAttachmentFromStorage(
+                                message,
+                                MessageAttachmentType.IMAGE,
+                                "storage/missing",
+                                "photo.jpg",
+                                "image/jpeg",
+                                1024
+                        )
+        );
+
+        verify(
+                attachmentStorage
+        ).exists(
+                "storage/missing"
+        );
+
+        verify(
+                attachmentRepository,
+                never()
+        ).save(
+                any(MessageAttachmentEntity.class)
+        );
+
+        verify(
+                attachmentStorage,
+                never()
+        ).store(
+                any(InputStream.class),
+                anyString(),
+                anyLong(),
+                anyString()
+        );
+    }
+
+    @Test
+    void createAttachmentFromStorage_rejectsBlankStorageKey() {
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        service.createAttachmentFromStorage(
+                                message,
+                                MessageAttachmentType.IMAGE,
+                                " ",
+                                "photo.jpg",
+                                "image/jpeg",
+                                1024
+                        )
+        );
+
+        /*
+         * При некорректном storageKey
+         * даже exists() вызывать не нужно.
+         */
+        verifyNoInteractions(
+                attachmentStorage
+        );
+
+        verifyNoInteractions(
+                attachmentRepository
+        );
+    }
+
+    @Test
+    void createAttachmentFromStorage_rejectsInvalidSize() {
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        service.createAttachmentFromStorage(
+                                message,
+                                MessageAttachmentType.IMAGE,
+                                "storage/image-1",
+                                "photo.jpg",
+                                "image/jpeg",
+                                0
+                        )
+        );
+
+        /*
+         * До Storage дело не доходит.
+         */
+        verifyNoInteractions(
+                attachmentStorage
+        );
+
+        verifyNoInteractions(
+                attachmentRepository
+        );
+    }
 }
