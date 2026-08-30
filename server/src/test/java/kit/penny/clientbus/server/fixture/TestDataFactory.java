@@ -132,4 +132,54 @@ public final class TestDataFactory {
                 UserRole.EMPLOYEE
         );
     }
+
+    public static ChannelEntity channel(
+            WorkspaceEntity workspace
+    ) {
+        return new ChannelEntity(
+                workspace,
+                ChannelType.TELEGRAM,
+                "Test TG Channel"
+        );
+    }
+
+    public static ChannelEntity channel(
+            WorkspaceEntity workspace,
+            ChannelType channelType,
+            String name
+    ) {
+        return new ChannelEntity(
+                workspace,
+                channelType,
+                name
+        );
+    }
+
+    public static ChannelAccountEntity channelAccount(
+            ChannelEntity channel
+    ) {
+        return new ChannelAccountEntity(
+                channel,
+                "channel-external-id",
+                "channel-username",
+                "channel-phone",
+                "channel-displayName"
+        );
+    }
+
+    public static ChannelAccountEntity channelAccount(
+            ChannelEntity channel,
+            String externalId,
+            String username,
+            String phone,
+            String displayName
+    ) {
+        return new ChannelAccountEntity(
+                channel,
+                externalId,
+                username,
+                phone,
+                displayName
+        );
+    }
 }
