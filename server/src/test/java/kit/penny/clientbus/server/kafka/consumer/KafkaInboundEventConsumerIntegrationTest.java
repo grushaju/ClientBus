@@ -9,19 +9,20 @@ import kit.penny.clientbus.common.kafka.KafkaEvent;
 import kit.penny.clientbus.common.kafka.KafkaEventType;
 import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
 import kit.penny.clientbus.server.service.IMessageProcessingService;
+import jakarta.annotation.Resource;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
@@ -30,7 +31,22 @@ import static org.mockito.Mockito.verify;
 @ActiveProfiles("test")
 class KafkaInboundEventConsumerIntegrationTest {
 
-    @Autowired
+    private static final String TEST_CONSUMER_GROUP =
+            "clientbus.inbound.integration-test-"
+                    + UUID.randomUUID();
+
+    @DynamicPropertySource
+    static void kafkaProperties(
+            DynamicPropertyRegistry registry
+    ) {
+
+        registry.add(
+                "spring.kafka.consumer.group-id",
+                () -> TEST_CONSUMER_GROUP
+        );
+    }
+
+    @Resource
     private KafkaTemplate<String, Object> kafkaTemplate;
 
     @MockitoBean

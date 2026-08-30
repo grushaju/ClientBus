@@ -28,6 +28,14 @@ spring:
       initialize-schema: never
       table-name: system.SPRING_SESSION
 
+  kafka:
+    consumer:
+      group-id: clientbus.inbound.processor
+
+logging:
+  level:
+    org.springframework.kafka: DEBUG
+
 clientbus:
 
   jwt:

@@ -13,8 +13,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.Instant;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class KafkaInboundEventConsumerTest {
@@ -37,7 +41,7 @@ class KafkaInboundEventConsumerTest {
     void consume_validInboundEvent_processesPayload() {
 
         PlatformInboundMessageEvent payload =
-                mock(
+                org.mockito.Mockito.mock(
                         PlatformInboundMessageEvent.class
                 );
 
@@ -57,8 +61,7 @@ class KafkaInboundEventConsumerTest {
         );
 
         verify(
-                messageProcessingService,
-                times(1)
+                messageProcessingService
         ).processInbound(
                 payload
         );
@@ -105,6 +108,11 @@ class KafkaInboundEventConsumerTest {
     @Test
     void consume_unsupportedEventType_throwsException() {
 
+        PlatformInboundMessageEvent payload =
+                org.mockito.Mockito.mock(
+                        PlatformInboundMessageEvent.class
+                );
+
         KafkaEvent<PlatformInboundMessageEvent> event =
                 new KafkaEvent<>(
                         UUID.randomUUID(),
@@ -112,9 +120,7 @@ class KafkaInboundEventConsumerTest {
                         1,
                         Instant.now(),
                         UUID.randomUUID(),
-                        mock(
-                                PlatformInboundMessageEvent.class
-                        )
+                        payload
                 );
 
         assertThrows(
@@ -132,7 +138,7 @@ class KafkaInboundEventConsumerTest {
     void consume_processingServiceThrowsException_propagatesException() {
 
         PlatformInboundMessageEvent payload =
-                mock(
+                org.mockito.Mockito.mock(
                         PlatformInboundMessageEvent.class
                 );
 
@@ -168,8 +174,9 @@ class KafkaInboundEventConsumerTest {
         );
 
         verify(
-                messageProcessingService,
-                times(1)
-        ).processInbound(payload);
+                messageProcessingService
+        ).processInbound(
+                payload
+        );
     }
 }

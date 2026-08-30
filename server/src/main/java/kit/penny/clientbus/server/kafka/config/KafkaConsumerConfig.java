@@ -21,6 +21,9 @@ public class KafkaConsumerConfig {
     @Value("${spring.kafka.bootstrap-servers}")
     private String bootstrapServers;
 
+    @Value("${spring.kafka.consumer.group-id}")
+    private String consumerGroupId;
+
     @Bean
     public ConsumerFactory<String, Object> kafkaConsumerFactory() {
 
@@ -34,7 +37,7 @@ public class KafkaConsumerConfig {
 
         properties.put(
                 ConsumerConfig.GROUP_ID_CONFIG,
-                "clientbus.inbound.processor"
+                consumerGroupId
         );
 
         properties.put(
