@@ -132,24 +132,25 @@ class KafkaInboundEventPublisherIntegrationTest {
                         )
         ) {
 
-            TopicPartition partition =
-                    new TopicPartition(
-                            topic,
-                            0
-                    );
+            List<TopicPartition> partitions =
+                    consumer.partitionsFor(topic)
+                            .stream()
+                            .map(
+                                    partitionInfo ->
+                                            new TopicPartition(
+                                                    topic,
+                                                    partitionInfo.partition()
+                                            )
+                            )
+                            .toList();
 
-            consumer.assign(
-                    List.of(partition)
-            );
+            consumer.assign(partitions);
 
-            long endOffset =
-                    consumer.endOffsets(
-                            List.of(partition)
-                    ).get(partition);
+            Map<TopicPartition, Long> endOffsets =
+                    consumer.endOffsets(partitions);
 
-            consumer.seek(
-                    partition,
-                    endOffset
+            endOffsets.forEach(
+                    consumer::seek
             );
 
             publisher.publish(
