@@ -33,8 +33,10 @@ spring:
       group-id: clientbus.inbound.processor
 
 logging:
-  level:
-    org.springframework.kafka: DEBUG
+#  level:
+#    org.apache.kafka.clients.consumer: DEBUG
+#    org.springframework.kafka.listener: DEBUG
+#    org.springframework.kafka.config: DEBUG
 
 clientbus:
 

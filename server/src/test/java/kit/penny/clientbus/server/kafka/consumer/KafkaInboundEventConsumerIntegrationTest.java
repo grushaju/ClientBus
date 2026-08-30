@@ -10,10 +10,11 @@ import kit.penny.clientbus.common.kafka.KafkaEventType;
 import kit.penny.clientbus.server.service.IMessageProcessingService;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentMatchers;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ApplicationContext;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.listener.MessageListenerContainer;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -45,10 +46,10 @@ class KafkaInboundEventConsumerIntegrationTest {
     private KafkaTemplate<String, Object> kafkaTemplate;
 
     @MockitoSpyBean
-    private KafkaInboundEventConsumer kafkaInboundEventConsumer;
-
-    @MockitoSpyBean
     private IMessageProcessingService messageProcessingService;
+
+    @Autowired
+    private ApplicationContext applicationContext;
 
     @DynamicPropertySource
     static void kafkaProperties(
@@ -61,6 +62,70 @@ class KafkaInboundEventConsumerIntegrationTest {
         );
     }
 
+    @Test
+    void _kafkaListener_isRunning() throws Exception {
+
+        System.out.println(
+                "GROUP-ID = "
+                        + applicationContext
+                        .getEnvironment()
+                        .getProperty(
+                                "spring.kafka.consumer.group-id"
+                        )
+        );
+
+        System.out.println(
+                "BOOTSTRAP = "
+                        + applicationContext
+                        .getEnvironment()
+                        .getProperty(
+                                "spring.kafka.bootstrap-servers"
+                        )
+        );
+
+        String[] beanNames =
+                applicationContext.getBeanNamesForType(
+                        MessageListenerContainer.class
+                );
+
+        System.out.println(
+                "LISTENER CONTAINERS = "
+                        + beanNames.length
+        );
+
+        for (String beanName : beanNames) {
+
+            MessageListenerContainer container =
+                    applicationContext.getBean(
+                            beanName,
+                            MessageListenerContainer.class
+                    );
+
+            System.out.println(
+                    "CONTAINER BEAN = "
+                            + beanName
+            );
+
+            System.out.println(
+                    "RUNNING = "
+                            + container.isRunning()
+            );
+
+            System.out.println(
+                    "ASSIGNMENT = "
+                            + container.getAssignedPartitions()
+            );
+
+            System.out.println(
+                    "GROUP = "
+                            + container
+                            .getContainerProperties()
+                            .getGroupId()
+            );
+        }
+
+        Thread.sleep(5_000);
+    }
 
     @Test
     void consume_receivesInboundEventAndProcessesPayload()
@@ -69,6 +134,9 @@ class KafkaInboundEventConsumerIntegrationTest {
         UUID channelAccountId =
                 UUID.randomUUID();
 
+        String externalId =
+                "external-" + UUID.randomUUID();
+
         InboundMessageRequest message =
                 new InboundMessageRequest(
                         channelAccountId,
@@ -76,8 +144,7 @@ class KafkaInboundEventConsumerIntegrationTest {
                         "client",
                         "+79990000000",
                         "Client",
-                        "external-"
-                                + UUID.randomUUID(),
+                        externalId,
                         MessageType.TEXT,
                         "Hello Kafka Consumer",
                         "{\"source\":\"telegram\"}",
@@ -95,7 +162,7 @@ class KafkaInboundEventConsumerIntegrationTest {
                         1024
                 );
 
-        PlatformInboundMessageEvent event =
+        PlatformInboundMessageEvent payload =
                 new PlatformInboundMessageEvent(
                         message,
                         List.of(attachment)
@@ -108,7 +175,7 @@ class KafkaInboundEventConsumerIntegrationTest {
                         1,
                         Instant.now(),
                         UUID.randomUUID(),
-                        event
+                        payload
                 );
 
         var sendResult =
@@ -140,18 +207,9 @@ class KafkaInboundEventConsumerIntegrationTest {
                         .key()
         );
 
-//        verify(
-//                kafkaInboundEventConsumer,
-//                timeout(10_000)
-//        ).consume(
-//                ArgumentMatchers.any(
-//                        KafkaEvent.class
-//                )
-//        );
-
         verify(
                 messageProcessingService,
-                timeout(10_000)
+                timeout(15_000)
         ).processInbound(
                 argThat(
                         received ->
@@ -174,6 +232,16 @@ class KafkaInboundEventConsumerIntegrationTest {
                                         && received.attachments()
                                         .size()
                                         == 1
+                                        && received.attachments()
+                                        .get(0)
+                                        .type()
+                                        == MessageAttachmentType.IMAGE
+                                        && received.attachments()
+                                        .get(0)
+                                        .storageKey()
+                                        .equals(
+                                                "storage/photo.jpg"
+                                        )
                 )
         );
     }

@@ -71,6 +71,10 @@ public class KafkaConsumerConfig {
                 "kit.penny.clientbus.*"
         );
 
+        System.out.println(
+                "KAFKA CONSUMER PROPERTIES = " + properties
+        );
+
         return new DefaultKafkaConsumerFactory<>(
                 properties
         );
