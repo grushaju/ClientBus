@@ -1,5 +1,8 @@
 package kit.penny.clientbus.server.integration;
 
+import com.github.dockerjava.api.model.ExposedPort;
+import com.github.dockerjava.api.model.PortBinding;
+import com.github.dockerjava.api.model.Ports;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -14,7 +17,17 @@ public abstract class AbstractIntegrationTest {
             new PostgreSQLContainer<>("postgres:16-alpine")
                     .withDatabaseName("clientbus")
                     .withUsername("clientbus")
-                    .withPassword("clientbus");
+                    .withPassword("clientbus")
+                    .withReuse(true)
+                    .withExposedPorts(5432)
+                    .withCreateContainerCmdModifier(cmd ->
+                            cmd.withName("clientbus-postgres-test")
+                                    .getHostConfig()
+                                    .withPortBindings(
+                                            PortBinding.parse("15432:5432")
+                                    )
+                    );
+                    //.withExposedPorts(15432);
 
     static {
         postgres.start();

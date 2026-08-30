@@ -7,6 +7,7 @@ import kit.penny.clientbus.common.enums.MessageAttachmentType;
 import kit.penny.clientbus.common.enums.MessageType;
 import kit.penny.clientbus.common.kafka.KafkaEvent;
 import kit.penny.clientbus.common.kafka.KafkaEventType;
+import kit.penny.clientbus.server.integration.AbstractIntegrationTest;
 import kit.penny.clientbus.server.service.IMessageProcessingService;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.junit.jupiter.api.Test;
@@ -33,7 +34,7 @@ import static org.mockito.Mockito.verify;
 
 @SpringBootTest
 @ActiveProfiles("test")
-class KafkaInboundEventConsumerIntegrationTest {
+class KafkaInboundEventConsumerIntegrationTest extends AbstractIntegrationTest {
 
     private static final String TOPIC =
             "clientbus.inbound";

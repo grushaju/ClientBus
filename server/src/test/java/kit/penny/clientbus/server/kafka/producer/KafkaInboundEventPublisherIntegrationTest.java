@@ -50,21 +50,21 @@ class KafkaInboundEventPublisherIntegrationTest extends AbstractIntegrationTest 
     private OrganizationRepository organizationRepository;
 
     @Autowired
+    private WorkspaceRepository workspaceRepository;
+
+    @Autowired
     private ChannelRepository channelRepository;
 
     @Autowired
-    private WorkspaceRepository workspaceRepository;
+    private ChannelAccountRepository channelAccountRepository;
 
     private OrganizationEntity organization;
-
     private WorkspaceEntity workspace;
-
     private ChannelEntity channel;
     private ChannelAccountEntity channelAccount;
 
 
-    @Autowired
-    private ChannelAccountRepository channelAccountRepository;
+
 
     @BeforeEach
     void setUp() {

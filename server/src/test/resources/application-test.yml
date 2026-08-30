@@ -5,7 +5,7 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: validate
+      ddl-auto: update
     open-in-view: false
     properties:
       hibernate:
@@ -43,3 +43,13 @@ clientbus:
   jwt:
     secret: FnQHtz4yCzaBgma1a25xV30mShdAQZx/33msarZ57f0=
     expiration: 1800000
+
+  bootstrap:
+    organization:
+      name: Penny Kit's Company ©
+      email: admin@admin.admin
+      username: admin
+      password: admin
+      firstname: Penny
+      lastname: Kit
+      phone: +12.04.1961(YAG)
