@@ -1,5 +1,6 @@
 package kit.penny.clientbus.server.kafka.config;
 
+import kit.penny.clientbus.common.kafka.KafkaEvent;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.springframework.beans.factory.annotation.Value;
@@ -48,6 +49,11 @@ public class KafkaConsumerConfig {
         properties.put(
                 ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,
                 JacksonJsonDeserializer.class
+        );
+
+        properties.put(
+                JacksonJsonDeserializer.VALUE_DEFAULT_TYPE,
+                KafkaEvent.class.getName()
         );
 
         properties.put(

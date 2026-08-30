@@ -23,7 +23,8 @@ public class KafkaInboundEventConsumer
 
     @Override
     @KafkaListener(
-            topics = "#{T(kit.penny.clientbus.server.kafka.routing.KafkaTopicNames).inbound()}"
+            groupId = "${spring.kafka.consumer.group-id}",
+            topics = "clientbus.inbound" //"#{T(kit.penny.clientbus.server.kafka.routing.KafkaTopicNames).inbound()}"
     )
     public void consume(
             KafkaEvent<PlatformInboundMessageEvent> event

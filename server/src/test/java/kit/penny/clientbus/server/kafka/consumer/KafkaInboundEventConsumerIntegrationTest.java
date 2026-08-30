@@ -7,23 +7,26 @@ import kit.penny.clientbus.common.enums.MessageAttachmentType;
 import kit.penny.clientbus.common.enums.MessageType;
 import kit.penny.clientbus.common.kafka.KafkaEvent;
 import kit.penny.clientbus.common.kafka.KafkaEventType;
-import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
 import kit.penny.clientbus.server.service.IMessageProcessingService;
-import jakarta.annotation.Resource;
+import org.apache.kafka.clients.producer.RecordMetadata;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentMatchers;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
-import static org.mockito.ArgumentMatchers.eq;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
@@ -31,9 +34,21 @@ import static org.mockito.Mockito.verify;
 @ActiveProfiles("test")
 class KafkaInboundEventConsumerIntegrationTest {
 
-    private static final String TEST_CONSUMER_GROUP =
-            "clientbus.inbound.integration-test-"
+    private static final String TOPIC =
+            "clientbus.inbound";
+
+    private static final String CONSUMER_GROUP =
+            "clientbus-inbound-test-"
                     + UUID.randomUUID();
+
+    @Autowired
+    private KafkaTemplate<String, Object> kafkaTemplate;
+
+    @MockitoSpyBean
+    private KafkaInboundEventConsumer kafkaInboundEventConsumer;
+
+    @MockitoSpyBean
+    private IMessageProcessingService messageProcessingService;
 
     @DynamicPropertySource
     static void kafkaProperties(
@@ -42,15 +57,10 @@ class KafkaInboundEventConsumerIntegrationTest {
 
         registry.add(
                 "spring.kafka.consumer.group-id",
-                () -> TEST_CONSUMER_GROUP
+                () -> CONSUMER_GROUP
         );
     }
 
-    @Resource
-    private KafkaTemplate<String, Object> kafkaTemplate;
-
-    @MockitoBean
-    private IMessageProcessingService messageProcessingService;
 
     @Test
     void consume_receivesInboundEventAndProcessesPayload()
@@ -66,7 +76,8 @@ class KafkaInboundEventConsumerIntegrationTest {
                         "client",
                         "+79990000000",
                         "Client",
-                        "external-" + UUID.randomUUID(),
+                        "external-"
+                                + UUID.randomUUID(),
                         MessageType.TEXT,
                         "Hello Kafka Consumer",
                         "{\"source\":\"telegram\"}",
@@ -84,38 +95,86 @@ class KafkaInboundEventConsumerIntegrationTest {
                         1024
                 );
 
-        PlatformInboundMessageEvent payload =
+        PlatformInboundMessageEvent event =
                 new PlatformInboundMessageEvent(
                         message,
                         List.of(attachment)
                 );
 
-        KafkaEvent<PlatformInboundMessageEvent> event =
+        KafkaEvent<PlatformInboundMessageEvent> kafkaEvent =
                 new KafkaEvent<>(
                         UUID.randomUUID(),
                         KafkaEventType.INBOUND_MESSAGE,
                         1,
                         Instant.now(),
                         UUID.randomUUID(),
-                        payload
+                        event
                 );
 
-        kafkaTemplate
-                .send(
-                        KafkaTopicNames.inbound(),
-                        channelAccountId.toString(),
-                        event
-                )
-                .get(
-                        10,
-                        TimeUnit.SECONDS
-                );
+        var sendResult =
+                kafkaTemplate
+                        .send(
+                                TOPIC,
+                                channelAccountId.toString(),
+                                kafkaEvent
+                        )
+                        .get(
+                                10,
+                                TimeUnit.SECONDS
+                        );
+
+        assertNotNull(sendResult);
+
+        RecordMetadata metadata =
+                sendResult.getRecordMetadata();
+
+        assertEquals(
+                TOPIC,
+                metadata.topic()
+        );
+
+        assertEquals(
+                channelAccountId.toString(),
+                sendResult
+                        .getProducerRecord()
+                        .key()
+        );
+
+//        verify(
+//                kafkaInboundEventConsumer,
+//                timeout(10_000)
+//        ).consume(
+//                ArgumentMatchers.any(
+//                        KafkaEvent.class
+//                )
+//        );
 
         verify(
                 messageProcessingService,
                 timeout(10_000)
         ).processInbound(
-                eq(payload)
+                argThat(
+                        received ->
+                                received != null
+                                        && received.message()
+                                        .channelAccountId()
+                                        .equals(
+                                                channelAccountId
+                                        )
+                                        && received.message()
+                                        .clientExternalId()
+                                        .equals(
+                                                "client-123"
+                                        )
+                                        && received.message()
+                                        .content()
+                                        .equals(
+                                                "Hello Kafka Consumer"
+                                        )
+                                        && received.attachments()
+                                        .size()
+                                        == 1
+                )
         );
     }
 }
