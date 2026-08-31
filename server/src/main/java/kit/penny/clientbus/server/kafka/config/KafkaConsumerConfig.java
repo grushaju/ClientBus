@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
+import org.springframework.kafka.listener.CommonErrorHandler;
 import org.springframework.kafka.listener.ContainerProperties;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 
@@ -66,7 +67,8 @@ public class KafkaConsumerConfig {
     @Bean
     public ConcurrentKafkaListenerContainerFactory<String, Object>
     kafkaListenerContainerFactory(
-            ConsumerFactory<String, Object> consumerFactory
+            ConsumerFactory<String, Object> consumerFactory,
+            CommonErrorHandler commonErrorHandler
     ) {
 
         ConcurrentKafkaListenerContainerFactory<String, Object>
@@ -75,6 +77,10 @@ public class KafkaConsumerConfig {
 
         factory.setConsumerFactory(
                 consumerFactory
+        );
+
+        factory.setCommonErrorHandler(
+                commonErrorHandler
         );
 
         factory.getContainerProperties()

@@ -3,11 +3,21 @@ package kit.penny.clientbus.server.kafka.consumer;
 import kit.penny.clientbus.common.dto.message.InboundMessageRequest;
 import kit.penny.clientbus.common.dto.message.PlatformInboundAttachment;
 import kit.penny.clientbus.common.dto.message.PlatformInboundMessageEvent;
+import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.common.enums.MessageAttachmentType;
 import kit.penny.clientbus.common.enums.MessageType;
 import kit.penny.clientbus.common.kafka.KafkaEvent;
 import kit.penny.clientbus.common.kafka.KafkaEventType;
+import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.integration.AbstractIntegrationTest;
+import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
+import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
+import kit.penny.clientbus.server.persistence.entity.OrganizationEntity;
+import kit.penny.clientbus.server.persistence.entity.WorkspaceEntity;
+import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
+import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
+import kit.penny.clientbus.server.persistence.repository.OrganizationRepository;
+import kit.penny.clientbus.server.persistence.repository.WorkspaceRepository;
 import kit.penny.clientbus.server.service.IMessageProcessingService;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.junit.jupiter.api.Test;
@@ -15,7 +25,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.kafka.listener.MessageListenerContainer;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -34,7 +43,8 @@ import static org.mockito.Mockito.verify;
 
 @SpringBootTest
 @ActiveProfiles("test")
-class KafkaInboundEventConsumerIntegrationTest extends AbstractIntegrationTest {
+class KafkaInboundEventConsumerIntegrationTest
+        extends AbstractIntegrationTest {
 
     private static final String TOPIC =
             "clientbus.inbound";
@@ -52,11 +62,22 @@ class KafkaInboundEventConsumerIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private ApplicationContext applicationContext;
 
+    @Autowired
+    private OrganizationRepository organizationRepository;
+
+    @Autowired
+    private WorkspaceRepository workspaceRepository;
+
+    @Autowired
+    private ChannelRepository channelRepository;
+
+    @Autowired
+    private ChannelAccountRepository channelAccountRepository;
+
     @DynamicPropertySource
     static void kafkaProperties(
             DynamicPropertyRegistry registry
     ) {
-
         registry.add(
                 "spring.kafka.consumer.group-id",
                 () -> CONSUMER_GROUP
@@ -64,76 +85,43 @@ class KafkaInboundEventConsumerIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void _kafkaListener_isRunning() throws Exception {
-
-        System.out.println(
-                "GROUP-ID = "
-                        + applicationContext
-                        .getEnvironment()
-                        .getProperty(
-                                "spring.kafka.consumer.group-id"
-                        )
-        );
-
-        System.out.println(
-                "BOOTSTRAP = "
-                        + applicationContext
-                        .getEnvironment()
-                        .getProperty(
-                                "spring.kafka.bootstrap-servers"
-                        )
-        );
-
-        String[] beanNames =
-                applicationContext.getBeanNamesForType(
-                        MessageListenerContainer.class
-                );
-
-        System.out.println(
-                "LISTENER CONTAINERS = "
-                        + beanNames.length
-        );
-
-        for (String beanName : beanNames) {
-
-            MessageListenerContainer container =
-                    applicationContext.getBean(
-                            beanName,
-                            MessageListenerContainer.class
-                    );
-
-            System.out.println(
-                    "CONTAINER BEAN = "
-                            + beanName
-            );
-
-            System.out.println(
-                    "RUNNING = "
-                            + container.isRunning()
-            );
-
-            System.out.println(
-                    "ASSIGNMENT = "
-                            + container.getAssignedPartitions()
-            );
-
-            System.out.println(
-                    "GROUP = "
-                            + container
-                            .getContainerProperties()
-                            .getGroupId()
-            );
-        }
-
-        Thread.sleep(5_000);
-    }
-
-    @Test
     void consume_receivesInboundEventAndProcessesPayload()
             throws Exception {
 
+        OrganizationEntity organization =
+                organizationRepository.saveAndFlush(
+                        TestDataFactory.organization()
+                );
+
+        WorkspaceEntity workspace =
+                workspaceRepository.saveAndFlush(
+                        TestDataFactory.workspace(
+                                organization
+                        )
+                );
+
+        ChannelEntity channel =
+                channelRepository.saveAndFlush(
+                        TestDataFactory.channel(
+                                workspace,
+                                ChannelType.TELEGRAM,
+                                "Integration Test Telegram"
+                        )
+                );
+
+        ChannelAccountEntity channelAccount =
+                channelAccountRepository.saveAndFlush(
+                        TestDataFactory.channelAccount(
+                                channel,
+                                "integration-telegram-123",
+                                "integration_test_channel",
+                                "+79990000000",
+                                "Integration Test Telegram"
+                        )
+                );
+
         UUID channelAccountId =
-                UUID.randomUUID();
+                channelAccount.getId();
 
         String externalId =
                 "external-" + UUID.randomUUID();
@@ -143,8 +131,8 @@ class KafkaInboundEventConsumerIntegrationTest extends AbstractIntegrationTest {
                         channelAccountId,
                         "client-123",
                         "client",
-                        "+79990000000",
-                        "Client",
+                        "+79990000001",
+                        "Test Client",
                         externalId,
                         MessageType.TEXT,
                         "Hello Kafka Consumer",
@@ -215,6 +203,7 @@ class KafkaInboundEventConsumerIntegrationTest extends AbstractIntegrationTest {
                 argThat(
                         received ->
                                 received != null
+                                        && received.message() != null
                                         && received.message()
                                         .channelAccountId()
                                         .equals(
@@ -226,6 +215,29 @@ class KafkaInboundEventConsumerIntegrationTest extends AbstractIntegrationTest {
                                                 "client-123"
                                         )
                                         && received.message()
+                                        .clientUsername()
+                                        .equals(
+                                                "client"
+                                        )
+                                        && received.message()
+                                        .clientPhone()
+                                        .equals(
+                                                "+79990000001"
+                                        )
+                                        && received.message()
+                                        .clientDisplayName()
+                                        .equals(
+                                                "Test Client"
+                                        )
+                                        && received.message()
+                                        .externalId()
+                                        .equals(
+                                                externalId
+                                        )
+                                        && received.message()
+                                        .type()
+                                        == MessageType.TEXT
+                                        && received.message()
                                         .content()
                                         .equals(
                                                 "Hello Kafka Consumer"
@@ -234,15 +246,31 @@ class KafkaInboundEventConsumerIntegrationTest extends AbstractIntegrationTest {
                                         .size()
                                         == 1
                                         && received.attachments()
-                                        .get(0)
+                                        .getFirst()
                                         .type()
                                         == MessageAttachmentType.IMAGE
                                         && received.attachments()
-                                        .get(0)
+                                        .getFirst()
                                         .storageKey()
                                         .equals(
                                                 "storage/photo.jpg"
                                         )
+                                        && received.attachments()
+                                        .getFirst()
+                                        .fileName()
+                                        .equals(
+                                                "photo.jpg"
+                                        )
+                                        && received.attachments()
+                                        .getFirst()
+                                        .contentType()
+                                        .equals(
+                                                "image/jpeg"
+                                        )
+                                        && received.attachments()
+                                        .getFirst()
+                                        .size()
+                                        == 1024
                 )
         );
     }
