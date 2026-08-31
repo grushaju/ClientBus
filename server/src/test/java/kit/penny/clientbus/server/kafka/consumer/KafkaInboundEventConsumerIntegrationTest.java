@@ -10,14 +10,8 @@ import kit.penny.clientbus.common.kafka.KafkaEvent;
 import kit.penny.clientbus.common.kafka.KafkaEventType;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.integration.AbstractIntegrationTest;
-import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
-import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
-import kit.penny.clientbus.server.persistence.entity.OrganizationEntity;
-import kit.penny.clientbus.server.persistence.entity.WorkspaceEntity;
-import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
-import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
-import kit.penny.clientbus.server.persistence.repository.OrganizationRepository;
-import kit.penny.clientbus.server.persistence.repository.WorkspaceRepository;
+import kit.penny.clientbus.server.persistence.entity.*;
+import kit.penny.clientbus.server.persistence.repository.*;
 import kit.penny.clientbus.server.service.IMessageProcessingService;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.junit.jupiter.api.Test;
@@ -73,6 +67,8 @@ class KafkaInboundEventConsumerIntegrationTest
 
     @Autowired
     private ChannelAccountRepository channelAccountRepository;
+
+    @Autowired private MessageRepository messageRepository;
 
     @DynamicPropertySource
     static void kafkaProperties(
@@ -274,4 +270,155 @@ class KafkaInboundEventConsumerIntegrationTest
                 )
         );
     }
+
+    @Test
+    void consume_duplicateInboundEvent_createsOnlyOneMessage()
+            throws Exception {
+
+        OrganizationEntity organization =
+                organizationRepository.saveAndFlush(
+                        TestDataFactory.organization()
+                );
+
+        WorkspaceEntity workspace =
+                workspaceRepository.saveAndFlush(
+                        TestDataFactory.workspace(
+                                organization
+                        )
+                );
+
+        ChannelEntity channel =
+                channelRepository.saveAndFlush(
+                        TestDataFactory.channel(
+                                workspace,
+                                ChannelType.TELEGRAM,
+                                "Integration Test Telegram Idempotency"
+                        )
+                );
+
+        ChannelAccountEntity channelAccount =
+                channelAccountRepository.saveAndFlush(
+                        TestDataFactory.channelAccount(
+                                channel,
+                                "integration-telegram-idempotency-"
+                                        + UUID.randomUUID(),
+                                "integration_test_channel",
+                                "+79990000010",
+                                "Integration Test Telegram"
+                        )
+                );
+
+        UUID channelAccountId =
+                channelAccount.getId();
+
+        String externalMessageId =
+                "external-idempotency-"
+                        + UUID.randomUUID();
+
+        InboundMessageRequest message =
+                new InboundMessageRequest(
+                        channelAccountId,
+                        "client-idempotency-123",
+                        "client",
+                        "+79990000011",
+                        "Idempotency Test Client",
+                        externalMessageId,
+                        MessageType.TEXT,
+                        "Duplicate Kafka message",
+                        "{\"source\":\"telegram\"}",
+                        Instant.parse(
+                                "2026-08-30T15:00:00Z"
+                        )
+                );
+
+        PlatformInboundMessageEvent payload =
+                new PlatformInboundMessageEvent(
+                        message,
+                        List.of()
+                );
+
+        KafkaEvent<PlatformInboundMessageEvent> kafkaEvent =
+                new KafkaEvent<>(
+                        UUID.randomUUID(),
+                        KafkaEventType.INBOUND_MESSAGE,
+                        1,
+                        Instant.now(),
+                        UUID.randomUUID(),
+                        payload
+                );
+
+        kafkaTemplate
+                .send(
+                        TOPIC,
+                        channelAccountId.toString(),
+                        kafkaEvent
+                )
+                .get(
+                        10,
+                        TimeUnit.SECONDS
+                );
+
+        kafkaTemplate
+                .send(
+                        TOPIC,
+                        channelAccountId.toString(),
+                        kafkaEvent
+                )
+                .get(
+                        10,
+                        TimeUnit.SECONDS
+                );
+
+        verify(
+                messageProcessingService,
+                timeout(15_000)
+                        .times(2)
+        ).processInbound(
+                argThat(
+                        received ->
+                                received != null
+                                        && received.message() != null
+                                        && externalMessageId.equals(
+                                        received.message()
+                                                .externalId()
+                                )
+                )
+        );
+
+        List<MessageEntity> messages =
+                messageRepository.findAll()
+                        .stream()
+                        .filter(
+                                entity ->
+                                        externalMessageId.equals(
+                                                entity.getExternalId()
+                                        )
+                        )
+                        .toList();
+
+        assertEquals(
+                1,
+                messages.size()
+        );
+
+        MessageEntity storedMessage =
+                messages.getFirst();
+
+        assertEquals(
+                "Duplicate Kafka message",
+                storedMessage.getContent()
+        );
+
+        assertEquals(
+                MessageType.TEXT,
+                storedMessage.getType()
+        );
+
+        assertEquals(
+                externalMessageId,
+                storedMessage.getExternalId()
+        );
+    }
+
+
 }
