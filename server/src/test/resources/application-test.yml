@@ -32,6 +32,7 @@ spring:
     consumer:
       inbound-group-id: clientbus.inbound.processor
       outbound-group-id: clientbus.outbound.processor
+      platform-events-group-id: clientbus.platform-events.processor
 
 logging:
 #  level:

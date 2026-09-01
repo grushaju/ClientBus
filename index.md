@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-09-01 23:05:26
+- Generated: 2026-09-01 23:50:02
 - Branch: `main`
-- Commit: `acf7c6b`
+- Commit: `09a8c07`
 
 ## Project Structure
 
@@ -160,8 +160,10 @@
 
 - `IInboundEventConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/IInboundEventConsumer.java`
 - `IOutboundMessageConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/IOutboundMessageConsumer.java`
+- `IPlatformEventConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/IPlatformEventConsumer.java`
 - `KafkaInboundEventConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaInboundEventConsumer.java`
 - `KafkaOutboundMessageConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaOutboundMessageConsumer.java`
+- `KafkaPlatformEventConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaPlatformEventConsumer.java`
 
 ##### `kit.penny.clientbus.server.kafka.producer`
 
@@ -302,12 +304,14 @@
 - `KafkaInboundEventConsumerTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaInboundEventConsumerTest.java`
 - `KafkaOutboundMessageConsumerIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaOutboundMessageConsumerIntegrationTest.java`
 - `KafkaOutboundMessageConsumerTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaOutboundMessageConsumerTest.java`
+- `KafkaPlatformEventConsumerTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaPlatformEventConsumerTest.java`
 
 ##### `kit.penny.clientbus.server.kafka.producer`
 
 - `KafkaInboundEventPublisherIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/producer/KafkaInboundEventPublisherIntegrationTest.java`
 - `KafkaInboundEventPublisherTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/producer/KafkaInboundEventPublisherTest.java`
 - `KafkaOutboundMessagePublisherIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/producer/KafkaOutboundMessagePublisherIntegrationTest.java`
+- `KafkaPlatformEventPublisherIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/producer/KafkaPlatformEventPublisherIntegrationTest.java`
 - `KafkaPlatformEventPublisherTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/producer/KafkaPlatformEventPublisherTest.java`
 
 ##### `kit.penny.clientbus.server.mapper`
@@ -360,6 +364,6 @@
 ## Summary
 
 - Maven modules: 4
-- Java files: 185
-- Git commit: `acf7c6b`
+- Java files: 189
+- Git commit: `09a8c07`
 
