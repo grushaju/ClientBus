@@ -7,11 +7,12 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import kit.penny.clientbus.common.dto.message.PlatformInboundMessageEvent;
 import kit.penny.clientbus.common.kafka.KafkaEvent;
 import kit.penny.clientbus.common.kafka.KafkaEventType;
+import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
+import kit.penny.clientbus.common.kafka.PlatformMessageKafkaEvent;
 import org.apache.kafka.common.errors.SerializationException;
 import org.apache.kafka.common.serialization.Deserializer;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Map;
 
 public class KafkaEventJsonDeserializer
         implements Deserializer<KafkaEvent<?>> {
@@ -105,10 +106,16 @@ public class KafkaEventJsonDeserializer
                             PlatformInboundMessageEvent.class
                     );
 
-            default ->
+            case OUTBOUND_MESSAGE ->
                     objectMapper.convertValue(
                             payload,
-                            Map.class
+                            OutboundMessageKafkaCommand.class
+                    );
+
+            case PLATFORM_MESSAGE_EVENT ->
+                    objectMapper.convertValue(
+                            payload,
+                            PlatformMessageKafkaEvent.class
                     );
         };
     }

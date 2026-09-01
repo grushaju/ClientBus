@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-08-31 15:57:48
+- Generated: 2026-09-01 08:23:38
 - Branch: `main`
-- Commit: `2b34171`
+- Commit: `984b205`
 
 ## Project Structure
 
@@ -159,7 +159,9 @@
 ##### `kit.penny.clientbus.server.kafka.consumer`
 
 - `IInboundEventConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/IInboundEventConsumer.java`
+- `IOutboundMessageConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/IOutboundMessageConsumer.java`
 - `KafkaInboundEventConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaInboundEventConsumer.java`
+- `KafkaOutboundMessageConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaOutboundMessageConsumer.java`
 
 ##### `kit.penny.clientbus.server.kafka.producer`
 
@@ -168,6 +170,7 @@
 - `IPlatformEventPublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/IPlatformEventPublisher.java`
 - `KafkaInboundEventPublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/KafkaInboundEventPublisher.java`
 - `KafkaOutboundMessagePublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/KafkaOutboundMessagePublisher.java`
+- `KafkaPlatformEventPublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/KafkaPlatformEventPublisher.java`
 
 ##### `kit.penny.clientbus.server.kafka.routing`
 
@@ -345,6 +348,6 @@
 ## Summary
 
 - Maven modules: 4
-- Java files: 176
-- Git commit: `2b34171`
+- Java files: 179
+- Git commit: `984b205`
 
