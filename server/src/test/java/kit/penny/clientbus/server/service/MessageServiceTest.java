@@ -3,10 +3,7 @@ package kit.penny.clientbus.server.service;
 import jakarta.persistence.EntityNotFoundException;
 import kit.penny.clientbus.common.dto.message.CreateInboundMessageRequest;
 import kit.penny.clientbus.common.dto.message.MessageDto;
-import kit.penny.clientbus.common.enums.MessageDirection;
-import kit.penny.clientbus.common.enums.MessageProcessingStatus;
-import kit.penny.clientbus.common.enums.MessageSenderType;
-import kit.penny.clientbus.common.enums.MessageType;
+import kit.penny.clientbus.common.enums.*;
 import kit.penny.clientbus.server.mapper.MessageMapper;
 import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ConversationEntity;
@@ -99,6 +96,12 @@ class MessageServiceTest {
         message.setProcessingStatus(
                 MessageProcessingStatus.RECEIVED
         );
+    }
+
+    private void stubMessageFound() {
+
+        when(messageRepository.findById(messageId))
+                .thenReturn(Optional.of(message));
     }
 
     @Test
@@ -362,6 +365,347 @@ class MessageServiceTest {
                 messageRepository,
                 conversationService,
                 messageMapper
+        );
+    }
+
+    // ============================================================
+    // PROCESSING STATE
+    // ============================================================
+
+    @Test
+    void startProcessing_receivedMessage_changesStatusToProcessing() {
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.RECEIVED
+        );
+
+        stubMessageFound();
+
+        messageService.startProcessing(message.getId());
+
+        assertEquals(
+                MessageProcessingStatus.PROCESSING,
+                message.getProcessingStatus()
+        );
+    }
+
+    @Test
+    void markProcessed_processingMessage_changesStatusToProcessed() {
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.PROCESSING
+        );
+
+        stubMessageFound();
+
+        messageService.markProcessed(message.getId());
+
+        assertEquals(
+                MessageProcessingStatus.PROCESSED,
+                message.getProcessingStatus()
+        );
+    }
+
+    @Test
+    void markProcessingFailed_processingMessage_changesStatusToFailed() {
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.PROCESSING
+        );
+
+        stubMessageFound();
+
+        messageService.markProcessingFailed(message.getId());
+
+        assertEquals(
+                MessageProcessingStatus.FAILED,
+                message.getProcessingStatus()
+        );
+    }
+
+    // ============================================================
+    // DELIVERY STATE
+    // ============================================================
+
+    @Test
+    void markSent_processedOutboundMessage_changesDeliveryToSent() {
+
+        message.setDirection(MessageDirection.OUTBOUND);
+        message.setProcessingStatus(
+                MessageProcessingStatus.PROCESSED
+        );
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.PENDING
+        );
+
+        stubMessageFound();
+
+        messageService.markSent(
+                message.getId(),
+                "telegram-message-123"
+        );
+
+        assertEquals(
+                MessageDeliveryStatus.SENT,
+                message.getDeliveryStatus()
+        );
+
+        assertEquals(
+                "telegram-message-123",
+                message.getExternalId()
+        );
+
+        assertNotNull(message.getSentAt());
+    }
+
+    @Test
+    void markDelivered_sentMessage_changesDeliveryToDelivered() {
+
+        message.setDirection(MessageDirection.OUTBOUND);
+        message.setProcessingStatus(
+                MessageProcessingStatus.PROCESSED
+        );
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.SENT
+        );
+
+        stubMessageFound();
+
+        messageService.markDelivered(message.getId());
+
+        assertEquals(
+                MessageDeliveryStatus.DELIVERED,
+                message.getDeliveryStatus()
+        );
+
+        assertNotNull(message.getDeliveredAt());
+    }
+
+    @Test
+    void markRead_sentMessage_changesDeliveryToRead() {
+
+        message.setDirection(MessageDirection.OUTBOUND);
+        message.setProcessingStatus(
+                MessageProcessingStatus.PROCESSED
+        );
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.SENT
+        );
+
+        stubMessageFound();
+
+        messageService.markRead(message.getId());
+
+        assertEquals(
+                MessageDeliveryStatus.READ,
+                message.getDeliveryStatus()
+        );
+
+        assertNotNull(message.getReadAt());
+    }
+
+    @Test
+    void markRead_deliveredMessage_changesDeliveryToRead() {
+
+        message.setDirection(MessageDirection.OUTBOUND);
+        message.setProcessingStatus(
+                MessageProcessingStatus.PROCESSED
+        );
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.DELIVERED
+        );
+
+        stubMessageFound();
+
+        messageService.markRead(message.getId());
+
+        assertEquals(
+                MessageDeliveryStatus.READ,
+                message.getDeliveryStatus()
+        );
+
+        assertNotNull(message.getReadAt());
+    }
+
+    @Test
+    void markDeliveryFailed_pendingMessage_changesDeliveryToFailed() {
+
+        message.setDirection(MessageDirection.OUTBOUND);
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.PENDING
+        );
+
+        stubMessageFound();
+
+        messageService.markDeliveryFailed(message.getId());
+
+        assertEquals(
+                MessageDeliveryStatus.FAILED,
+                message.getDeliveryStatus()
+        );
+    }
+
+    @Test
+    void markDeliveryFailed_sentMessage_changesDeliveryToFailed() {
+
+        message.setDirection(MessageDirection.OUTBOUND);
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.SENT
+        );
+
+        stubMessageFound();
+
+        messageService.markDeliveryFailed(message.getId());
+
+        assertEquals(
+                MessageDeliveryStatus.FAILED,
+                message.getDeliveryStatus()
+        );
+    }
+
+    // ============================================================
+    // INVALID TRANSITIONS
+    // ============================================================
+
+    @Test
+    void markDelivered_pendingMessage_throwsException() {
+
+        message.setDirection(MessageDirection.OUTBOUND);
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.PENDING
+        );
+
+        stubMessageFound();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageService.markDelivered(message.getId())
+        );
+    }
+
+    @Test
+    void markRead_pendingMessage_throwsException() {
+
+        message.setDirection(MessageDirection.OUTBOUND);
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.PENDING
+        );
+
+        stubMessageFound();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageService.markRead(message.getId())
+        );
+    }
+
+    @Test
+    void markDeliveryFailed_deliveredMessage_throwsException() {
+
+        message.setDirection(MessageDirection.OUTBOUND);
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.DELIVERED
+        );
+
+        stubMessageFound();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageService.markDeliveryFailed(message.getId())
+        );
+    }
+
+    @Test
+    void markDeliveryFailed_readMessage_throwsException() {
+
+        message.setDirection(MessageDirection.OUTBOUND);
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.READ
+        );
+
+        stubMessageFound();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageService.markDeliveryFailed(message.getId())
+        );
+    }
+
+    // ============================================================
+    // IDEMPOTENCY
+    // ============================================================
+
+    @Test
+    void markDelivered_deliveredMessage_isIdempotent() {
+
+        message.setDirection(MessageDirection.OUTBOUND);
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.DELIVERED
+        );
+
+        Instant deliveredAt =
+                Instant.parse("2026-08-26T10:05:00Z");
+
+        message.setDeliveredAt(deliveredAt);
+
+        stubMessageFound();
+
+        messageService.markDelivered(message.getId());
+
+        assertEquals(
+                MessageDeliveryStatus.DELIVERED,
+                message.getDeliveryStatus()
+        );
+
+        assertEquals(
+                deliveredAt,
+                message.getDeliveredAt()
+        );
+    }
+
+    @Test
+    void markRead_readMessage_isIdempotent() {
+
+        message.setDirection(MessageDirection.OUTBOUND);
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.READ
+        );
+
+        Instant readAt =
+                Instant.parse("2026-08-26T10:06:00Z");
+
+        message.setReadAt(readAt);
+
+        stubMessageFound();
+
+        messageService.markRead(message.getId());
+
+        assertEquals(
+                MessageDeliveryStatus.READ,
+                message.getDeliveryStatus()
+        );
+
+        assertEquals(
+                readAt,
+                message.getReadAt()
+        );
+    }
+
+    @Test
+    void markDeliveryFailed_failedMessage_isIdempotent() {
+
+        message.setDirection(MessageDirection.OUTBOUND);
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.FAILED
+        );
+
+        stubMessageFound();
+
+        messageService.markDeliveryFailed(message.getId());
+
+        assertEquals(
+                MessageDeliveryStatus.FAILED,
+                message.getDeliveryStatus()
         );
     }
 }

@@ -27,6 +27,13 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import kit.penny.clientbus.common.enums.MessageDeliveryStatus;
+import kit.penny.clientbus.common.enums.MessageDirection;
+import kit.penny.clientbus.common.enums.MessageProcessingStatus;
+import kit.penny.clientbus.common.enums.MessageSenderType;
+
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -62,6 +69,12 @@ class MessageProcessingServiceIntegrationTest
 
     @Autowired
     private MessageRepository messageRepository;
+
+    @PersistenceContext
+    private EntityManager entityManager;
+
+    @Autowired
+    private MessageService messageService;
 
     @Test
     void processInbound_createsClientAccountConversationAndMessage() {
@@ -491,5 +504,333 @@ class MessageProcessingServiceIntegrationTest
                 0,
                 messageRepository.count()
         );
+    }
+
+    @Test
+    void outboundMessage_fullStateMachine_persistsAllTransitions() {
+
+        MessageEntity message =
+                createOutboundMessage();
+
+        assertEquals(
+                MessageProcessingStatus.PROCESSED,
+                message.getProcessingStatus()
+        );
+
+        assertEquals(
+                MessageDeliveryStatus.PENDING,
+                reload(message.getId()).getDeliveryStatus()
+        );
+
+        // PENDING -> SENT
+        messageService.markSent(
+                message.getId(),
+                "telegram-external-message-001"
+        );
+
+        MessageEntity sent =
+                reload(message.getId());
+
+        assertEquals(
+                MessageDeliveryStatus.SENT,
+                sent.getDeliveryStatus()
+        );
+
+        assertEquals(
+                "telegram-external-message-001",
+                sent.getExternalId()
+        );
+
+        // SENT -> DELIVERED
+        messageService.markDelivered(
+                message.getId()
+        );
+
+        MessageEntity delivered =
+                reload(message.getId());
+
+        assertEquals(
+                MessageDeliveryStatus.DELIVERED,
+                delivered.getDeliveryStatus()
+        );
+
+        assertNotNull(
+                delivered.getDeliveredAt()
+        );
+
+        // DELIVERED -> READ
+        messageService.markRead(
+                message.getId()
+        );
+
+        MessageEntity read =
+                reload(message.getId());
+
+        assertEquals(
+                MessageDeliveryStatus.READ,
+                read.getDeliveryStatus()
+        );
+
+        assertNotNull(
+                read.getReadAt()
+        );
+
+        assertNotNull(
+                read.getDeliveredAt()
+        );
+    }
+
+    @Test
+    void outboundMessage_sentToFailed_persistsFailedState() {
+
+        MessageEntity message =
+                createOutboundMessage();
+
+        messageService.markSent(
+                message.getId(),
+                "telegram-external-message-002"
+        );
+
+        assertEquals(
+                MessageDeliveryStatus.SENT,
+                reload(message.getId()).getDeliveryStatus()
+        );
+
+        messageService.markDeliveryFailed(
+                message.getId()
+        );
+
+        MessageEntity failed =
+                reload(message.getId());
+
+        assertEquals(
+                MessageDeliveryStatus.FAILED,
+                failed.getDeliveryStatus()
+        );
+
+        assertEquals(
+                "telegram-external-message-002",
+                failed.getExternalId()
+        );
+    }
+
+    @Test
+    void outboundMessage_duplicateDelivered_isIdempotent() {
+
+        MessageEntity message =
+                createOutboundMessage();
+
+        messageService.markSent(
+                message.getId(),
+                "telegram-external-message-003"
+        );
+
+        messageService.markDelivered(
+                message.getId()
+        );
+
+        MessageEntity first =
+                reload(message.getId());
+
+        Instant firstDeliveredAt =
+                first.getDeliveredAt();
+
+        assertNotNull(firstDeliveredAt);
+
+        messageService.markDelivered(
+                message.getId()
+        );
+
+        MessageEntity second =
+                reload(message.getId());
+
+        assertEquals(
+                MessageDeliveryStatus.DELIVERED,
+                second.getDeliveryStatus()
+        );
+
+        assertEquals(
+                firstDeliveredAt,
+                second.getDeliveredAt()
+        );
+    }
+
+    @Test
+    void outboundMessage_duplicateRead_isIdempotent() {
+
+        MessageEntity message =
+                createOutboundMessage();
+
+        messageService.markSent(
+                message.getId(),
+                "telegram-external-message-004"
+        );
+
+        messageService.markDelivered(
+                message.getId()
+        );
+
+        messageService.markRead(
+                message.getId()
+        );
+
+        MessageEntity first =
+                reload(message.getId());
+
+        Instant firstReadAt =
+                first.getReadAt();
+
+        assertNotNull(firstReadAt);
+
+        messageService.markRead(
+                message.getId()
+        );
+
+        MessageEntity second =
+                reload(message.getId());
+
+        assertEquals(
+                MessageDeliveryStatus.READ,
+                second.getDeliveryStatus()
+        );
+
+        assertEquals(
+                firstReadAt,
+                second.getReadAt()
+        );
+    }
+
+    @Test
+    void outboundMessage_duplicateFailed_isIdempotent() {
+
+        MessageEntity message =
+                createOutboundMessage();
+
+        messageService.markDeliveryFailed(
+                message.getId()
+        );
+
+        MessageEntity first =
+                reload(message.getId());
+
+        assertEquals(
+                MessageDeliveryStatus.FAILED,
+                first.getDeliveryStatus()
+        );
+
+        messageService.markDeliveryFailed(
+                message.getId()
+        );
+
+        MessageEntity second =
+                reload(message.getId());
+
+        assertEquals(
+                MessageDeliveryStatus.FAILED,
+                second.getDeliveryStatus()
+        );
+    }
+
+    private MessageEntity createOutboundMessage() {
+
+        OrganizationEntity organization =
+                organizationRepository.saveAndFlush(
+                        TestDataFactory.organization()
+                );
+
+        WorkspaceEntity workspace =
+                workspaceRepository.saveAndFlush(
+                        TestDataFactory.workspace(
+                                organization
+                        )
+                );
+
+        ChannelEntity channel =
+                channelRepository.saveAndFlush(
+                        TestDataFactory.channel(
+                                workspace,
+                                ChannelType.TELEGRAM,
+                                "Telegram state machine"
+                        )
+                );
+
+        ChannelAccountEntity channelAccount =
+                channelAccountRepository.saveAndFlush(
+                        TestDataFactory.channelAccount(
+                                channel,
+                                "telegram-state-machine-channel-"
+                                        + UUID.randomUUID(),
+                                "state_machine_channel",
+                                "+79990000003",
+                                "State Machine Telegram"
+                        )
+                );
+
+        ClientAccountEntity clientAccount =
+                clientAccountRepository.saveAndFlush(
+                        TestDataFactory.clientAccount(
+                                null,
+                                ChannelType.TELEGRAM,
+                                "telegram-state-machine-client-"
+                                        + UUID.randomUUID()
+                        )
+                );
+
+        ConversationEntity conversation =
+                conversationRepository.saveAndFlush(
+                        TestDataFactory.conversation(
+                                workspace,
+                                channelAccount,
+                                clientAccount
+                        )
+                );
+
+        MessageEntity message =
+                new MessageEntity(
+                        conversation,
+                        MessageType.TEXT,
+                        MessageDirection.OUTBOUND,
+                        MessageSenderType.EMPLOYEE
+                );
+
+        message.setContent(
+                "State machine integration test"
+        );
+
+        message.setSentAt(
+                Instant.parse(
+                        "2026-08-30T15:00:00Z"
+                )
+        );
+
+        /*
+         * markSent() требует PROCESSED.
+         *
+         * В этом тесте мы тестируем именно
+         * delivery state machine, поэтому
+         * processing lifecycle не является
+         * предметом теста.
+         */
+        message.setProcessingStatus(
+                MessageProcessingStatus.PROCESSED
+        );
+
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.PENDING
+        );
+
+        return messageRepository.saveAndFlush(
+                message
+        );
+    }
+
+    private MessageEntity reload(UUID messageId) {
+
+        entityManager.flush();
+        entityManager.clear();
+
+        return messageRepository
+                .findById(messageId)
+                .orElseThrow();
     }
 }

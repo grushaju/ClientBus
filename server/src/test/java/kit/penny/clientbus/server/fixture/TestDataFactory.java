@@ -182,4 +182,16 @@ public final class TestDataFactory {
                 displayName
         );
     }
+
+    public static ConversationEntity conversation(
+            WorkspaceEntity workspace,
+            ChannelAccountEntity channelAccount,
+            ClientAccountEntity clientAccount
+    ) {
+        return new ConversationEntity(
+                workspace,
+                channelAccount,
+                clientAccount
+        );
+    }
 }

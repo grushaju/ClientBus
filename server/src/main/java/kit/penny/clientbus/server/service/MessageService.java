@@ -513,6 +513,8 @@ public class MessageService {
 
     /**
      * SENT -> DELIVERED.
+     *
+     * Повторное получение DELIVERED является идемпотентным.
      */
     @Transactional
     public MessageDto markDelivered(
@@ -524,8 +526,20 @@ public class MessageService {
 
         requireOutbound(message);
 
-        if (message.getDeliveryStatus()
-                != MessageDeliveryStatus.SENT) {
+        MessageDeliveryStatus status =
+                message.getDeliveryStatus();
+
+        /*
+         * Повторное DELIVERED не является ошибкой.
+         *
+         * Ничего не меняем и не сохраняем повторно,
+         * чтобы не перезаписать deliveredAt.
+         */
+        if (status == MessageDeliveryStatus.DELIVERED) {
+            return messageMapper.toDto(message);
+        }
+
+        if (status != MessageDeliveryStatus.SENT) {
 
             throw new IllegalStateException(
                     "Message must be SENT before DELIVERED: "
@@ -548,6 +562,8 @@ public class MessageService {
 
     /**
      * SENT / DELIVERED -> READ.
+     *
+     * Повторное получение READ является идемпотентным.
      */
     @Transactional
     public MessageDto markRead(
@@ -561,6 +577,16 @@ public class MessageService {
 
         MessageDeliveryStatus status =
                 message.getDeliveryStatus();
+
+        /*
+         * Повторное READ не является ошибкой.
+         *
+         * Ничего не меняем и не сохраняем повторно,
+         * чтобы не перезаписать readAt.
+         */
+        if (status == MessageDeliveryStatus.READ) {
+            return messageMapper.toDto(message);
+        }
 
         if (status != MessageDeliveryStatus.SENT
                 && status != MessageDeliveryStatus.DELIVERED) {
@@ -586,6 +612,8 @@ public class MessageService {
 
     /**
      * PENDING / SENT -> FAILED.
+     *
+     * Повторное получение FAILED является идемпотентным.
      */
     @Transactional
     public MessageDto markDeliveryFailed(
@@ -599,6 +627,15 @@ public class MessageService {
 
         MessageDeliveryStatus status =
                 message.getDeliveryStatus();
+
+        /*
+         * Повторное FAILED не является ошибкой.
+         *
+         * Ничего не меняем и не сохраняем повторно.
+         */
+        if (status == MessageDeliveryStatus.FAILED) {
+            return messageMapper.toDto(message);
+        }
 
         if (status != MessageDeliveryStatus.PENDING
                 && status != MessageDeliveryStatus.SENT) {
