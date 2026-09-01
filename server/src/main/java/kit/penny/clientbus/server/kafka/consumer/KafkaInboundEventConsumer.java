@@ -24,7 +24,7 @@ public class KafkaInboundEventConsumer
     @Override
     @KafkaListener(
             id = "kafkaInboundEventConsumer",
-            groupId = "${spring.kafka.consumer.group-id}",
+            groupId = "${spring.kafka.consumer.inbound-group-id}",
             topics = "#{T(kit.penny.clientbus.server.kafka.routing.KafkaTopicNames).inbound()}"
     )
     public void consume(

@@ -99,7 +99,8 @@ spring:
       value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
 
     consumer:
-      group-id: clientbus.inbound.processor
+      inbound-group-id: clientbus.inbound.processor
+      outbound-group-id: clientbus.outbound.processor
 #  security:
 #    user:
 #      name: clientbus
