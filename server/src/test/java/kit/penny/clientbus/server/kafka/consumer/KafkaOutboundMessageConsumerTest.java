@@ -2,24 +2,20 @@ package kit.penny.clientbus.server.kafka.consumer;
 
 import kit.penny.clientbus.common.dto.message.PlatformMessageEvent;
 import kit.penny.clientbus.common.enums.ChannelType;
-import kit.penny.clientbus.common.enums.MessageAttachmentType;
 import kit.penny.clientbus.common.enums.MessageType;
 import kit.penny.clientbus.common.enums.PlatformMessageEventType;
 import kit.penny.clientbus.common.kafka.KafkaEvent;
 import kit.penny.clientbus.common.kafka.KafkaEventType;
 import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
-import kit.penny.clientbus.common.kafka.PlatformOutboundAttachment;
 import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
 import kit.penny.clientbus.server.connector.ConnectorSendResult;
 import kit.penny.clientbus.server.connector.IChannelConnector;
 import kit.penny.clientbus.server.kafka.producer.IPlatformEventPublisher;
+import kit.penny.clientbus.server.mapper.OutboundMessageKafkaCommandMapper;
 import kit.penny.clientbus.server.service.ChannelSendRequest;
-import kit.penny.clientbus.server.storage.IAttachmentStorage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.io.ByteArrayInputStream;
-import java.io.InputStream;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -32,7 +28,7 @@ import static org.mockito.Mockito.*;
 class KafkaOutboundMessageConsumerTest {
 
     private ChannelConnectorRegistry channelConnectorRegistry;
-    private IAttachmentStorage attachmentStorage;
+    private OutboundMessageKafkaCommandMapper commandMapper;
     private IPlatformEventPublisher platformEventPublisher;
     private IChannelConnector connector;
 
@@ -43,8 +39,8 @@ class KafkaOutboundMessageConsumerTest {
         channelConnectorRegistry =
                 mock(ChannelConnectorRegistry.class);
 
-        attachmentStorage =
-                mock(IAttachmentStorage.class);
+        commandMapper =
+                mock(OutboundMessageKafkaCommandMapper.class);
 
         platformEventPublisher =
                 mock(IPlatformEventPublisher.class);
@@ -55,7 +51,7 @@ class KafkaOutboundMessageConsumerTest {
         consumer =
                 new KafkaOutboundMessageConsumer(
                         channelConnectorRegistry,
-                        attachmentStorage,
+                        commandMapper,
                         platformEventPublisher
                 );
     }
@@ -77,17 +73,30 @@ class KafkaOutboundMessageConsumerTest {
                         List.of()
                 );
 
+        ChannelSendRequest request =
+                new ChannelSendRequest(
+                        messageId,
+                        channelAccountId,
+                        "recipient-123",
+                        MessageType.TEXT,
+                        "Hello",
+                        List.of()
+                );
+
         KafkaEvent<OutboundMessageKafkaCommand> event =
                 outboundEvent(
                         command,
                         correlationId
                 );
 
+        when(commandMapper.toRequest(command))
+                .thenReturn(request);
+
         when(channelConnectorRegistry.getConnector(
                 ChannelType.TELEGRAM
         )).thenReturn(connector);
 
-        when(connector.send(any(ChannelSendRequest.class)))
+        when(connector.send(request))
                 .thenReturn(
                         new ConnectorSendResult(
                                 "external-123"
@@ -102,8 +111,11 @@ class KafkaOutboundMessageConsumerTest {
         verify(channelConnectorRegistry)
                 .getConnector(ChannelType.TELEGRAM);
 
+        verify(commandMapper)
+                .toRequest(command);
+
         verify(connector)
-                .send(any(ChannelSendRequest.class));
+                .send(request);
 
         verify(platformEventPublisher)
                 .publish(
@@ -129,17 +141,30 @@ class KafkaOutboundMessageConsumerTest {
                         List.of()
                 );
 
+        ChannelSendRequest request =
+                new ChannelSendRequest(
+                        messageId,
+                        channelAccountId,
+                        "recipient-456",
+                        MessageType.TEXT,
+                        "Hello world",
+                        List.of()
+                );
+
         KafkaEvent<OutboundMessageKafkaCommand> event =
                 outboundEvent(
                         command,
                         correlationId
                 );
 
+        when(commandMapper.toRequest(command))
+                .thenReturn(request);
+
         when(channelConnectorRegistry.getConnector(
                 ChannelType.VK
         )).thenReturn(connector);
 
-        when(connector.send(any(ChannelSendRequest.class)))
+        when(connector.send(request))
                 .thenReturn(
                         new ConnectorSendResult(
                                 "vk-message-123"
@@ -151,115 +176,33 @@ class KafkaOutboundMessageConsumerTest {
                 "clientbus.outbound.vk"
         );
 
-        verify(connector).send(
-                argThat(request ->
-                        request.messageId().equals(messageId)
-                                && request.channelAccountId()
-                                .equals(channelAccountId)
-                                && request.recipientExternalId()
-                                .equals("recipient-456")
-                                && request.type()
-                                == MessageType.TEXT
-                                && request.content()
-                                .equals("Hello world")
-                                && request.attachments().isEmpty()
-                )
-        );
+        verify(commandMapper)
+                .toRequest(command);
+
+        verify(connector)
+                .send(request);
     }
 
     @Test
-    void shouldLoadAttachmentsFromStorage() {
+    void shouldPublishSentEventWithConnectorExternalId() {
 
         UUID messageId = UUID.randomUUID();
         UUID channelAccountId = UUID.randomUUID();
         UUID correlationId = UUID.randomUUID();
-
-        InputStream content =
-                new ByteArrayInputStream(
-                        "file-content".getBytes()
-                );
-
-        PlatformOutboundAttachment attachment =
-                new PlatformOutboundAttachment(
-                        MessageAttachmentType.IMAGE,
-                        "storage-key",
-                        "image.jpg",
-                        "image/jpeg",
-                        12L
-                );
 
         OutboundMessageKafkaCommand command =
                 new OutboundMessageKafkaCommand(
                         messageId,
                         channelAccountId,
                         "recipient-123",
-                        MessageType.IMAGE,
-                        null,
-                        List.of(attachment)
+                        MessageType.TEXT,
+                        "Hello",
+                        List.of()
                 );
 
-        KafkaEvent<OutboundMessageKafkaCommand> event =
-                outboundEvent(
-                        command,
-                        correlationId
-                );
-
-        when(channelConnectorRegistry.getConnector(
-                ChannelType.TELEGRAM
-        )).thenReturn(connector);
-
-        when(attachmentStorage.load("storage-key"))
-                .thenReturn(content);
-
-        when(connector.send(any(ChannelSendRequest.class)))
-                .thenReturn(
-                        new ConnectorSendResult(
-                                "external-123"
-                        )
-                );
-
-        consumer.consume(
-                event,
-                "clientbus.outbound.telegram"
-        );
-
-        verify(attachmentStorage)
-                .load("storage-key");
-
-        verify(connector).send(
-                argThat(request ->
-                        request.attachments().size() == 1
-                                && request.attachments()
-                                .getFirst()
-                                .type()
-                                == MessageAttachmentType.IMAGE
-                                && request.attachments()
-                                .getFirst()
-                                .fileName()
-                                .equals("image.jpg")
-                                && request.attachments()
-                                .getFirst()
-                                .contentType()
-                                .equals("image/jpeg")
-                                && request.attachments()
-                                .getFirst()
-                                .size() == 12L
-                                && request.attachments()
-                                .getFirst()
-                                .content() == content
-                )
-        );
-    }
-
-    @Test
-    void shouldPublishSentEventWithConnectorExternalId() {
-
-        UUID channelAccountId = UUID.randomUUID();
-        UUID correlationId = UUID.randomUUID();
-
-        OutboundMessageKafkaCommand command =
-                new OutboundMessageKafkaCommand(
-                        UUID.randomUUID(),
+        ChannelSendRequest request =
+                new ChannelSendRequest(
+                        messageId,
                         channelAccountId,
                         "recipient-123",
                         MessageType.TEXT,
@@ -273,11 +216,14 @@ class KafkaOutboundMessageConsumerTest {
                         correlationId
                 );
 
+        when(commandMapper.toRequest(command))
+                .thenReturn(request);
+
         when(channelConnectorRegistry.getConnector(
                 ChannelType.TELEGRAM
         )).thenReturn(connector);
 
-        when(connector.send(any(ChannelSendRequest.class)))
+        when(connector.send(request))
                 .thenReturn(
                         new ConnectorSendResult(
                                 "telegram-external-42"
@@ -324,7 +270,7 @@ class KafkaOutboundMessageConsumerTest {
 
         verifyNoInteractions(
                 channelConnectorRegistry,
-                attachmentStorage,
+                commandMapper,
                 platformEventPublisher
         );
     }
@@ -332,17 +278,33 @@ class KafkaOutboundMessageConsumerTest {
     @Test
     void shouldPropagateConnectorException() {
 
+        OutboundMessageKafkaCommand command =
+                validCommand();
+
+        ChannelSendRequest request =
+                new ChannelSendRequest(
+                        command.messageId(),
+                        command.channelAccountId(),
+                        command.recipientExternalId(),
+                        command.type(),
+                        command.content(),
+                        List.of()
+                );
+
         KafkaEvent<OutboundMessageKafkaCommand> event =
                 outboundEvent(
-                        validCommand(),
+                        command,
                         UUID.randomUUID()
                 );
+
+        when(commandMapper.toRequest(command))
+                .thenReturn(request);
 
         when(channelConnectorRegistry.getConnector(
                 ChannelType.TELEGRAM
         )).thenReturn(connector);
 
-        when(connector.send(any(ChannelSendRequest.class)))
+        when(connector.send(request))
                 .thenThrow(
                         new RuntimeException(
                                 "Platform unavailable"
@@ -364,17 +326,33 @@ class KafkaOutboundMessageConsumerTest {
     @Test
     void shouldFailWhenConnectorReturnsNull() {
 
+        OutboundMessageKafkaCommand command =
+                validCommand();
+
+        ChannelSendRequest request =
+                new ChannelSendRequest(
+                        command.messageId(),
+                        command.channelAccountId(),
+                        command.recipientExternalId(),
+                        command.type(),
+                        command.content(),
+                        List.of()
+                );
+
         KafkaEvent<OutboundMessageKafkaCommand> event =
                 outboundEvent(
-                        validCommand(),
+                        command,
                         UUID.randomUUID()
                 );
+
+        when(commandMapper.toRequest(command))
+                .thenReturn(request);
 
         when(channelConnectorRegistry.getConnector(
                 ChannelType.TELEGRAM
         )).thenReturn(connector);
 
-        when(connector.send(any(ChannelSendRequest.class)))
+        when(connector.send(request))
                 .thenReturn(null);
 
         assertThatThrownBy(() ->
@@ -394,17 +372,33 @@ class KafkaOutboundMessageConsumerTest {
     @Test
     void shouldFailWhenConnectorReturnsBlankExternalId() {
 
+        OutboundMessageKafkaCommand command =
+                validCommand();
+
+        ChannelSendRequest request =
+                new ChannelSendRequest(
+                        command.messageId(),
+                        command.channelAccountId(),
+                        command.recipientExternalId(),
+                        command.type(),
+                        command.content(),
+                        List.of()
+                );
+
         KafkaEvent<OutboundMessageKafkaCommand> event =
                 outboundEvent(
-                        validCommand(),
+                        command,
                         UUID.randomUUID()
                 );
+
+        when(commandMapper.toRequest(command))
+                .thenReturn(request);
 
         when(channelConnectorRegistry.getConnector(
                 ChannelType.TELEGRAM
         )).thenReturn(connector);
 
-        when(connector.send(any(ChannelSendRequest.class)))
+        when(connector.send(request))
                 .thenReturn(
                         new ConnectorSendResult(" ")
                 );
@@ -448,7 +442,7 @@ class KafkaOutboundMessageConsumerTest {
 
         verifyNoInteractions(
                 channelConnectorRegistry,
-                attachmentStorage,
+                commandMapper,
                 platformEventPublisher
         );
     }
@@ -474,7 +468,7 @@ class KafkaOutboundMessageConsumerTest {
 
         verifyNoInteractions(
                 channelConnectorRegistry,
-                attachmentStorage,
+                commandMapper,
                 platformEventPublisher
         );
     }

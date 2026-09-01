@@ -11,30 +11,27 @@ import kit.penny.clientbus.server.connector.ConnectorSendResult;
 import kit.penny.clientbus.server.connector.IChannelConnector;
 import kit.penny.clientbus.server.kafka.producer.IPlatformEventPublisher;
 import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
-import kit.penny.clientbus.server.service.ChannelAttachment;
+import kit.penny.clientbus.server.mapper.OutboundMessageKafkaCommandMapper;
 import kit.penny.clientbus.server.service.ChannelSendRequest;
-import kit.penny.clientbus.server.storage.IAttachmentStorage;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
 
-import java.util.List;
-
 @Component
 public class KafkaOutboundMessageConsumer {
 
     private final ChannelConnectorRegistry channelConnectorRegistry;
-    private final IAttachmentStorage attachmentStorage;
+    private final OutboundMessageKafkaCommandMapper commandMapper;
     private final IPlatformEventPublisher platformEventPublisher;
 
     public KafkaOutboundMessageConsumer(
             ChannelConnectorRegistry channelConnectorRegistry,
-            IAttachmentStorage attachmentStorage,
+            OutboundMessageKafkaCommandMapper commandMapper,
             IPlatformEventPublisher platformEventPublisher
     ) {
         this.channelConnectorRegistry = channelConnectorRegistry;
-        this.attachmentStorage = attachmentStorage;
+        this.commandMapper = commandMapper;
         this.platformEventPublisher = platformEventPublisher;
     }
 
@@ -59,14 +56,7 @@ public class KafkaOutboundMessageConsumer {
                 channelConnectorRegistry.getConnector(channelType);
 
         ChannelSendRequest request =
-                new ChannelSendRequest(
-                        command.messageId(),
-                        command.channelAccountId(),
-                        command.recipientExternalId(),
-                        command.type(),
-                        command.content(),
-                        loadAttachments(command)
-                );
+                commandMapper.toRequest(command);
 
         ConnectorSendResult result =
                 connector.send(request);
@@ -97,30 +87,6 @@ public class KafkaOutboundMessageConsumer {
                 platformEvent,
                 event.correlationId()
         );
-    }
-
-    private List<ChannelAttachment> loadAttachments(
-            OutboundMessageKafkaCommand command
-    ) {
-        if (command.attachments() == null
-                || command.attachments().isEmpty()) {
-            return List.of();
-        }
-
-        return command.attachments()
-                .stream()
-                .map(attachment ->
-                        new ChannelAttachment(
-                                attachment.type(),
-                                attachment.fileName(),
-                                attachment.contentType(),
-                                attachment.size(),
-                                attachmentStorage.load(
-                                        attachment.storageKey()
-                                )
-                        )
-                )
-                .toList();
     }
 
     private void validateEvent(

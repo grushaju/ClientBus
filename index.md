@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-09-01 20:16:36
+- Generated: 2026-09-01 23:05:26
 - Branch: `main`
-- Commit: `efb3ee7`
+- Commit: `acf7c6b`
 
 ## Project Structure
 
@@ -186,6 +186,7 @@
 - `MessageAttachmentMapper.java` — `server/src/main/java/kit/penny/clientbus/server/mapper/MessageAttachmentMapper.java`
 - `MessageMapper.java` — `server/src/main/java/kit/penny/clientbus/server/mapper/MessageMapper.java`
 - `OrganizationMapper.java` — `server/src/main/java/kit/penny/clientbus/server/mapper/OrganizationMapper.java`
+- `OutboundMessageKafkaCommandMapper.java` — `server/src/main/java/kit/penny/clientbus/server/mapper/OutboundMessageKafkaCommandMapper.java`
 - `WorkspaceMapper.java` — `server/src/main/java/kit/penny/clientbus/server/mapper/WorkspaceMapper.java`
 
 ##### `kit.penny.clientbus.server.persistence.entity`
@@ -309,6 +310,10 @@
 - `KafkaOutboundMessagePublisherIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/producer/KafkaOutboundMessagePublisherIntegrationTest.java`
 - `KafkaPlatformEventPublisherTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/producer/KafkaPlatformEventPublisherTest.java`
 
+##### `kit.penny.clientbus.server.mapper`
+
+- `OutboundMessageKafkaCommandMapperTest.java` — `server/src/test/java/kit/penny/clientbus/server/mapper/OutboundMessageKafkaCommandMapperTest.java`
+
 ##### `kit.penny.clientbus.server.repository`
 
 - `ChannelAccountRepositoryTest.java` — `server/src/test/java/kit/penny/clientbus/server/repository/ChannelAccountRepositoryTest.java`
@@ -355,6 +360,6 @@
 ## Summary
 
 - Maven modules: 4
-- Java files: 183
-- Git commit: `efb3ee7`
+- Java files: 185
+- Git commit: `acf7c6b`
 
