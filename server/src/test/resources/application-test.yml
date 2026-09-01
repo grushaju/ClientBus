@@ -44,6 +44,10 @@ clientbus:
     secret: FnQHtz4yCzaBgma1a25xV30mShdAQZx/33msarZ57f0=
     expiration: 1800000
 
+  kafka:
+    consumer:
+      outbound-group-id: clientbus.outbound.processor
+
   bootstrap:
     organization:
       name: Penny Kit's Company ©

@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-09-01 08:23:38
+- Generated: 2026-09-01 16:38:44
 - Branch: `main`
-- Commit: `984b205`
+- Commit: `9ddc6b9`
 
 ## Project Structure
 
@@ -291,16 +291,23 @@
 - `AbstractIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/integration/AbstractIntegrationTest.java`
 - `MessageInboundFlowIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/integration/MessageInboundFlowIntegrationTest.java`
 
+##### `kit.penny.clientbus.server.kafka.config`
+
+- `KafkaEventJsonDeserializerTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/config/KafkaEventJsonDeserializerTest.java`
+
 ##### `kit.penny.clientbus.server.kafka.consumer`
 
 - `KafkaInboundEventConsumerIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaInboundEventConsumerIntegrationTest.java`
 - `KafkaInboundEventConsumerTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaInboundEventConsumerTest.java`
+- `KafkaOutboundMessageConsumerIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaOutboundMessageConsumerIntegrationTest.java`
+- `KafkaOutboundMessageConsumerTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaOutboundMessageConsumerTest.java`
 
 ##### `kit.penny.clientbus.server.kafka.producer`
 
 - `KafkaInboundEventPublisherIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/producer/KafkaInboundEventPublisherIntegrationTest.java`
 - `KafkaInboundEventPublisherTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/producer/KafkaInboundEventPublisherTest.java`
 - `KafkaOutboundMessagePublisherIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/producer/KafkaOutboundMessagePublisherIntegrationTest.java`
+- `KafkaPlatformEventPublisherTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/producer/KafkaPlatformEventPublisherTest.java`
 
 ##### `kit.penny.clientbus.server.repository`
 
@@ -348,6 +355,6 @@
 ## Summary
 
 - Maven modules: 4
-- Java files: 179
-- Git commit: `984b205`
+- Java files: 183
+- Git commit: `9ddc6b9`
 

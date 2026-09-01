@@ -10,15 +10,28 @@ import kit.penny.clientbus.common.kafka.KafkaEvent;
 import kit.penny.clientbus.common.kafka.KafkaEventType;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.integration.AbstractIntegrationTest;
-import kit.penny.clientbus.server.persistence.entity.*;
-import kit.penny.clientbus.server.persistence.repository.*;
+import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
+import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
+import kit.penny.clientbus.server.persistence.entity.MessageEntity;
+import kit.penny.clientbus.server.persistence.entity.OrganizationEntity;
+import kit.penny.clientbus.server.persistence.entity.WorkspaceEntity;
+import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
+import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
+import kit.penny.clientbus.server.persistence.repository.MessageRepository;
+import kit.penny.clientbus.server.persistence.repository.OrganizationRepository;
+import kit.penny.clientbus.server.persistence.repository.WorkspaceRepository;
 import kit.penny.clientbus.server.service.IMessageProcessingService;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.ApplicationContext;
+import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.listener.MessageListenerContainer;
+import org.springframework.kafka.test.utils.ContainerTestUtils;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -26,12 +39,15 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
@@ -54,7 +70,7 @@ class KafkaInboundEventConsumerIntegrationTest
     private IMessageProcessingService messageProcessingService;
 
     @Autowired
-    private ApplicationContext applicationContext;
+    private KafkaListenerEndpointRegistry kafkaListenerEndpointRegistry;
 
     @Autowired
     private OrganizationRepository organizationRepository;
@@ -68,7 +84,8 @@ class KafkaInboundEventConsumerIntegrationTest
     @Autowired
     private ChannelAccountRepository channelAccountRepository;
 
-    @Autowired private MessageRepository messageRepository;
+    @Autowired
+    private MessageRepository messageRepository;
 
     @DynamicPropertySource
     static void kafkaProperties(
@@ -78,11 +95,71 @@ class KafkaInboundEventConsumerIntegrationTest
                 "spring.kafka.consumer.group-id",
                 () -> CONSUMER_GROUP
         );
+
+        registry.add(
+                "spring.kafka.consumer.auto-offset-reset",
+                () -> "latest"
+        );
+    }
+
+    @BeforeEach
+    void clearPreviousInvocations() {
+        clearInvocations(
+                messageProcessingService
+        );
+    }
+
+    private void waitForKafkaInboundConsumer()
+            throws Exception {
+
+        MessageListenerContainer container =
+                kafkaListenerEndpointRegistry
+                        .getListenerContainer(
+                                "kafkaInboundEventConsumer"
+                        );
+
+        assertNotNull(container);
+
+        Properties properties =
+                new Properties();
+
+        properties.put(
+                AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG,
+                kafkaTemplate
+                        .getProducerFactory()
+                        .getConfigurationProperties()
+                        .get(
+                                AdminClientConfig
+                                        .BOOTSTRAP_SERVERS_CONFIG
+                        )
+        );
+
+        try (AdminClient adminClient =
+                     AdminClient.create(properties)) {
+
+            int partitionCount =
+                    adminClient
+                            .describeTopics(
+                                    List.of(TOPIC)
+                            )
+                            .allTopicNames()
+                            .get()
+                            .get(TOPIC)
+                            .partitions()
+                            .size();
+
+            ContainerTestUtils.waitForAssignment(
+                    container,
+                    partitionCount
+            );
+        }
     }
 
     @Test
     void consume_receivesInboundEventAndProcessesPayload()
             throws Exception {
+
+        waitForKafkaInboundConsumer();
 
         OrganizationEntity organization =
                 organizationRepository.saveAndFlush(
@@ -275,6 +352,8 @@ class KafkaInboundEventConsumerIntegrationTest
     void consume_duplicateInboundEvent_createsOnlyOneMessage()
             throws Exception {
 
+        waitForKafkaInboundConsumer();
+
         OrganizationEntity organization =
                 organizationRepository.saveAndFlush(
                         TestDataFactory.organization()
@@ -419,6 +498,4 @@ class KafkaInboundEventConsumerIntegrationTest
                 storedMessage.getExternalId()
         );
     }
-
-
 }

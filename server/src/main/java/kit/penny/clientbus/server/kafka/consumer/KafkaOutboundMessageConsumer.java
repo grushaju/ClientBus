@@ -40,7 +40,7 @@ public class KafkaOutboundMessageConsumer {
 
     @KafkaListener(
             id = "kafkaOutboundMessageConsumer",
-            groupId = "${spring.kafka.consumer.group-id}",
+            groupId = "${clientbus.kafka.consumer.outbound-group-id}",
             topicPattern = "#{T(kit.penny.clientbus.server.kafka.routing.KafkaTopicNames).outboundPattern()}"
     )
     public void consume(
