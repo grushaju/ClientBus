@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-09-02 00:35:37
+- Generated: 2026-09-02 13:39:17
 - Branch: `main`
-- Commit: `b77025e`
+- Commit: `f1a830f`
 
 ## Project Structure
 
@@ -103,6 +103,11 @@
 - `OutboundMessageKafkaCommand.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/OutboundMessageKafkaCommand.java`
 - `PlatformMessageKafkaEvent.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/PlatformMessageKafkaEvent.java`
 - `PlatformOutboundAttachment.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/PlatformOutboundAttachment.java`
+
+#### `src/main/resources`
+
+
+#### `src/test/java`
 
 ### server
 
@@ -359,11 +364,9 @@
 
 - `ui/src/main/resources/application.properties`
 
-#### `src/test/java`
-
 ## Summary
 
 - Maven modules: 4
 - Java files: 189
-- Git commit: `b77025e`
+- Git commit: `f1a830f`
 

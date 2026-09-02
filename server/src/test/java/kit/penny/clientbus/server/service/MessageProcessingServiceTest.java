@@ -3,9 +3,9 @@ package kit.penny.clientbus.server.service;
 import jakarta.persistence.EntityNotFoundException;
 import kit.penny.clientbus.common.dto.message.*;
 import kit.penny.clientbus.common.enums.*;
-import kit.penny.clientbus.server.connector.ConnectorSendResult;
-import kit.penny.clientbus.server.connector.IChannelConnector;
-import kit.penny.clientbus.server.connector.IChannelConnectorRegistry;
+import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
+import kit.penny.clientbus.common.kafka.PlatformOutboundAttachment;
+import kit.penny.clientbus.server.kafka.producer.IOutboundMessagePublisher;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
 import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
@@ -56,10 +56,7 @@ class MessageProcessingServiceTest {
     private MessageAttachmentService messageAttachmentService;
 
     @Mock
-    private IChannelConnectorRegistry connectorRegistry;
-
-    @Mock
-    private IChannelConnector connector;
+    private IOutboundMessagePublisher outboundMessagePublisher;
 
     @Mock
     private MessageRepository messageRepository;
@@ -926,16 +923,28 @@ class MessageProcessingServiceTest {
                         )
                 );
 
-        ChannelAttachment channelAttachment =
-                new ChannelAttachment(
-                        MessageAttachmentType.IMAGE,
-                        "photo.jpg",
-                        "image/jpeg",
-                        1024,
-                        new ByteArrayInputStream(
-                                new byte[]{1, 2, 3}
-                        )
-                );
+        MessageAttachmentEntity storedAttachment =
+                new MessageAttachmentEntity();
+
+        storedAttachment.setType(
+                MessageAttachmentType.IMAGE
+        );
+
+        storedAttachment.setStorageKey(
+                "storage/photo.jpg"
+        );
+
+        storedAttachment.setFileName(
+                "photo.jpg"
+        );
+
+        storedAttachment.setContentType(
+                "image/jpeg"
+        );
+
+        storedAttachment.setSize(
+                1024
+        );
 
         MessageDto processingMessage =
                 mock(MessageDto.class);
@@ -955,16 +964,13 @@ class MessageProcessingServiceTest {
         when(processedMessage.content())
                 .thenReturn("Hello");
 
-        MessageDto sentMessage =
+        MessageDto queuedMessage =
                 mock(MessageDto.class);
-
-        when(messageDto.id())
-                .thenReturn(messageId);
 
         when(messageService.createOutboundMessage(
                 any(CreateOutboundMessageRequest.class)
         )).thenReturn(
-                messageDto
+                processingMessage
         );
 
         when(messageService.startProcessing(
@@ -991,31 +997,16 @@ class MessageProcessingServiceTest {
                 processedMessage
         );
 
-        when(messageAttachmentService.getChannelAttachments(
+        when(messageAttachmentService.getAttachmentsForProcessing(
                 messageId
         )).thenReturn(
-                List.of(channelAttachment)
+                List.of(storedAttachment)
         );
 
-        when(connectorRegistry.getConnector(
-                ChannelType.TELEGRAM
+        when(messageService.markQueued(
+                messageId
         )).thenReturn(
-                connector
-        );
-
-        when(connector.send(
-                any(ChannelSendRequest.class)
-        )).thenReturn(
-                new ConnectorSendResult(
-                        "telegram-message-123"
-                )
-        );
-
-        when(messageService.markSent(
-                messageId,
-                "telegram-message-123"
-        )).thenReturn(
-                sentMessage
+                queuedMessage
         );
 
         MessageDto result =
@@ -1025,7 +1016,7 @@ class MessageProcessingServiceTest {
                 );
 
         assertSame(
-                sentMessage,
+                queuedMessage,
                 result
         );
 
@@ -1035,7 +1026,9 @@ class MessageProcessingServiceTest {
                 );
 
         verify(messageService)
-                .startProcessing(messageId);
+                .startProcessing(
+                        messageId
+                );
 
         verify(conversationService)
                 .findEntityForProcessing(
@@ -1054,193 +1047,101 @@ class MessageProcessingServiceTest {
                 );
 
         verify(messageService)
-                .markProcessed(messageId);
+                .markProcessed(
+                        messageId
+                );
 
         verify(messageAttachmentService)
-                .getChannelAttachments(messageId);
+                .getAttachmentsForProcessing(
+                        messageId
+                );
 
-        ArgumentCaptor<ChannelSendRequest>
-                sendRequestCaptor =
+        verify(messageService)
+                .markQueued(
+                        messageId
+                );
+
+        ArgumentCaptor<ChannelType> channelTypeCaptor =
                 ArgumentCaptor.forClass(
-                        ChannelSendRequest.class
+                        ChannelType.class
                 );
 
-        verify(connector)
-                .send(
-                        sendRequestCaptor.capture()
+        ArgumentCaptor<OutboundMessageKafkaCommand> commandCaptor =
+                ArgumentCaptor.forClass(
+                        OutboundMessageKafkaCommand.class
                 );
 
-        ChannelSendRequest sendRequest =
-                sendRequestCaptor.getValue();
+        verify(outboundMessagePublisher)
+                .publish(
+                        channelTypeCaptor.capture(),
+                        commandCaptor.capture()
+                );
+
+        assertEquals(
+                ChannelType.TELEGRAM,
+                channelTypeCaptor.getValue()
+        );
+
+        OutboundMessageKafkaCommand command =
+                commandCaptor.getValue();
 
         assertEquals(
                 messageId,
-                sendRequest.messageId()
+                command.messageId()
         );
 
         assertEquals(
                 channelAccountId,
-                sendRequest.channelAccountId()
+                command.channelAccountId()
         );
 
         assertEquals(
                 "client-123",
-                sendRequest.recipientExternalId()
+                command.recipientExternalId()
         );
 
         assertEquals(
                 MessageType.TEXT,
-                sendRequest.type()
+                command.type()
         );
 
         assertEquals(
                 "Hello",
-                sendRequest.content()
+                command.content()
         );
 
         assertEquals(
-                List.of(channelAttachment),
-                sendRequest.attachments()
+                1,
+                command.attachments().size()
         );
 
-        verify(messageService)
-                .markSent(
-                        messageId,
-                        "telegram-message-123"
-                );
+        PlatformOutboundAttachment outboundAttachment =
+                command.attachments().get(0);
 
-        verify(
-                messageService,
-                never()
-        ).markProcessingFailed(any());
-
-        verify(
-                messageService,
-                never()
-        ).markDeliveryFailed(any());
-    }
-
-    @Test
-    void processOutbound_connectorFails_marksDeliveryFailed() {
-
-        OutboundMessageRequest request =
-                new OutboundMessageRequest(
-                        conversationId,
-                        MessageType.TEXT,
-                        "Hello",
-                        null,
-                        null
-                );
-
-        MessageDto processingMessage =
-                mock(MessageDto.class);
-
-        when(processingMessage.id())
-                .thenReturn(messageId);
-
-        MessageDto processedMessage =
-                mock(MessageDto.class);
-
-        when(processedMessage.id())
-                .thenReturn(messageId);
-
-        when(processedMessage.type())
-                .thenReturn(MessageType.TEXT);
-
-        when(processedMessage.content())
-                .thenReturn("Hello");
-
-        RuntimeException connectorException =
-                new RuntimeException(
-                        "Connector failed"
-                );
-
-        when(messageService.createOutboundMessage(
-                any(CreateOutboundMessageRequest.class)
-        )).thenReturn(
-                messageDto
+        assertEquals(
+                MessageAttachmentType.IMAGE,
+                outboundAttachment.type()
         );
 
-        when(messageService.startProcessing(
-                messageId
-        )).thenReturn(
-                processingMessage
+        assertEquals(
+                "storage/photo.jpg",
+                outboundAttachment.storageKey()
         );
 
-        when(conversationService.findEntityForProcessing(
-                conversationId
-        )).thenReturn(
-                conversation
+        assertEquals(
+                "photo.jpg",
+                outboundAttachment.fileName()
         );
 
-        when(messageService.getMessageEntityForProcessing(
-                messageId
-        )).thenReturn(
-                messageEntity
+        assertEquals(
+                "image/jpeg",
+                outboundAttachment.contentType()
         );
 
-        when(messageService.markProcessed(
-                messageId
-        )).thenReturn(
-                processedMessage
+        assertEquals(
+                1024,
+                outboundAttachment.size()
         );
-
-        when(messageAttachmentService.getChannelAttachments(
-                messageId
-        )).thenReturn(
-                List.of()
-        );
-
-        when(connectorRegistry.getConnector(
-                ChannelType.TELEGRAM
-        )).thenReturn(
-                connector
-        );
-
-        when(connector.send(
-                any(ChannelSendRequest.class)
-        )).thenThrow(
-                connectorException
-        );
-
-        MessageDto deliveryFailedMessage =
-                mock(MessageDto.class);
-
-        when(messageService.markDeliveryFailed(
-                messageId
-        )).thenReturn(
-                deliveryFailedMessage
-        );
-
-        when(messageDto.id())
-                .thenReturn(messageId);
-
-        RuntimeException result =
-                assertThrows(
-                        RuntimeException.class,
-                        () ->
-                                messageProcessingService
-                                        .processOutbound(
-                                                request,
-                                                List.of()
-                                        )
-                );
-
-        assertSame(
-                connectorException,
-                result
-        );
-
-        verify(messageService)
-                .markProcessed(messageId);
-
-        verify(messageService)
-                .markDeliveryFailed(messageId);
-
-        verify(
-                messageService,
-                never()
-        ).markProcessingFailed(any());
 
         verify(
                 messageService,
@@ -1249,216 +1150,12 @@ class MessageProcessingServiceTest {
                 any(),
                 anyString()
         );
-    }
-
-    @Test
-    void processOutbound_connectorReturnsNull_marksDeliveryFailed() {
-
-        OutboundMessageRequest request =
-                new OutboundMessageRequest(
-                        conversationId,
-                        MessageType.TEXT,
-                        "Hello",
-                        null,
-                        null
-                );
-
-        MessageDto processingMessage =
-                mock(MessageDto.class);
-
-        when(processingMessage.id())
-                .thenReturn(messageId);
-
-        MessageDto processedMessage =
-                mock(MessageDto.class);
-
-        when(processedMessage.id())
-                .thenReturn(messageId);
-
-        when(processedMessage.type())
-                .thenReturn(MessageType.TEXT);
-
-        when(processedMessage.content())
-                .thenReturn("Hello");
-
-        when(messageService.createOutboundMessage(
-                any(CreateOutboundMessageRequest.class)
-        )).thenReturn(
-                messageDto
-        );
-
-        when(messageService.startProcessing(
-                messageId
-        )).thenReturn(
-                processingMessage
-        );
-
-        when(conversationService.findEntityForProcessing(
-                conversationId
-        )).thenReturn(
-                conversation
-        );
-
-        when(messageService.getMessageEntityForProcessing(
-                messageId
-        )).thenReturn(
-                messageEntity
-        );
-
-        when(messageService.markProcessed(
-                messageId
-        )).thenReturn(
-                processedMessage
-        );
-
-        when(messageAttachmentService.getChannelAttachments(
-                messageId
-        )).thenReturn(
-                List.of()
-        );
-
-        when(connectorRegistry.getConnector(
-                ChannelType.TELEGRAM
-        )).thenReturn(
-                connector
-        );
-
-        when(connector.send(
-                any(ChannelSendRequest.class)
-        )).thenReturn(null);
-
-        RuntimeException deliveryException =
-                new IllegalStateException(
-                        "ChannelConnector returned null result"
-                );
-
-        when(messageService.markDeliveryFailed(
-                messageId
-        )).thenReturn(
-                mock(MessageDto.class)
-        );
-
-        when(messageDto.id())
-                .thenReturn(messageId);
-
-        RuntimeException result =
-                assertThrows(
-                        RuntimeException.class,
-                        () ->
-                                messageProcessingService
-                                        .processOutbound(
-                                                request,
-                                                List.of()
-                                        )
-                );
-
-        assertEquals(
-                deliveryException.getMessage(),
-                result.getMessage()
-        );
-
-        verify(messageService)
-                .markDeliveryFailed(messageId);
-    }
-
-    @Test
-    void processOutbound_connectorReturnsBlankExternalId_marksDeliveryFailed() {
-
-        OutboundMessageRequest request =
-                new OutboundMessageRequest(
-                        conversationId,
-                        MessageType.TEXT,
-                        "Hello",
-                        null,
-                        null
-                );
-
-        MessageDto processingMessage =
-                mock(MessageDto.class);
-
-        when(processingMessage.id())
-                .thenReturn(messageId);
-
-        MessageDto processedMessage =
-                mock(MessageDto.class);
-
-        when(processedMessage.id())
-                .thenReturn(messageId);
-
-        when(processedMessage.type())
-                .thenReturn(MessageType.TEXT);
-
-        when(processedMessage.content())
-                .thenReturn("Hello");
-
-        when(messageDto.id())
-                .thenReturn(messageId);
-
-        when(messageService.createOutboundMessage(
-                any(CreateOutboundMessageRequest.class)
-        )).thenReturn(messageDto);
-
-        when(messageService.startProcessing(
-                messageId
-        )).thenReturn(processingMessage);
-
-        when(conversationService.findEntityForProcessing(
-                conversationId
-        )).thenReturn(conversation);
-
-        when(messageService.getMessageEntityForProcessing(
-                messageId
-        )).thenReturn(messageEntity);
-
-        when(messageService.markProcessed(
-                messageId
-        )).thenReturn(processedMessage);
-
-        when(messageAttachmentService.getChannelAttachments(
-                messageId
-        )).thenReturn(List.of());
-
-        when(connectorRegistry.getConnector(
-                ChannelType.TELEGRAM
-        )).thenReturn(connector);
-
-        when(connector.send(
-                any(ChannelSendRequest.class)
-        )).thenReturn(
-                new ConnectorSendResult("")
-        );
-
-        when(messageService.markDeliveryFailed(
-                messageId
-        )).thenReturn(
-                mock(MessageDto.class)
-        );
-
-        RuntimeException result =
-                assertThrows(
-                        RuntimeException.class,
-                        () ->
-                                messageProcessingService
-                                        .processOutbound(
-                                                request,
-                                                List.of()
-                                        )
-                );
-
-        assertEquals(
-                "ChannelConnector returned blank externalId",
-                result.getMessage()
-        );
-
-        verify(messageService)
-                .markDeliveryFailed(messageId);
 
         verify(
                 messageService,
                 never()
-        ).markSent(
-                any(),
-                anyString()
+        ).markDeliveryFailed(
+                any()
         );
     }
 

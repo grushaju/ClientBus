@@ -13,6 +13,7 @@ import kit.penny.clientbus.server.kafka.producer.IPlatformEventPublisher;
 import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
 import kit.penny.clientbus.server.mapper.OutboundMessageKafkaCommandMapper;
 import kit.penny.clientbus.server.service.ChannelSendRequest;
+import kit.penny.clientbus.server.service.MessageService;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.handler.annotation.Header;
@@ -23,16 +24,16 @@ public class KafkaOutboundMessageConsumer {
 
     private final ChannelConnectorRegistry channelConnectorRegistry;
     private final OutboundMessageKafkaCommandMapper commandMapper;
-    private final IPlatformEventPublisher platformEventPublisher;
+    private final MessageService messageService;
 
     public KafkaOutboundMessageConsumer(
             ChannelConnectorRegistry channelConnectorRegistry,
             OutboundMessageKafkaCommandMapper commandMapper,
-            IPlatformEventPublisher platformEventPublisher
+            MessageService messageService
     ) {
         this.channelConnectorRegistry = channelConnectorRegistry;
         this.commandMapper = commandMapper;
-        this.platformEventPublisher = platformEventPublisher;
+        this.messageService = messageService;
     }
 
     @KafkaListener(
@@ -69,23 +70,15 @@ public class KafkaOutboundMessageConsumer {
 
         if (result.externalId() == null
                 || result.externalId().isBlank()) {
+
             throw new IllegalStateException(
                     "Connector returned blank externalId"
             );
         }
 
-        PlatformMessageEvent platformEvent =
-                new PlatformMessageEvent(
-                        command.channelAccountId(),
-                        result.externalId(),
-                        PlatformMessageEventType.SENT,
-                        null,
-                        null
-                );
-
-        platformEventPublisher.publish(
-                platformEvent,
-                event.correlationId()
+        messageService.markSent(
+                command.messageId(),
+                result.externalId()
         );
     }
 

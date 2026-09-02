@@ -4,9 +4,12 @@ import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
 import kit.penny.clientbus.common.dto.message.*;
 import kit.penny.clientbus.common.enums.ChannelType;
+import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
+import kit.penny.clientbus.common.kafka.PlatformOutboundAttachment;
 import kit.penny.clientbus.server.connector.ConnectorSendResult;
 import kit.penny.clientbus.server.connector.IChannelConnector;
 import kit.penny.clientbus.server.connector.IChannelConnectorRegistry;
+import kit.penny.clientbus.server.kafka.producer.IOutboundMessagePublisher;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ConversationEntity;
@@ -29,8 +32,8 @@ public class MessageProcessingService
     private final ConversationService conversationService;
     private final MessageService messageService;
     private final MessageAttachmentService messageAttachmentService;
-    private final IChannelConnectorRegistry connectorRegistry;
     private final MessageRepository messageRepository;
+    private final IOutboundMessagePublisher outboundMessagePublisher;
 
     public MessageProcessingService(
             ChannelAccountRepository channelAccountRepository,
@@ -39,7 +42,7 @@ public class MessageProcessingService
             ConversationService conversationService,
             MessageService messageService,
             MessageAttachmentService messageAttachmentService,
-            IChannelConnectorRegistry connectorRegistry,
+            IOutboundMessagePublisher outboundMessagePublisher,
             MessageRepository messageRepository
     ) {
         this.channelAccountRepository = channelAccountRepository;
@@ -48,7 +51,7 @@ public class MessageProcessingService
         this.conversationService = conversationService;
         this.messageService = messageService;
         this.messageAttachmentService = messageAttachmentService;
-        this.connectorRegistry = connectorRegistry;
+        this.outboundMessagePublisher = outboundMessagePublisher;
         this.messageRepository = messageRepository;
     }
 
@@ -266,7 +269,6 @@ public class MessageProcessingService
         boolean processingCompleted = false;
 
         try {
-
             message =
                     messageService.startProcessing(
                             message.id()
@@ -317,48 +319,46 @@ public class MessageProcessingService
 
             processingCompleted = true;
 
-            List<ChannelAttachment> channelAttachments =
-                    messageAttachmentService.getChannelAttachments(
+            List<MessageAttachmentEntity> messageAttachments =
+                    messageAttachmentService.getAttachmentsForProcessing(
                             message.id()
                     );
 
-            ChannelSendRequest sendRequest =
-                    new ChannelSendRequest(
+            List<PlatformOutboundAttachment> outboundAttachments =
+                    messageAttachments.stream()
+                            .map(attachment ->
+                                    new PlatformOutboundAttachment(
+                                            attachment.getType(),
+                                            attachment.getStorageKey(),
+                                            attachment.getFileName(),
+                                            attachment.getContentType(),
+                                            attachment.getSize()
+                                    )
+                            )
+                            .toList();
+
+            OutboundMessageKafkaCommand command =
+                    new OutboundMessageKafkaCommand(
                             message.id(),
                             channelAccount.getId(),
                             conversation.getClientAccount()
                                     .getExternalId(),
                             message.type(),
                             message.content(),
-                            channelAttachments
+                            outboundAttachments
                     );
 
-            IChannelConnector connector =
-                    connectorRegistry.getConnector(
-                            channelType
+            message =
+                    messageService.markQueued(
+                            message.id()
                     );
 
-            ConnectorSendResult result =
-                    connector.send(sendRequest);
-
-            if (result == null) {
-                throw new IllegalStateException(
-                        "ChannelConnector returned null result"
-                );
-            }
-
-            if (result.externalId() == null
-                    || result.externalId().isBlank()) {
-
-                throw new IllegalStateException(
-                        "ChannelConnector returned blank externalId"
-                );
-            }
-
-            return messageService.markSent(
-                    message.id(),
-                    result.externalId()
+            outboundMessagePublisher.publish(
+                    channelType,
+                    command
             );
+
+            return message;
 
         } catch (RuntimeException e) {
 

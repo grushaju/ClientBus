@@ -448,7 +448,50 @@ public class MessageService {
     }
 
     /**
-     * PROCESSED/PENDING -> SENT.
+     * PROCESSED -> QUEUED.
+     *
+     * Сообщение подготовлено и поставлено
+     * в асинхронный outbound Kafka flow.
+     *
+     * Повторный QUEUED является идемпотентным.
+     */
+    @Transactional
+    public MessageDto markQueued(UUID messageId) {
+
+        MessageEntity message =
+                getMessageForProcessing(messageId);
+
+        if (message.getProcessingStatus()
+                == MessageProcessingStatus.QUEUED) {
+
+            return messageMapper.toDto(message);
+        }
+
+        if (message.getProcessingStatus()
+                != MessageProcessingStatus.PROCESSED) {
+
+            throw new IllegalStateException(
+                    "Message must be PROCESSED before QUEUED: "
+                            + messageId
+            );
+        }
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.QUEUED
+        );
+
+        return messageMapper.toDto(
+                messageRepository.save(message)
+        );
+    }
+
+    /**
+     * QUEUED -> SENT.
+     *
+     * Вызывается KafkaOutboundMessageConsumer
+     * после успешной отправки через ChannelConnector.
+     *
+     * Повторный SENT является идемпотентным.
      */
     @Transactional
     public MessageDto markSent(
@@ -461,17 +504,51 @@ public class MessageService {
 
         requireOutbound(message);
 
-        if (message.getProcessingStatus()
-                != MessageProcessingStatus.PROCESSED) {
+        validateExternalId(externalId);
+
+        MessageProcessingStatus processingStatus =
+                message.getProcessingStatus();
+
+        MessageDeliveryStatus deliveryStatus =
+                message.getDeliveryStatus();
+
+        /*
+         * Полностью обработанный повторный SENT.
+         *
+         * Если сообщение уже SENT с тем же externalId —
+         * это повторная доставка Kafka и ничего менять не нужно.
+         */
+        if (deliveryStatus == MessageDeliveryStatus.SENT
+                && externalId.equals(message.getExternalId())) {
+
+            return messageMapper.toDto(message);
+        }
+
+        /*
+         * SENT с другим externalId означает конфликт.
+         */
+        if (deliveryStatus == MessageDeliveryStatus.SENT) {
 
             throw new IllegalStateException(
-                    "Message must be PROCESSED before sending: "
+                    "Message is already SENT with another externalId: "
                             + messageId
             );
         }
 
-        if (message.getDeliveryStatus()
-                != MessageDeliveryStatus.PENDING) {
+        /*
+         * До отправки сообщение должно находиться
+         * именно в QUEUED.
+         */
+        if (processingStatus
+                != MessageProcessingStatus.QUEUED) {
+
+            throw new IllegalStateException(
+                    "Message must be QUEUED before SENT: "
+                            + messageId
+            );
+        }
+
+        if (deliveryStatus != MessageDeliveryStatus.PENDING) {
 
             throw new IllegalStateException(
                     "Message must be PENDING before SENT: "
@@ -479,8 +556,10 @@ public class MessageService {
             );
         }
 
-        validateExternalId(externalId);
-
+        /*
+         * Защищаемся от повторного externalId
+         * другого Message внутри Conversation.
+         */
         messageRepository
                 .findByConversationIdAndExternalId(
                         message.getConversation().getId(),
@@ -498,9 +577,7 @@ public class MessageService {
                     }
                 });
 
-        message.setExternalId(
-                externalId
-        );
+        message.setExternalId(externalId);
 
         message.setDeliveryStatus(
                 MessageDeliveryStatus.SENT

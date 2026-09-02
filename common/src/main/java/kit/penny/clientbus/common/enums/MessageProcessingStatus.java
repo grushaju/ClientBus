@@ -19,6 +19,11 @@ public enum MessageProcessingStatus {
     PROCESSED,
 
     /**
+     * Сообщение поставлено в очередь на отправку.
+     */
+    QUEUED,
+
+    /**
      * Обработка завершилась ошибкой.
      */
     FAILED

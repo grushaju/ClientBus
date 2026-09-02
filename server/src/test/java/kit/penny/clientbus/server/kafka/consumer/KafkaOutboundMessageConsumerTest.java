@@ -1,18 +1,16 @@
 package kit.penny.clientbus.server.kafka.consumer;
 
-import kit.penny.clientbus.common.dto.message.PlatformMessageEvent;
 import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.common.enums.MessageType;
-import kit.penny.clientbus.common.enums.PlatformMessageEventType;
 import kit.penny.clientbus.common.kafka.KafkaEvent;
 import kit.penny.clientbus.common.kafka.KafkaEventType;
 import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
 import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
 import kit.penny.clientbus.server.connector.ConnectorSendResult;
 import kit.penny.clientbus.server.connector.IChannelConnector;
-import kit.penny.clientbus.server.kafka.producer.IPlatformEventPublisher;
 import kit.penny.clientbus.server.mapper.OutboundMessageKafkaCommandMapper;
 import kit.penny.clientbus.server.service.ChannelSendRequest;
+import kit.penny.clientbus.server.service.MessageService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -21,15 +19,13 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 class KafkaOutboundMessageConsumerTest {
 
     private ChannelConnectorRegistry channelConnectorRegistry;
     private OutboundMessageKafkaCommandMapper commandMapper;
-    private IPlatformEventPublisher platformEventPublisher;
+    private MessageService messageService;
     private IChannelConnector connector;
 
     private KafkaOutboundMessageConsumer consumer;
@@ -42,8 +38,8 @@ class KafkaOutboundMessageConsumerTest {
         commandMapper =
                 mock(OutboundMessageKafkaCommandMapper.class);
 
-        platformEventPublisher =
-                mock(IPlatformEventPublisher.class);
+        messageService =
+                mock(MessageService.class);
 
         connector =
                 mock(IChannelConnector.class);
@@ -52,16 +48,15 @@ class KafkaOutboundMessageConsumerTest {
                 new KafkaOutboundMessageConsumer(
                         channelConnectorRegistry,
                         commandMapper,
-                        platformEventPublisher
+                        messageService
                 );
     }
 
     @Test
-    void shouldSendMessageThroughConnector() {
+    void shouldSendMessageThroughConnectorAndMarkItSent() {
 
         UUID messageId = UUID.randomUUID();
         UUID channelAccountId = UUID.randomUUID();
-        UUID correlationId = UUID.randomUUID();
 
         OutboundMessageKafkaCommand command =
                 new OutboundMessageKafkaCommand(
@@ -86,7 +81,7 @@ class KafkaOutboundMessageConsumerTest {
         KafkaEvent<OutboundMessageKafkaCommand> event =
                 outboundEvent(
                         command,
-                        correlationId
+                        UUID.randomUUID()
                 );
 
         when(commandMapper.toRequest(command))
@@ -117,11 +112,18 @@ class KafkaOutboundMessageConsumerTest {
         verify(connector)
                 .send(request);
 
-        verify(platformEventPublisher)
-                .publish(
-                        any(PlatformMessageEvent.class),
-                        eq(correlationId)
+        verify(messageService)
+                .markSent(
+                        messageId,
+                        "external-123"
                 );
+
+        verifyNoMoreInteractions(
+                channelConnectorRegistry,
+                commandMapper,
+                connector,
+                messageService
+        );
     }
 
     @Test
@@ -129,7 +131,6 @@ class KafkaOutboundMessageConsumerTest {
 
         UUID messageId = UUID.randomUUID();
         UUID channelAccountId = UUID.randomUUID();
-        UUID correlationId = UUID.randomUUID();
 
         OutboundMessageKafkaCommand command =
                 new OutboundMessageKafkaCommand(
@@ -154,7 +155,7 @@ class KafkaOutboundMessageConsumerTest {
         KafkaEvent<OutboundMessageKafkaCommand> event =
                 outboundEvent(
                         command,
-                        correlationId
+                        UUID.randomUUID()
                 );
 
         when(commandMapper.toRequest(command))
@@ -181,71 +182,11 @@ class KafkaOutboundMessageConsumerTest {
 
         verify(connector)
                 .send(request);
-    }
 
-    @Test
-    void shouldPublishSentEventWithConnectorExternalId() {
-
-        UUID messageId = UUID.randomUUID();
-        UUID channelAccountId = UUID.randomUUID();
-        UUID correlationId = UUID.randomUUID();
-
-        OutboundMessageKafkaCommand command =
-                new OutboundMessageKafkaCommand(
+        verify(messageService)
+                .markSent(
                         messageId,
-                        channelAccountId,
-                        "recipient-123",
-                        MessageType.TEXT,
-                        "Hello",
-                        List.of()
-                );
-
-        ChannelSendRequest request =
-                new ChannelSendRequest(
-                        messageId,
-                        channelAccountId,
-                        "recipient-123",
-                        MessageType.TEXT,
-                        "Hello",
-                        List.of()
-                );
-
-        KafkaEvent<OutboundMessageKafkaCommand> event =
-                outboundEvent(
-                        command,
-                        correlationId
-                );
-
-        when(commandMapper.toRequest(command))
-                .thenReturn(request);
-
-        when(channelConnectorRegistry.getConnector(
-                ChannelType.TELEGRAM
-        )).thenReturn(connector);
-
-        when(connector.send(request))
-                .thenReturn(
-                        new ConnectorSendResult(
-                                "telegram-external-42"
-                        )
-                );
-
-        consumer.consume(
-                event,
-                "clientbus.outbound.telegram"
-        );
-
-        verify(platformEventPublisher)
-                .publish(
-                        argThat(platformEvent ->
-                                platformEvent.channelAccountId()
-                                        .equals(channelAccountId)
-                                        && platformEvent.externalId()
-                                        .equals("telegram-external-42")
-                                        && platformEvent.type()
-                                        == PlatformMessageEventType.SENT
-                        ),
-                        eq(correlationId)
+                        "vk-message-123"
                 );
     }
 
@@ -271,7 +212,7 @@ class KafkaOutboundMessageConsumerTest {
         verifyNoInteractions(
                 channelConnectorRegistry,
                 commandMapper,
-                platformEventPublisher
+                messageService
         );
     }
 
@@ -320,7 +261,10 @@ class KafkaOutboundMessageConsumerTest {
                 .isInstanceOf(RuntimeException.class)
                 .hasMessage("Platform unavailable");
 
-        verifyNoInteractions(platformEventPublisher);
+        verify(connector)
+                .send(request);
+
+        verifyNoInteractions(messageService);
     }
 
     @Test
@@ -366,7 +310,10 @@ class KafkaOutboundMessageConsumerTest {
                         "Connector returned null send result"
                 );
 
-        verifyNoInteractions(platformEventPublisher);
+        verify(connector)
+                .send(request);
+
+        verifyNoInteractions(messageService);
     }
 
     @Test
@@ -400,7 +347,7 @@ class KafkaOutboundMessageConsumerTest {
 
         when(connector.send(request))
                 .thenReturn(
-                        new ConnectorSendResult(" ")
+                        new ConnectorSendResult("")
                 );
 
         assertThatThrownBy(() ->
@@ -414,7 +361,61 @@ class KafkaOutboundMessageConsumerTest {
                         "Connector returned blank externalId"
                 );
 
-        verifyNoInteractions(platformEventPublisher);
+        verify(connector)
+                .send(request);
+
+        verifyNoInteractions(messageService);
+    }
+
+    @Test
+    void shouldFailWhenConnectorReturnsWhitespaceExternalId() {
+
+        OutboundMessageKafkaCommand command =
+                validCommand();
+
+        ChannelSendRequest request =
+                new ChannelSendRequest(
+                        command.messageId(),
+                        command.channelAccountId(),
+                        command.recipientExternalId(),
+                        command.type(),
+                        command.content(),
+                        List.of()
+                );
+
+        KafkaEvent<OutboundMessageKafkaCommand> event =
+                outboundEvent(
+                        command,
+                        UUID.randomUUID()
+                );
+
+        when(commandMapper.toRequest(command))
+                .thenReturn(request);
+
+        when(channelConnectorRegistry.getConnector(
+                ChannelType.TELEGRAM
+        )).thenReturn(connector);
+
+        when(connector.send(request))
+                .thenReturn(
+                        new ConnectorSendResult("   ")
+                );
+
+        assertThatThrownBy(() ->
+                consumer.consume(
+                        event,
+                        "clientbus.outbound.telegram"
+                )
+        )
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage(
+                        "Connector returned blank externalId"
+                );
+
+        verify(connector)
+                .send(request);
+
+        verifyNoInteractions(messageService);
     }
 
     @Test
@@ -443,7 +444,7 @@ class KafkaOutboundMessageConsumerTest {
         verifyNoInteractions(
                 channelConnectorRegistry,
                 commandMapper,
-                platformEventPublisher
+                messageService
         );
     }
 
@@ -469,7 +470,115 @@ class KafkaOutboundMessageConsumerTest {
         verifyNoInteractions(
                 channelConnectorRegistry,
                 commandMapper,
-                platformEventPublisher
+                messageService
+        );
+    }
+
+    @Test
+    void shouldRejectMissingMessageId() {
+
+        OutboundMessageKafkaCommand command =
+                new OutboundMessageKafkaCommand(
+                        null,
+                        UUID.randomUUID(),
+                        "recipient-123",
+                        MessageType.TEXT,
+                        "Hello",
+                        List.of()
+                );
+
+        KafkaEvent<OutboundMessageKafkaCommand> event =
+                outboundEvent(
+                        command,
+                        UUID.randomUUID()
+                );
+
+        assertThatThrownBy(() ->
+                consumer.consume(
+                        event,
+                        "clientbus.outbound.telegram"
+                )
+        )
+                .isInstanceOf(
+                        IllegalArgumentException.class
+                );
+
+        verifyNoInteractions(
+                channelConnectorRegistry,
+                commandMapper,
+                messageService
+        );
+    }
+
+    @Test
+    void shouldRejectMissingChannelAccountId() {
+
+        OutboundMessageKafkaCommand command =
+                new OutboundMessageKafkaCommand(
+                        UUID.randomUUID(),
+                        null,
+                        "recipient-123",
+                        MessageType.TEXT,
+                        "Hello",
+                        List.of()
+                );
+
+        KafkaEvent<OutboundMessageKafkaCommand> event =
+                outboundEvent(
+                        command,
+                        UUID.randomUUID()
+                );
+
+        assertThatThrownBy(() ->
+                consumer.consume(
+                        event,
+                        "clientbus.outbound.telegram"
+                )
+        )
+                .isInstanceOf(
+                        IllegalArgumentException.class
+                );
+
+        verifyNoInteractions(
+                channelConnectorRegistry,
+                commandMapper,
+                messageService
+        );
+    }
+
+    @Test
+    void shouldRejectBlankRecipientExternalId() {
+
+        OutboundMessageKafkaCommand command =
+                new OutboundMessageKafkaCommand(
+                        UUID.randomUUID(),
+                        UUID.randomUUID(),
+                        " ",
+                        MessageType.TEXT,
+                        "Hello",
+                        List.of()
+                );
+
+        KafkaEvent<OutboundMessageKafkaCommand> event =
+                outboundEvent(
+                        command,
+                        UUID.randomUUID()
+                );
+
+        assertThatThrownBy(() ->
+                consumer.consume(
+                        event,
+                        "clientbus.outbound.telegram"
+                )
+        )
+                .isInstanceOf(
+                        IllegalArgumentException.class
+                );
+
+        verifyNoInteractions(
+                channelConnectorRegistry,
+                commandMapper,
+                messageService
         );
     }
 
