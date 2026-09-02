@@ -243,6 +243,6 @@ class OutboundMessageKafkaCommandMapperTest {
                 .load("storage/first.jpg");
 
         verify(attachmentStorage)
-                .load("storage/second.pdf");
+                .load("storage/second.mp3");
     }
 }

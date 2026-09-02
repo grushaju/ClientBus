@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-09-02 13:39:17
+- Generated: 2026-09-02 15:30:21
 - Branch: `main`
-- Commit: `f1a830f`
+- Commit: `b87e26a`
 
 ## Project Structure
 
@@ -307,6 +307,7 @@
 
 - `KafkaInboundEventConsumerIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaInboundEventConsumerIntegrationTest.java`
 - `KafkaInboundEventConsumerTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaInboundEventConsumerTest.java`
+- `KafkaOutboundMessageConsumerDlqIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaOutboundMessageConsumerDlqIntegrationTest.java`
 - `KafkaOutboundMessageConsumerIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaOutboundMessageConsumerIntegrationTest.java`
 - `KafkaOutboundMessageConsumerTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaOutboundMessageConsumerTest.java`
 - `KafkaPlatformEventConsumerTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaPlatformEventConsumerTest.java`
@@ -367,6 +368,6 @@
 ## Summary
 
 - Maven modules: 4
-- Java files: 189
-- Git commit: `f1a830f`
+- Java files: 190
+- Git commit: `b87e26a`
 

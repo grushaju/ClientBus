@@ -76,7 +76,7 @@ public final class KafkaTopicNames {
     public static String outboundPattern() {
         return "^"
                 + OUTBOUND_PREFIX.replace(".", "\\.")
-                + ".*$";
+                + "[^.]+$";
     }
 
     public static String dlq(

@@ -1,9 +1,16 @@
 package kit.penny.clientbus.server.service;
 
 import jakarta.persistence.EntityNotFoundException;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import kit.penny.clientbus.common.dto.message.InboundMessageRequest;
 import kit.penny.clientbus.common.dto.message.MessageDto;
+import kit.penny.clientbus.common.dto.message.OutboundMessageRequest;
 import kit.penny.clientbus.common.enums.ChannelType;
+import kit.penny.clientbus.common.enums.MessageDeliveryStatus;
+import kit.penny.clientbus.common.enums.MessageDirection;
+import kit.penny.clientbus.common.enums.MessageProcessingStatus;
+import kit.penny.clientbus.common.enums.MessageSenderType;
 import kit.penny.clientbus.common.enums.MessageType;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.integration.AbstractIntegrationTest;
@@ -26,13 +33,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
-
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
-import kit.penny.clientbus.common.enums.MessageDeliveryStatus;
-import kit.penny.clientbus.common.enums.MessageDirection;
-import kit.penny.clientbus.common.enums.MessageProcessingStatus;
-import kit.penny.clientbus.common.enums.MessageSenderType;
 
 import java.time.Instant;
 import java.util.List;
@@ -232,6 +232,15 @@ class MessageProcessingServiceIntegrationTest
         assertEquals(
                 externalMessageId,
                 message.getExternalId()
+        );
+
+        assertEquals(
+                MessageProcessingStatus.RECEIVED,
+                message.getProcessingStatus()
+        );
+
+        assertNull(
+                message.getDeliveryStatus()
         );
     }
 
@@ -452,6 +461,11 @@ class MessageProcessingServiceIntegrationTest
                 externalMessageId,
                 message.getExternalId()
         );
+
+        assertEquals(
+                1,
+                messageRepository.count()
+        );
     }
 
     @Test
@@ -513,8 +527,8 @@ class MessageProcessingServiceIntegrationTest
                 createOutboundMessage();
 
         assertEquals(
-                MessageProcessingStatus.PROCESSED,
-                message.getProcessingStatus()
+                MessageProcessingStatus.QUEUED,
+                reload(message.getId()).getProcessingStatus()
         );
 
         assertEquals(
@@ -522,7 +536,11 @@ class MessageProcessingServiceIntegrationTest
                 reload(message.getId()).getDeliveryStatus()
         );
 
-        // PENDING -> SENT
+        assertNull(
+                reload(message.getId()).getExternalId()
+        );
+
+        // QUEUED + PENDING -> SENT
         messageService.markSent(
                 message.getId(),
                 "telegram-external-message-001"
@@ -530,6 +548,11 @@ class MessageProcessingServiceIntegrationTest
 
         MessageEntity sent =
                 reload(message.getId());
+
+        assertEquals(
+                MessageProcessingStatus.QUEUED,
+                sent.getProcessingStatus()
+        );
 
         assertEquals(
                 MessageDeliveryStatus.SENT,
@@ -750,7 +773,7 @@ class MessageProcessingServiceIntegrationTest
                         TestDataFactory.channel(
                                 workspace,
                                 ChannelType.TELEGRAM,
-                                "Telegram state machine"
+                                "Telegram outbound"
                         )
                 );
 
@@ -758,11 +781,10 @@ class MessageProcessingServiceIntegrationTest
                 channelAccountRepository.saveAndFlush(
                         TestDataFactory.channelAccount(
                                 channel,
-                                "telegram-state-machine-channel-"
-                                        + UUID.randomUUID(),
-                                "state_machine_channel",
+                                "telegram-company-outbound",
+                                "company_channel",
                                 "+79990000003",
-                                "State Machine Telegram"
+                                "Company Telegram"
                         )
                 );
 
@@ -771,7 +793,7 @@ class MessageProcessingServiceIntegrationTest
                         TestDataFactory.clientAccount(
                                 null,
                                 ChannelType.TELEGRAM,
-                                "telegram-state-machine-client-"
+                                "telegram-client-outbound-"
                                         + UUID.randomUUID()
                         )
                 );
@@ -793,35 +815,37 @@ class MessageProcessingServiceIntegrationTest
                         MessageSenderType.EMPLOYEE
                 );
 
-        message.setContent(
-                "State machine integration test"
-        );
-
-        message.setSentAt(
-                Instant.parse(
-                        "2026-08-30T15:00:00Z"
-                )
-        );
-
-        /*
-         * markSent() требует PROCESSED.
-         *
-         * В этом тесте мы тестируем именно
-         * delivery state machine, поэтому
-         * processing lifecycle не является
-         * предметом теста.
-         */
+        message.setClientAccount(null);
+        message.setExternalId(null);
+        message.setContent("Outbound test message");
+        message.setMetadata(null);
+        message.setSentAt(Instant.now());
         message.setProcessingStatus(
-                MessageProcessingStatus.PROCESSED
+                MessageProcessingStatus.RECEIVED
         );
-
         message.setDeliveryStatus(
                 MessageDeliveryStatus.PENDING
         );
 
-        return messageRepository.saveAndFlush(
-                message
+        message =
+                messageRepository.saveAndFlush(message);
+
+        // RECEIVED -> PROCESSING
+        messageService.startProcessing(
+                message.getId()
         );
+
+        // PROCESSING -> PROCESSED
+        messageService.markProcessed(
+                message.getId()
+        );
+
+        // PROCESSED -> QUEUED
+        messageService.markQueued(
+                message.getId()
+        );
+
+        return reload(message.getId());
     }
 
     private MessageEntity reload(UUID messageId) {

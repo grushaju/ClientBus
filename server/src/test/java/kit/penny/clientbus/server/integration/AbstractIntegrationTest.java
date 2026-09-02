@@ -18,7 +18,7 @@ public abstract class AbstractIntegrationTest {
                     .withDatabaseName("clientbus")
                     .withUsername("clientbus")
                     .withPassword("clientbus")
-                    .withReuse(true)
+                    //.withReuse(true)
                     .withExposedPorts(5432)
                     .withCreateContainerCmdModifier(cmd ->
                             cmd.withName("clientbus-postgres-test")
