@@ -579,6 +579,10 @@ public class MessageService {
 
         message.setExternalId(externalId);
 
+        message.setSentAt(
+                Instant.now()
+        );
+
         message.setDeliveryStatus(
                 MessageDeliveryStatus.SENT
         );

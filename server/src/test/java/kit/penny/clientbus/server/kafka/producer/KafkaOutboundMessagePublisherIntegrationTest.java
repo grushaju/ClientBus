@@ -1,250 +1,337 @@
 package kit.penny.clientbus.server.kafka.producer;
 
+import jakarta.persistence.EntityManager;
 import kit.penny.clientbus.common.enums.ChannelType;
+import kit.penny.clientbus.common.enums.MessageDeliveryStatus;
+import kit.penny.clientbus.common.enums.MessageDirection;
+import kit.penny.clientbus.common.enums.MessageProcessingStatus;
+import kit.penny.clientbus.common.enums.MessageSenderType;
 import kit.penny.clientbus.common.enums.MessageType;
-import kit.penny.clientbus.common.kafka.KafkaEvent;
-import kit.penny.clientbus.common.kafka.KafkaEventType;
 import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
+import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
+import kit.penny.clientbus.server.connector.ConnectorSendResult;
+import kit.penny.clientbus.server.connector.IChannelConnector;
+import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.integration.AbstractIntegrationTest;
-import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.common.serialization.StringDeserializer;
+import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
+import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
+import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
+import kit.penny.clientbus.server.persistence.entity.ConversationEntity;
+import kit.penny.clientbus.server.persistence.entity.MessageEntity;
+import kit.penny.clientbus.server.persistence.entity.OrganizationEntity;
+import kit.penny.clientbus.server.persistence.entity.WorkspaceEntity;
+import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
+import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
+import kit.penny.clientbus.server.persistence.repository.ClientAccountRepository;
+import kit.penny.clientbus.server.persistence.repository.ConversationRepository;
+import kit.penny.clientbus.server.persistence.repository.MessageRepository;
+import kit.penny.clientbus.server.persistence.repository.OrganizationRepository;
+import kit.penny.clientbus.server.persistence.repository.WorkspaceRepository;
+import kit.penny.clientbus.server.service.MessageService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.kafka.support.serializer.JsonDeserializer;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
-import java.time.Duration;
 import java.util.List;
-import java.util.Properties;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest
 @ActiveProfiles("test")
 class KafkaOutboundMessagePublisherIntegrationTest
         extends AbstractIntegrationTest {
 
-    private static final String BOOTSTRAP_SERVERS =
-            "localhost:9092";
-
-    private static final String GROUP_ID =
-            "clientbus.outbound.processor.test";
-
-    private static final Duration ASSIGNMENT_TIMEOUT =
-            Duration.ofSeconds(10);
-
-    private static final Duration POLL_TIMEOUT =
-            Duration.ofSeconds(10);
+    private static final long ASYNC_TIMEOUT_MILLIS = 15_000;
 
     @Autowired
     private KafkaOutboundMessagePublisher publisher;
 
+    @Autowired
+    private MessageService messageService;
+
+    @Autowired
+    private MessageRepository messageRepository;
+
+    @Autowired
+    private ConversationRepository conversationRepository;
+
+    @Autowired
+    private ClientAccountRepository clientAccountRepository;
+
+    @Autowired
+    private OrganizationRepository organizationRepository;
+
+    @Autowired
+    private WorkspaceRepository workspaceRepository;
+
+    @Autowired
+    private ChannelRepository channelRepository;
+
+    @Autowired
+    private ChannelAccountRepository channelAccountRepository;
+
+    @Autowired
+    private EntityManager entityManager;
+
+    @MockitoBean
+    private ChannelConnectorRegistry channelConnectorRegistry;
+
+    @MockitoBean
+    private IChannelConnector channelConnector;
+
+    @BeforeEach
+    void setUp() {
+
+        when(
+                channelConnectorRegistry.getConnector(
+                        ChannelType.TELEGRAM
+                )
+        ).thenReturn(channelConnector);
+
+        when(
+                channelConnector.send(
+                        any()
+                )
+        ).thenReturn(
+                new ConnectorSendResult(
+                        "telegram-external-message-123"
+                )
+        );
+    }
+
     @Test
-    void publish_sendsOutboundMessageCommandToChannelTopic() {
-        UUID messageId = UUID.randomUUID();
-        UUID channelAccountId = UUID.randomUUID();
+    void publish_sendsOutboundMessageThroughKafkaAndMarksItSent() {
+
+        QueuedOutboundMessage queuedMessage =
+                createQueuedOutboundMessage();
+
+        UUID messageId =
+                queuedMessage.messageId();
+
+        UUID channelAccountId =
+                queuedMessage.channelAccountId();
 
         OutboundMessageKafkaCommand command =
                 new OutboundMessageKafkaCommand(
                         messageId,
                         channelAccountId,
-                        "telegram-user-123",
+                        queuedMessage.clientExternalId(),
                         MessageType.TEXT,
                         "Hello Telegram",
                         List.of()
                 );
 
-        String topic =
-                KafkaTopicNames.outbound(ChannelType.TELEGRAM);
+        publisher.publish(
+                ChannelType.TELEGRAM,
+                command
+        );
 
-        try (KafkaConsumer<String, KafkaEvent<?>> consumer =
-                     createConsumer(topic)) {
+        verify(
+                channelConnector,
+                timeout(ASYNC_TIMEOUT_MILLIS)
+                        .times(1)
+        ).send(
+                any()
+        );
 
-            publisher.publish(
-                    ChannelType.TELEGRAM,
-                    command
-            );
+        MessageEntity sentMessage =
+                awaitMessageStatus(
+                        messageId,
+                        MessageDeliveryStatus.SENT
+                );
 
-            ConsumerRecord<String, KafkaEvent<?>> record =
-                    consumeSingleRecord(consumer);
+        assertThat(sentMessage.getProcessingStatus())
+                .isEqualTo(
+                        MessageProcessingStatus.QUEUED
+                );
 
-            assertThat(record.topic())
-                    .isEqualTo(topic);
+        assertThat(sentMessage.getDeliveryStatus())
+                .isEqualTo(
+                        MessageDeliveryStatus.SENT
+                );
 
-            assertThat(record.key())
-                    .isEqualTo(channelAccountId.toString());
-
-            KafkaEvent<?> event = record.value();
-
-            assertThat(event)
-                    .isNotNull();
-
-            assertThat(event.eventId())
-                    .isNotNull();
-
-            assertThat(event.eventType())
-                    .isEqualTo(KafkaEventType.OUTBOUND_MESSAGE);
-
-            assertThat(event.schemaVersion())
-                    .isEqualTo(1);
-
-            assertThat(event.occurredAt())
-                    .isNotNull();
-
-            assertThat(event.correlationId())
-                    .isNotNull();
-
-            assertThat(event.payload())
-                    .isInstanceOf(
-                            OutboundMessageKafkaCommand.class
-                    );
-
-            OutboundMessageKafkaCommand received =
-                    (OutboundMessageKafkaCommand) event.payload();
-
-            assertThat(received.messageId())
-                    .isEqualTo(messageId);
-
-            assertThat(received.channelAccountId())
-                    .isEqualTo(channelAccountId);
-
-            assertThat(received.recipientExternalId())
-                    .isEqualTo("telegram-user-123");
-
-            assertThat(received.type())
-                    .isEqualTo(MessageType.TEXT);
-
-            assertThat(received.content())
-                    .isEqualTo("Hello Telegram");
-
-            assertThat(received.attachments())
-                    .isEmpty();
-        }
+        assertThat(sentMessage.getExternalId())
+                .isEqualTo(
+                        "telegram-external-message-123"
+                );
     }
 
-    private KafkaConsumer<String, KafkaEvent<?>> createConsumer(
-            String topic
-    ) {
-        Properties properties =
-                new Properties();
+    private QueuedOutboundMessage createQueuedOutboundMessage() {
 
-        properties.put(
-                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG,
-                BOOTSTRAP_SERVERS
-        );
+        OrganizationEntity organization =
+                organizationRepository.saveAndFlush(
+                        TestDataFactory.organization()
+                );
 
-        properties.put(
-                ConsumerConfig.GROUP_ID_CONFIG,
-                GROUP_ID
-        );
-
-        properties.put(
-                ConsumerConfig.AUTO_OFFSET_RESET_CONFIG,
-                "latest"
-        );
-
-        properties.put(
-                ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG,
-                "false"
-        );
-
-        properties.put(
-                ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,
-                StringDeserializer.class
-        );
-
-        properties.put(
-                ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,
-                JsonDeserializer.class
-        );
-
-        properties.put(
-                JsonDeserializer.TRUSTED_PACKAGES,
-                "kit.penny.clientbus.common.*"
-        );
-
-        properties.put(
-                JsonDeserializer.VALUE_DEFAULT_TYPE,
-                KafkaEvent.class.getName()
-        );
-
-        KafkaConsumer<String, KafkaEvent<?>> consumer =
-                new KafkaConsumer<>(
-                        properties,
-                        new StringDeserializer(),
-                        new JsonDeserializer<>(
-                                KafkaEvent.class
+        WorkspaceEntity workspace =
+                workspaceRepository.saveAndFlush(
+                        TestDataFactory.workspace(
+                                organization
                         )
                 );
 
-        consumer.subscribe(List.of(topic));
+        ChannelEntity channel =
+                channelRepository.saveAndFlush(
+                        TestDataFactory.channel(
+                                workspace,
+                                ChannelType.TELEGRAM,
+                                "Test Telegram Channel"
+                        )
+                );
 
-        waitForAssignment(consumer);
+        ChannelAccountEntity channelAccount =
+                channelAccountRepository.saveAndFlush(
+                        TestDataFactory.channelAccount(
+                                channel
+                        )
+                );
 
-        consumer.seekToEnd(
-                consumer.assignment()
+        ClientAccountEntity clientAccount =
+                clientAccountRepository.saveAndFlush(
+                        TestDataFactory.clientAccount(
+                                null,
+                                ChannelType.TELEGRAM,
+                                "telegram-client-"
+                                        + UUID.randomUUID()
+                        )
+                );
+
+        ConversationEntity conversation =
+                conversationRepository.saveAndFlush(
+                        TestDataFactory.conversation(
+                                workspace,
+                                channelAccount,
+                                clientAccount
+                        )
+                );
+
+        MessageEntity message =
+                new MessageEntity(
+                        conversation,
+                        MessageType.TEXT,
+                        MessageDirection.OUTBOUND,
+                        MessageSenderType.EMPLOYEE
+                );
+
+        message.setExternalId(null);
+
+        message.setContent(
+                "Outbound test message"
         );
 
-        return consumer;
+        message.setMetadata(null);
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.RECEIVED
+        );
+
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.PENDING
+        );
+
+        message =
+                messageRepository.saveAndFlush(
+                        message
+                );
+
+        UUID messageId =
+                message.getId();
+
+        UUID channelAccountId =
+                channelAccount.getId();
+
+        String clientExternalId =
+                clientAccount.getExternalId();
+
+        messageService.startProcessing(
+                messageId
+        );
+
+        messageService.markProcessed(
+                messageId
+        );
+
+        messageService.markQueued(
+                messageId
+        );
+
+        entityManager.clear();
+
+        return new QueuedOutboundMessage(
+                messageId,
+                channelAccountId,
+                clientExternalId
+        );
     }
 
-    private void waitForAssignment(
-            KafkaConsumer<String, KafkaEvent<?>> consumer
+    private MessageEntity awaitMessageStatus(
+            UUID messageId,
+            MessageDeliveryStatus expectedStatus
     ) {
+
         long deadline =
-                System.nanoTime()
-                        + ASSIGNMENT_TIMEOUT.toNanos();
+                System.currentTimeMillis()
+                        + ASYNC_TIMEOUT_MILLIS;
 
         while (
-                consumer.assignment().isEmpty()
-                        && System.nanoTime() < deadline
+                System.currentTimeMillis()
+                        < deadline
         ) {
-            consumer.poll(Duration.ofMillis(100));
-        }
 
-        assertThat(consumer.assignment())
-                .as("Kafka consumer partition assignment")
-                .isNotEmpty();
-    }
+            entityManager.clear();
 
-    private ConsumerRecord<String, KafkaEvent<?>> consumeSingleRecord(
-            KafkaConsumer<String, KafkaEvent<?>> consumer
-    ) {
-        long deadline =
-                System.nanoTime()
-                        + POLL_TIMEOUT.toNanos();
+            MessageEntity message =
+                    messageRepository
+                            .findById(messageId)
+                            .orElseThrow();
 
-        while (System.nanoTime() < deadline) {
-            var records =
-                    consumer.poll(
-                            Duration.ofMillis(500)
-                    );
-
-            for (
-                    ConsumerRecord<String, KafkaEvent<?>> record
-                    : records
+            if (
+                    message.getDeliveryStatus()
+                            == expectedStatus
             ) {
-                KafkaEvent<?> event =
-                        record.value();
+                return message;
+            }
 
-                if (
-                        event != null
-                                && event.eventType()
-                                == KafkaEventType.OUTBOUND_MESSAGE
-                ) {
-                    return record;
-                }
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+
+                throw new AssertionError(
+                        "Interrupted while waiting for message status",
+                        e
+                );
             }
         }
 
-        throw new AssertionError(
-                "No outbound message event received from Kafka within "
-                        + POLL_TIMEOUT
-        );
+        entityManager.clear();
+
+        MessageEntity message =
+                messageRepository
+                        .findById(messageId)
+                        .orElseThrow();
+
+        assertThat(message.getDeliveryStatus())
+                .as(
+                        "Message delivery status after asynchronous processing"
+                )
+                .isEqualTo(expectedStatus);
+
+        return message;
+    }
+
+    private record QueuedOutboundMessage(
+            UUID messageId,
+            UUID channelAccountId,
+            String clientExternalId
+    ) {
     }
 }

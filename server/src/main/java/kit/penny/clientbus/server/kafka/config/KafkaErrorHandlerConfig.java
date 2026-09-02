@@ -1,7 +1,11 @@
 package kit.penny.clientbus.server.kafka.config;
 
-import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
 import jakarta.persistence.EntityNotFoundException;
+import kit.penny.clientbus.common.kafka.KafkaEvent;
+import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
+import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
+import kit.penny.clientbus.server.service.MessageService;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -18,7 +22,6 @@ public class KafkaErrorHandlerConfig {
     public DeadLetterPublishingRecoverer kafkaDeadLetterPublishingRecoverer(
             KafkaTemplate<String, Object> kafkaTemplate
     ) {
-
         return new DeadLetterPublishingRecoverer(
                 kafkaTemplate,
                 (record, exception) ->
@@ -31,9 +34,9 @@ public class KafkaErrorHandlerConfig {
 
     @Bean
     public CommonErrorHandler kafkaCommonErrorHandler(
-            DeadLetterPublishingRecoverer deadLetterPublishingRecoverer
+            DeadLetterPublishingRecoverer deadLetterPublishingRecoverer,
+            MessageService messageService
     ) {
-
         FixedBackOff backOff =
                 new FixedBackOff(
                         1000L,
@@ -42,7 +45,17 @@ public class KafkaErrorHandlerConfig {
 
         DefaultErrorHandler errorHandler =
                 new DefaultErrorHandler(
-                        deadLetterPublishingRecoverer,
+                        (record, exception) -> {
+                            markOutboundMessageFailed(
+                                    record,
+                                    messageService
+                            );
+
+                            deadLetterPublishingRecoverer.accept(
+                                    record,
+                                    exception
+                            );
+                        },
                         backOff
                 );
 
@@ -51,5 +64,28 @@ public class KafkaErrorHandlerConfig {
         );
 
         return errorHandler;
+    }
+
+    private void markOutboundMessageFailed(
+            ConsumerRecord<?, ?> record,
+            MessageService messageService
+    ) {
+        if (record == null
+                || record.value() == null) {
+            return;
+        }
+
+        if (!(record.value() instanceof KafkaEvent<?> event)) {
+            return;
+        }
+
+        if (!(event.payload()
+                instanceof OutboundMessageKafkaCommand command)) {
+            return;
+        }
+
+        messageService.markDeliveryFailed(
+                command.messageId()
+        );
     }
 }

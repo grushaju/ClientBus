@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-09-02 15:30:21
+- Generated: 2026-09-02 17:05:53
 - Branch: `main`
-- Commit: `b87e26a`
+- Commit: `42486a4`
 
 ## Project Structure
 
@@ -298,6 +298,7 @@
 
 - `AbstractIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/integration/AbstractIntegrationTest.java`
 - `MessageInboundFlowIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/integration/MessageInboundFlowIntegrationTest.java`
+- `OutboundMessageAsyncFlowIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/integration/OutboundMessageAsyncFlowIntegrationTest.java`
 
 ##### `kit.penny.clientbus.server.kafka.config`
 
@@ -310,6 +311,7 @@
 - `KafkaOutboundMessageConsumerDlqIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaOutboundMessageConsumerDlqIntegrationTest.java`
 - `KafkaOutboundMessageConsumerIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaOutboundMessageConsumerIntegrationTest.java`
 - `KafkaOutboundMessageConsumerTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaOutboundMessageConsumerTest.java`
+- `KafkaOutboundMessageFailureIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaOutboundMessageFailureIntegrationTest.java`
 - `KafkaPlatformEventConsumerTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaPlatformEventConsumerTest.java`
 
 ##### `kit.penny.clientbus.server.kafka.producer`
@@ -368,6 +370,6 @@
 ## Summary
 
 - Maven modules: 4
-- Java files: 190
-- Git commit: `b87e26a`
+- Java files: 192
+- Git commit: `42486a4`
 
