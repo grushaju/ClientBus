@@ -25,6 +25,7 @@ public class ChannelMapper {
                 entity.getId(),
                 entity.getWorkspace().getId(),
                 entity.getType(),
+                entity.getStatus(),
                 entity.getName(),
                 accountDto
         );

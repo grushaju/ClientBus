@@ -1,6 +1,7 @@
 package kit.penny.clientbus.server.persistence.entity;
 
 import jakarta.persistence.*;
+import kit.penny.clientbus.common.enums.ChannelConnectionStatus;
 import kit.penny.clientbus.common.enums.ChannelType;
 
 import java.util.UUID;
@@ -32,6 +33,10 @@ public class ChannelEntity {
     )
     private ChannelType type;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private ChannelConnectionStatus status;
+
     @Column(nullable = false, length = 100)
     private String name;
 
@@ -44,6 +49,7 @@ public class ChannelEntity {
     private ChannelAccountEntity account;
 
     public ChannelEntity() {
+        this.status = ChannelConnectionStatus.CREATED;
     }
 
     public ChannelEntity(
@@ -51,6 +57,7 @@ public class ChannelEntity {
             ChannelType type,
             String name
     ) {
+        this();
         this.workspace = workspace;
         this.type = type;
         this.name = name;
@@ -78,6 +85,14 @@ public class ChannelEntity {
 
     public void setType(ChannelType type) {
         this.type = type;
+    }
+
+    public ChannelConnectionStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(ChannelConnectionStatus status) {
+        this.status = status;
     }
 
     public String getName() {

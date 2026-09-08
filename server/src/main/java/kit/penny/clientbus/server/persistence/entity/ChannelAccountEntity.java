@@ -34,7 +34,7 @@ public class ChannelAccountEntity {
 
     @Column(
             name = "externalid",
-            nullable = false,
+            nullable = true,
             length = 200
     )
     private String externalId;

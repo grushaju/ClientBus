@@ -4,7 +4,6 @@ import jakarta.validation.constraints.NotBlank;
 
 public record CreateChannelAccountRequest(
 
-        @NotBlank
         String externalId,
 
         String username,

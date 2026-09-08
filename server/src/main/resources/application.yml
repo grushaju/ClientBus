@@ -128,3 +128,22 @@ spring:
     baseline-version: 0
     validate-on-migrate: true
     table: flyway_schema_history
+
+  telegram:
+    client:
+      api-id: 94575
+      api-hash: a3406de8d171bb422bb6ddf3bbd800e2
+      database-directory: ./data/telegram
+      database-encryption-key: TELEGRAM_DATABASE_SECRET
+
+      use-test-dc: false
+      use-file-database: true
+      use-chat-info-database: true
+      use-message-database: true
+      use-secret-chats: true
+
+      system-language-code: en
+      device-model: ClientBus
+      system-version: "1.0"
+      application-version: "1.0"
+      log-verbosity-level: 2
