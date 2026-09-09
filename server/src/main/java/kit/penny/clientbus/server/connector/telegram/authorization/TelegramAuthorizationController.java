@@ -17,7 +17,7 @@ public class TelegramAuthorizationController {
     }
 
     @GetMapping("/status")
-    public TelegramAuthorizationService.TelegramAuthorizationStatus getStatus(
+    public TelegramAuthorizationStatus getStatus(
             @PathVariable UUID channelAccountId
     ) {
         return authorizationService.getStatus(channelAccountId);

@@ -2,7 +2,6 @@ package kit.penny.clientbus.server.connector.telegram.authorization;
 
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientContext;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientLifecycleService;
-import kit.penny.tdlib.updates.TelegramAuthorizationManager;
 import org.springframework.stereotype.Service;
 
 import java.util.UUID;
@@ -17,6 +16,7 @@ import java.util.UUID;
  *
  * @author Pavel Grushin
  */
+
 @Service
 public class TelegramAuthorizationService {
 
@@ -31,15 +31,9 @@ public class TelegramAuthorizationService {
     public TelegramAuthorizationStatus getStatus(
             UUID channelAccountId
     ) {
-        TelegramAuthorizationManager authorizationManager =
-                getAuthorizationManager(channelAccountId);
-
-        return new TelegramAuthorizationStatus(
-                authorizationManager.haveAuthorization(),
-                authorizationManager.isWaitAuthenticationCode(),
-                authorizationManager.isWaitAuthenticationPassword(),
-                authorizationManager.isWaitEmailAddress(),
-                authorizationManager.isStateClosed()
+        return mapStatus(
+                getAuthorizationManager(channelAccountId)
+                        .getStatus()
         );
     }
 
@@ -67,7 +61,8 @@ public class TelegramAuthorizationService {
                 .checkEmailAddress(email);
     }
 
-    private TelegramAuthorizationManager getAuthorizationManager(
+    private kit.penny.tdlib.updates.TelegramAuthorizationManager
+    getAuthorizationManager(
             UUID channelAccountId
     ) {
         TelegramClientContext context =
@@ -76,12 +71,24 @@ public class TelegramAuthorizationService {
         return context.authorizationManager();
     }
 
-    public record TelegramAuthorizationStatus(
-            boolean authorized,
-            boolean waitingAuthenticationCode,
-            boolean waitingAuthenticationPassword,
-            boolean waitingEmailAddress,
-            boolean stateClosed
+    private TelegramAuthorizationStatus mapStatus(
+            kit.penny.tdlib.updates.TelegramAuthorizationStatus status
     ) {
+        return switch (status) {
+            case WAIT_PHONE_NUMBER ->
+                    TelegramAuthorizationStatus.WAIT_PHONE_NUMBER;
+            case WAIT_CODE ->
+                    TelegramAuthorizationStatus.WAIT_CODE;
+            case WAIT_PASSWORD ->
+                    TelegramAuthorizationStatus.WAIT_PASSWORD;
+            case WAIT_EMAIL ->
+                    TelegramAuthorizationStatus.WAIT_EMAIL;
+            case READY ->
+                    TelegramAuthorizationStatus.READY;
+            case ERROR ->
+                    TelegramAuthorizationStatus.ERROR;
+            case CLOSED ->
+                    TelegramAuthorizationStatus.CLOSED;
+        };
     }
 }
