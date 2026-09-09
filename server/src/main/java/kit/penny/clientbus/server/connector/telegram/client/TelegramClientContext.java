@@ -1,4 +1,4 @@
-package kit.penny.clientbus.server.connector.telegram;
+package kit.penny.clientbus.server.connector.telegram.client;
 
 import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.updates.TelegramAuthorizationManager;

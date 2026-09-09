@@ -1,8 +1,15 @@
-package kit.penny.clientbus.server.connector.telegram;
+package kit.penny.clientbus.server.connector.telegram.client;
 
+import kit.penny.clientbus.server.connector.telegram.config.TelegramClientConfiguration;
+import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
 import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.properties.TelegramProperties;
+import kit.penny.tdlib.updates.ITdlibUpdateListener;
 import kit.penny.tdlib.updates.TelegramAuthorizationManager;
+import org.drinkless.tdlib.TdApi;
+import org.springframework.beans.factory.support.BeanDefinitionRegistry;
+import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
+import org.springframework.beans.factory.support.RootBeanDefinition;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.core.env.MapPropertySource;
 
@@ -16,10 +23,18 @@ public class TelegramContextFactory {
     private static final String PROPERTY_PREFIX =
             "spring.telegram.client.";
 
-    private final TelegramProperties globalProperties;
+    private static final String AUTHORIZATION_STATE_BEAN_NAME =
+            "updateAuthorizationState";
 
-    public TelegramContextFactory(TelegramProperties globalProperties) {
+    private final TelegramProperties globalProperties;
+    private final ChannelAccountRepository channelAccountRepository;
+
+    public TelegramContextFactory(
+            TelegramProperties globalProperties,
+            ChannelAccountRepository channelAccountRepository
+    ) {
         this.globalProperties = globalProperties;
+        this.channelAccountRepository = channelAccountRepository;
     }
 
     public TelegramClientContext create(
@@ -41,6 +56,13 @@ public class TelegramContextFactory {
                         )
                 );
 
+        context.addBeanFactoryPostProcessor(
+                authorizationStateListenerReplacer(
+                        context,
+                        channelAccountId
+                )
+        );
+
         context.register(TelegramClientConfiguration.class);
         context.refresh();
 
@@ -49,6 +71,76 @@ public class TelegramContextFactory {
                 context,
                 context.getBean(TelegramClient.class),
                 context.getBean(TelegramAuthorizationManager.class)
+        );
+    }
+
+    private BeanDefinitionRegistryPostProcessor
+    authorizationStateListenerReplacer(
+            AnnotationConfigApplicationContext context,
+            UUID channelAccountId
+    ) {
+        return new BeanDefinitionRegistryPostProcessor() {
+
+            @Override
+            public void postProcessBeanDefinitionRegistry(
+                    BeanDefinitionRegistry registry
+            ) {
+                if (registry.containsBeanDefinition(
+                        AUTHORIZATION_STATE_BEAN_NAME
+                )) {
+                    registry.removeBeanDefinition(
+                            AUTHORIZATION_STATE_BEAN_NAME
+                    );
+                }
+
+                RootBeanDefinition beanDefinition =
+                        new RootBeanDefinition(
+                                ITdlibUpdateListener.class
+                        );
+
+                beanDefinition.setInstanceSupplier(
+                        () -> createAuthorizationStateListener(
+                                context,
+                                channelAccountId
+                        )
+                );
+
+                registry.registerBeanDefinition(
+                        AUTHORIZATION_STATE_BEAN_NAME,
+                        beanDefinition
+                );
+            }
+
+            @Override
+            public void postProcessBeanFactory(
+                    org.springframework.beans.factory.config.ConfigurableListableBeanFactory beanFactory
+            ) {
+                // Nothing to process.
+            }
+        };
+    }
+
+    private ITdlibUpdateListener<TdApi.UpdateAuthorizationState>
+    createAuthorizationStateListener(
+            AnnotationConfigApplicationContext context,
+            UUID channelAccountId
+    ) {
+        TelegramProperties properties =
+                context.getBean(TelegramProperties.class);
+
+        TelegramAuthorizationManager authorizationManager =
+                context.getBean(TelegramAuthorizationManager.class);
+
+        org.springframework.beans.factory.ObjectProvider<TelegramClient>
+                telegramClientProvider =
+                context.getBeanProvider(TelegramClient.class);
+
+        return new TelegramAuthorizationStateListener(
+                channelAccountId,
+                channelAccountRepository,
+                properties,
+                authorizationManager,
+                telegramClientProvider
         );
     }
 
@@ -70,16 +162,12 @@ public class TelegramContextFactory {
 
         properties.put(
                 PROPERTY_PREFIX + "database-directory",
-                accountDirectory
-                        .resolve("database")
-                        .toString()
+                accountDirectory.resolve("database").toString()
         );
 
         properties.put(
                 PROPERTY_PREFIX + "files-directory",
-                accountDirectory
-                        .resolve("files")
-                        .toString()
+                accountDirectory.resolve("files").toString()
         );
 
         properties.put(

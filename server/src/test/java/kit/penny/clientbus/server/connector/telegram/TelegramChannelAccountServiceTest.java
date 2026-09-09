@@ -1,5 +1,8 @@
 package kit.penny.clientbus.server.connector.telegram;
 
+import kit.penny.clientbus.server.connector.telegram.account.TelegramChannelAccountService;
+import kit.penny.clientbus.server.connector.telegram.client.TelegramClientContext;
+import kit.penny.clientbus.server.connector.telegram.client.TelegramClientLifecycleService;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
 import org.junit.jupiter.api.BeforeEach;

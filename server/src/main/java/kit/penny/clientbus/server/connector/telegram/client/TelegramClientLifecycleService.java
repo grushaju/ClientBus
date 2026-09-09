@@ -1,4 +1,4 @@
-package kit.penny.clientbus.server.connector.telegram;
+package kit.penny.clientbus.server.connector.telegram.client;
 
 import org.springframework.stereotype.Service;
 

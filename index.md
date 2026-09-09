@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-09-02 17:05:53
+- Generated: 2026-09-09 08:47:46
 - Branch: `main`
-- Commit: `42486a4`
+- Commit: `9a2b4aa`
 
 ## Project Structure
 
@@ -85,6 +85,7 @@
 
 ##### `kit.penny.clientbus.common.enums`
 
+- `ChannelConnectionStatus.java` — `common/src/main/java/kit/penny/clientbus/common/enums/ChannelConnectionStatus.java`
 - `ChannelType.java` — `common/src/main/java/kit/penny/clientbus/common/enums/ChannelType.java`
 - `ClientAccountState.java` — `common/src/main/java/kit/penny/clientbus/common/enums/ClientAccountState.java`
 - `MessageAttachmentType.java` — `common/src/main/java/kit/penny/clientbus/common/enums/MessageAttachmentType.java`
@@ -103,11 +104,6 @@
 - `OutboundMessageKafkaCommand.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/OutboundMessageKafkaCommand.java`
 - `PlatformMessageKafkaEvent.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/PlatformMessageKafkaEvent.java`
 - `PlatformOutboundAttachment.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/PlatformOutboundAttachment.java`
-
-#### `src/main/resources`
-
-
-#### `src/test/java`
 
 ### server
 
@@ -139,6 +135,33 @@
 - `IChannelConnector.java` — `server/src/main/java/kit/penny/clientbus/server/connector/IChannelConnector.java`
 - `IChannelConnectorRegistry.java` — `server/src/main/java/kit/penny/clientbus/server/connector/IChannelConnectorRegistry.java`
 - `IChannelEventHandler.java` — `server/src/main/java/kit/penny/clientbus/server/connector/IChannelEventHandler.java`
+
+##### `kit.penny.clientbus.server.connector.telegram.account`
+
+- `TelegramChannelAccountService.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/account/TelegramChannelAccountService.java`
+
+##### `kit.penny.clientbus.server.connector.telegram.authorization`
+
+- `TelegramAuthorizationController.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/authorization/TelegramAuthorizationController.java`
+- `TelegramAuthorizationService.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/authorization/TelegramAuthorizationService.java`
+
+##### `kit.penny.clientbus.server.connector.telegram.client`
+
+- `TelegramAuthorizationStateListener.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/client/TelegramAuthorizationStateListener.java`
+- `TelegramClientContext.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/client/TelegramClientContext.java`
+- `TelegramClientLifecycleService.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/client/TelegramClientLifecycleService.java`
+- `TelegramClientManager.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/client/TelegramClientManager.java`
+- `TelegramContextFactory.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/client/TelegramContextFactory.java`
+
+##### `kit.penny.clientbus.server.connector.telegram.config`
+
+- `TelegramClientConfiguration.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/config/TelegramClientConfiguration.java`
+- `TelegramConnectorConfiguration.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/config/TelegramConnectorConfiguration.java`
+- `TelegramPropertiesConfiguration.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/config/TelegramPropertiesConfiguration.java`
+
+##### `kit.penny.clientbus.server.connector.telegram.startup`
+
+- `TelegramClientStartupService.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/startup/TelegramClientStartupService.java`
 
 ##### `kit.penny.clientbus.server.controller`
 
@@ -286,6 +309,11 @@
 
 - `ChannelEventHandlerTest.java` — `server/src/test/java/kit/penny/clientbus/server/connector/ChannelEventHandlerTest.java`
 
+##### `kit.penny.clientbus.server.connector.telegram`
+
+- `TelegramChannelAccountServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/connector/telegram/TelegramChannelAccountServiceTest.java`
+- `TelegramContextFactoryTest.java` — `server/src/test/java/kit/penny/clientbus/server/connector/telegram/TelegramContextFactoryTest.java`
+
 ##### `kit.penny.clientbus.server.controller`
 
 - `MessageControllerTest.java` — `server/src/test/java/kit/penny/clientbus/server/controller/MessageControllerTest.java`
@@ -367,9 +395,11 @@
 
 - `ui/src/main/resources/application.properties`
 
+#### `src/test/java`
+
 ## Summary
 
 - Maven modules: 4
-- Java files: 192
-- Git commit: `42486a4`
+- Java files: 207
+- Git commit: `9a2b4aa`
 

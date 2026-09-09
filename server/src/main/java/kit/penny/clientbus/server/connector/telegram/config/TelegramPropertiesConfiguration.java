@@ -1,4 +1,4 @@
-package kit.penny.clientbus.server.connector.telegram;
+package kit.penny.clientbus.server.connector.telegram.config;
 
 import kit.penny.tdlib.properties.TelegramProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;

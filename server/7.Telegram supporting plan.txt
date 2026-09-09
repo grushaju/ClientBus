@@ -1,0 +1,41 @@
+7. Поддержка Telegram — детальный план
+
+7.1  Telegram Channel lifecycle
+       ↓
+7.2  TelegramClientManager
+       ↓
+7.3  Child Spring Context
+       ↓
+7.4  Per-account TelegramProperties
+       ↓
+7.5  Authorization API/service
+       ↓
+7.6  Startup / restore sessions
+       ↓
+7.7  TelegramInboundMessageListener
+       ↓
+7.8  Telegram → ClientBus mapping
+       ↓
+7.9  TEXT inbound
+       ↓
+7.10 TEXT → Kafka → DB → UI
+       ↓
+7.11 Multi-account
+       ↓
+7.12 Attachments inbound
+       ↓
+7.13 TelegramChannelConnector
+       ↓
+7.14 TEXT outbound
+       ↓
+7.15 TEXT outbound → Telegram
+       ↓
+7.16 Outbound attachments
+       ↓
+7.17 Delivery lifecycle
+       ↓
+7.18 Error handling
+       ↓
+7.19 Restart/recovery
+       ↓
+7.20 Final Telegram acceptance test

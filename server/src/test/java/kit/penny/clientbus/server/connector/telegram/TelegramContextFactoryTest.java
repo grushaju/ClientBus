@@ -1,10 +1,14 @@
 package kit.penny.clientbus.server.connector.telegram;
 
+import kit.penny.clientbus.server.connector.telegram.client.TelegramClientContext;
+import kit.penny.clientbus.server.connector.telegram.client.TelegramContextFactory;
+import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
 import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.properties.TelegramProperties;
 import kit.penny.tdlib.updates.TelegramAuthorizationManager;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.Mockito;
 
 import java.nio.file.Path;
 import java.util.UUID;
@@ -44,8 +48,14 @@ class TelegramContextFactoryTest {
                         null
                 );
 
+        ChannelAccountRepository channelAccountRepository =
+                Mockito.mock(ChannelAccountRepository.class);
+
         TelegramContextFactory factory =
-                new TelegramContextFactory(globalProperties);
+                new TelegramContextFactory(
+                        globalProperties,
+                        channelAccountRepository
+                );
 
         UUID accountA = UUID.randomUUID();
         UUID accountB = UUID.randomUUID();

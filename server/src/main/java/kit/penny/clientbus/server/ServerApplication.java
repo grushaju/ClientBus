@@ -1,6 +1,6 @@
 package kit.penny.clientbus.server;
 
-import kit.penny.clientbus.server.connector.telegram.TelegramClientConfiguration;
+import kit.penny.clientbus.server.connector.telegram.config.TelegramClientConfiguration;
 import kit.penny.tdlib.TdlibAutoConfiguration;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

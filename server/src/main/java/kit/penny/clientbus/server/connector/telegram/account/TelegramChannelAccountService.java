@@ -1,8 +1,12 @@
-package kit.penny.clientbus.server.connector.telegram;
+package kit.penny.clientbus.server.connector.telegram.account;
 
+import kit.penny.clientbus.common.enums.ChannelConnectionStatus;
+import kit.penny.clientbus.server.connector.telegram.client.TelegramClientContext;
+import kit.penny.clientbus.server.connector.telegram.client.TelegramClientLifecycleService;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
 
@@ -20,12 +24,13 @@ public class TelegramChannelAccountService {
         this.lifecycleService = lifecycleService;
     }
 
+    @Transactional
     public TelegramClientContext create(UUID channelAccountId) {
+
         ChannelAccountEntity account =
                 channelAccountRepository.findById(channelAccountId)
                         .orElseThrow(() -> new IllegalArgumentException(
-                                "Channel account not found: " + channelAccountId
-                        ));
+                                "Channel account not found: " + channelAccountId));
 
         if (account.getPhone() == null || account.getPhone().isBlank()) {
             throw new IllegalStateException(
@@ -34,10 +39,25 @@ public class TelegramChannelAccountService {
             );
         }
 
-        return lifecycleService.create(
-                account.getId(),
-                account.getPhone()
-        );
+        account.getChannel()
+                .setStatus(ChannelConnectionStatus.CONNECTING);
+
+        channelAccountRepository.save(account);
+
+        try {
+            return lifecycleService.create(
+                    account.getId(),
+                    account.getPhone()
+            );
+        } catch (RuntimeException e) {
+
+            account.getChannel()
+                    .setStatus(ChannelConnectionStatus.ERROR);
+
+            channelAccountRepository.save(account);
+
+            throw e;
+        }
     }
 
     public TelegramClientContext get(UUID channelAccountId) {
@@ -48,16 +68,27 @@ public class TelegramChannelAccountService {
         return lifecycleService.require(channelAccountId);
     }
 
+    @Transactional
     public void stop(UUID channelAccountId) {
+
         lifecycleService.stop(channelAccountId);
+
+        channelAccountRepository.findById(channelAccountId)
+                .ifPresent(account -> {
+                    account.getChannel()
+                            .setStatus(ChannelConnectionStatus.DISCONNECTED);
+
+                    channelAccountRepository.save(account);
+                });
     }
 
+    @Transactional
     public void restart(UUID channelAccountId) {
+
         ChannelAccountEntity account =
                 channelAccountRepository.findById(channelAccountId)
                         .orElseThrow(() -> new IllegalArgumentException(
-                                "Channel account not found: " + channelAccountId
-                        ));
+                                "Channel account not found: " + channelAccountId));
 
         if (account.getPhone() == null || account.getPhone().isBlank()) {
             throw new IllegalStateException(
@@ -66,9 +97,24 @@ public class TelegramChannelAccountService {
             );
         }
 
-        lifecycleService.restart(
-                account.getId(),
-                account.getPhone()
-        );
+        account.getChannel()
+                .setStatus(ChannelConnectionStatus.CONNECTING);
+
+        channelAccountRepository.save(account);
+
+        try {
+            lifecycleService.restart(
+                    account.getId(),
+                    account.getPhone()
+            );
+        } catch (RuntimeException e) {
+
+            account.getChannel()
+                    .setStatus(ChannelConnectionStatus.ERROR);
+
+            channelAccountRepository.save(account);
+
+            throw e;
+        }
     }
 }
