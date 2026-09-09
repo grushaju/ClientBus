@@ -1,5 +1,6 @@
 package kit.penny.clientbus.server.connector.telegram.authorization;
 
+import kit.penny.clientbus.server.connector.telegram.account.TelegramChannelAccountService;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientContext;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientLifecycleService;
 import kit.penny.tdlib.updates.TelegramAuthorizationManager;
@@ -23,6 +24,9 @@ class TelegramAuthorizationServiceTest {
     private TelegramClientLifecycleService lifecycleService;
 
     @Mock
+    private TelegramChannelAccountService channelAccountService;
+
+    @Mock
     private TelegramClientContext clientContext;
 
     @Mock
@@ -35,7 +39,8 @@ class TelegramAuthorizationServiceTest {
     @BeforeEach
     void setUp() {
         service = new TelegramAuthorizationService(
-                lifecycleService
+                lifecycleService,
+                channelAccountService
         );
 
         channelAccountId = UUID.randomUUID();

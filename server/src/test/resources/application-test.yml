@@ -35,6 +35,12 @@ spring:
       platform-events-group-id: clientbus.platform-events.processor
 
 logging:
+  level:
+    org.springframework.boot.actuate.endpoint.web.EndpointLinksResolver: WARN
+    org.apache.kafka.clients.admin.AdminClientConfig: WARN
+    org.apache.kafka.common.config.AbstractConfig: WARN
+    org.apache.kafka.common.metrics.Metrics: WARN
+    org.apache.kafka.common.utils.AppInfoParser: WARN
 #  level:
 #    org.apache.kafka.clients.consumer: DEBUG
 #    org.springframework.kafka.listener: DEBUG

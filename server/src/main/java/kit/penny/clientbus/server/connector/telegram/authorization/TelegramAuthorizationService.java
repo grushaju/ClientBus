@@ -1,5 +1,6 @@
 package kit.penny.clientbus.server.connector.telegram.authorization;
 
+import kit.penny.clientbus.server.connector.telegram.account.TelegramChannelAccountService;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientContext;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientLifecycleService;
 import org.springframework.stereotype.Service;
@@ -21,11 +22,20 @@ import java.util.UUID;
 public class TelegramAuthorizationService {
 
     private final TelegramClientLifecycleService lifecycleService;
+    private final TelegramChannelAccountService channelAccountService;
 
     public TelegramAuthorizationService(
-            TelegramClientLifecycleService lifecycleService
+            TelegramClientLifecycleService lifecycleService,
+            TelegramChannelAccountService channelAccountService
     ) {
         this.lifecycleService = lifecycleService;
+        this.channelAccountService = channelAccountService;
+    }
+
+    public void startAuthorization(
+            UUID channelAccountId
+    ) {
+        channelAccountService.create(channelAccountId);
     }
 
     public TelegramAuthorizationStatus getStatus(

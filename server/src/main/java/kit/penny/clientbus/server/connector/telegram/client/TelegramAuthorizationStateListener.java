@@ -47,6 +47,12 @@ public class TelegramAuthorizationStateListener
     public void handleNotification(
             TdApi.UpdateAuthorizationState notification
     ) {
+        log.info(
+                "TelegramAuthorizationStateListener received: {}",
+                notification.authorizationState == null
+                        ? "null"
+                        : notification.authorizationState.getClass().getSimpleName()
+        );
         getAuthorizationStateHandler()
                 .handleNotification(notification);
 

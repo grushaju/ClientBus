@@ -31,6 +31,14 @@ server:
 #  servlet:
 #    context-path: /clientbus
 
+logging:
+  level:
+    org.springframework.boot.actuate.endpoint.web.EndpointLinksResolver: WARN
+    org.apache.kafka.clients.admin.AdminClientConfig: WARN
+    org.apache.kafka.common.config.AbstractConfig: WARN
+    org.apache.kafka.common.metrics.Metrics: WARN
+    org.apache.kafka.common.utils.AppInfoParser: WARN
+
 # logging:
   # level:
     # org.springframework.web: DEBUG
@@ -59,7 +67,7 @@ springdoc:
   # Пакеты для сканирования
   packages-to-scan:
     - kit.penny.clientbus.server.controller
-#    - kit.penny.clientbus.server.security.controller
+    - kit.penny.clientbus.server.connector.telegram.authorization
 
   # Пути для сканирования (если нужно)
   paths-to-match:
@@ -75,6 +83,7 @@ springdoc:
     disabled: false
 
 spring:
+
   application:
     name: server
 

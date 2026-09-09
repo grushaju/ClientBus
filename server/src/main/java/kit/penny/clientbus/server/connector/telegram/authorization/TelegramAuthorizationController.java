@@ -1,11 +1,15 @@
 package kit.penny.clientbus.server.connector.telegram.authorization;
 
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/channels/{channelAccountId}/telegram")
+@SecurityRequirement(name = "bearerAuth")
+@Tag(name = "Управление каналами Telegram", description = "API для управления Telegram")
 public class TelegramAuthorizationController {
 
     private final TelegramAuthorizationService authorizationService;
@@ -14,6 +18,13 @@ public class TelegramAuthorizationController {
             TelegramAuthorizationService authorizationService
     ) {
         this.authorizationService = authorizationService;
+    }
+
+    @PostMapping("/start")
+    public void startAuthorization(
+            @PathVariable UUID channelAccountId
+    ) {
+        authorizationService.startAuthorization(channelAccountId);
     }
 
     @GetMapping("/status")
