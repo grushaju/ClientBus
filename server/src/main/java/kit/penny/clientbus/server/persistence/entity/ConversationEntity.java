@@ -46,7 +46,7 @@ public class ConversationEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    @Column(nullable = false, updatable = false, name = "conversationtid")
+    @Column(nullable = false, updatable = false, name = "conversationid")
     private UUID id;
 
     /**

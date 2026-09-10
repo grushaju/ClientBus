@@ -1,6 +1,7 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
 import kit.penny.clientbus.common.dto.message.InboundMessageRequest;
+import kit.penny.clientbus.common.enums.MessageType;
 import kit.penny.clientbus.server.service.MessageProcessingService;
 import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.query.TdlibResponse;
@@ -11,9 +12,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -76,6 +79,20 @@ class TelegramInboundMessageListenerTest {
 
         mockGetChatSuccess(chat);
 
+        TdApi.User user = new TdApi.User();
+        user.id = USER_ID;
+        user.firstName = "Ivan";
+        user.lastName = "Ivanov";
+        user.phoneNumber = "+79991234567";
+
+
+        TdlibResponse<TdApi.User> userResponse =
+                new TdlibResponse<>(user, null);
+        when(telegramUserService.getUser(USER_ID))
+                .thenReturn(
+                        CompletableFuture.completedFuture(userResponse)
+                );
+
         listener.handleNotification(
                 new TdApi.UpdateNewMessage(message)
         );
@@ -93,7 +110,14 @@ class TelegramInboundMessageListenerTest {
         assertEquals(CHANNEL_ACCOUNT_ID, request.channelAccountId());
         assertEquals(Long.toString(USER_ID), request.clientExternalId());
         assertEquals(Long.toString(MESSAGE_ID), request.externalId());
+        assertEquals(MessageType.TEXT, request.type());
         assertEquals("Hello", request.content());
+        assertEquals("+79991234567", request.clientPhone());
+        assertEquals("Ivan Ivanov", request.clientDisplayName());
+        assertEquals(Instant.ofEpochSecond(1_700_000_000), request.sentAt());
+
+        verify(telegramUserService)
+                .getUser(USER_ID);
     }
 
     @Test
