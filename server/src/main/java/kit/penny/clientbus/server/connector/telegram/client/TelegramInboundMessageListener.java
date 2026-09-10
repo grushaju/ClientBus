@@ -1,12 +1,14 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
 import kit.penny.clientbus.common.dto.message.InboundMessageRequest;
+import kit.penny.clientbus.common.dto.message.PlatformInboundMessageEvent;
 import kit.penny.clientbus.common.enums.MessageType;
 import kit.penny.clientbus.server.service.MessageProcessingService;
 import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.query.TdlibResponse;
 import kit.penny.tdlib.service.TelegramUserService;
 import kit.penny.tdlib.updates.ITdlibUpdateListener;
+import kit.penny.clientbus.server.kafka.producer.IInboundEventPublisher;
 import org.drinkless.tdlib.TdApi;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,18 +27,18 @@ public class TelegramInboundMessageListener
     private final UUID channelAccountId;
     private final ObjectProvider<TelegramClient> telegramClientProvider;
     private final TelegramUserService telegramUserService;
-    private final MessageProcessingService messageProcessingService;
+    private final IInboundEventPublisher inboundEventPublisher;
 
     public TelegramInboundMessageListener(
             UUID channelAccountId,
             ObjectProvider<TelegramClient> telegramClientProvider,
             TelegramUserService telegramUserService,
-            MessageProcessingService messageProcessingService
+            IInboundEventPublisher inboundEventPublisher
     ) {
         this.channelAccountId = channelAccountId;
         this.telegramClientProvider = telegramClientProvider;
         this.telegramUserService = telegramUserService;
-        this.messageProcessingService = messageProcessingService;
+        this.inboundEventPublisher = inboundEventPublisher;
     }
 
     @Override
@@ -201,10 +203,12 @@ public class TelegramInboundMessageListener
                 );
 
         try {
-            messageProcessingService.processInbound(
-                    request,
-                    List.of()
-            );
+            PlatformInboundMessageEvent event =
+                    new PlatformInboundMessageEvent(
+                            request,
+                            List.of());
+
+            inboundEventPublisher.publish(event);
 
             log.debug(
                     "Telegram inbound message processed: channelAccountId={}, chatId={}, messageId={}, clientExternalId={}",

@@ -1,6 +1,7 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
 import kit.penny.clientbus.server.fixture.TestDataFactory;
+import kit.penny.clientbus.server.kafka.producer.IInboundEventPublisher;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
 import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
@@ -56,15 +57,15 @@ class TelegramContextFactoryTest {
                 Mockito.mock(ChannelAccountRepository.class);
         ChannelRepository channelRepository =
                 Mockito.mock(ChannelRepository.class);
-        MessageProcessingService messageProcessingService =
-                Mockito.mock(MessageProcessingService.class);
+        IInboundEventPublisher inboundEventPublisher =
+                Mockito.mock(IInboundEventPublisher.class);
 
         TelegramContextFactory factory =
                 new TelegramContextFactory(
                         globalProperties,
                         channelAccountRepository,
                         channelRepository,
-                        messageProcessingService
+                        inboundEventPublisher
                 );
 
         UUID accountA = UUID.randomUUID();
@@ -203,15 +204,15 @@ class TelegramContextFactoryTest {
                 Mockito.mock(ChannelAccountRepository.class);
         ChannelRepository channelRepository =
                 Mockito.mock(ChannelRepository.class);
-        MessageProcessingService messageProcessingService =
-                Mockito.mock(MessageProcessingService.class);
+        IInboundEventPublisher inboundEventPublisher =
+                Mockito.mock(IInboundEventPublisher.class);
 
         TelegramContextFactory factory =
                 new TelegramContextFactory(
                         globalProperties,
                         channelAccountRepository,
                         channelRepository,
-                        messageProcessingService
+                        inboundEventPublisher
                 );
 
         UUID accountA = UUID.randomUUID();

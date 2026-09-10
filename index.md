@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-09-10 16:27:56
+- Generated: 2026-09-10 23:54:16
 - Branch: `main`
-- Commit: `061c058`
+- Commit: `9a632df`
 
 ## Project Structure
 
@@ -104,11 +104,6 @@
 - `OutboundMessageKafkaCommand.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/OutboundMessageKafkaCommand.java`
 - `PlatformMessageKafkaEvent.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/PlatformMessageKafkaEvent.java`
 - `PlatformOutboundAttachment.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/PlatformOutboundAttachment.java`
-
-#### `src/main/resources`
-
-
-#### `src/test/java`
 
 ### server
 
@@ -337,6 +332,7 @@
 
 ##### `kit.penny.clientbus.server.controller`
 
+- `ConversationControllerTest.java` — `server/src/test/java/kit/penny/clientbus/server/controller/ConversationControllerTest.java`
 - `MessageControllerTest.java` — `server/src/test/java/kit/penny/clientbus/server/controller/MessageControllerTest.java`
 
 ##### `kit.penny.clientbus.server.fixture`
@@ -346,6 +342,7 @@
 ##### `kit.penny.clientbus.server.integration`
 
 - `AbstractIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/integration/AbstractIntegrationTest.java`
+- `ConversationApiIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/integration/ConversationApiIntegrationTest.java`
 - `MessageInboundFlowIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/integration/MessageInboundFlowIntegrationTest.java`
 - `OutboundMessageAsyncFlowIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/integration/OutboundMessageAsyncFlowIntegrationTest.java`
 
@@ -393,6 +390,7 @@
 ##### `kit.penny.clientbus.server.service`
 
 - `AuthServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/AuthServiceTest.java`
+- `ClientAccountServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/ClientAccountServiceTest.java`
 - `ClientServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/ClientServiceTest.java`
 - `MessageAttachmentServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/MessageAttachmentServiceTest.java`
 - `MessageProcessingServiceIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/MessageProcessingServiceIntegrationTest.java`
@@ -416,9 +414,11 @@
 
 - `ui/src/main/resources/application.properties`
 
+#### `src/test/java`
+
 ## Summary
 
 - Maven modules: 4
-- Java files: 214
-- Git commit: `061c058`
+- Java files: 217
+- Git commit: `9a632df`
 

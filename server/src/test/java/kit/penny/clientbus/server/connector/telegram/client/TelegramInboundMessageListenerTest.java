@@ -1,7 +1,9 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
 import kit.penny.clientbus.common.dto.message.InboundMessageRequest;
+import kit.penny.clientbus.common.dto.message.PlatformInboundMessageEvent;
 import kit.penny.clientbus.common.enums.MessageType;
+import kit.penny.clientbus.server.kafka.producer.IInboundEventPublisher;
 import kit.penny.clientbus.server.service.MessageProcessingService;
 import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.query.TdlibResponse;
@@ -46,7 +48,7 @@ class TelegramInboundMessageListenerTest {
     private ObjectProvider<TelegramClient> telegramClientProvider;
 
     @Mock
-    private MessageProcessingService messageProcessingService;
+    private IInboundEventPublisher inboundEventPublisher;
 
     @Mock
     private TelegramUserService telegramUserService;
@@ -59,7 +61,7 @@ class TelegramInboundMessageListenerTest {
                 CHANNEL_ACCOUNT_ID,
                 telegramClientProvider,
                 telegramUserService,
-                messageProcessingService
+                inboundEventPublisher
         );
     }
 
@@ -97,15 +99,17 @@ class TelegramInboundMessageListenerTest {
                 new TdApi.UpdateNewMessage(message)
         );
 
-        ArgumentCaptor<InboundMessageRequest> requestCaptor =
-                ArgumentCaptor.forClass(InboundMessageRequest.class);
+        ArgumentCaptor<PlatformInboundMessageEvent> eventCaptor =
+                ArgumentCaptor.forClass(PlatformInboundMessageEvent.class);
 
-        verify(messageProcessingService).processInbound(
-                requestCaptor.capture(),
-                any(List.class)
-        );
+        verify(inboundEventPublisher)
+                .publish(eventCaptor.capture());
 
-        InboundMessageRequest request = requestCaptor.getValue();
+        PlatformInboundMessageEvent event =
+                eventCaptor.getValue();
+
+        InboundMessageRequest request =
+                event.message();
 
         assertEquals(CHANNEL_ACCOUNT_ID, request.channelAccountId());
         assertEquals(Long.toString(USER_ID), request.clientExternalId());
@@ -132,8 +136,8 @@ class TelegramInboundMessageListenerTest {
                 new TdApi.UpdateNewMessage(message)
         );
 
-        verify(messageProcessingService, never())
-                .processInbound(any(), any());
+        verify(inboundEventPublisher, never())
+                .publish(any());
 
         verify(telegramClient, never())
                 .sendAsync(any());
@@ -151,8 +155,8 @@ class TelegramInboundMessageListenerTest {
                 new TdApi.UpdateNewMessage(message)
         );
 
-        verify(messageProcessingService, never())
-                .processInbound(any(), any());
+        verify(inboundEventPublisher, never())
+                .publish(any());
 
         verify(telegramClient, never())
                 .sendAsync(any());
@@ -171,8 +175,8 @@ class TelegramInboundMessageListenerTest {
                 new TdApi.UpdateNewMessage(message)
         );
 
-        verify(messageProcessingService, never())
-                .processInbound(any(), any());
+        verify(inboundEventPublisher, never())
+                .publish(any());
 
         verify(telegramClient, never())
                 .sendAsync(any());
@@ -200,8 +204,8 @@ class TelegramInboundMessageListenerTest {
                 new TdApi.UpdateNewMessage(message)
         );
 
-        verify(messageProcessingService, never())
-                .processInbound(any(), any());
+        verify(inboundEventPublisher, never())
+                .publish(any());
     }
 
     @Test
@@ -225,8 +229,8 @@ class TelegramInboundMessageListenerTest {
                 new TdApi.UpdateNewMessage(message)
         );
 
-        verify(messageProcessingService, never())
-                .processInbound(any(), any());
+        verify(inboundEventPublisher, never())
+                .publish(any());
     }
 
     @Test
@@ -247,8 +251,8 @@ class TelegramInboundMessageListenerTest {
                 new TdApi.UpdateNewMessage(message)
         );
 
-        verify(messageProcessingService, never())
-                .processInbound(any(), any());
+        verify(inboundEventPublisher, never())
+                .publish(any());
     }
 
     @Test
