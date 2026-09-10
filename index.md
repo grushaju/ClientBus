@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-09-10 14:00:11
+- Generated: 2026-09-10 16:27:56
 - Branch: `main`
-- Commit: `51bb78a`
+- Commit: `061c058`
 
 ## Project Structure
 
@@ -158,6 +158,7 @@
 - `TelegramClientLifecycleService.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/client/TelegramClientLifecycleService.java`
 - `TelegramClientManager.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/client/TelegramClientManager.java`
 - `TelegramContextFactory.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/client/TelegramContextFactory.java`
+- `TelegramInboundMessageListener.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/client/TelegramInboundMessageListener.java`
 
 ##### `kit.penny.clientbus.server.connector.telegram.config`
 
@@ -328,6 +329,7 @@
 
 - `TelegramAuthorizationStateListenerTest.java` — `server/src/test/java/kit/penny/clientbus/server/connector/telegram/client/TelegramAuthorizationStateListenerTest.java`
 - `TelegramContextFactoryTest.java` — `server/src/test/java/kit/penny/clientbus/server/connector/telegram/client/TelegramContextFactoryTest.java`
+- `TelegramInboundMessageListenerTest.java` — `server/src/test/java/kit/penny/clientbus/server/connector/telegram/client/TelegramInboundMessageListenerTest.java`
 
 ##### `kit.penny.clientbus.server.connector.telegram.startup`
 
@@ -417,6 +419,6 @@
 ## Summary
 
 - Maven modules: 4
-- Java files: 212
-- Git commit: `51bb78a`
+- Java files: 214
+- Git commit: `061c058`
 

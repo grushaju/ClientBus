@@ -8,7 +8,6 @@ import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
 import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
 import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
 

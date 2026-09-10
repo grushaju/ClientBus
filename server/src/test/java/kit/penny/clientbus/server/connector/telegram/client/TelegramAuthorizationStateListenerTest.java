@@ -4,6 +4,7 @@ import kit.penny.clientbus.common.enums.ChannelConnectionStatus;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
+import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
 import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
 import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.properties.TelegramProperties;
@@ -24,6 +25,7 @@ import static org.mockito.Mockito.when;
 class TelegramAuthorizationStateListenerTest {
 
     private ChannelRepository channelRepository;
+    private ChannelAccountRepository channelAccountRepository;
     private TelegramProperties properties;
     private TelegramAuthorizationManager authorizationManager;
     private ObjectProvider<TelegramClient> telegramClientProvider;
@@ -33,6 +35,7 @@ class TelegramAuthorizationStateListenerTest {
     @BeforeEach
     void setUp() {
         channelRepository = mock(ChannelRepository.class);
+        channelAccountRepository = mock(ChannelAccountRepository.class);
         properties = mock(TelegramProperties.class);
         authorizationManager = mock(TelegramAuthorizationManager.class);
         telegramClientProvider = mock(ObjectProvider.class);
@@ -40,6 +43,7 @@ class TelegramAuthorizationStateListenerTest {
         listener = new TelegramAuthorizationStateListener(
                 UUID.randomUUID(),
                 channelRepository,
+                channelAccountRepository,
                 properties,
                 authorizationManager,
                 telegramClientProvider
@@ -66,6 +70,7 @@ class TelegramAuthorizationStateListenerTest {
         listener = new TelegramAuthorizationStateListener(
                 channelId,
                 channelRepository,
+                channelAccountRepository,
                 properties,
                 authorizationManager,
                 telegramClientProvider

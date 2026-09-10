@@ -15,6 +15,7 @@ import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProce
 import org.springframework.beans.factory.support.RootBeanDefinition;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.core.env.MapPropertySource;
+import kit.penny.clientbus.server.service.MessageProcessingService;
 
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -29,18 +30,24 @@ public class TelegramContextFactory {
     private static final String AUTHORIZATION_STATE_BEAN_NAME =
             "updateAuthorizationState";
 
+    private static final String INBOUND_MESSAGE_BEAN_NAME =
+            "telegramInboundMessageListener";
+
     private final TelegramProperties globalProperties;
     private final ChannelRepository channelRepository;
     private final ChannelAccountRepository channelAccountRepository;
+    private final MessageProcessingService messageProcessingService;
 
     public TelegramContextFactory(
             TelegramProperties globalProperties,
             ChannelAccountRepository channelAccountRepository,
-            ChannelRepository channelRepository
+            ChannelRepository channelRepository,
+            MessageProcessingService messageProcessingService
     ) {
         this.globalProperties = globalProperties;
         this.channelAccountRepository = channelAccountRepository;
         this.channelRepository = channelRepository;
+        this.messageProcessingService = messageProcessingService;
     }
 
     public TelegramClientContext create(
@@ -63,7 +70,7 @@ public class TelegramContextFactory {
                 );
 
         context.addBeanFactoryPostProcessor(
-                authorizationStateListenerReplacer(
+                updateListenerReplacer(
                         context,
                         channelAccountId
                 )
@@ -80,7 +87,7 @@ public class TelegramContextFactory {
         );
     }
 
-    private BeanDefinitionRegistryPostProcessor authorizationStateListenerReplacer(
+    private BeanDefinitionRegistryPostProcessor updateListenerReplacer(
             AnnotationConfigApplicationContext context,
             UUID channelAccountId
     ) {
@@ -98,12 +105,12 @@ public class TelegramContextFactory {
                     );
                 }
 
-                RootBeanDefinition beanDefinition =
+                RootBeanDefinition authorizationDefinition =
                         new RootBeanDefinition(
                                 ITdlibUpdateListener.class
                         );
 
-                beanDefinition.setInstanceSupplier(
+                authorizationDefinition.setInstanceSupplier(
                         () -> createAuthorizationStateListener(
                                 context,
                                 channelAccountId
@@ -112,7 +119,24 @@ public class TelegramContextFactory {
 
                 registry.registerBeanDefinition(
                         AUTHORIZATION_STATE_BEAN_NAME,
-                        beanDefinition
+                        authorizationDefinition
+                );
+
+                RootBeanDefinition inboundMessageDefinition =
+                        new RootBeanDefinition(
+                                ITdlibUpdateListener.class
+                        );
+
+                inboundMessageDefinition.setInstanceSupplier(
+                        () -> createInboundMessageListener(
+                                context,
+                                channelAccountId
+                        )
+                );
+
+                registry.registerBeanDefinition(
+                        INBOUND_MESSAGE_BEAN_NAME,
+                        inboundMessageDefinition
                 );
             }
 
@@ -123,6 +147,21 @@ public class TelegramContextFactory {
                 // Nothing to process.
             }
         };
+    }
+
+    private ITdlibUpdateListener<TdApi.UpdateNewMessage>
+    createInboundMessageListener(
+            AnnotationConfigApplicationContext context,
+            UUID channelAccountId
+    ) {
+        ObjectProvider<TelegramClient> telegramClientProvider =
+                context.getBeanProvider(TelegramClient.class);
+
+        return new TelegramInboundMessageListener(
+                channelAccountId,
+                telegramClientProvider,
+                messageProcessingService
+        );
     }
 
     private ITdlibUpdateListener<TdApi.UpdateAuthorizationState> createAuthorizationStateListener(
@@ -152,6 +191,7 @@ public class TelegramContextFactory {
         return new TelegramAuthorizationStateListener(
                 channelId,
                 channelRepository,
+                channelAccountRepository,
                 properties,
                 authorizationManager,
                 telegramClientProvider

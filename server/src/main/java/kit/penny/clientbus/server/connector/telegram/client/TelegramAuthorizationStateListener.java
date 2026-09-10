@@ -28,21 +28,25 @@ public class TelegramAuthorizationStateListener
     private final TelegramProperties properties;
     private final TelegramAuthorizationManager authorizationManager;
     private final ObjectProvider<TelegramClient> telegramClientProvider;
+    private final ChannelAccountRepository channelAccountRepository;
 
     private volatile UpdateAuthorizationState authorizationStateHandler;
 
     public TelegramAuthorizationStateListener(
             UUID channelId,
             ChannelRepository channelRepository,
+            ChannelAccountRepository channelAccountRepository,
             TelegramProperties properties,
             TelegramAuthorizationManager authorizationManager,
             ObjectProvider<TelegramClient> telegramClientProvider
     ) {
         this.channelId = channelId;
         this.channelRepository = channelRepository;
+        this.channelAccountRepository = channelAccountRepository;
         this.properties = properties;
         this.authorizationManager = authorizationManager;
         this.telegramClientProvider = telegramClientProvider;
+
     }
 
     @Override
@@ -112,6 +116,7 @@ public class TelegramAuthorizationStateListener
             TdApi.AuthorizationState state
     ) {
         if (state instanceof TdApi.AuthorizationStateReady) {
+            loadTelegramAccount();
             return ChannelConnectionStatus.CONNECTED;
         }
 
@@ -182,5 +187,111 @@ public class TelegramAuthorizationStateListener
                 channel.getStatus(),
                 state.getClass().getSimpleName()
         );
+    }
+
+    private void loadTelegramAccount() {
+        telegramClientProvider
+                .getObject()
+                .sendAsync(new TdApi.GetMe())
+                .thenAccept(response -> {
+                    if (response.getError().isPresent()) {
+                        log.warn(
+                                "Failed to load Telegram account: channelId={}, error={}",
+                                channelId,
+                                response.getError().get().message
+                        );
+                        return;
+                    }
+
+                    TdApi.User user =
+                            response.getObject().orElse(null);
+
+                    if (user == null) {
+                        log.warn(
+                                "Telegram account response is empty: channelId={}",
+                                channelId
+                        );
+                        return;
+                    }
+
+                    updateChannelAccount(user);
+                });
+    }
+
+    private void updateChannelAccount(TdApi.User user) {
+        ChannelEntity channel =
+                channelRepository.findById(channelId)
+                        .orElse(null);
+
+        if (channel == null) {
+            log.warn(
+                    "Telegram channel not found while updating account: channelId={}",
+                    channelId
+            );
+            return;
+        }
+
+        ChannelAccountEntity account =
+                channel.getAccount();
+
+        if (account == null) {
+            log.warn(
+                    "Telegram channel account not found: channelId={}",
+                    channelId
+            );
+            return;
+        }
+
+        account.setExternalId(
+                Long.toString(user.id)
+        );
+
+        account.setUsername(
+                user.usernames != null
+                        && user.usernames.activeUsernames != null
+                        && user.usernames.activeUsernames.length > 0
+                        ? user.usernames.activeUsernames[0]
+                        : null
+        );
+
+        account.setPhone(user.phoneNumber);
+
+        account.setDisplayName(
+                buildDisplayName(
+                        user.firstName,
+                        user.lastName
+                )
+        );
+
+        channelAccountRepository.save(account);
+
+        log.debug(
+                "Telegram account data saved: channelAccountId={}, externalId={}, username={}, displayName={}",
+                account.getId(),
+                account.getExternalId(),
+                account.getUsername(),
+                account.getDisplayName()
+        );
+    }
+
+    private String buildDisplayName(
+            String firstName,
+            String lastName
+    ) {
+        String first =
+                firstName == null ? "" : firstName.trim();
+
+        String last =
+                lastName == null ? "" : lastName.trim();
+
+        if (first.isEmpty()) {
+            return last.isEmpty() ? null : last;
+        }
+
+        if (last.isEmpty()) {
+            return first;
+        }
+
+        return first + " " + last;
     }
 }
