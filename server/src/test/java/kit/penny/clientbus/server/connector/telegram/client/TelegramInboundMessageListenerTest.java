@@ -4,6 +4,7 @@ import kit.penny.clientbus.common.dto.message.InboundMessageRequest;
 import kit.penny.clientbus.server.service.MessageProcessingService;
 import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.query.TdlibResponse;
+import kit.penny.tdlib.service.TelegramUserService;
 import org.drinkless.tdlib.TdApi;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -44,6 +45,9 @@ class TelegramInboundMessageListenerTest {
     @Mock
     private MessageProcessingService messageProcessingService;
 
+    @Mock
+    private TelegramUserService telegramUserService;
+
     private TelegramInboundMessageListener listener;
 
     @BeforeEach
@@ -51,6 +55,7 @@ class TelegramInboundMessageListenerTest {
         listener = new TelegramInboundMessageListener(
                 CHANNEL_ACCOUNT_ID,
                 telegramClientProvider,
+                telegramUserService,
                 messageProcessingService
         );
     }

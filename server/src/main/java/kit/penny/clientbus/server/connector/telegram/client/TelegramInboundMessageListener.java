@@ -5,6 +5,7 @@ import kit.penny.clientbus.common.enums.MessageType;
 import kit.penny.clientbus.server.service.MessageProcessingService;
 import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.query.TdlibResponse;
+import kit.penny.tdlib.service.TelegramUserService;
 import kit.penny.tdlib.updates.ITdlibUpdateListener;
 import org.drinkless.tdlib.TdApi;
 import org.slf4j.Logger;
@@ -22,16 +23,19 @@ public class TelegramInboundMessageListener
             LoggerFactory.getLogger(TelegramInboundMessageListener.class);
 
     private final UUID channelAccountId;
-    private final ObjectProvider<TelegramClient>  telegramClientProvider;
+    private final ObjectProvider<TelegramClient> telegramClientProvider;
+    private final TelegramUserService telegramUserService;
     private final MessageProcessingService messageProcessingService;
 
     public TelegramInboundMessageListener(
             UUID channelAccountId,
             ObjectProvider<TelegramClient> telegramClientProvider,
+            TelegramUserService telegramUserService,
             MessageProcessingService messageProcessingService
     ) {
         this.channelAccountId = channelAccountId;
         this.telegramClientProvider = telegramClientProvider;
+        this.telegramUserService = telegramUserService;
         this.messageProcessingService = messageProcessingService;
     }
 
@@ -133,6 +137,47 @@ public class TelegramInboundMessageListener
             return;
         }
 
+        telegramUserService
+                .getUser(sender.userId)
+                .thenAccept(userResponse ->
+                        handleUserResponse(
+                                message,
+                                sender,
+                                messageText,
+                                userResponse
+                        )
+                );
+    }
+
+    private void handleUserResponse(
+            TdApi.Message message,
+            TdApi.MessageSenderUser sender,
+            TdApi.MessageText messageText,
+            TdlibResponse<TdApi.User> response
+    ) {
+        if (response.getError().isPresent()) {
+            log.warn(
+                    "Failed to load Telegram user: channelAccountId={}, userId={}, messageId={}, error={}",
+                    channelAccountId,
+                    sender.userId,
+                    message.id,
+                    response.getError().get().message
+            );
+            return;
+        }
+
+        TdApi.User user = response.getObject().orElse(null);
+
+        if (user == null) {
+            log.warn(
+                    "Telegram user response is empty: channelAccountId={}, userId={}, messageId={}",
+                    channelAccountId,
+                    sender.userId,
+                    message.id
+            );
+            return;
+        }
+
         String content =
                 messageText.text == null
                         ? null
@@ -141,10 +186,13 @@ public class TelegramInboundMessageListener
         InboundMessageRequest request =
                 new InboundMessageRequest(
                         channelAccountId,
-                        Long.toString(sender.userId),
-                        null,
-                        null,
-                        null,
+                        Long.toString(user.id),
+                        extractUsername(user),
+                        user.phoneNumber,
+                        buildDisplayName(
+                                user.firstName,
+                                user.lastName
+                        ),
                         Long.toString(message.id),
                         MessageType.TEXT,
                         content,
@@ -163,7 +211,7 @@ public class TelegramInboundMessageListener
                     channelAccountId,
                     message.chatId,
                     message.id,
-                    sender.userId
+                    user.id
             );
 
         } catch (RuntimeException e) {
@@ -175,6 +223,41 @@ public class TelegramInboundMessageListener
                     e
             );
         }
+    }
+
+    private String extractUsername(TdApi.User user) {
+        if (user.usernames == null
+                || user.usernames.activeUsernames == null
+                || user.usernames.activeUsernames.length == 0) {
+            return null;
+        }
+
+        return user.usernames.activeUsernames[0];
+    }
+
+    private String buildDisplayName(
+            String firstName,
+            String lastName
+    ) {
+        String first =
+                firstName == null
+                        ? ""
+                        : firstName.trim();
+
+        String last =
+                lastName == null
+                        ? ""
+                        : lastName.trim();
+
+        if (first.isEmpty()) {
+            return last.isEmpty() ? null : last;
+        }
+
+        if (last.isEmpty()) {
+            return first;
+        }
+
+        return first + " " + last;
     }
 
     @Override

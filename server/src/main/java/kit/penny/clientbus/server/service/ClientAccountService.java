@@ -112,6 +112,12 @@ public class ClientAccountService {
                         channelType,
                         externalId
                 )
+                .map(entity -> {
+                    entity.setUsername(username);
+                    entity.setPhone(phone);
+                    entity.setDisplayName(displayName);
+                    return entity;
+                })
                 .orElseGet(() -> {
 
                     ClientAccountEntity entity =

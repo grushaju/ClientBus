@@ -6,6 +6,7 @@ import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepositor
 import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
 import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.properties.TelegramProperties;
+import kit.penny.tdlib.service.TelegramUserService;
 import kit.penny.tdlib.updates.ITdlibUpdateListener;
 import kit.penny.tdlib.updates.TelegramAuthorizationManager;
 import org.drinkless.tdlib.TdApi;
@@ -156,10 +157,13 @@ public class TelegramContextFactory {
     ) {
         ObjectProvider<TelegramClient> telegramClientProvider =
                 context.getBeanProvider(TelegramClient.class);
+        TelegramUserService telegramUserService =
+                context.getBean(TelegramUserService.class);
 
         return new TelegramInboundMessageListener(
                 channelAccountId,
                 telegramClientProvider,
+                telegramUserService,
                 messageProcessingService
         );
     }
