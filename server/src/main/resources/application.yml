@@ -145,6 +145,10 @@ spring:
     client:
       api-id: 94575
       api-hash: a3406de8d171bb422bb6ddf3bbd800e2
+#      api-id: 33073180
+#      api-hash: af4cc39ef18fb85d54c2cef445627f97
+#      api-id: 31219459
+#      api-hash: b956f4f74f8c2f6510e38d9f767b5640
       database-directory: ./data/telegram
       database-encryption-key: TELEGRAM_DATABASE_SECRET
 

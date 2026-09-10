@@ -256,4 +256,94 @@ class TelegramChannelAccountServiceTest {
                 "+79990000000"
         );
     }
+
+    @Test
+    void multipleAccountsShouldRemainIsolated() {
+        UUID accountAId = UUID.randomUUID();
+        UUID accountBId = UUID.randomUUID();
+
+        ChannelAccountEntity accountA =
+                TestDataFactory.channelAccount(
+                        TestDataFactory.channel(null),
+                        "external-a",
+                        "username-a",
+                        "+79990000001",
+                        "display-a"
+                );
+        accountA.setId(accountAId);
+
+        ChannelAccountEntity accountB =
+                TestDataFactory.channelAccount(
+                        TestDataFactory.channel(null),
+                        "external-b",
+                        "username-b",
+                        "+79990000002",
+                        "display-b"
+                );
+        accountB.setId(accountBId);
+
+        TelegramClientContext contextA =
+                mock(TelegramClientContext.class);
+        TelegramClientContext contextB =
+                mock(TelegramClientContext.class);
+
+        when(channelAccountRepository.findById(accountAId))
+                .thenReturn(Optional.of(accountA));
+        when(channelAccountRepository.findById(accountBId))
+                .thenReturn(Optional.of(accountB));
+
+        when(lifecycleService.create(accountAId, "+79990000001"))
+                .thenReturn(contextA);
+        when(lifecycleService.create(accountBId, "+79990000002"))
+                .thenReturn(contextB);
+
+        when(lifecycleService.get(accountAId))
+                .thenReturn(contextA);
+        when(lifecycleService.get(accountBId))
+                .thenReturn(contextB);
+
+        TelegramClientContext resultA =
+                service.create(accountAId);
+
+        TelegramClientContext resultB =
+                service.create(accountBId);
+
+        assertSame(contextA, resultA);
+        assertSame(contextB, resultB);
+
+        assertSame(
+                contextA,
+                service.get(accountAId)
+        );
+
+        assertSame(
+                contextB,
+                service.get(accountBId)
+        );
+
+        service.stop(accountAId);
+
+        assertEquals(
+                ChannelConnectionStatus.DISCONNECTED,
+                accountA.getChannel().getStatus()
+        );
+
+        assertEquals(
+                ChannelConnectionStatus.CONNECTING,
+                accountB.getChannel().getStatus()
+        );
+
+        verify(lifecycleService).stop(accountAId);
+        verify(lifecycleService, times(1)).create(
+                accountAId,
+                "+79990000001"
+        );
+        verify(lifecycleService, times(1)).create(
+                accountBId,
+                "+79990000002"
+        );
+
+        verify(channelRepository, times(2))
+                .save(accountA.getChannel());
+    }
 }

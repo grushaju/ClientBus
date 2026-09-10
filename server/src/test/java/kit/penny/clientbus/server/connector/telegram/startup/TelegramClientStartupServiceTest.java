@@ -164,4 +164,32 @@ class TelegramClientStartupServiceTest {
                 ChannelConnectionStatus.ERROR
         );
     }
+
+    @Test
+    void restoreTelegramClientsShouldRestoreEachAccountIndependently() {
+        UUID firstId = UUID.randomUUID();
+        UUID secondId = UUID.randomUUID();
+
+        ChannelAccountEntity first = mock(ChannelAccountEntity.class);
+        ChannelAccountEntity second = mock(ChannelAccountEntity.class);
+
+        when(first.getId()).thenReturn(firstId);
+        when(second.getId()).thenReturn(secondId);
+
+        when(channelAccountRepository
+                .findAllByChannelTypeAndChannelStatus(
+                        ChannelType.TELEGRAM,
+                        ChannelConnectionStatus.CONNECTED
+                ))
+                .thenReturn(List.of(first, second));
+
+        service.restoreTelegramClients();
+
+        var inOrder = org.mockito.Mockito.inOrder(channelAccountService);
+
+        inOrder.verify(channelAccountService).create(firstId);
+        inOrder.verify(channelAccountService).create(secondId);
+
+        verifyNoMoreInteractions(channelAccountService);
+    }
 }
