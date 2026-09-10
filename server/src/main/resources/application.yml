@@ -39,8 +39,8 @@ logging:
     org.apache.kafka.common.metrics.Metrics: WARN
     org.apache.kafka.common.utils.AppInfoParser: WARN
     org.apache.kafka.clients.*: WARN
-    org.hibernate.SQL: DEBUG
-    org.hibernate.orm.jdbc.bind: TRACE
+#    org.hibernate.SQL: DEBUG
+#    org.hibernate.orm.jdbc.bind: TRACE
 
 # logging:
   # level:

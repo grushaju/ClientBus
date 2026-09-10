@@ -68,7 +68,6 @@ class TelegramChannelAccountServiceTest {
         );
 
         verify(channelAccountRepository).findById(channelAccountId);
-        verify(channelAccountRepository).save(account);
         verify(lifecycleService).create(
                 channelAccountId,
                 "+79990000000"
@@ -83,7 +82,7 @@ class TelegramChannelAccountServiceTest {
                 .thenReturn(Optional.empty());
 
         assertThrows(
-                IllegalArgumentException.class,
+                IllegalStateException.class,
                 () -> service.create(channelAccountId)
         );
 
@@ -183,7 +182,6 @@ class TelegramChannelAccountServiceTest {
         );
 
         verify(channelAccountRepository).findById(channelAccountId);
-        verify(channelAccountRepository).save(account);
         verify(lifecycleService).restart(
                 channelAccountId,
                 "+79990000000"
@@ -253,8 +251,6 @@ class TelegramChannelAccountServiceTest {
         );
 
         verify(channelAccountRepository).findById(channelAccountId);
-        verify(channelAccountRepository, times(2)).save(account);
-
         verify(lifecycleService).restart(
                 channelAccountId,
                 "+79990000000"

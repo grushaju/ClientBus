@@ -1,5 +1,8 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
+import kit.penny.clientbus.server.fixture.TestDataFactory;
+import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
+import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
 import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
 import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
 import kit.penny.tdlib.client.TelegramClient;
@@ -10,6 +13,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mockito;
 
 import java.nio.file.Path;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -61,6 +65,27 @@ class TelegramContextFactoryTest {
 
         UUID accountA = UUID.randomUUID();
         UUID accountB = UUID.randomUUID();
+
+        ChannelEntity channelA =
+                TestDataFactory.channel(null);
+
+        ChannelEntity channelB =
+                TestDataFactory.channel(null);
+
+        ChannelAccountEntity channelAccountA =
+                TestDataFactory.channelAccount(channelA);
+
+        ChannelAccountEntity channelAccountB =
+                TestDataFactory.channelAccount(channelB);
+
+        channelAccountA.setId(accountA);
+        channelAccountB.setId(accountB);
+
+        Mockito.when(channelAccountRepository.findById(accountA))
+                .thenReturn(Optional.of(channelAccountA));
+
+        Mockito.when(channelAccountRepository.findById(accountB))
+                .thenReturn(Optional.of(channelAccountB));
 
         TelegramClientContext contextA = null;
         TelegramClientContext contextB = null;
@@ -148,6 +173,7 @@ class TelegramContextFactoryTest {
 
     @Test
     void shouldCreatePerAccountTelegramProperties() {
+
         TelegramProperties globalProperties =
                 new TelegramProperties(
                         false,
@@ -183,6 +209,27 @@ class TelegramContextFactoryTest {
 
         UUID accountA = UUID.randomUUID();
         UUID accountB = UUID.randomUUID();
+
+        ChannelEntity channelA =
+                TestDataFactory.channel(null);
+
+        ChannelEntity channelB =
+                TestDataFactory.channel(null);
+
+        ChannelAccountEntity channelAccountA =
+                TestDataFactory.channelAccount(channelA);
+
+        ChannelAccountEntity channelAccountB =
+                TestDataFactory.channelAccount(channelB);
+
+        channelAccountA.setId(accountA);
+        channelAccountB.setId(accountB);
+
+        Mockito.when(channelAccountRepository.findById(accountA))
+                .thenReturn(Optional.of(channelAccountA));
+
+        Mockito.when(channelAccountRepository.findById(accountB))
+                .thenReturn(Optional.of(channelAccountB));
 
         TelegramClientContext contextA = null;
         TelegramClientContext contextB = null;

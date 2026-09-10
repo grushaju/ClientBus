@@ -49,7 +49,7 @@ public class TelegramAuthorizationStateListener
     public void handleNotification(
             TdApi.UpdateAuthorizationState notification
     ) {
-        log.info(
+        log.debug(
                 "TelegramAuthorizationStateListener received: {}",
                 notification.authorizationState == null
                         ? "null"
@@ -71,7 +71,7 @@ public class TelegramAuthorizationStateListener
         if (status == null) {
             return;
         }
-        log.info(
+        log.debug(
                 "Telegram auth state mapped: channelId={}, tdlibState={}, connectionStatus={}",
                 channelId,
                 state.getClass().getSimpleName(),
@@ -150,14 +150,14 @@ public class TelegramAuthorizationStateListener
             return;
         }
 
-        log.info(
+        log.debug(
                 "Telegram account loaded: channelAccountId={}, channelFound={}",
                 channel.getAccount().getId(),
                 true
         );
 
         if (channel.getStatus() == status) {
-            log.info(
+            log.debug(
                     "Telegram status already set: channelAccountId={}, currentStatus={}, requestedStatus={}",
                     channel.getAccount().getId(),
                     channel.getStatus(),
@@ -166,7 +166,7 @@ public class TelegramAuthorizationStateListener
             return;
         }
 
-        log.info(
+        log.debug(
                 "Telegram saving connection status: channelAccountId={}, status={}",
                 channel.getAccount().getId(),
                 status
@@ -176,7 +176,7 @@ public class TelegramAuthorizationStateListener
 
         channelRepository.save(channel);
 
-        log.info(
+        log.debug(
                 "Telegram connection status saved: channelAccountId={}, status={}, tdlibState={}",
                 channel.getAccount().getId(),
                 channel.getStatus(),

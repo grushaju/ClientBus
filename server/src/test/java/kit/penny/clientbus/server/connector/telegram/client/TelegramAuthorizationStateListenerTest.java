@@ -61,6 +61,7 @@ class TelegramAuthorizationStateListenerTest {
                         "channel-displayName"
                 );
         channel.setId(channelId);
+        channel.setAccount(account);
 
         listener = new TelegramAuthorizationStateListener(
                 channelId,
