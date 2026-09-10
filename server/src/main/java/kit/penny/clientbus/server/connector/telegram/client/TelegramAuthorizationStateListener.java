@@ -2,7 +2,9 @@ package kit.penny.clientbus.server.connector.telegram.client;
 
 import kit.penny.clientbus.common.enums.ChannelConnectionStatus;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
+import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
 import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
+import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
 import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.properties.TelegramProperties;
 import kit.penny.tdlib.updates.ITdlibUpdateListener;
@@ -21,8 +23,8 @@ public class TelegramAuthorizationStateListener
     private static final Logger log =
             LoggerFactory.getLogger(TelegramAuthorizationStateListener.class);
 
-    private final UUID channelAccountId;
-    private final ChannelAccountRepository channelAccountRepository;
+    private final UUID channelId;
+    private final ChannelRepository channelRepository;
     private final TelegramProperties properties;
     private final TelegramAuthorizationManager authorizationManager;
     private final ObjectProvider<TelegramClient> telegramClientProvider;
@@ -30,14 +32,14 @@ public class TelegramAuthorizationStateListener
     private volatile UpdateAuthorizationState authorizationStateHandler;
 
     public TelegramAuthorizationStateListener(
-            UUID channelAccountId,
-            ChannelAccountRepository channelAccountRepository,
+            UUID channelId,
+            ChannelRepository channelRepository,
             TelegramProperties properties,
             TelegramAuthorizationManager authorizationManager,
             ObjectProvider<TelegramClient> telegramClientProvider
     ) {
-        this.channelAccountId = channelAccountId;
-        this.channelAccountRepository = channelAccountRepository;
+        this.channelId = channelId;
+        this.channelRepository = channelRepository;
         this.properties = properties;
         this.authorizationManager = authorizationManager;
         this.telegramClientProvider = telegramClientProvider;
@@ -69,7 +71,12 @@ public class TelegramAuthorizationStateListener
         if (status == null) {
             return;
         }
-
+        log.info(
+                "Telegram auth state mapped: channelId={}, tdlibState={}, connectionStatus={}",
+                channelId,
+                state.getClass().getSimpleName(),
+                status
+        );
         updateStatus(status, state);
     }
 
@@ -131,29 +138,48 @@ public class TelegramAuthorizationStateListener
             ChannelConnectionStatus status,
             TdApi.AuthorizationState state
     ) {
-        ChannelAccountEntity account =
-                channelAccountRepository.findById(channelAccountId)
+        ChannelEntity channel =
+                channelRepository.findById(channelId)
                         .orElse(null);
 
-        if (account == null || account.getChannel() == null) {
+        if (channel == null) {
             log.warn(
-                    "Telegram channel account not found: channelAccountId={}",
-                    channelAccountId
+                    "Telegram channel not found: channelId={}",
+                    channelId
             );
             return;
         }
 
-        if (account.getChannel().getStatus() == status) {
+        log.info(
+                "Telegram account loaded: channelAccountId={}, channelFound={}",
+                channel.getAccount().getId(),
+                true
+        );
+
+        if (channel.getStatus() == status) {
+            log.info(
+                    "Telegram status already set: channelAccountId={}, currentStatus={}, requestedStatus={}",
+                    channel.getAccount().getId(),
+                    channel.getStatus(),
+                    status
+            );
             return;
         }
 
-        account.getChannel().setStatus(status);
-        channelAccountRepository.save(account);
+        log.info(
+                "Telegram saving connection status: channelAccountId={}, status={}",
+                channel.getAccount().getId(),
+                status
+        );
+
+        channel.setStatus(status);
+
+        channelRepository.save(channel);
 
         log.info(
-                "Telegram connection status changed: channelAccountId={}, status={}, tdlibState={}",
-                channelAccountId,
-                status,
+                "Telegram connection status saved: channelAccountId={}, status={}, tdlibState={}",
+                channel.getAccount().getId(),
+                channel.getStatus(),
                 state.getClass().getSimpleName()
         );
     }

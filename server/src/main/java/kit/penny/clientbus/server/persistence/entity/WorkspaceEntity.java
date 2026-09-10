@@ -24,7 +24,7 @@ public class WorkspaceEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    @Column(nullable = false, updatable = false)
+    @Column(nullable = false, updatable = false, name = "workspaceid")
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)

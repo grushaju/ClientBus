@@ -12,7 +12,7 @@ public class ChannelEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    @Column(nullable = false, updatable = false)
+    @Column(nullable = false, updatable = false, name = "channelid")
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)

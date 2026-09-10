@@ -24,7 +24,7 @@ public class ClientAccountEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    @Column(nullable = false, updatable = false)
+    @Column(nullable = false, updatable = false, name = "clientaccountid")
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)

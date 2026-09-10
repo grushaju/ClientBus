@@ -23,7 +23,7 @@ public class UserEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    @Column(nullable = false, updatable = false)
+    @Column(nullable = false, updatable = false, name = "userid")
     private UUID id;
 
     @Column(nullable = false, length = 50)

@@ -6,9 +6,6 @@ import kit.penny.clientbus.common.dto.message.*;
 import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
 import kit.penny.clientbus.common.kafka.PlatformOutboundAttachment;
-import kit.penny.clientbus.server.connector.ConnectorSendResult;
-import kit.penny.clientbus.server.connector.IChannelConnector;
-import kit.penny.clientbus.server.connector.IChannelConnectorRegistry;
 import kit.penny.clientbus.server.kafka.producer.IOutboundMessagePublisher;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
@@ -63,53 +60,7 @@ public class MessageProcessingService
     ) {
         attachments = normalizeAttachments(attachments);
 
-        ChannelAccountEntity channelAccount =
-                channelAccountRepository
-                        .findById(request.channelAccountId())
-                        .orElseThrow(() ->
-                                new EntityNotFoundException(
-                                        "ChannelAccount not found: "
-                                                + request.channelAccountId()
-                                )
-                        );
-
-        ChannelType channelType =
-                channelAccount.getChannel().getType();
-
-        ClientAccountEntity clientAccount =
-                clientAccountService.getOrCreateForInbound(
-                        channelType,
-                        request.clientExternalId(),
-                        request.clientUsername(),
-                        request.clientPhone(),
-                        request.clientDisplayName()
-                );
-
-        ConversationEntity conversation =
-                conversationService.findEntityByAccounts(
-                        channelAccount.getId(),
-                        clientAccount.getId()
-                );
-
-        if (conversation == null) {
-            conversation =
-                    conversationService.createConversationInternal(
-                            channelAccount,
-                            clientAccount
-                    );
-        }
-
-        MessageCreationResult result =
-                messageService.createInboundMessage(
-                        new CreateInboundMessageRequest(
-                                conversation.getId(),
-                                request.type(),
-                                request.externalId(),
-                                request.content(),
-                                request.metadata(),
-                                request.sentAt()
-                        )
-                );
+        MessageCreationResult result = getMessageCreationResult(request);
 
         MessageDto message = result.message();
 
@@ -155,54 +106,7 @@ public class MessageProcessingService
         InboundMessageRequest request =
                 event.message();
 
-        ChannelAccountEntity channelAccount =
-                channelAccountRepository
-                        .findById(request.channelAccountId())
-                        .orElseThrow(() ->
-                                new EntityNotFoundException(
-                                        "ChannelAccount not found: "
-                                                + request.channelAccountId()
-                                )
-                        );
-
-        ChannelType channelType =
-                channelAccount.getChannel()
-                        .getType();
-
-        ClientAccountEntity clientAccount =
-                clientAccountService.getOrCreateForInbound(
-                        channelType,
-                        request.clientExternalId(),
-                        request.clientUsername(),
-                        request.clientPhone(),
-                        request.clientDisplayName()
-                );
-
-        ConversationEntity conversation =
-                conversationService.findEntityByAccounts(
-                        channelAccount.getId(),
-                        clientAccount.getId()
-                );
-
-        if (conversation == null) {
-            conversation =
-                    conversationService.createConversationInternal(
-                            channelAccount,
-                            clientAccount
-                    );
-        }
-
-        MessageCreationResult result =
-                messageService.createInboundMessage(
-                        new CreateInboundMessageRequest(
-                                conversation.getId(),
-                                request.type(),
-                                request.externalId(),
-                                request.content(),
-                                request.metadata(),
-                                request.sentAt()
-                        )
-                );
+        MessageCreationResult result = getMessageCreationResult(request);
 
         MessageDto message = result.message();
 
@@ -530,5 +434,54 @@ public class MessageProcessingService
         }
 
         return List.copyOf(attachments);
+    }
+
+    private MessageCreationResult getMessageCreationResult(InboundMessageRequest request) {
+        ChannelAccountEntity channelAccount =
+                channelAccountRepository
+                        .findById(request.channelAccountId())
+                        .orElseThrow(() ->
+                                new EntityNotFoundException(
+                                        "ChannelAccount not found: "
+                                                + request.channelAccountId()
+                                )
+                        );
+
+        ChannelType channelType =
+                channelAccount.getChannel().getType();
+
+        ClientAccountEntity clientAccount =
+                clientAccountService.getOrCreateForInbound(
+                        channelType,
+                        request.clientExternalId(),
+                        request.clientUsername(),
+                        request.clientPhone(),
+                        request.clientDisplayName()
+                );
+
+        ConversationEntity conversation =
+                conversationService.findEntityByAccounts(
+                        channelAccount.getId(),
+                        clientAccount.getId()
+                );
+
+        if (conversation == null) {
+            conversation =
+                    conversationService.createConversationInternal(
+                            channelAccount,
+                            clientAccount
+                    );
+        }
+
+        return messageService.createInboundMessage(
+                new CreateInboundMessageRequest(
+                        conversation.getId(),
+                        request.type(),
+                        request.externalId(),
+                        request.content(),
+                        request.metadata(),
+                        request.sentAt()
+                )
+        );
     }
 }

@@ -1,6 +1,7 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
 import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
+import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
 import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.properties.TelegramProperties;
 import kit.penny.tdlib.updates.TelegramAuthorizationManager;
@@ -48,11 +49,14 @@ class TelegramContextFactoryTest {
 
         ChannelAccountRepository channelAccountRepository =
                 Mockito.mock(ChannelAccountRepository.class);
+        ChannelRepository channelRepository =
+                Mockito.mock(ChannelRepository.class);
 
         TelegramContextFactory factory =
                 new TelegramContextFactory(
                         globalProperties,
-                        channelAccountRepository
+                        channelAccountRepository,
+                        channelRepository
                 );
 
         UUID accountA = UUID.randomUUID();
@@ -167,11 +171,14 @@ class TelegramContextFactoryTest {
 
         ChannelAccountRepository channelAccountRepository =
                 Mockito.mock(ChannelAccountRepository.class);
+        ChannelRepository channelRepository =
+                Mockito.mock(ChannelRepository.class);
 
         TelegramContextFactory factory =
                 new TelegramContextFactory(
                         globalProperties,
-                        channelAccountRepository
+                        channelAccountRepository,
+                        channelRepository
                 );
 
         UUID accountA = UUID.randomUUID();

@@ -6,6 +6,7 @@ import kit.penny.clientbus.server.connector.telegram.client.TelegramClientLifecy
 import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
+import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -24,6 +25,7 @@ import static org.mockito.Mockito.when;
 class TelegramChannelAccountServiceTest {
 
     private ChannelAccountRepository channelAccountRepository;
+    private ChannelRepository channelRepository;
     private TelegramClientLifecycleService lifecycleService;
 
     private TelegramChannelAccountService service;
@@ -31,10 +33,12 @@ class TelegramChannelAccountServiceTest {
     @BeforeEach
     void setUp() {
         channelAccountRepository = mock(ChannelAccountRepository.class);
+        channelRepository = mock(ChannelRepository.class);
         lifecycleService = mock(TelegramClientLifecycleService.class);
 
         service = new TelegramChannelAccountService(
                 channelAccountRepository,
+                channelRepository,
                 lifecycleService
         );
     }

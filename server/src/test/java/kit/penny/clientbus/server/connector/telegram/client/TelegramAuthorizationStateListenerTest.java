@@ -3,7 +3,8 @@ package kit.penny.clientbus.server.connector.telegram.client;
 import kit.penny.clientbus.common.enums.ChannelConnectionStatus;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
-import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
+import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
+import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
 import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.properties.TelegramProperties;
 import kit.penny.tdlib.updates.TelegramAuthorizationManager;
@@ -22,7 +23,7 @@ import static org.mockito.Mockito.when;
 
 class TelegramAuthorizationStateListenerTest {
 
-    private ChannelAccountRepository channelAccountRepository;
+    private ChannelRepository channelRepository;
     private TelegramProperties properties;
     private TelegramAuthorizationManager authorizationManager;
     private ObjectProvider<TelegramClient> telegramClientProvider;
@@ -31,14 +32,14 @@ class TelegramAuthorizationStateListenerTest {
 
     @BeforeEach
     void setUp() {
-        channelAccountRepository = mock(ChannelAccountRepository.class);
+        channelRepository = mock(ChannelRepository.class);
         properties = mock(TelegramProperties.class);
         authorizationManager = mock(TelegramAuthorizationManager.class);
         telegramClientProvider = mock(ObjectProvider.class);
 
         listener = new TelegramAuthorizationStateListener(
                 UUID.randomUUID(),
-                channelAccountRepository,
+                channelRepository,
                 properties,
                 authorizationManager,
                 telegramClientProvider
@@ -47,28 +48,30 @@ class TelegramAuthorizationStateListenerTest {
 
     @Test
     void readyStateShouldSetChannelStatusToConnected() {
-        UUID channelAccountId = UUID.randomUUID();
+        UUID channelId = UUID.randomUUID();
+
+        ChannelEntity channel = TestDataFactory.channel(null);
 
         ChannelAccountEntity account =
                 TestDataFactory.channelAccount(
-                        TestDataFactory.channel(null),
+                        channel,
                         "channel-external-id",
                         "channel-username",
                         "+79990000000",
                         "channel-displayName"
                 );
-        account.setId(channelAccountId);
+        channel.setId(channelId);
 
         listener = new TelegramAuthorizationStateListener(
-                channelAccountId,
-                channelAccountRepository,
+                channelId,
+                channelRepository,
                 properties,
                 authorizationManager,
                 telegramClientProvider
         );
 
-        when(channelAccountRepository.findById(channelAccountId))
-                .thenReturn(Optional.of(account));
+        when(channelRepository.findById(channelId))
+                .thenReturn(Optional.of(channel));
 
         listener.handleNotification(
                 new TdApi.UpdateAuthorizationState(
@@ -81,10 +84,10 @@ class TelegramAuthorizationStateListenerTest {
                 account.getChannel().getStatus()
         );
 
-        verify(channelAccountRepository)
-                .findById(channelAccountId);
+        verify(channelRepository)
+                .findById(channelId);
 
-        verify(channelAccountRepository)
-                .save(account);
+        verify(channelRepository)
+                .save(channel);
     }
 }

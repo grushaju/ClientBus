@@ -137,7 +137,7 @@ public class MessageService {
 
     /**
      * Creates an outbound message initiated by the current Employee.
-     *
+     * <p>
      * If replyToMessageId is specified, the target message must
      * belong to the same Conversation.
      */
@@ -254,7 +254,7 @@ public class MessageService {
     /**
      * Создаёт OUTBOUND Message как Forward
      * существующего Message.
-     *
+     * <p>
      * ACL Conversation должен быть проверен
      * вызывающим application layer.
      */
@@ -365,7 +365,7 @@ public class MessageService {
     ) {
 
         MessageEntity message =
-                getMessageForProcessing(messageId);
+                getMessageEntityForProcessing(messageId);
 
         if (message.getProcessingStatus()
                 != MessageProcessingStatus.RECEIVED) {
@@ -394,7 +394,7 @@ public class MessageService {
     ) {
 
         MessageEntity message =
-                getMessageForProcessing(messageId);
+                getMessageEntityForProcessing(messageId);
 
         if (message.getProcessingStatus()
                 != MessageProcessingStatus.PROCESSING) {
@@ -427,7 +427,7 @@ public class MessageService {
     ) {
 
         MessageEntity message =
-                getMessageForProcessing(messageId);
+                getMessageEntityForProcessing(messageId);
 
         if (message.getProcessingStatus()
                 != MessageProcessingStatus.PROCESSING) {
@@ -449,17 +449,17 @@ public class MessageService {
 
     /**
      * PROCESSED -> QUEUED.
-     *
+     * <p>
      * Сообщение подготовлено и поставлено
      * в асинхронный outbound Kafka flow.
-     *
+     * <p>
      * Повторный QUEUED является идемпотентным.
      */
     @Transactional
     public MessageDto markQueued(UUID messageId) {
 
         MessageEntity message =
-                getMessageForProcessing(messageId);
+                getMessageEntityForProcessing(messageId);
 
         if (message.getProcessingStatus()
                 == MessageProcessingStatus.QUEUED) {
@@ -487,10 +487,10 @@ public class MessageService {
 
     /**
      * QUEUED -> SENT.
-     *
+     * <p>
      * Вызывается KafkaOutboundMessageConsumer
      * после успешной отправки через ChannelConnector.
-     *
+     * <p>
      * Повторный SENT является идемпотентным.
      */
     @Transactional
@@ -500,7 +500,7 @@ public class MessageService {
     ) {
 
         MessageEntity message =
-                getMessageForProcessing(messageId);
+                getMessageEntityForProcessing(messageId);
 
         requireOutbound(message);
 
@@ -594,7 +594,7 @@ public class MessageService {
 
     /**
      * SENT -> DELIVERED.
-     *
+     * <p>
      * Повторное получение DELIVERED является идемпотентным.
      */
     @Transactional
@@ -603,7 +603,7 @@ public class MessageService {
     ) {
 
         MessageEntity message =
-                getMessageForProcessing(messageId);
+                getMessageEntityForProcessing(messageId);
 
         requireOutbound(message);
 
@@ -643,7 +643,7 @@ public class MessageService {
 
     /**
      * SENT / DELIVERED -> READ.
-     *
+     * <p>
      * Повторное получение READ является идемпотентным.
      */
     @Transactional
@@ -652,7 +652,7 @@ public class MessageService {
     ) {
 
         MessageEntity message =
-                getMessageForProcessing(messageId);
+                getMessageEntityForProcessing(messageId);
 
         requireOutbound(message);
 
@@ -693,7 +693,7 @@ public class MessageService {
 
     /**
      * PENDING / SENT -> FAILED.
-     *
+     * <p>
      * Повторное получение FAILED является идемпотентным.
      */
     @Transactional
@@ -702,7 +702,7 @@ public class MessageService {
     ) {
 
         MessageEntity message =
-                getMessageForProcessing(messageId);
+                getMessageEntityForProcessing(messageId);
 
         requireOutbound(message);
 
@@ -765,7 +765,7 @@ public class MessageService {
 
     /**
      * Получить MessageEntity для application processing.
-     *
+     * <p>
      * ACL не выполняется здесь.
      * Вызывающий orchestration service обязан
      * выполнить необходимую ACL.
@@ -787,7 +787,7 @@ public class MessageService {
 
     /**
      * Получить MessageEntity с Workspace ACL.
-     *
+     * <p>
      * Используется application layer,
      * когда нужен сам Entity для дальнейшей операции.
      */
@@ -829,14 +829,6 @@ public class MessageService {
                 );
     }
 
-    private MessageEntity getMessageForProcessing(
-            UUID messageId
-    ) {
-
-        return getMessageEntityForProcessing(
-                messageId
-        );
-    }
 
     private void requireOutbound(
             MessageEntity message

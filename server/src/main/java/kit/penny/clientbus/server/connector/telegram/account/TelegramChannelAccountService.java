@@ -4,7 +4,9 @@ import kit.penny.clientbus.common.enums.ChannelConnectionStatus;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientContext;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientLifecycleService;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
+import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
 import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
+import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,35 +16,45 @@ import java.util.UUID;
 public class TelegramChannelAccountService {
 
     private final ChannelAccountRepository channelAccountRepository;
+    private final ChannelRepository channelRepository;
     private final TelegramClientLifecycleService lifecycleService;
 
     public TelegramChannelAccountService(
             ChannelAccountRepository channelAccountRepository,
+            ChannelRepository channelRepository,
             TelegramClientLifecycleService lifecycleService
     ) {
         this.channelAccountRepository = channelAccountRepository;
         this.lifecycleService = lifecycleService;
+        this.channelRepository = channelRepository;
     }
 
-    @Transactional
     public TelegramClientContext create(UUID channelAccountId) {
 
         ChannelAccountEntity account =
                 channelAccountRepository.findById(channelAccountId)
-                        .orElseThrow(() -> new IllegalArgumentException(
-                                "Channel account not found: " + channelAccountId));
+                        .orElseThrow(() ->
+                                new IllegalStateException(
+                                        "Telegram channel account not found: "
+                                                + channelAccountId
+                                )
+                        );
 
-        if (account.getPhone() == null || account.getPhone().isBlank()) {
+        if (account.getPhone() == null
+                || account.getPhone().isBlank()) {
             throw new IllegalStateException(
-                    "Phone is not configured for Telegram channel account: "
+                    "Telegram channel account has no phone: "
                             + channelAccountId
             );
         }
 
-        account.getChannel()
-                .setStatus(ChannelConnectionStatus.CONNECTING);
+        ChannelEntity channel = account.getChannel();
 
-        channelAccountRepository.save(account);
+        channel.setStatus(
+                ChannelConnectionStatus.CONNECTING
+        );
+
+        channelRepository.save(channel);
 
         try {
             return lifecycleService.create(
@@ -50,11 +62,11 @@ public class TelegramChannelAccountService {
                     account.getPhone()
             );
         } catch (RuntimeException e) {
+            channel.setStatus(
+                    ChannelConnectionStatus.ERROR
+            );
 
-            account.getChannel()
-                    .setStatus(ChannelConnectionStatus.ERROR);
-
-            channelAccountRepository.save(account);
+            channelRepository.save(channel);
 
             throw e;
         }
@@ -68,39 +80,46 @@ public class TelegramChannelAccountService {
         return lifecycleService.require(channelAccountId);
     }
 
-    @Transactional
     public void stop(UUID channelAccountId) {
-
         lifecycleService.stop(channelAccountId);
 
         channelAccountRepository.findById(channelAccountId)
                 .ifPresent(account -> {
-                    account.getChannel()
-                            .setStatus(ChannelConnectionStatus.DISCONNECTED);
+                    ChannelEntity channel = account.getChannel();
 
-                    channelAccountRepository.save(account);
+                    channel.setStatus(
+                            ChannelConnectionStatus.DISCONNECTED
+                    );
+
+                    channelRepository.save(channel);
                 });
     }
 
-    @Transactional
     public void restart(UUID channelAccountId) {
-
         ChannelAccountEntity account =
                 channelAccountRepository.findById(channelAccountId)
-                        .orElseThrow(() -> new IllegalArgumentException(
-                                "Channel account not found: " + channelAccountId));
+                        .orElseThrow(() ->
+                                new IllegalStateException(
+                                        "Telegram channel account not found: "
+                                                + channelAccountId
+                                )
+                        );
 
-        if (account.getPhone() == null || account.getPhone().isBlank()) {
+        if (account.getPhone() == null
+                || account.getPhone().isBlank()) {
             throw new IllegalStateException(
-                    "Phone is not configured for Telegram channel account: "
+                    "Telegram channel account has no phone: "
                             + channelAccountId
             );
         }
 
-        account.getChannel()
-                .setStatus(ChannelConnectionStatus.CONNECTING);
+        ChannelEntity channel = account.getChannel();
 
-        channelAccountRepository.save(account);
+        channel.setStatus(
+                ChannelConnectionStatus.CONNECTING
+        );
+
+        channelRepository.save(channel);
 
         try {
             lifecycleService.restart(
@@ -108,11 +127,11 @@ public class TelegramChannelAccountService {
                     account.getPhone()
             );
         } catch (RuntimeException e) {
+            channel.setStatus(
+                    ChannelConnectionStatus.ERROR
+            );
 
-            account.getChannel()
-                    .setStatus(ChannelConnectionStatus.ERROR);
-
-            channelAccountRepository.save(account);
+            channelRepository.save(channel);
 
             throw e;
         }

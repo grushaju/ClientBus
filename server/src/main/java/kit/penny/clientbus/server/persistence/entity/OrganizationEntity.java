@@ -21,7 +21,7 @@ public class OrganizationEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    @Column(nullable = false, updatable = false)
+    @Column(nullable = false, updatable = false, name = "organizationid")
     private UUID id;
 
     @Column(nullable = false, length = 200)

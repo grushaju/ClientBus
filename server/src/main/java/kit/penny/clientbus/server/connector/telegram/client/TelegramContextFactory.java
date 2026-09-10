@@ -1,12 +1,15 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
 import kit.penny.clientbus.server.connector.telegram.config.TelegramClientConfiguration;
+import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
+import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
 import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.properties.TelegramProperties;
 import kit.penny.tdlib.updates.ITdlibUpdateListener;
 import kit.penny.tdlib.updates.TelegramAuthorizationManager;
 import org.drinkless.tdlib.TdApi;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
 import org.springframework.beans.factory.support.RootBeanDefinition;
@@ -27,14 +30,17 @@ public class TelegramContextFactory {
             "updateAuthorizationState";
 
     private final TelegramProperties globalProperties;
+    private final ChannelRepository channelRepository;
     private final ChannelAccountRepository channelAccountRepository;
 
     public TelegramContextFactory(
             TelegramProperties globalProperties,
-            ChannelAccountRepository channelAccountRepository
+            ChannelAccountRepository channelAccountRepository,
+            ChannelRepository channelRepository
     ) {
         this.globalProperties = globalProperties;
         this.channelAccountRepository = channelAccountRepository;
+        this.channelRepository = channelRepository;
     }
 
     public TelegramClientContext create(
@@ -74,8 +80,7 @@ public class TelegramContextFactory {
         );
     }
 
-    private BeanDefinitionRegistryPostProcessor
-    authorizationStateListenerReplacer(
+    private BeanDefinitionRegistryPostProcessor authorizationStateListenerReplacer(
             AnnotationConfigApplicationContext context,
             UUID channelAccountId
     ) {
@@ -120,8 +125,7 @@ public class TelegramContextFactory {
         };
     }
 
-    private ITdlibUpdateListener<TdApi.UpdateAuthorizationState>
-    createAuthorizationStateListener(
+    private ITdlibUpdateListener<TdApi.UpdateAuthorizationState> createAuthorizationStateListener(
             AnnotationConfigApplicationContext context,
             UUID channelAccountId
     ) {
@@ -131,13 +135,23 @@ public class TelegramContextFactory {
         TelegramAuthorizationManager authorizationManager =
                 context.getBean(TelegramAuthorizationManager.class);
 
-        org.springframework.beans.factory.ObjectProvider<TelegramClient>
-                telegramClientProvider =
+        ObjectProvider<TelegramClient> telegramClientProvider =
                 context.getBeanProvider(TelegramClient.class);
 
+        ChannelAccountEntity account =
+                channelAccountRepository.findById(channelAccountId)
+                        .orElseThrow(() ->
+                                new IllegalStateException(
+                                        "Telegram channel account not found: "
+                                                + channelAccountId
+                                )
+                        );
+
+        UUID channelId = account.getChannel().getId();
+
         return new TelegramAuthorizationStateListener(
-                channelAccountId,
-                channelAccountRepository,
+                channelId,
+                channelRepository,
                 properties,
                 authorizationManager,
                 telegramClientProvider

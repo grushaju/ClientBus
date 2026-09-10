@@ -113,7 +113,7 @@ public class CurrentUserService {
     /**
      * Проверяет, что employeeId принадлежит
      * текущему пользователю.
-     *
+     * <p>
      * Используется для self-service операций.
      */
     public void requireSelf(UUID employeeId) {

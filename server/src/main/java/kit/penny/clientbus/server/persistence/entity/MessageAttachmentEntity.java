@@ -12,6 +12,7 @@ public class MessageAttachmentEntity {
 
     @Id
     @GeneratedValue
+    @Column(nullable = false, updatable = false, name = "messageattachmentid")
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)

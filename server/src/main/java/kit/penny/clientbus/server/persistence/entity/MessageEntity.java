@@ -56,10 +56,7 @@ public class MessageEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    @Column(
-            nullable = false,
-            updatable = false
-    )
+    @Column(nullable = false, updatable = false, name = "messageid")
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
