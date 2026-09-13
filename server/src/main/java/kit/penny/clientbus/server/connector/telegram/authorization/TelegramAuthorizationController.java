@@ -67,6 +67,13 @@ public class TelegramAuthorizationController {
         );
     }
 
+    @PostMapping("/stop")
+    public void stop(
+            @PathVariable UUID channelAccountId
+    ) {
+        authorizationService.stop(channelAccountId);
+    }
+
     public record AuthenticationCodeRequest(
             String code
     ) {

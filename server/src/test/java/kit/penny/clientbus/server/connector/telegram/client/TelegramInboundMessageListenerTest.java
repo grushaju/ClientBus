@@ -263,6 +263,191 @@ class TelegramInboundMessageListenerTest {
         );
     }
 
+    @Test
+    void shouldKeepInboundMessagesIsolatedBetweenAccounts() {
+
+        UUID accountA = UUID.randomUUID();
+        UUID accountB = UUID.randomUUID();
+
+        long chatIdA = 101L;
+        long chatIdB = 102L;
+
+        long userIdA = 201L;
+        long userIdB = 202L;
+
+        long messageIdA = 301L;
+        long messageIdB = 302L;
+
+        TelegramClient clientA = Mockito.mock(TelegramClient.class);
+        TelegramClient clientB = Mockito.mock(TelegramClient.class);
+
+        ObjectProvider<TelegramClient> providerA =
+                Mockito.mock(ObjectProvider.class);
+
+        ObjectProvider<TelegramClient> providerB =
+                Mockito.mock(ObjectProvider.class);
+
+        TelegramUserService userService =
+                Mockito.mock(TelegramUserService.class);
+
+        when(providerA.getObject())
+                .thenReturn(clientA);
+
+        when(providerB.getObject())
+                .thenReturn(clientB);
+
+        TdApi.Chat chatA = createPrivateChat(chatIdA);
+        TdApi.Chat chatB = createPrivateChat(chatIdB);
+
+        TdApi.User userA = new TdApi.User();
+        userA.id = userIdA;
+        userA.firstName = "User";
+        userA.lastName = "A";
+        userA.phoneNumber = "+79990000001";
+
+        TdApi.User userB = new TdApi.User();
+        userB.id = userIdB;
+        userB.firstName = "User";
+        userB.lastName = "B";
+        userB.phoneNumber = "+79990000002";
+
+        when(userService.getUser(userIdA))
+                .thenReturn(
+                        CompletableFuture.completedFuture(
+                                new TdlibResponse<>(userA, null)
+                        )
+                );
+
+        when(userService.getUser(userIdB))
+                .thenReturn(
+                        CompletableFuture.completedFuture(
+                                new TdlibResponse<>(userB, null)
+                        )
+                );
+
+        TdApi.Message messageA = createTextMessage(
+                false,
+                new TdApi.MessageSenderUser(userIdA),
+                "Hello from A"
+        );
+        messageA.id = messageIdA;
+        messageA.chatId = chatIdA;
+
+        TdApi.Message messageB = createTextMessage(
+                false,
+                new TdApi.MessageSenderUser(userIdB),
+                "Hello from B"
+        );
+        messageB.id = messageIdB;
+        messageB.chatId = chatIdB;
+
+        doReturn(
+                CompletableFuture.completedFuture(
+                        new TdlibResponse<>(chatA, null)
+                )
+        ).when(clientA).sendAsync(any());
+
+        doReturn(
+                CompletableFuture.completedFuture(
+                        new TdlibResponse<>(chatB, null)
+                )
+        ).when(clientB).sendAsync(any());
+
+        TelegramInboundMessageListener listenerA =
+                new TelegramInboundMessageListener(
+                        accountA,
+                        providerA,
+                        userService,
+                        inboundEventPublisher
+                );
+
+        TelegramInboundMessageListener listenerB =
+                new TelegramInboundMessageListener(
+                        accountB,
+                        providerB,
+                        userService,
+                        inboundEventPublisher
+                );
+
+        listenerA.handleNotification(
+                new TdApi.UpdateNewMessage(messageA)
+        );
+
+        listenerB.handleNotification(
+                new TdApi.UpdateNewMessage(messageB)
+        );
+
+        ArgumentCaptor<PlatformInboundMessageEvent> eventCaptor =
+                ArgumentCaptor.forClass(PlatformInboundMessageEvent.class);
+
+        verify(inboundEventPublisher, Mockito.times(2))
+                .publish(eventCaptor.capture());
+
+        List<PlatformInboundMessageEvent> events =
+                eventCaptor.getAllValues();
+
+        assertEquals(2, events.size());
+
+        InboundMessageRequest requestA =
+                events.stream()
+                        .map(PlatformInboundMessageEvent::message)
+                        .filter(request ->
+                                request.channelAccountId().equals(accountA))
+                        .findFirst()
+                        .orElseThrow();
+
+        InboundMessageRequest requestB =
+                events.stream()
+                        .map(PlatformInboundMessageEvent::message)
+                        .filter(request ->
+                                request.channelAccountId().equals(accountB))
+                        .findFirst()
+                        .orElseThrow();
+
+        assertEquals(
+                accountA,
+                requestA.channelAccountId()
+        );
+        assertEquals(
+                Long.toString(userIdA),
+                requestA.clientExternalId()
+        );
+        assertEquals(
+                Long.toString(messageIdA),
+                requestA.externalId()
+        );
+        assertEquals(
+                "Hello from A",
+                requestA.content()
+        );
+
+        assertEquals(
+                accountB,
+                requestB.channelAccountId()
+        );
+        assertEquals(
+                Long.toString(userIdB),
+                requestB.clientExternalId()
+        );
+        assertEquals(
+                Long.toString(messageIdB),
+                requestB.externalId()
+        );
+        assertEquals(
+                "Hello from B",
+                requestB.content()
+        );
+
+        verify(providerA).getObject();
+        verify(providerB).getObject();
+
+        verify(clientA).sendAsync(any());
+        verify(clientB).sendAsync(any());
+
+        verify(userService).getUser(userIdA);
+        verify(userService).getUser(userIdB);
+    }
+
     private TdApi.Message createTextMessage(
             boolean outgoing,
             TdApi.MessageSender sender,

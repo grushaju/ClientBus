@@ -81,6 +81,12 @@ public class TelegramAuthorizationService {
         return context.authorizationManager();
     }
 
+    public void stop(
+            UUID channelAccountId
+    ) {
+        channelAccountService.stop(channelAccountId);
+    }
+
     private TelegramAuthorizationStatus mapStatus(
             kit.penny.tdlib.updates.TelegramAuthorizationStatus status
     ) {
