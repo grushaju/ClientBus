@@ -7,6 +7,7 @@ import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
 import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
 import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
 import kit.penny.clientbus.server.service.MessageProcessingService;
+import kit.penny.clientbus.server.storage.IAttachmentStorage;
 import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.properties.TelegramProperties;
 import kit.penny.tdlib.updates.TelegramAuthorizationManager;
@@ -59,13 +60,16 @@ class TelegramContextFactoryTest {
                 Mockito.mock(ChannelRepository.class);
         IInboundEventPublisher inboundEventPublisher =
                 Mockito.mock(IInboundEventPublisher.class);
+        IAttachmentStorage attachmentStorage =
+                Mockito.mock(IAttachmentStorage.class);
 
         TelegramContextFactory factory =
                 new TelegramContextFactory(
                         globalProperties,
                         channelAccountRepository,
                         channelRepository,
-                        inboundEventPublisher
+                        inboundEventPublisher,
+                        attachmentStorage
                 );
 
         UUID accountA = UUID.randomUUID();
@@ -206,13 +210,16 @@ class TelegramContextFactoryTest {
                 Mockito.mock(ChannelRepository.class);
         IInboundEventPublisher inboundEventPublisher =
                 Mockito.mock(IInboundEventPublisher.class);
+        IAttachmentStorage attachmentStorage =
+                Mockito.mock(IAttachmentStorage.class);
 
         TelegramContextFactory factory =
                 new TelegramContextFactory(
                         globalProperties,
                         channelAccountRepository,
                         channelRepository,
-                        inboundEventPublisher
+                        inboundEventPublisher,
+                        attachmentStorage
                 );
 
         UUID accountA = UUID.randomUUID();

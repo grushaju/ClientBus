@@ -17,7 +17,7 @@ import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProce
 import org.springframework.beans.factory.support.RootBeanDefinition;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.core.env.MapPropertySource;
-import kit.penny.clientbus.server.service.MessageProcessingService;
+import kit.penny.clientbus.server.storage.IAttachmentStorage;
 
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -39,17 +39,20 @@ public class TelegramContextFactory {
     private final ChannelRepository channelRepository;
     private final ChannelAccountRepository channelAccountRepository;
     private final IInboundEventPublisher inboundEventPublisher;
+    private final IAttachmentStorage attachmentStorage;
 
     public TelegramContextFactory(
             TelegramProperties globalProperties,
             ChannelAccountRepository channelAccountRepository,
             ChannelRepository channelRepository,
-            IInboundEventPublisher inboundEventPublisher
+            IInboundEventPublisher inboundEventPublisher,
+            IAttachmentStorage attachmentStorage
     ) {
         this.globalProperties = globalProperties;
         this.channelAccountRepository = channelAccountRepository;
         this.channelRepository = channelRepository;
         this.inboundEventPublisher = inboundEventPublisher;
+        this.attachmentStorage = attachmentStorage;
     }
 
     public TelegramClientContext create(
@@ -165,7 +168,8 @@ public class TelegramContextFactory {
                 channelAccountId,
                 telegramClientProvider,
                 telegramUserService,
-                inboundEventPublisher
+                inboundEventPublisher,
+                attachmentStorage
         );
     }
 
