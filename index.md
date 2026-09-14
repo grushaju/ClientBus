@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-09-10 23:54:16
+- Generated: 2026-09-14 14:27:23
 - Branch: `main`
-- Commit: `9a632df`
+- Commit: `be4ef51`
 
 ## Project Structure
 
@@ -105,6 +105,11 @@
 - `PlatformMessageKafkaEvent.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/PlatformMessageKafkaEvent.java`
 - `PlatformOutboundAttachment.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/PlatformOutboundAttachment.java`
 
+#### `src/main/resources`
+
+
+#### `src/test/java`
+
 ### server
 
 #### `src/main/java`
@@ -129,9 +134,11 @@
 
 ##### `kit.penny.clientbus.server.connector`
 
+- `ChannelAccountLifecycleRegistry.java` — `server/src/main/java/kit/penny/clientbus/server/connector/ChannelAccountLifecycleRegistry.java`
 - `ChannelConnectorRegistry.java` — `server/src/main/java/kit/penny/clientbus/server/connector/ChannelConnectorRegistry.java`
 - `ChannelEventHandler.java` — `server/src/main/java/kit/penny/clientbus/server/connector/ChannelEventHandler.java`
 - `ConnectorSendResult.java` — `server/src/main/java/kit/penny/clientbus/server/connector/ConnectorSendResult.java`
+- `IChannelAccountLifecycle.java` — `server/src/main/java/kit/penny/clientbus/server/connector/IChannelAccountLifecycle.java`
 - `IChannelConnector.java` — `server/src/main/java/kit/penny/clientbus/server/connector/IChannelConnector.java`
 - `IChannelConnectorRegistry.java` — `server/src/main/java/kit/penny/clientbus/server/connector/IChannelConnectorRegistry.java`
 - `IChannelEventHandler.java` — `server/src/main/java/kit/penny/clientbus/server/connector/IChannelEventHandler.java`
@@ -164,6 +171,10 @@
 ##### `kit.penny.clientbus.server.connector.telegram.startup`
 
 - `TelegramClientStartupService.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/startup/TelegramClientStartupService.java`
+
+##### `kit.penny.clientbus.server.connector.telegram.storage`
+
+- `TelegramDataStorage.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/storage/TelegramDataStorage.java`
 
 ##### `kit.penny.clientbus.server.controller`
 
@@ -323,12 +334,17 @@
 ##### `kit.penny.clientbus.server.connector.telegram.client`
 
 - `TelegramAuthorizationStateListenerTest.java` — `server/src/test/java/kit/penny/clientbus/server/connector/telegram/client/TelegramAuthorizationStateListenerTest.java`
+- `TelegramClientManagerTest.java` — `server/src/test/java/kit/penny/clientbus/server/connector/telegram/client/TelegramClientManagerTest.java`
 - `TelegramContextFactoryTest.java` — `server/src/test/java/kit/penny/clientbus/server/connector/telegram/client/TelegramContextFactoryTest.java`
 - `TelegramInboundMessageListenerTest.java` — `server/src/test/java/kit/penny/clientbus/server/connector/telegram/client/TelegramInboundMessageListenerTest.java`
 
 ##### `kit.penny.clientbus.server.connector.telegram.startup`
 
 - `TelegramClientStartupServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/connector/telegram/startup/TelegramClientStartupServiceTest.java`
+
+##### `kit.penny.clientbus.server.connector.telegram.storage`
+
+- `TelegramDataStorageTest.java` — `server/src/test/java/kit/penny/clientbus/server/connector/telegram/storage/TelegramDataStorageTest.java`
 
 ##### `kit.penny.clientbus.server.controller`
 
@@ -342,6 +358,7 @@
 ##### `kit.penny.clientbus.server.integration`
 
 - `AbstractIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/integration/AbstractIntegrationTest.java`
+- `ChannelServiceIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/integration/ChannelServiceIntegrationTest.java`
 - `ConversationApiIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/integration/ConversationApiIntegrationTest.java`
 - `MessageInboundFlowIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/integration/MessageInboundFlowIntegrationTest.java`
 - `OutboundMessageAsyncFlowIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/integration/OutboundMessageAsyncFlowIntegrationTest.java`
@@ -390,6 +407,7 @@
 ##### `kit.penny.clientbus.server.service`
 
 - `AuthServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/AuthServiceTest.java`
+- `ChannelServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/ChannelServiceTest.java`
 - `ClientAccountServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/ClientAccountServiceTest.java`
 - `ClientServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/ClientServiceTest.java`
 - `MessageAttachmentServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/MessageAttachmentServiceTest.java`
@@ -414,11 +432,9 @@
 
 - `ui/src/main/resources/application.properties`
 
-#### `src/test/java`
-
 ## Summary
 
 - Maven modules: 4
-- Java files: 217
-- Git commit: `9a632df`
+- Java files: 224
+- Git commit: `be4ef51`
 

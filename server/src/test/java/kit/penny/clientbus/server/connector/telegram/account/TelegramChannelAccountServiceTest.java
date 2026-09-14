@@ -3,8 +3,10 @@ package kit.penny.clientbus.server.connector.telegram.account;
 import kit.penny.clientbus.common.enums.ChannelConnectionStatus;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientContext;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientLifecycleService;
+import kit.penny.clientbus.server.connector.telegram.storage.TelegramDataStorage;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
+import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
 import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
 import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,17 +18,14 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 class TelegramChannelAccountServiceTest {
 
     private ChannelAccountRepository channelAccountRepository;
     private ChannelRepository channelRepository;
     private TelegramClientLifecycleService lifecycleService;
+    private TelegramDataStorage dataStorage;
 
     private TelegramChannelAccountService service;
 
@@ -35,11 +34,14 @@ class TelegramChannelAccountServiceTest {
         channelAccountRepository = mock(ChannelAccountRepository.class);
         channelRepository = mock(ChannelRepository.class);
         lifecycleService = mock(TelegramClientLifecycleService.class);
+        dataStorage = mock(TelegramDataStorage.class);
+
 
         service = new TelegramChannelAccountService(
                 channelAccountRepository,
                 channelRepository,
-                lifecycleService
+                lifecycleService,
+                dataStorage
         );
     }
 
@@ -149,13 +151,101 @@ class TelegramChannelAccountServiceTest {
     }
 
     @Test
-    void stopShouldDelegateToLifecycleService() {
+    void disableShouldStopTelegramClientAndSetDisabledStatus() {
+
         UUID channelAccountId = UUID.randomUUID();
 
-        service.stop(channelAccountId);
+        ChannelAccountEntity account =
+                TestDataFactory.channelAccount(
+                        TestDataFactory.channel(null),
+                        "external-id",
+                        "username",
+                        "+79990000000",
+                        "displayName"
+                );
+
+        account.setId(channelAccountId);
+
+        when(channelAccountRepository.findById(channelAccountId))
+                .thenReturn(Optional.of(account));
+
+        service.disable(channelAccountId);
+
+        assertEquals(
+                ChannelConnectionStatus.DISABLED,
+                account.getChannel().getStatus()
+        );
 
         verify(lifecycleService).stop(channelAccountId);
+        verify(channelAccountRepository)
+                .findById(channelAccountId);
+        verify(channelRepository)
+                .save(account.getChannel());
     }
+
+    @Test
+    void enableShouldCreateTelegramClient() {
+
+        UUID channelAccountId = UUID.randomUUID();
+
+        ChannelAccountEntity account =
+                TestDataFactory.channelAccount(
+                        TestDataFactory.channel(null),
+                        "external-id",
+                        "username",
+                        "+79990000000",
+                        "displayName"
+                );
+
+        account.setId(channelAccountId);
+
+        when(channelAccountRepository.findById(channelAccountId))
+                .thenReturn(Optional.of(account));
+
+        service.enable(channelAccountId);
+
+        verify(lifecycleService).create(
+                channelAccountId,
+                "+79990000000"
+        );
+    }
+
+    @Test
+    void disconnectShouldLogoutTelegramClientAndSetDisconnectedStatus() {
+
+        UUID channelAccountId = UUID.randomUUID();
+
+        ChannelAccountEntity account =
+                TestDataFactory.channelAccount(
+                        TestDataFactory.channel(null),
+                        "external-id",
+                        "username",
+                        "+79990000000",
+                        "displayName"
+                );
+
+        account.setId(channelAccountId);
+
+        when(channelAccountRepository.findById(channelAccountId))
+                .thenReturn(Optional.of(account));
+
+        service.disconnect(channelAccountId);
+
+        assertEquals(
+                ChannelConnectionStatus.DISCONNECTED,
+                account.getChannel().getStatus()
+        );
+
+        verify(lifecycleService)
+                .disconnect(channelAccountId);
+
+        verify(channelAccountRepository)
+                .findById(channelAccountId);
+
+        verify(channelRepository)
+                .save(account.getChannel());
+    }
+
 
     @Test
     void restartShouldRestartTelegramClientForAccount() {
@@ -321,10 +411,10 @@ class TelegramChannelAccountServiceTest {
                 service.get(accountBId)
         );
 
-        service.stop(accountAId);
+        service.disable(accountAId);
 
         assertEquals(
-                ChannelConnectionStatus.DISCONNECTED,
+                ChannelConnectionStatus.DISABLED,
                 accountA.getChannel().getStatus()
         );
 
@@ -345,5 +435,83 @@ class TelegramChannelAccountServiceTest {
 
         verify(channelRepository, times(2))
                 .save(accountA.getChannel());
+    }
+
+    @Test
+    void disconnectShouldLogoutDeleteDataAndSetDisconnectedStatus() {
+        UUID channelAccountId = UUID.randomUUID();
+
+        ChannelEntity channel =
+                TestDataFactory.channel(null);
+
+        ChannelAccountEntity account =
+                TestDataFactory.channelAccount(
+                        channel,
+                        "external-id",
+                        "username",
+                        "+79990000000",
+                        "displayName"
+                );
+
+        account.setId(channelAccountId);
+
+        when(channelAccountRepository.findById(channelAccountId))
+                .thenReturn(Optional.of(account));
+
+        service.disconnect(channelAccountId);
+
+        assertEquals(
+                ChannelConnectionStatus.DISCONNECTED,
+                channel.getStatus()
+        );
+
+        verify(lifecycleService)
+                .disconnect(channelAccountId);
+
+        verify(dataStorage)
+                .delete(channelAccountId);
+
+        verify(channelRepository)
+                .save(channel);
+    }
+
+    @Test
+    void disconnectShouldNotDeleteDataWhenLogoutFails() {
+        UUID channelAccountId = UUID.randomUUID();
+
+        ChannelEntity channel =
+                TestDataFactory.channel(null);
+
+        ChannelAccountEntity account =
+                TestDataFactory.channelAccount(
+                        channel,
+                        "external-id",
+                        "username",
+                        "+79990000000",
+                        "displayName"
+                );
+
+        account.setId(channelAccountId);
+
+        when(channelAccountRepository.findById(channelAccountId))
+                .thenReturn(Optional.of(account));
+
+        doThrow(new IllegalStateException("Logout failed"))
+                .when(lifecycleService)
+                .disconnect(channelAccountId);
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> service.disconnect(channelAccountId)
+        );
+
+        verify(lifecycleService)
+                .disconnect(channelAccountId);
+
+        verify(dataStorage, never())
+                .delete(channelAccountId);
+
+        verify(channelRepository, never())
+                .save(any());
     }
 }

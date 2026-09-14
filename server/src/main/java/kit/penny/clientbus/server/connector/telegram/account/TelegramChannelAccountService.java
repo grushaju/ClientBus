@@ -1,8 +1,11 @@
 package kit.penny.clientbus.server.connector.telegram.account;
 
 import kit.penny.clientbus.common.enums.ChannelConnectionStatus;
+import kit.penny.clientbus.common.enums.ChannelType;
+import kit.penny.clientbus.server.connector.IChannelAccountLifecycle;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientContext;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientLifecycleService;
+import kit.penny.clientbus.server.connector.telegram.storage.TelegramDataStorage;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
 import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
@@ -12,20 +15,50 @@ import org.springframework.stereotype.Service;
 import java.util.UUID;
 
 @Service
-public class TelegramChannelAccountService {
+public class TelegramChannelAccountService
+        implements IChannelAccountLifecycle {
 
     private final ChannelAccountRepository channelAccountRepository;
     private final ChannelRepository channelRepository;
     private final TelegramClientLifecycleService lifecycleService;
+    private final TelegramDataStorage dataStorage;
 
     public TelegramChannelAccountService(
             ChannelAccountRepository channelAccountRepository,
             ChannelRepository channelRepository,
-            TelegramClientLifecycleService lifecycleService
+            TelegramClientLifecycleService lifecycleService,
+            TelegramDataStorage dataStorage
     ) {
         this.channelAccountRepository = channelAccountRepository;
         this.lifecycleService = lifecycleService;
         this.channelRepository = channelRepository;
+        this.dataStorage = dataStorage;
+    }
+
+    @Override
+    public boolean supports(ChannelType channelType) {
+        return channelType == ChannelType.TELEGRAM;
+    }
+
+    @Override
+    public void disconnect(UUID channelAccountId) {
+
+        lifecycleService.disconnect(channelAccountId);
+
+        dataStorage.delete(channelAccountId);
+
+        channelAccountRepository.findById(channelAccountId)
+                .ifPresent(account -> {
+
+                    ChannelEntity channel =
+                            account.getChannel();
+
+                    channel.setStatus(
+                            ChannelConnectionStatus.DISCONNECTED
+                    );
+
+                    channelRepository.save(channel);
+                });
     }
 
     public TelegramClientContext create(UUID channelAccountId) {
@@ -79,20 +112,28 @@ public class TelegramChannelAccountService {
         return lifecycleService.require(channelAccountId);
     }
 
-    public void stop(UUID channelAccountId) {
+    public void disable(UUID channelAccountId) {
+
         lifecycleService.stop(channelAccountId);
 
         channelAccountRepository.findById(channelAccountId)
                 .ifPresent(account -> {
-                    ChannelEntity channel = account.getChannel();
+
+                    ChannelEntity channel =
+                            account.getChannel();
 
                     channel.setStatus(
-                            ChannelConnectionStatus.DISCONNECTED
+                            ChannelConnectionStatus.DISABLED
                     );
 
                     channelRepository.save(channel);
                 });
     }
+
+    public void enable(UUID channelAccountId) {
+        create(channelAccountId);
+    }
+
 
     public void restart(UUID channelAccountId) {
         ChannelAccountEntity account =

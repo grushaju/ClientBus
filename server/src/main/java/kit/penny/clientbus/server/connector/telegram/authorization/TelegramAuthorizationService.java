@@ -81,10 +81,16 @@ public class TelegramAuthorizationService {
         return context.authorizationManager();
     }
 
-    public void stop(
-            UUID channelAccountId
-    ) {
-        channelAccountService.stop(channelAccountId);
+    public void disable(UUID channelAccountId) {
+        channelAccountService.disable(channelAccountId);
+    }
+
+    public void enable(UUID channelAccountId) {
+        channelAccountService.enable(channelAccountId);
+    }
+
+    public void disconnect(UUID channelAccountId) {
+        channelAccountService.disconnect(channelAccountId);
     }
 
     private TelegramAuthorizationStatus mapStatus(

@@ -8,6 +8,7 @@ import kit.penny.clientbus.common.dto.channel.CreateChannelRequest;
 import kit.penny.clientbus.common.dto.channel.UpdateChannelAccountRequest;
 import kit.penny.clientbus.common.dto.channel.UpdateChannelRequest;
 import kit.penny.clientbus.common.enums.ChannelType;
+import kit.penny.clientbus.server.connector.ChannelAccountLifecycleRegistry;
 import kit.penny.clientbus.server.mapper.ChannelMapper;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
@@ -29,19 +30,23 @@ public class ChannelService {
     private final WorkspaceRepository workspaceRepository;
     private final ChannelMapper channelMapper;
     private final CurrentUserService currentUserService;
+    private final ChannelAccountLifecycleRegistry
+            channelAccountLifecycleRegistry;
 
     public ChannelService(
             ChannelRepository channelRepository,
             ChannelAccountRepository channelAccountRepository,
             WorkspaceRepository workspaceRepository,
             ChannelMapper channelMapper,
-            CurrentUserService currentUserService
+            CurrentUserService currentUserService,
+            ChannelAccountLifecycleRegistry channelAccountLifecycleRegistry
     ) {
         this.channelRepository = channelRepository;
         this.channelAccountRepository = channelAccountRepository;
         this.workspaceRepository = workspaceRepository;
         this.channelMapper = channelMapper;
         this.currentUserService = currentUserService;
+        this.channelAccountLifecycleRegistry = channelAccountLifecycleRegistry;
     }
 
     @Transactional
@@ -160,6 +165,13 @@ public class ChannelService {
 
         requireChannelWorkspaceAccess(channel);
 
+        ChannelAccountEntity account =
+                findChannelAccount(id);
+
+        channelAccountLifecycleRegistry
+                .getLifecycle(channel.getType())
+                .disconnect(account.getId());
+
         channelRepository.delete(channel);
     }
 
@@ -213,6 +225,10 @@ public class ChannelService {
 
         ChannelAccountEntity account =
                 findChannelAccount(channelId);
+
+        channelAccountLifecycleRegistry
+                .getLifecycle(channel.getType())
+                .disconnect(account.getId());
 
         channelAccountRepository.delete(account);
     }

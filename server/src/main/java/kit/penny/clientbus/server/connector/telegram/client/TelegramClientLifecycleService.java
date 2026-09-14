@@ -52,4 +52,9 @@ public class TelegramClientLifecycleService {
                 phone
         );
     }
+
+    public void disconnect(UUID channelAccountId) {
+        clientManager.disconnect(channelAccountId);
+    }
+
 }

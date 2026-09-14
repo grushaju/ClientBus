@@ -91,4 +91,23 @@ public class TelegramClientManager {
 
         clients.clear();
     }
+
+    public void disconnect(UUID channelAccountId) {
+
+        TelegramClientContext context =
+                clients.remove(channelAccountId);
+
+        if (context == null) {
+            return;
+        }
+
+        try {
+            context.telegramClient().logout();
+        } finally {
+            if (context.applicationContext().isActive()) {
+                context.applicationContext().close();
+            }
+        }
+    }
+
 }
