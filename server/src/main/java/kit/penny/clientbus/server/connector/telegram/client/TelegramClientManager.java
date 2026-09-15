@@ -1,25 +1,34 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class TelegramClientManager {
 
+    private static final Logger log =
+            LoggerFactory.getLogger(TelegramClientManager.class);
+
     private final Map<UUID, TelegramClientContext> clients =
             new ConcurrentHashMap<>();
 
     private final TelegramContextFactory contextFactory;
 
-    public TelegramClientManager(TelegramContextFactory contextFactory) {
+    public TelegramClientManager(
+            TelegramContextFactory contextFactory
+    ) {
         this.contextFactory = contextFactory;
     }
 
-    public TelegramClientContext create(
+    public synchronized TelegramClientContext create(
             UUID channelAccountId,
             String phone
     ) {
-        TelegramClientContext existing = clients.get(channelAccountId);
+        TelegramClientContext existing =
+                clients.get(channelAccountId);
 
         if (existing != null) {
             throw new IllegalStateException(
@@ -29,28 +38,36 @@ public class TelegramClientManager {
         }
 
         TelegramClientContext context =
-                contextFactory.create(channelAccountId, phone);
+                contextFactory.create(
+                        channelAccountId,
+                        phone
+                );
 
-        existing = clients.putIfAbsent(channelAccountId, context);
+        try {
+            clients.put(channelAccountId, context);
+            return context;
 
-        if (existing != null) {
-            context.applicationContext().close();
-
-            throw new IllegalStateException(
-                    "Telegram client already exists for channel account: "
-                            + channelAccountId
+        } catch (RuntimeException e) {
+            closeContext(
+                    channelAccountId,
+                    context
             );
-        }
 
-        return context;
+            throw e;
+        }
     }
 
-    public TelegramClientContext get(UUID channelAccountId) {
+    public TelegramClientContext get(
+            UUID channelAccountId
+    ) {
         return clients.get(channelAccountId);
     }
 
-    public TelegramClientContext require(UUID channelAccountId) {
-        TelegramClientContext context = clients.get(channelAccountId);
+    public TelegramClientContext require(
+            UUID channelAccountId
+    ) {
+        TelegramClientContext context =
+                clients.get(channelAccountId);
 
         if (context == null) {
             throw new IllegalStateException(
@@ -62,16 +79,20 @@ public class TelegramClientManager {
         return context;
     }
 
-    public void stop(UUID channelAccountId) {
-        TelegramClientContext context = clients.remove(channelAccountId);
+    public void stop(
+            UUID channelAccountId
+    ) {
+        TelegramClientContext context =
+                clients.remove(channelAccountId);
 
         if (context == null) {
             return;
         }
 
-        if (context.applicationContext().isActive()) {
-            context.applicationContext().close();
-        }
+        closeContext(
+                channelAccountId,
+                context
+        );
     }
 
     public void restart(
@@ -83,17 +104,18 @@ public class TelegramClientManager {
     }
 
     public void closeAll() {
-        clients.values().forEach(context -> {
-            if (context.applicationContext().isActive()) {
-                context.applicationContext().close();
-            }
-        });
-
-        clients.clear();
+        try {
+            clients.forEach(
+                    this::closeContext
+            );
+        } finally {
+            clients.clear();
+        }
     }
 
-    public void disconnect(UUID channelAccountId) {
-
+    public void disconnect(
+            UUID channelAccountId
+    ) {
         TelegramClientContext context =
                 clients.remove(channelAccountId);
 
@@ -101,13 +123,53 @@ public class TelegramClientManager {
             return;
         }
 
+        RuntimeException logoutFailure = null;
+
         try {
             context.telegramClient().logout();
+
+        } catch (RuntimeException e) {
+            logoutFailure = e;
+
+            log.error(
+                    "Failed to logout Telegram client: " +
+                            "channelAccountId={}",
+                    channelAccountId,
+                    e
+            );
+
         } finally {
-            if (context.applicationContext().isActive()) {
-                context.applicationContext().close();
-            }
+            closeContext(
+                    channelAccountId,
+                    context
+            );
+        }
+
+        if (logoutFailure != null) {
+            throw logoutFailure;
         }
     }
 
+    private void closeContext(
+            UUID channelAccountId,
+            TelegramClientContext context
+    ) {
+        if (context == null
+                || context.applicationContext() == null
+                || !context.applicationContext().isActive()) {
+            return;
+        }
+
+        try {
+            context.applicationContext().close();
+
+        } catch (RuntimeException e) {
+            log.error(
+                    "Failed to close Telegram client context: " +
+                            "channelAccountId={}",
+                    channelAccountId,
+                    e
+            );
+        }
+    }
 }

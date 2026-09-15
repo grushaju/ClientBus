@@ -21,7 +21,9 @@ public class TelegramAuthorizationStateListener
         implements ITdlibUpdateListener<TdApi.UpdateAuthorizationState> {
 
     private static final Logger log =
-            LoggerFactory.getLogger(TelegramAuthorizationStateListener.class);
+            LoggerFactory.getLogger(
+                    TelegramAuthorizationStateListener.class
+            );
 
     private final UUID channelId;
     private final ChannelRepository channelRepository;
@@ -46,46 +48,70 @@ public class TelegramAuthorizationStateListener
         this.properties = properties;
         this.authorizationManager = authorizationManager;
         this.telegramClientProvider = telegramClientProvider;
-
     }
 
     @Override
     public void handleNotification(
             TdApi.UpdateAuthorizationState notification
     ) {
-        log.debug(
-                "TelegramAuthorizationStateListener received: {}",
-                notification.authorizationState == null
-                        ? "null"
-                        : notification.authorizationState.getClass().getSimpleName()
-        );
-        getAuthorizationStateHandler()
-                .handleNotification(notification);
-
-        TdApi.AuthorizationState state =
-                notification.authorizationState;
-
-        if (state == null) {
+        if (notification == null) {
+            log.warn(
+                    "Ignoring null Telegram authorization update: channelId={}",
+                    channelId
+            );
             return;
         }
 
-        ChannelConnectionStatus status =
-                mapStatus(state);
+        try {
+            log.debug(
+                    "TelegramAuthorizationStateListener received: {}",
+                    notification.authorizationState == null
+                            ? "null"
+                            : notification.authorizationState
+                            .getClass()
+                            .getSimpleName()
+            );
 
-        if (status == null) {
-            return;
+            getAuthorizationStateHandler()
+                    .handleNotification(notification);
+
+            TdApi.AuthorizationState state =
+                    notification.authorizationState;
+
+            if (state == null) {
+                return;
+            }
+
+            ChannelConnectionStatus status =
+                    mapStatus(state);
+
+            if (status == null) {
+                return;
+            }
+
+            log.debug(
+                    "Telegram auth state mapped: channelId={}, " +
+                            "tdlibState={}, connectionStatus={}",
+                    channelId,
+                    state.getClass().getSimpleName(),
+                    status
+            );
+
+            updateStatus(status, state);
+
+        } catch (RuntimeException e) {
+            log.error(
+                    "Failed to process Telegram authorization state: " +
+                            "channelId={}",
+                    channelId,
+                    e
+            );
         }
-        log.debug(
-                "Telegram auth state mapped: channelId={}, tdlibState={}, connectionStatus={}",
-                channelId,
-                state.getClass().getSimpleName(),
-                status
-        );
-        updateStatus(status, state);
     }
 
     @Override
-    public Class<TdApi.UpdateAuthorizationState> notificationType() {
+    public Class<TdApi.UpdateAuthorizationState>
+    notificationType() {
         return TdApi.UpdateAuthorizationState.class;
     }
 
@@ -143,135 +169,205 @@ public class TelegramAuthorizationStateListener
             ChannelConnectionStatus status,
             TdApi.AuthorizationState state
     ) {
-        ChannelEntity channel =
-                channelRepository.findById(channelId)
-                        .orElse(null);
+        try {
+            ChannelEntity channel =
+                    channelRepository.findById(channelId)
+                            .orElse(null);
 
-        if (channel == null) {
-            log.warn(
-                    "Telegram channel not found: channelId={}",
-                    channelId
-            );
-            return;
-        }
+            if (channel == null) {
+                log.warn(
+                        "Telegram channel not found: channelId={}",
+                        channelId
+                );
+                return;
+            }
 
-        log.debug(
-                "Telegram account loaded: channelAccountId={}, channelFound={}",
-                channel.getAccount().getId(),
-                true
-        );
+            ChannelAccountEntity account =
+                    channel.getAccount();
 
-        if (channel.getStatus() == status) {
+            if (account == null) {
+                log.warn(
+                        "Telegram channel account not found: channelId={}",
+                        channelId
+                );
+                return;
+            }
+
             log.debug(
-                    "Telegram status already set: channelAccountId={}, currentStatus={}, requestedStatus={}",
-                    channel.getAccount().getId(),
-                    channel.getStatus(),
+                    "Telegram account loaded: " +
+                            "channelAccountId={}, channelFound={}",
+                    account.getId(),
+                    true
+            );
+
+            if (channel.getStatus() == status) {
+                log.debug(
+                        "Telegram status already set: " +
+                                "channelAccountId={}, " +
+                                "currentStatus={}, requestedStatus={}",
+                        account.getId(),
+                        channel.getStatus(),
+                        status
+                );
+                return;
+            }
+
+            log.debug(
+                    "Telegram saving connection status: " +
+                            "channelAccountId={}, status={}",
+                    account.getId(),
                     status
             );
-            return;
+
+            channel.setStatus(status);
+
+            channelRepository.save(channel);
+
+            log.debug(
+                    "Telegram connection status saved: " +
+                            "channelAccountId={}, status={}, tdlibState={}",
+                    account.getId(),
+                    channel.getStatus(),
+                    state.getClass().getSimpleName()
+            );
+
+        } catch (RuntimeException e) {
+            log.error(
+                    "Failed to update Telegram connection status: " +
+                            "channelId={}, status={}",
+                    channelId,
+                    status,
+                    e
+            );
         }
-
-        log.debug(
-                "Telegram saving connection status: channelAccountId={}, status={}",
-                channel.getAccount().getId(),
-                status
-        );
-
-        channel.setStatus(status);
-
-        channelRepository.save(channel);
-
-        log.debug(
-                "Telegram connection status saved: channelAccountId={}, status={}, tdlibState={}",
-                channel.getAccount().getId(),
-                channel.getStatus(),
-                state.getClass().getSimpleName()
-        );
     }
 
     private void loadTelegramAccount() {
-        telegramClientProvider
-                .getObject()
-                .sendAsync(new TdApi.GetMe())
-                .thenAccept(response -> {
-                    if (response.getError().isPresent()) {
-                        log.warn(
-                                "Failed to load Telegram account: channelId={}, error={}",
+        try {
+            telegramClientProvider
+                    .getObject()
+                    .sendAsync(new TdApi.GetMe())
+                    .thenAccept(response -> {
+                        try {
+                            if (response.getError().isPresent()) {
+                                log.warn(
+                                        "Failed to load Telegram account: " +
+                                                "channelId={}, error={}",
+                                        channelId,
+                                        response.getError()
+                                                .get()
+                                                .message
+                                );
+                                return;
+                            }
+
+                            TdApi.User user =
+                                    response.getObject().orElse(null);
+
+                            if (user == null) {
+                                log.warn(
+                                        "Telegram account response is empty: " +
+                                                "channelId={}",
+                                        channelId
+                                );
+                                return;
+                            }
+
+                            updateChannelAccount(user);
+
+                        } catch (RuntimeException e) {
+                            log.error(
+                                    "Failed to process Telegram account " +
+                                            "response: channelId={}",
+                                    channelId,
+                                    e
+                            );
+                        }
+                    })
+                    .exceptionally(e -> {
+                        log.error(
+                                "Telegram GetMe request failed: channelId={}",
                                 channelId,
-                                response.getError().get().message
+                                e
                         );
-                        return;
-                    }
+                        return null;
+                    });
 
-                    TdApi.User user =
-                            response.getObject().orElse(null);
-
-                    if (user == null) {
-                        log.warn(
-                                "Telegram account response is empty: channelId={}",
-                                channelId
-                        );
-                        return;
-                    }
-
-                    updateChannelAccount(user);
-                });
+        } catch (RuntimeException e) {
+            log.error(
+                    "Failed to request Telegram account: channelId={}",
+                    channelId,
+                    e
+            );
+        }
     }
 
     private void updateChannelAccount(TdApi.User user) {
-        ChannelEntity channel =
-                channelRepository.findById(channelId)
-                        .orElse(null);
+        try {
+            ChannelEntity channel =
+                    channelRepository.findById(channelId)
+                            .orElse(null);
 
-        if (channel == null) {
-            log.warn(
-                    "Telegram channel not found while updating account: channelId={}",
-                    channelId
+            if (channel == null) {
+                log.warn(
+                        "Telegram channel not found while updating account: " +
+                                "channelId={}",
+                        channelId
+                );
+                return;
+            }
+
+            ChannelAccountEntity account =
+                    channel.getAccount();
+
+            if (account == null) {
+                log.warn(
+                        "Telegram channel account not found: channelId={}",
+                        channelId
+                );
+                return;
+            }
+
+            account.setExternalId(
+                    Long.toString(user.id)
             );
-            return;
-        }
 
-        ChannelAccountEntity account =
-                channel.getAccount();
-
-        if (account == null) {
-            log.warn(
-                    "Telegram channel account not found: channelId={}",
-                    channelId
+            account.setUsername(
+                    user.usernames != null
+                            && user.usernames.activeUsernames != null
+                            && user.usernames.activeUsernames.length > 0
+                            ? user.usernames.activeUsernames[0]
+                            : null
             );
-            return;
+
+            account.setPhone(user.phoneNumber);
+
+            account.setDisplayName(
+                    buildDisplayName(
+                            user.firstName,
+                            user.lastName
+                    )
+            );
+
+            channelAccountRepository.save(account);
+
+            log.debug(
+                    "Telegram account data saved: " +
+                            "channelAccountId={}, externalId={}, " +
+                            "username={}, displayName={}",
+                    account.getId(),
+                    account.getExternalId(),
+                    account.getUsername(),
+                    account.getDisplayName()
+            );
+
+        } catch (RuntimeException e) {
+            log.error(
+                    "Failed to update Telegram account data: channelId={}",
+                    channelId,
+                    e
+            );
         }
-
-        account.setExternalId(
-                Long.toString(user.id)
-        );
-
-        account.setUsername(
-                user.usernames != null
-                        && user.usernames.activeUsernames != null
-                        && user.usernames.activeUsernames.length > 0
-                        ? user.usernames.activeUsernames[0]
-                        : null
-        );
-
-        account.setPhone(user.phoneNumber);
-
-        account.setDisplayName(
-                buildDisplayName(
-                        user.firstName,
-                        user.lastName
-                )
-        );
-
-        channelAccountRepository.save(account);
-
-        log.debug(
-                "Telegram account data saved: channelAccountId={}, externalId={}, username={}, displayName={}",
-                account.getId(),
-                account.getExternalId(),
-                account.getUsername(),
-                account.getDisplayName()
-        );
     }
 
     private String buildDisplayName(
