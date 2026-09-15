@@ -1,5 +1,8 @@
 package kit.penny.clientbus.server.controller;
 
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -64,6 +67,16 @@ public class MessageController {
     )
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<MessageDto> processOutbound(
+            @Parameter(
+                    name = "request",
+                    required = true,
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(
+                                    implementation = OutboundMessageRequest.class
+                            )
+                    )
+            )
             @Valid
             @RequestPart("request")
             OutboundMessageRequest request,

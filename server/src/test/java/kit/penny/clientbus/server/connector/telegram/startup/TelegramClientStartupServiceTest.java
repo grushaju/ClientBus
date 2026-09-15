@@ -12,11 +12,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 class TelegramClientStartupServiceTest {
 
@@ -191,5 +187,25 @@ class TelegramClientStartupServiceTest {
         inOrder.verify(channelAccountService).create(secondId);
 
         verifyNoMoreInteractions(channelAccountService);
+    }
+
+    @Test
+    void restoreTelegramClients_loadsOnlyConnectedTelegramAccounts() {
+        when(channelAccountRepository
+                .findAllByChannelTypeAndChannelStatus(
+                        ChannelType.TELEGRAM,
+                        ChannelConnectionStatus.CONNECTED
+                ))
+                .thenReturn(List.of());
+
+        service.restoreTelegramClients();
+
+        verify(channelAccountRepository)
+                .findAllByChannelTypeAndChannelStatus(
+                        ChannelType.TELEGRAM,
+                        ChannelConnectionStatus.CONNECTED
+                );
+
+        verifyNoInteractions(channelAccountService);
     }
 }
