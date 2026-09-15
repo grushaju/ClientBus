@@ -21,9 +21,11 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -991,5 +993,345 @@ class MessageServiceTest {
                 MessageDeliveryStatus.FAILED,
                 message.getDeliveryStatus()
         );
+    }
+    // ============================================================
+    // MarkReadUpTo
+    // ============================================================
+    @Test
+    void markReadUpTo_marksSentOutboundMessagesUpToWatermarkAsRead() {
+        UUID conversationId =
+                UUID.fromString("11111111-1111-1111-1111-111111111111");
+
+        ConversationEntity conversation = new ConversationEntity();
+        conversation.setId(conversationId);
+
+        MessageEntity message101 = message(
+                conversation,
+                "101",
+                MessageDirection.OUTBOUND,
+                MessageDeliveryStatus.SENT
+        );
+
+        MessageEntity message102 = message(
+                conversation,
+                "102",
+                MessageDirection.OUTBOUND,
+                MessageDeliveryStatus.SENT
+        );
+
+        MessageEntity message105 = message(
+                conversation,
+                "105",
+                MessageDirection.OUTBOUND,
+                MessageDeliveryStatus.SENT
+        );
+
+        MessageEntity message106 = message(
+                conversation,
+                "106",
+                MessageDirection.OUTBOUND,
+                MessageDeliveryStatus.SENT
+        );
+
+        when(conversationRepository.findById(conversationId))
+                .thenReturn(Optional.of(conversation));
+
+        when(messageRepository
+                .findAllByConversationIdAndDirectionAndDeliveryStatus(
+                        conversationId,
+                        MessageDirection.OUTBOUND,
+                        MessageDeliveryStatus.SENT
+                ))
+                .thenReturn(List.of(
+                        message101,
+                        message102,
+                        message105,
+                        message106
+                ));
+
+        messageService.markReadUpTo(
+                conversationId,
+                105
+        );
+
+        assertThat(message101.getDeliveryStatus())
+                .isEqualTo(MessageDeliveryStatus.READ);
+
+        assertThat(message102.getDeliveryStatus())
+                .isEqualTo(MessageDeliveryStatus.READ);
+
+        assertThat(message105.getDeliveryStatus())
+                .isEqualTo(MessageDeliveryStatus.READ);
+
+        assertThat(message106.getDeliveryStatus())
+                .isEqualTo(MessageDeliveryStatus.SENT);
+
+        assertThat(message101.getReadAt()).isNotNull();
+        assertThat(message102.getReadAt()).isNotNull();
+        assertThat(message105.getReadAt()).isNotNull();
+        assertThat(message106.getReadAt()).isNull();
+
+        assertThat(message101.getReadAt())
+                .isEqualTo(message102.getReadAt())
+                .isEqualTo(message105.getReadAt());
+
+        verify(messageRepository)
+                .saveAll(List.of(
+                        message101,
+                        message102,
+                        message105,
+                        message106
+                ));
+    }
+
+    @Test
+    void markReadUpTo_ignoresInvalidExternalIds() {
+        UUID conversationId =
+                UUID.fromString("11111111-1111-1111-1111-111111111111");
+
+        ConversationEntity conversation = new ConversationEntity();
+        conversation.setId(conversationId);
+
+        MessageEntity nullExternalId = message(
+                conversation,
+                null,
+                MessageDirection.OUTBOUND,
+                MessageDeliveryStatus.SENT
+        );
+
+        MessageEntity blankExternalId = message(
+                conversation,
+                "   ",
+                MessageDirection.OUTBOUND,
+                MessageDeliveryStatus.SENT
+        );
+
+        MessageEntity invalidExternalId = message(
+                conversation,
+                "telegram-message-id",
+                MessageDirection.OUTBOUND,
+                MessageDeliveryStatus.SENT
+        );
+
+        MessageEntity validMessage = message(
+                conversation,
+                "100",
+                MessageDirection.OUTBOUND,
+                MessageDeliveryStatus.SENT
+        );
+
+        when(conversationRepository.findById(conversationId))
+                .thenReturn(Optional.of(conversation));
+
+        when(messageRepository
+                .findAllByConversationIdAndDirectionAndDeliveryStatus(
+                        conversationId,
+                        MessageDirection.OUTBOUND,
+                        MessageDeliveryStatus.SENT
+                ))
+                .thenReturn(List.of(
+                        nullExternalId,
+                        blankExternalId,
+                        invalidExternalId,
+                        validMessage
+                ));
+
+        messageService.markReadUpTo(
+                conversationId,
+                100
+        );
+
+        assertThat(nullExternalId.getDeliveryStatus())
+                .isEqualTo(MessageDeliveryStatus.SENT);
+
+        assertThat(blankExternalId.getDeliveryStatus())
+                .isEqualTo(MessageDeliveryStatus.SENT);
+
+        assertThat(invalidExternalId.getDeliveryStatus())
+                .isEqualTo(MessageDeliveryStatus.SENT);
+
+        assertThat(validMessage.getDeliveryStatus())
+                .isEqualTo(MessageDeliveryStatus.READ);
+
+        assertThat(nullExternalId.getReadAt()).isNull();
+        assertThat(blankExternalId.getReadAt()).isNull();
+        assertThat(invalidExternalId.getReadAt()).isNull();
+        assertThat(validMessage.getReadAt()).isNotNull();
+
+        verify(messageRepository)
+                .saveAll(List.of(
+                        nullExternalId,
+                        blankExternalId,
+                        invalidExternalId,
+                        validMessage
+                ));
+    }
+
+    @Test
+    void markReadUpTo_doesNothingWhenWatermarkIsInvalid() {
+        UUID conversationId =
+                UUID.fromString("11111111-1111-1111-1111-111111111111");
+
+        messageService.markReadUpTo(
+                conversationId,
+                0
+        );
+
+        verifyNoInteractions(
+                conversationRepository,
+                messageRepository
+        );
+    }
+
+    @Test
+    void markReadUpTo_doesNothingWhenNoSentMessagesExist() {
+        UUID conversationId =
+                UUID.fromString("11111111-1111-1111-1111-111111111111");
+
+        ConversationEntity conversation = new ConversationEntity();
+        conversation.setId(conversationId);
+
+        when(conversationRepository.findById(conversationId))
+                .thenReturn(Optional.of(conversation));
+
+        when(messageRepository
+                .findAllByConversationIdAndDirectionAndDeliveryStatus(
+                        conversationId,
+                        MessageDirection.OUTBOUND,
+                        MessageDeliveryStatus.SENT
+                ))
+                .thenReturn(List.of());
+
+        messageService.markReadUpTo(
+                conversationId,
+                105
+        );
+
+        verify(messageRepository, never())
+                .saveAll(anyList());
+    }
+
+    @Test
+    void markReadUpTo_doesNotMarkMessagesAboveWatermark() {
+        UUID conversationId =
+                UUID.fromString("11111111-1111-1111-1111-111111111111");
+
+        ConversationEntity conversation = new ConversationEntity();
+        conversation.setId(conversationId);
+
+        MessageEntity message106 = message(
+                conversation,
+                "106",
+                MessageDirection.OUTBOUND,
+                MessageDeliveryStatus.SENT
+        );
+
+        MessageEntity message200 = message(
+                conversation,
+                "200",
+                MessageDirection.OUTBOUND,
+                MessageDeliveryStatus.SENT
+        );
+
+        when(conversationRepository.findById(conversationId))
+                .thenReturn(Optional.of(conversation));
+
+        when(messageRepository
+                .findAllByConversationIdAndDirectionAndDeliveryStatus(
+                        conversationId,
+                        MessageDirection.OUTBOUND,
+                        MessageDeliveryStatus.SENT
+                ))
+                .thenReturn(List.of(
+                        message106,
+                        message200
+                ));
+
+        messageService.markReadUpTo(
+                conversationId,
+                105
+        );
+
+        assertThat(message106.getDeliveryStatus())
+                .isEqualTo(MessageDeliveryStatus.SENT);
+
+        assertThat(message200.getDeliveryStatus())
+                .isEqualTo(MessageDeliveryStatus.SENT);
+
+        assertThat(message106.getReadAt()).isNull();
+        assertThat(message200.getReadAt()).isNull();
+
+        verify(messageRepository)
+                .saveAll(List.of(
+                        message106,
+                        message200
+                ));
+    }
+
+    @Test
+    void markReadUpTo_usesSameReadTimestampForAllMessages() {
+        UUID conversationId =
+                UUID.fromString("11111111-1111-1111-1111-111111111111");
+
+        ConversationEntity conversation = new ConversationEntity();
+        conversation.setId(conversationId);
+
+        MessageEntity message101 = message(
+                conversation,
+                "101",
+                MessageDirection.OUTBOUND,
+                MessageDeliveryStatus.SENT
+        );
+
+        MessageEntity message102 = message(
+                conversation,
+                "102",
+                MessageDirection.OUTBOUND,
+                MessageDeliveryStatus.SENT
+        );
+
+        when(conversationRepository.findById(conversationId))
+                .thenReturn(Optional.of(conversation));
+
+        when(messageRepository
+                .findAllByConversationIdAndDirectionAndDeliveryStatus(
+                        conversationId,
+                        MessageDirection.OUTBOUND,
+                        MessageDeliveryStatus.SENT
+                ))
+                .thenReturn(List.of(
+                        message101,
+                        message102
+                ));
+
+        messageService.markReadUpTo(
+                conversationId,
+                102
+        );
+
+        assertThat(message101.getReadAt())
+                .isNotNull();
+
+        assertThat(message102.getReadAt())
+                .isNotNull();
+
+        assertThat(message101.getReadAt())
+                .isEqualTo(message102.getReadAt());
+    }
+
+    private MessageEntity message(
+            ConversationEntity conversation,
+            String externalId,
+            MessageDirection direction,
+            MessageDeliveryStatus deliveryStatus
+    ) {
+        MessageEntity message = new MessageEntity();
+
+        message.setConversation(conversation);
+        message.setExternalId(externalId);
+        message.setDirection(direction);
+        message.setDeliveryStatus(deliveryStatus);
+
+        return message;
     }
 }

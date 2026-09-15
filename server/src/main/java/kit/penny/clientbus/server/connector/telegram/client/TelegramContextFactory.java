@@ -18,6 +18,8 @@ import org.springframework.beans.factory.support.RootBeanDefinition;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.core.env.MapPropertySource;
 import kit.penny.clientbus.server.storage.IAttachmentStorage;
+import kit.penny.clientbus.server.persistence.repository.ConversationRepository;
+import kit.penny.clientbus.server.service.MessageService;
 
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -35,22 +37,31 @@ public class TelegramContextFactory {
     private static final String INBOUND_MESSAGE_BEAN_NAME =
             "telegramInboundMessageListener";
 
+    private static final String MESSAGE_READ_BEAN_NAME =
+            "telegramMessageReadListener";
+
     private final TelegramProperties globalProperties;
     private final ChannelRepository channelRepository;
     private final ChannelAccountRepository channelAccountRepository;
     private final IInboundEventPublisher inboundEventPublisher;
     private final IAttachmentStorage attachmentStorage;
+    private final ConversationRepository conversationRepository;
+    private final MessageService messageService;
 
     public TelegramContextFactory(
             TelegramProperties globalProperties,
             ChannelAccountRepository channelAccountRepository,
             ChannelRepository channelRepository,
+            ConversationRepository conversationRepository,
+            MessageService messageService,
             IInboundEventPublisher inboundEventPublisher,
             IAttachmentStorage attachmentStorage
     ) {
         this.globalProperties = globalProperties;
         this.channelAccountRepository = channelAccountRepository;
         this.channelRepository = channelRepository;
+        this.conversationRepository = conversationRepository;
+        this.messageService = messageService;
         this.inboundEventPublisher = inboundEventPublisher;
         this.attachmentStorage = attachmentStorage;
     }
@@ -143,6 +154,22 @@ public class TelegramContextFactory {
                         INBOUND_MESSAGE_BEAN_NAME,
                         inboundMessageDefinition
                 );
+
+                RootBeanDefinition messageReadDefinition =
+                        new RootBeanDefinition(
+                                ITdlibUpdateListener.class
+                        );
+
+                messageReadDefinition.setInstanceSupplier(
+                        () -> createMessageReadListener(
+                                channelAccountId
+                        )
+                );
+
+                registry.registerBeanDefinition(
+                        MESSAGE_READ_BEAN_NAME,
+                        messageReadDefinition
+                );
             }
 
             @Override
@@ -204,6 +231,17 @@ public class TelegramContextFactory {
                 properties,
                 authorizationManager,
                 telegramClientProvider
+        );
+    }
+
+    private ITdlibUpdateListener<TdApi.UpdateChatReadOutbox>
+    createMessageReadListener(
+            UUID channelAccountId
+    ) {
+        return new TelegramMessageReadListener(
+                channelAccountId,
+                conversationRepository,
+                messageService
         );
     }
 

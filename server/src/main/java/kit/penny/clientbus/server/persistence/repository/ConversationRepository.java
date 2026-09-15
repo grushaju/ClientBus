@@ -24,6 +24,12 @@ public interface ConversationRepository
             UUID clientAccountId
     );
 
+    Optional<ConversationEntity>
+    findByChannelAccountIdAndClientAccountExternalId(
+            UUID channelAccountId,
+            String clientAccountExternalId
+    );
+
     boolean existsByChannelAccountIdAndClientAccountId(
             UUID channelAccountId,
             UUID clientAccountId

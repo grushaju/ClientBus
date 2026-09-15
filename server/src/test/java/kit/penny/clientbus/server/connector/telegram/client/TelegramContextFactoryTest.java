@@ -6,7 +6,9 @@ import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
 import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
 import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
+import kit.penny.clientbus.server.persistence.repository.ConversationRepository;
 import kit.penny.clientbus.server.service.MessageProcessingService;
+import kit.penny.clientbus.server.service.MessageService;
 import kit.penny.clientbus.server.storage.IAttachmentStorage;
 import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.properties.TelegramProperties;
@@ -58,6 +60,10 @@ class TelegramContextFactoryTest {
                 Mockito.mock(ChannelAccountRepository.class);
         ChannelRepository channelRepository =
                 Mockito.mock(ChannelRepository.class);
+        ConversationRepository conversationRepository =
+                Mockito.mock(ConversationRepository.class);
+        MessageService messageService =
+                Mockito.mock(MessageService.class);
         IInboundEventPublisher inboundEventPublisher =
                 Mockito.mock(IInboundEventPublisher.class);
         IAttachmentStorage attachmentStorage =
@@ -68,6 +74,8 @@ class TelegramContextFactoryTest {
                         globalProperties,
                         channelAccountRepository,
                         channelRepository,
+                        conversationRepository,
+                        messageService,
                         inboundEventPublisher,
                         attachmentStorage
                 );
@@ -208,6 +216,10 @@ class TelegramContextFactoryTest {
                 Mockito.mock(ChannelAccountRepository.class);
         ChannelRepository channelRepository =
                 Mockito.mock(ChannelRepository.class);
+        ConversationRepository conversationRepository =
+                Mockito.mock(ConversationRepository.class);
+        MessageService messageService =
+                Mockito.mock(MessageService.class);
         IInboundEventPublisher inboundEventPublisher =
                 Mockito.mock(IInboundEventPublisher.class);
         IAttachmentStorage attachmentStorage =
@@ -218,6 +230,8 @@ class TelegramContextFactoryTest {
                         globalProperties,
                         channelAccountRepository,
                         channelRepository,
+                        conversationRepository,
+                        messageService,
                         inboundEventPublisher,
                         attachmentStorage
                 );

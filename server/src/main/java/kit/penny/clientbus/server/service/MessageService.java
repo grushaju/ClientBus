@@ -692,6 +692,70 @@ public class MessageService {
     }
 
     /**
+     * Помечает прочитанными все outbound-сообщения Conversation,
+     * для которых Telegram external message ID не превышает watermark.
+     *
+     * Telegram UpdateChatReadOutbox является watermark-событием:
+     * если пользователь прочитал сообщение N, все предыдущие
+     * исходящие сообщения этого чата с ID <= N также прочитаны.
+     */
+    @Transactional
+    public void markReadUpTo(
+            UUID conversationId,
+            long lastReadOutboxMessageId
+    ) {
+        if (lastReadOutboxMessageId <= 0) {
+            return;
+        }
+
+        ConversationEntity conversation =
+                getConversation(conversationId);
+
+        var messages =
+                messageRepository
+                        .findAllByConversationIdAndDirectionAndDeliveryStatus(
+                                conversation.getId(),
+                                MessageDirection.OUTBOUND,
+                                MessageDeliveryStatus.SENT
+                        );
+
+        if (messages.isEmpty()) {
+            return;
+        }
+
+        Instant readAt = Instant.now();
+
+        for (MessageEntity message : messages) {
+
+            String externalId =
+                    message.getExternalId();
+
+            if (externalId == null || externalId.isBlank()) {
+                continue;
+            }
+
+            long telegramMessageId;
+
+            try {
+                telegramMessageId =
+                        Long.parseLong(externalId);
+            } catch (NumberFormatException ignored) {
+                continue;
+            }
+
+            if (telegramMessageId <= lastReadOutboxMessageId) {
+                message.setDeliveryStatus(
+                        MessageDeliveryStatus.READ
+                );
+
+                message.setReadAt(readAt);
+            }
+        }
+
+        messageRepository.saveAll(messages);
+    }
+
+    /**
      * PENDING / SENT -> FAILED.
      * <p>
      * Повторное получение FAILED является идемпотентным.

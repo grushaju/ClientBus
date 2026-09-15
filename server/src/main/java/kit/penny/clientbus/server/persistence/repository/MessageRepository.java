@@ -25,6 +25,13 @@ public interface MessageRepository
     );
 
     List<MessageEntity>
+    findAllByConversationIdAndDirectionAndDeliveryStatus(
+            UUID conversationId,
+            MessageDirection direction,
+            MessageDeliveryStatus deliveryStatus
+    );
+
+    List<MessageEntity>
     findAllByConversationIdOrderBySentAtAscCreatedAtAsc(
             UUID conversationId
     );

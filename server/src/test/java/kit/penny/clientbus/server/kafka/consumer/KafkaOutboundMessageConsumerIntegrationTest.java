@@ -31,6 +31,7 @@ import kit.penny.clientbus.server.persistence.repository.ConversationRepository;
 import kit.penny.clientbus.server.persistence.repository.MessageRepository;
 import kit.penny.clientbus.server.persistence.repository.OrganizationRepository;
 import kit.penny.clientbus.server.persistence.repository.WorkspaceRepository;
+import kit.penny.clientbus.server.service.ChannelAttachment;
 import kit.penny.clientbus.server.service.ChannelSendRequest;
 import kit.penny.clientbus.server.service.MessageService;
 import kit.penny.clientbus.server.storage.IAttachmentStorage;
@@ -39,6 +40,7 @@ import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -54,8 +56,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
@@ -316,12 +317,76 @@ class KafkaOutboundMessageConsumerIntegrationTest
                 "storage/photo.jpg"
         );
 
+        ArgumentCaptor<ChannelSendRequest> requestCaptor =
+                ArgumentCaptor.forClass(ChannelSendRequest.class);
+
         verify(
                 channelConnector,
                 timeout(15_000)
                         .times(1)
         ).send(
-                any(ChannelSendRequest.class)
+                requestCaptor.capture()
+        );
+
+        ChannelSendRequest request =
+                requestCaptor.getValue();
+
+        assertEquals(
+                messageId,
+                request.messageId()
+        );
+
+        assertEquals(
+                channelAccountId,
+                request.channelAccountId()
+        );
+
+        assertEquals(
+                clientExternalId,
+                request.recipientExternalId()
+        );
+
+        assertEquals(
+                MessageType.TEXT,
+                request.type()
+        );
+
+        assertEquals(
+                "Message with attachment",
+                request.content()
+        );
+
+        assertEquals(
+                1,
+                request.attachments().size()
+        );
+
+        ChannelAttachment channelAttachment =
+                request.attachments().getFirst();
+
+        assertEquals(
+                MessageAttachmentType.IMAGE,
+                channelAttachment.type()
+        );
+
+        assertEquals(
+                "photo.jpg",
+                channelAttachment.fileName()
+        );
+
+        assertEquals(
+                "image/jpeg",
+                channelAttachment.contentType()
+        );
+
+        assertEquals(
+                1024,
+                channelAttachment.size()
+        );
+
+        assertArrayEquals(
+                new byte[]{10, 20, 30},
+                channelAttachment.content().readAllBytes()
         );
 
         MessageEntity sentMessage =
