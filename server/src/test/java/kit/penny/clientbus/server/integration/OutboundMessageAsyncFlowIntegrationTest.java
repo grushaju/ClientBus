@@ -109,7 +109,7 @@ class OutboundMessageAsyncFlowIntegrationTest
             DynamicPropertyRegistry registry
     ) {
         registry.add(
-                "clientbus.kafka.consumer.outbound-group-id",
+                "spring.kafka.consumer.outbound-group-id",
                 () -> CONSUMER_GROUP
         );
     }
@@ -138,7 +138,7 @@ class OutboundMessageAsyncFlowIntegrationTest
     }
 
     @Test
-    void processOutbound_fullAsyncFlow_sendsThroughKafkaAndMarksSent()
+    void processOutbound_fullAsyncFlow_sendsThroughKafkaAndRegistersPendingDelivery()
             throws Exception {
 
         OrganizationEntity organization =
@@ -215,7 +215,8 @@ class OutboundMessageAsyncFlowIntegrationTest
         assertNotNull(result);
         assertNotNull(result.id());
 
-        UUID messageId = result.id();
+        UUID messageId =
+                result.id();
 
         verify(
                 channelConnector,
@@ -223,29 +224,29 @@ class OutboundMessageAsyncFlowIntegrationTest
                         .times(1)
         ).send(any());
 
-        MessageEntity sentMessage =
+        MessageEntity pendingMessage =
                 awaitMessageStatus(
                         messageId,
-                        MessageDeliveryStatus.SENT
+                        MessageDeliveryStatus.PENDING
                 );
 
         assertEquals(
                 MessageProcessingStatus.QUEUED,
-                sentMessage.getProcessingStatus()
+                pendingMessage.getProcessingStatus()
         );
 
         assertEquals(
-                MessageDeliveryStatus.SENT,
-                sentMessage.getDeliveryStatus()
+                MessageDeliveryStatus.PENDING,
+                pendingMessage.getDeliveryStatus()
         );
 
         assertEquals(
                 EXTERNAL_MESSAGE_ID,
-                sentMessage.getExternalId()
+                pendingMessage.getExternalId()
         );
 
         assertNotNull(
-                sentMessage.getSentAt()
+                pendingMessage.getCreatedAt()
         );
     }
 

@@ -1,6 +1,9 @@
 package kit.penny.clientbus.server.kafka.consumer;
 
+import kit.penny.clientbus.common.dto.message.MessageDto;
 import kit.penny.clientbus.common.enums.ChannelType;
+import kit.penny.clientbus.common.enums.MessageDeliveryStatus;
+import kit.penny.clientbus.common.enums.MessageProcessingStatus;
 import kit.penny.clientbus.common.kafka.KafkaEvent;
 import kit.penny.clientbus.common.kafka.KafkaEventType;
 import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
@@ -9,6 +12,7 @@ import kit.penny.clientbus.server.connector.ConnectorSendResult;
 import kit.penny.clientbus.server.connector.IChannelConnector;
 import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
 import kit.penny.clientbus.server.mapper.OutboundMessageKafkaCommandMapper;
+import kit.penny.clientbus.server.persistence.entity.MessageEntity;
 import kit.penny.clientbus.server.service.ChannelSendRequest;
 import kit.penny.clientbus.server.service.MessageService;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -50,6 +54,10 @@ public class KafkaOutboundMessageConsumer {
         OutboundMessageKafkaCommand command =
                 event.payload();
 
+        if (isAlreadyAcceptedForDelivery(command.messageId())) {
+            return;
+        }
+
         IChannelConnector connector =
                 channelConnectorRegistry.getConnector(channelType);
 
@@ -76,6 +84,20 @@ public class KafkaOutboundMessageConsumer {
                 command.messageId(),
                 result.externalId()
         );
+    }
+
+    private boolean isAlreadyAcceptedForDelivery(
+            java.util.UUID messageId
+    ) {
+        MessageEntity message =
+                messageService.getMessageEntityForProcessing(messageId);
+
+        return message.getProcessingStatus()
+                == MessageProcessingStatus.QUEUED
+                && message.getDeliveryStatus()
+                == MessageDeliveryStatus.PENDING
+                && message.getExternalId() != null
+                && !message.getExternalId().isBlank();
     }
 
     private void validateEvent(

@@ -1187,6 +1187,117 @@ class MessageProcessingServiceTest {
         );
     }
 
+
+    @Test
+    void processOutbound_kafkaPublicationFails_marksDeliveryFailed() {
+
+        UUID messageId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID channelAccountId = UUID.randomUUID();
+
+        OutboundMessageRequest request =
+                new OutboundMessageRequest(
+                        conversationId,
+                        MessageType.TEXT,
+                        "Hello",
+                        null,
+                        null
+                );
+
+        ConversationEntity conversation =
+                mock(ConversationEntity.class);
+
+        ChannelAccountEntity channelAccount =
+                mock(ChannelAccountEntity.class);
+
+        ChannelEntity channel =
+                mock(ChannelEntity.class);
+
+        MessageEntity messageEntity =
+                mock(MessageEntity.class);
+
+        when(messageService.createOutboundMessage(
+                any(CreateOutboundMessageRequest.class)
+        )).thenReturn(messageDto);
+
+        when(messageDto.id())
+                .thenReturn(messageId);
+
+        when(messageService.startProcessing(messageId))
+                .thenReturn(messageDto);
+
+        when(conversationService.findEntityForProcessing(
+                conversationId
+        )).thenReturn(conversation);
+
+        when(conversation.getChannelAccount())
+                .thenReturn(channelAccount);
+
+        when(channelAccount.getId())
+                .thenReturn(channelAccountId);
+
+        when(channelAccount.getChannel())
+                .thenReturn(channel);
+
+        when(channel.getType())
+                .thenReturn(ChannelType.TELEGRAM);
+
+        clientAccount.setExternalId("client-123");
+
+        when(conversation.getClientAccount())
+                .thenReturn(clientAccount);
+
+        when(messageService.getMessageEntityForProcessing(
+                messageId
+        )).thenReturn(messageEntity);
+
+        when(messageAttachmentService.getAttachmentsForProcessing(
+                messageId
+        )).thenReturn(List.of());
+
+        when(messageService.markQueued(messageId))
+                .thenReturn(messageDto);
+
+        doThrow(
+                new IllegalStateException(
+                        "Kafka outbound message publication failed"
+                )
+        ).when(outboundMessagePublisher)
+                .publish(
+                        eq(ChannelType.TELEGRAM),
+                        any(OutboundMessageKafkaCommand.class)
+                );
+
+        when(messageService.markDeliveryFailed(messageId))
+                .thenReturn(messageDto);
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageProcessingService.processOutbound(
+                        request,
+                        List.of()
+                )
+        );
+
+        verify(messageService)
+                .markQueued(messageId);
+
+        verify(messageService)
+                .markDeliveryFailed(messageId);
+
+        verify(messageService, never())
+                .markProcessingFailed(messageId);
+
+        verify(messageService, never())
+                .markProcessed(messageId);
+
+        verify(outboundMessagePublisher)
+                .publish(
+                        eq(ChannelType.TELEGRAM),
+                        any(OutboundMessageKafkaCommand.class)
+                );
+    }
+
     // =========================================================
     // FORWARD
     // =========================================================
@@ -1828,7 +1939,7 @@ class MessageProcessingServiceTest {
         MessageDto retriedMessage =
                 mock(MessageDto.class);
 
-        when(messageService.getMessageEntityForProcessing(messageId))
+        when(messageService.getMessageEntity(messageId))
                 .thenReturn(messageEntity);
 
         when(messageService.retryDelivery(messageId))
@@ -1866,7 +1977,7 @@ class MessageProcessingServiceTest {
         assertSame(retriedMessage, result);
 
         verify(messageService)
-                .getMessageEntityForProcessing(messageId);
+                .getMessageEntity(messageId);
 
         verify(messageService)
                 .retryDelivery(messageId);
@@ -1908,7 +2019,7 @@ class MessageProcessingServiceTest {
         MessageDto retriedMessage =
                 mock(MessageDto.class);
 
-        when(messageService.getMessageEntityForProcessing(messageId))
+        when(messageService.getMessageEntity(messageId))
                 .thenReturn(messageEntity);
 
         when(messageService.retryDelivery(messageId))
@@ -1963,7 +2074,7 @@ class MessageProcessingServiceTest {
                 MessageDeliveryStatus.FAILED
         );
 
-        when(messageService.getMessageEntityForProcessing(messageId))
+        when(messageService.getMessageEntity(messageId))
                 .thenReturn(messageEntity);
 
         when(messageService.retryDelivery(messageId))

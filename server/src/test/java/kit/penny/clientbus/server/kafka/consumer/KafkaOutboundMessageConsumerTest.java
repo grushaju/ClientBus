@@ -1,6 +1,8 @@
 package kit.penny.clientbus.server.kafka.consumer;
 
 import kit.penny.clientbus.common.enums.ChannelType;
+import kit.penny.clientbus.common.enums.MessageDeliveryStatus;
+import kit.penny.clientbus.common.enums.MessageProcessingStatus;
 import kit.penny.clientbus.common.enums.MessageType;
 import kit.penny.clientbus.common.kafka.KafkaEvent;
 import kit.penny.clientbus.common.kafka.KafkaEventType;
@@ -9,6 +11,7 @@ import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
 import kit.penny.clientbus.server.connector.ConnectorSendResult;
 import kit.penny.clientbus.server.connector.IChannelConnector;
 import kit.penny.clientbus.server.mapper.OutboundMessageKafkaCommandMapper;
+import kit.penny.clientbus.server.persistence.entity.MessageEntity;
 import kit.penny.clientbus.server.service.ChannelSendRequest;
 import kit.penny.clientbus.server.service.MessageService;
 import org.junit.jupiter.api.BeforeEach;
@@ -53,7 +56,7 @@ class KafkaOutboundMessageConsumerTest {
     }
 
     @Test
-    void shouldSendMessageThroughConnectorAndMarkItSent() {
+    void shouldSendMessageThroughConnectorAndRegisterPendingExternalId() {
 
         UUID messageId = UUID.randomUUID();
         UUID channelAccountId = UUID.randomUUID();
@@ -84,6 +87,15 @@ class KafkaOutboundMessageConsumerTest {
                         UUID.randomUUID()
                 );
 
+        MessageEntity message =
+                messageInPendingState(
+                        messageId,
+                        null
+                );
+
+        when(messageService.getMessageEntityForProcessing(messageId))
+                .thenReturn(message);
+
         when(commandMapper.toRequest(command))
                 .thenReturn(request);
 
@@ -103,6 +115,9 @@ class KafkaOutboundMessageConsumerTest {
                 "clientbus.outbound.telegram"
         );
 
+        verify(messageService)
+                .getMessageEntityForProcessing(messageId);
+
         verify(channelConnectorRegistry)
                 .getConnector(ChannelType.TELEGRAM);
 
@@ -113,7 +128,7 @@ class KafkaOutboundMessageConsumerTest {
                 .send(request);
 
         verify(messageService)
-                .markSent(
+                .registerPendingExternalId(
                         messageId,
                         "external-123"
                 );
@@ -158,6 +173,15 @@ class KafkaOutboundMessageConsumerTest {
                         UUID.randomUUID()
                 );
 
+        MessageEntity message =
+                messageInPendingState(
+                        messageId,
+                        null
+                );
+
+        when(messageService.getMessageEntityForProcessing(messageId))
+                .thenReturn(message);
+
         when(commandMapper.toRequest(command))
                 .thenReturn(request);
 
@@ -177,6 +201,9 @@ class KafkaOutboundMessageConsumerTest {
                 "clientbus.outbound.vk"
         );
 
+        verify(messageService)
+                .getMessageEntityForProcessing(messageId);
+
         verify(commandMapper)
                 .toRequest(command);
 
@@ -184,9 +211,60 @@ class KafkaOutboundMessageConsumerTest {
                 .send(request);
 
         verify(messageService)
-                .markSent(
+                .registerPendingExternalId(
                         messageId,
                         "vk-message-123"
+                );
+    }
+
+    @Test
+    void shouldNotSendMessageWhenAlreadyAcceptedForDelivery() {
+
+        UUID messageId = UUID.randomUUID();
+
+        OutboundMessageKafkaCommand command =
+                new OutboundMessageKafkaCommand(
+                        messageId,
+                        UUID.randomUUID(),
+                        "recipient-123",
+                        MessageType.TEXT,
+                        "Hello",
+                        List.of()
+                );
+
+        KafkaEvent<OutboundMessageKafkaCommand> event =
+                outboundEvent(
+                        command,
+                        UUID.randomUUID()
+                );
+
+        MessageEntity message =
+                messageInPendingState(
+                        messageId,
+                        "telegram-message-123"
+                );
+
+        when(messageService.getMessageEntityForProcessing(messageId))
+                .thenReturn(message);
+
+        consumer.consume(
+                event,
+                "clientbus.outbound.telegram"
+        );
+
+        verify(messageService)
+                .getMessageEntityForProcessing(messageId);
+
+        verifyNoInteractions(
+                channelConnectorRegistry,
+                commandMapper,
+                connector
+        );
+
+        verify(messageService, never())
+                .registerPendingExternalId(
+                        any(),
+                        anyString()
                 );
     }
 
@@ -238,6 +316,17 @@ class KafkaOutboundMessageConsumerTest {
                         UUID.randomUUID()
                 );
 
+        MessageEntity message =
+                messageInPendingState(
+                        command.messageId(),
+                        null
+                );
+
+        when(messageService.getMessageEntityForProcessing(
+                command.messageId()
+        ))
+                .thenReturn(message);
+
         when(commandMapper.toRequest(command))
                 .thenReturn(request);
 
@@ -264,7 +353,11 @@ class KafkaOutboundMessageConsumerTest {
         verify(connector)
                 .send(request);
 
-        verifyNoInteractions(messageService);
+        verify(messageService, never())
+                .registerPendingExternalId(
+                        any(),
+                        anyString()
+                );
     }
 
     @Test
@@ -288,6 +381,17 @@ class KafkaOutboundMessageConsumerTest {
                         command,
                         UUID.randomUUID()
                 );
+
+        MessageEntity message =
+                messageInPendingState(
+                        command.messageId(),
+                        null
+                );
+
+        when(messageService.getMessageEntityForProcessing(
+                command.messageId()
+        ))
+                .thenReturn(message);
 
         when(commandMapper.toRequest(command))
                 .thenReturn(request);
@@ -313,7 +417,11 @@ class KafkaOutboundMessageConsumerTest {
         verify(connector)
                 .send(request);
 
-        verifyNoInteractions(messageService);
+        verify(messageService, never())
+                .registerPendingExternalId(
+                        any(),
+                        anyString()
+                );
     }
 
     @Test
@@ -337,6 +445,17 @@ class KafkaOutboundMessageConsumerTest {
                         command,
                         UUID.randomUUID()
                 );
+
+        MessageEntity message =
+                messageInPendingState(
+                        command.messageId(),
+                        null
+                );
+
+        when(messageService.getMessageEntityForProcessing(
+                command.messageId()
+        ))
+                .thenReturn(message);
 
         when(commandMapper.toRequest(command))
                 .thenReturn(request);
@@ -364,7 +483,11 @@ class KafkaOutboundMessageConsumerTest {
         verify(connector)
                 .send(request);
 
-        verifyNoInteractions(messageService);
+        verify(messageService, never())
+                .registerPendingExternalId(
+                        any(),
+                        anyString()
+                );
     }
 
     @Test
@@ -388,6 +511,17 @@ class KafkaOutboundMessageConsumerTest {
                         command,
                         UUID.randomUUID()
                 );
+
+        MessageEntity message =
+                messageInPendingState(
+                        command.messageId(),
+                        null
+                );
+
+        when(messageService.getMessageEntityForProcessing(
+                command.messageId()
+        ))
+                .thenReturn(message);
 
         when(commandMapper.toRequest(command))
                 .thenReturn(request);
@@ -415,7 +549,34 @@ class KafkaOutboundMessageConsumerTest {
         verify(connector)
                 .send(request);
 
-        verifyNoInteractions(messageService);
+        verify(messageService, never())
+                .registerPendingExternalId(
+                        any(),
+                        anyString()
+                );
+    }
+
+    @Test
+    void shouldRejectNullEvent() {
+
+        assertThatThrownBy(() ->
+                consumer.consume(
+                        null,
+                        "clientbus.outbound.telegram"
+                )
+        )
+                .isInstanceOf(
+                        IllegalArgumentException.class
+                )
+                .hasMessage(
+                        "Kafka outbound event must not be null"
+                );
+
+        verifyNoInteractions(
+                channelConnectorRegistry,
+                commandMapper,
+                messageService
+        );
     }
 
     @Test
@@ -465,6 +626,40 @@ class KafkaOutboundMessageConsumerTest {
         )
                 .isInstanceOf(
                         IllegalArgumentException.class
+                );
+
+        verifyNoInteractions(
+                channelConnectorRegistry,
+                commandMapper,
+                messageService
+        );
+    }
+
+    @Test
+    void shouldRejectNullPayload() {
+
+        KafkaEvent<OutboundMessageKafkaCommand> event =
+                new KafkaEvent<>(
+                        UUID.randomUUID(),
+                        KafkaEventType.OUTBOUND_MESSAGE,
+                        1,
+                        Instant.now(),
+                        UUID.randomUUID(),
+                        null
+                );
+
+        assertThatThrownBy(() ->
+                consumer.consume(
+                        event,
+                        "clientbus.outbound.telegram"
+                )
+        )
+                .isInstanceOf(
+                        IllegalArgumentException.class
+                )
+                .hasMessage(
+                        "Kafka outbound event payload "
+                                + "must not be null"
                 );
 
         verifyNoInteractions(
@@ -580,6 +775,32 @@ class KafkaOutboundMessageConsumerTest {
                 commandMapper,
                 messageService
         );
+    }
+
+    private MessageEntity messageInPendingState(
+            UUID messageId,
+            String externalId
+    ) {
+        MessageEntity message =
+                mock(MessageEntity.class);
+
+        when(message.getId())
+                .thenReturn(messageId);
+
+        when(message.getProcessingStatus())
+                .thenReturn(
+                        MessageProcessingStatus.QUEUED
+                );
+
+        when(message.getDeliveryStatus())
+                .thenReturn(
+                        MessageDeliveryStatus.PENDING
+                );
+
+        when(message.getExternalId())
+                .thenReturn(externalId);
+
+        return message;
     }
 
     private OutboundMessageKafkaCommand validCommand() {
