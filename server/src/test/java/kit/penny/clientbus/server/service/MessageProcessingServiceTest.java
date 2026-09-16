@@ -900,8 +900,12 @@ class MessageProcessingServiceTest {
     // OUTBOUND
     // =========================================================
 
+
     @Test
     void processOutbound_success_sendsMessageWithAttachments() {
+        UUID messageId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID channelAccountId = UUID.randomUUID();
 
         OutboundMessageRequest request =
                 new OutboundMessageRequest(
@@ -911,6 +915,21 @@ class MessageProcessingServiceTest {
                         "{\"source\":\"ui\"}",
                         null
                 );
+
+        ConversationEntity conversation =
+                mock(ConversationEntity.class);
+
+        ChannelAccountEntity channelAccount =
+                mock(ChannelAccountEntity.class);
+
+        ChannelEntity channel =
+                mock(ChannelEntity.class);
+
+        ClientAccountEntity clientAccount =
+                mock(ClientAccountEntity.class);
+
+        MessageEntity messageEntity =
+                mock(MessageEntity.class);
 
         AttachmentContent attachment =
                 new AttachmentContent(
@@ -946,22 +965,17 @@ class MessageProcessingServiceTest {
                 1024
         );
 
+
         MessageDto processingMessage =
                 mock(MessageDto.class);
 
         when(processingMessage.id())
                 .thenReturn(messageId);
 
-        MessageDto processedMessage =
-                mock(MessageDto.class);
-
-        when(processedMessage.id())
-                .thenReturn(messageId);
-
-        when(processedMessage.type())
+        when(processingMessage.type())
                 .thenReturn(MessageType.TEXT);
 
-        when(processedMessage.content())
+        when(processingMessage.content())
                 .thenReturn("Hello");
 
         MessageDto queuedMessage =
@@ -985,16 +999,28 @@ class MessageProcessingServiceTest {
                 conversation
         );
 
+        when(conversation.getChannelAccount())
+                .thenReturn(channelAccount);
+
+        when(channelAccount.getId())
+                .thenReturn(channelAccountId);
+
+        when(channelAccount.getChannel())
+                .thenReturn(channel);
+
+        when(channel.getType())
+                .thenReturn(ChannelType.TELEGRAM);
+
+        when(conversation.getClientAccount())
+                .thenReturn(clientAccount);
+
+        when(clientAccount.getExternalId())
+                .thenReturn("client-123");
+
         when(messageService.getMessageEntityForProcessing(
                 messageId
         )).thenReturn(
                 messageEntity
-        );
-
-        when(messageService.markProcessed(
-                messageId
-        )).thenReturn(
-                processedMessage
         );
 
         when(messageAttachmentService.getAttachmentsForProcessing(
@@ -1046,11 +1072,6 @@ class MessageProcessingServiceTest {
                         attachment
                 );
 
-        verify(messageService)
-                .markProcessed(
-                        messageId
-                );
-
         verify(messageAttachmentService)
                 .getAttachmentsForProcessing(
                         messageId
@@ -1060,6 +1081,13 @@ class MessageProcessingServiceTest {
                 .markQueued(
                         messageId
                 );
+
+        verify(
+                messageService,
+                never()
+        ).markProcessed(
+                messageId
+        );
 
         ArgumentCaptor<ChannelType> channelTypeCaptor =
                 ArgumentCaptor.forClass(
@@ -1674,7 +1702,7 @@ class MessageProcessingServiceTest {
 
         assertEquals(
                 "SENT platform events are not processed "
-                        + "by the current synchronous outbound flow",
+                        + "by the current asynchronous outbound flow",
                 result.getMessage()
         );
 
@@ -1771,5 +1799,217 @@ class MessageProcessingServiceTest {
         verifyNoInteractions(
                 messageService
         );
+    }
+
+    @Test
+    void retryOutbound_success_requeuesExistingMessage() {
+
+        UUID messageId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID channelAccountId = UUID.randomUUID();
+
+        MessageEntity messageEntity = message(
+                messageId,
+                conversationId,
+                MessageDirection.OUTBOUND,
+                MessageProcessingStatus.PROCESSED,
+                MessageDeliveryStatus.FAILED
+        );
+
+        ChannelAccountEntity channelAccount =
+                mock(ChannelAccountEntity.class);
+
+        ChannelEntity channel =
+                mock(ChannelEntity.class);
+
+        ConversationEntity conversation =
+                mock(ConversationEntity.class);
+
+        MessageDto retriedMessage =
+                mock(MessageDto.class);
+
+        when(messageService.getMessageEntityForProcessing(messageId))
+                .thenReturn(messageEntity);
+
+        when(messageService.retryDelivery(messageId))
+                .thenReturn(retriedMessage);
+
+        when(conversationService.findEntityForProcessing(conversationId))
+                .thenReturn(conversation);
+
+        when(conversation.getChannelAccount())
+                .thenReturn(channelAccount);
+
+        when(channelAccount.getId())
+                .thenReturn(channelAccountId);
+
+        when(channelAccount.getChannel())
+                .thenReturn(channel);
+
+        when(channel.getType())
+                .thenReturn(ChannelType.TELEGRAM);
+
+        when(conversation.getClientAccount())
+                .thenReturn(clientAccount);
+
+        clientAccount.setExternalId("123456");
+
+        when(messageService.markQueued(messageId))
+                .thenReturn(retriedMessage);
+
+        when(messageAttachmentService.getAttachmentsForProcessing(messageId))
+                .thenReturn(List.of());
+
+        MessageDto result =
+                messageProcessingService.retryOutbound(messageId);
+
+        assertSame(retriedMessage, result);
+
+        verify(messageService)
+                .getMessageEntityForProcessing(messageId);
+
+        verify(messageService)
+                .retryDelivery(messageId);
+
+        verify(messageService)
+                .markQueued(messageId);
+
+        verify(outboundMessagePublisher)
+                .publish(
+                        eq(ChannelType.TELEGRAM),
+                        any(OutboundMessageKafkaCommand.class)
+                );
+    }
+
+    @Test
+    void retryOutbound_doesNotCreateNewMessage() {
+
+        UUID messageId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID channelAccountId = UUID.randomUUID();
+
+        MessageEntity messageEntity = message(
+                messageId,
+                conversationId,
+                MessageDirection.OUTBOUND,
+                MessageProcessingStatus.PROCESSED,
+                MessageDeliveryStatus.FAILED
+        );
+
+        ChannelAccountEntity channelAccount =
+                mock(ChannelAccountEntity.class);
+
+        ChannelEntity channel =
+                mock(ChannelEntity.class);
+
+        ConversationEntity conversation =
+                mock(ConversationEntity.class);
+
+        MessageDto retriedMessage =
+                mock(MessageDto.class);
+
+        when(messageService.getMessageEntityForProcessing(messageId))
+                .thenReturn(messageEntity);
+
+        when(messageService.retryDelivery(messageId))
+                .thenReturn(retriedMessage);
+
+        when(conversationService.findEntityForProcessing(conversationId))
+                .thenReturn(conversation);
+
+        when(conversation.getChannelAccount())
+                .thenReturn(channelAccount);
+
+        when(channelAccount.getId())
+                .thenReturn(channelAccountId);
+
+        when(channelAccount.getChannel())
+                .thenReturn(channel);
+
+        when(channel.getType())
+                .thenReturn(ChannelType.TELEGRAM);
+
+        when(conversation.getClientAccount())
+                .thenReturn(clientAccount);
+
+        clientAccount.setExternalId("123456");
+
+        when(messageService.markQueued(messageId))
+                .thenReturn(retriedMessage);
+
+        when(messageAttachmentService.getAttachmentsForProcessing(messageId))
+                .thenReturn(List.of());
+
+        messageProcessingService.retryOutbound(messageId);
+
+        verify(messageService, never())
+                .createOutboundMessage(any());
+
+        verify(messageAttachmentService, never())
+                .createAttachment(any(), any());
+    }
+
+    @Test
+    void retryOutbound_failureBeforeQueued_marksProcessingFailed() {
+
+        UUID messageId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+
+        MessageEntity messageEntity = message(
+                messageId,
+                conversationId,
+                MessageDirection.OUTBOUND,
+                MessageProcessingStatus.PROCESSED,
+                MessageDeliveryStatus.FAILED
+        );
+
+        when(messageService.getMessageEntityForProcessing(messageId))
+                .thenReturn(messageEntity);
+
+        when(messageService.retryDelivery(messageId))
+                .thenReturn(mock(MessageDto.class));
+
+        when(conversationService.findEntityForProcessing(conversationId))
+                .thenThrow(new IllegalStateException("channel unavailable"));
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageProcessingService.retryOutbound(messageId)
+        );
+
+        verify(messageService)
+                .markProcessingFailed(messageId);
+
+        verify(outboundMessagePublisher, never())
+                .publish(any(), any());
+
+        verify(messageService, never())
+                .markQueued(messageId);
+    }
+
+    private MessageEntity message(
+            UUID messageId,
+            UUID conversationId,
+            MessageDirection direction,
+            MessageProcessingStatus processingStatus,
+            MessageDeliveryStatus deliveryStatus
+    ) {
+        MessageEntity message = new MessageEntity();
+
+        ConversationEntity conversation =
+                mock(ConversationEntity.class);
+
+        when(conversation.getId())
+                .thenReturn(conversationId);
+
+        message.setId(messageId);
+        message.setConversation(conversation);
+        message.setDirection(direction);
+        message.setProcessingStatus(processingStatus);
+        message.setDeliveryStatus(deliveryStatus);
+        message.setType(MessageType.TEXT);
+        message.setContent("retry message");
+
+        return message;
     }
 }

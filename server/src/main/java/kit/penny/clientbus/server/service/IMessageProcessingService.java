@@ -3,6 +3,7 @@ package kit.penny.clientbus.server.service;
 import kit.penny.clientbus.common.dto.message.*;
 
 import java.util.List;
+import java.util.UUID;
 
 public interface IMessageProcessingService {
 
@@ -35,7 +36,7 @@ public interface IMessageProcessingService {
     /**
      * Форвардит существующее сообщение
      * в другой Conversation.
-     *
+     * <p>
      * Attachments исходного сообщения будут обработаны
      * внутри orchestration layer.
      */
@@ -46,11 +47,21 @@ public interface IMessageProcessingService {
     /**
      * Обрабатывает lifecycle-событие
      * от внешней платформы.
-     *
+     * <p>
      * Событие идентифицирует Message
      * через channelAccountId + externalId.
      */
     MessageDto processPlatformEvent(
             PlatformMessageEvent event
     );
+
+    /**
+     * Повторно отправляет сообщения
+     * со статусом FAILED
+     * @param messageId  - ID существующего сообщения
+     */
+    MessageDto retryOutbound(
+            UUID messageId
+    );
+
 }

@@ -6,38 +6,28 @@ import jakarta.persistence.PersistenceContext;
 import kit.penny.clientbus.common.dto.message.InboundMessageRequest;
 import kit.penny.clientbus.common.dto.message.MessageDto;
 import kit.penny.clientbus.common.dto.message.OutboundMessageRequest;
-import kit.penny.clientbus.common.enums.ChannelType;
-import kit.penny.clientbus.common.enums.MessageDeliveryStatus;
-import kit.penny.clientbus.common.enums.MessageDirection;
-import kit.penny.clientbus.common.enums.MessageProcessingStatus;
-import kit.penny.clientbus.common.enums.MessageSenderType;
-import kit.penny.clientbus.common.enums.MessageType;
+import kit.penny.clientbus.common.enums.*;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.integration.AbstractIntegrationTest;
-import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
-import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
-import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
-import kit.penny.clientbus.server.persistence.entity.ConversationEntity;
-import kit.penny.clientbus.server.persistence.entity.MessageEntity;
-import kit.penny.clientbus.server.persistence.entity.OrganizationEntity;
-import kit.penny.clientbus.server.persistence.entity.WorkspaceEntity;
-import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
-import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
-import kit.penny.clientbus.server.persistence.repository.ClientAccountRepository;
-import kit.penny.clientbus.server.persistence.repository.ConversationRepository;
-import kit.penny.clientbus.server.persistence.repository.MessageRepository;
-import kit.penny.clientbus.server.persistence.repository.OrganizationRepository;
-import kit.penny.clientbus.server.persistence.repository.WorkspaceRepository;
+import kit.penny.clientbus.server.persistence.entity.*;
+import kit.penny.clientbus.server.persistence.repository.*;
+import kit.penny.clientbus.server.security.UserPrincipal;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest
@@ -75,6 +65,15 @@ class MessageProcessingServiceIntegrationTest
 
     @Autowired
     private MessageService messageService;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private EmployeeRepository employeeRepository;
+
+    @Autowired
+    private EmployeeWorkspaceRepository employeeWorkspaceRepository;
 
     @Test
     void processInbound_createsClientAccountConversationAndMessage() {
@@ -540,7 +539,7 @@ class MessageProcessingServiceIntegrationTest
                 reload(message.getId()).getExternalId()
         );
 
-        // QUEUED + PENDING -> SENT
+        // QUEUED + PENDING -> PROCESSED + SENT
         messageService.markSent(
                 message.getId(),
                 "telegram-external-message-001"
@@ -550,7 +549,7 @@ class MessageProcessingServiceIntegrationTest
                 reload(message.getId());
 
         assertEquals(
-                MessageProcessingStatus.QUEUED,
+                MessageProcessingStatus.PROCESSED,
                 sent.getProcessingStatus()
         );
 
@@ -754,6 +753,374 @@ class MessageProcessingServiceIntegrationTest
         );
     }
 
+    @Test
+    void retryOutbound_failedMessage_reusesExistingMessage() {
+
+        MessageEntity message =
+                createOutboundMessage();
+
+        UUID messageId = message.getId();
+
+        messageService.markDeliveryFailed(messageId);
+
+        authenticate(
+                createEmployeeForWorkspace(message)
+        );
+
+        MessageEntity failed =
+                messageRepository.findById(messageId)
+                        .orElseThrow();
+
+        assertThat(failed.getProcessingStatus())
+                .isEqualTo(MessageProcessingStatus.PROCESSED);
+
+        assertThat(failed.getDeliveryStatus())
+                .isEqualTo(MessageDeliveryStatus.FAILED);
+
+        MessageDto result =
+                messageProcessingService.retryOutbound(messageId);
+
+        assertThat(result.id())
+                .isEqualTo(messageId);
+
+        MessageEntity retried =
+                messageRepository.findById(messageId)
+                        .orElseThrow();
+
+        assertThat(retried.getId())
+                .isEqualTo(messageId);
+
+        assertThat(retried.getProcessingStatus())
+                .isEqualTo(MessageProcessingStatus.QUEUED);
+
+        assertThat(retried.getDeliveryStatus())
+                .isEqualTo(MessageDeliveryStatus.PENDING);
+
+        assertThat(
+                messageRepository.findAll()
+                        .stream()
+                        .filter(m -> m.getId().equals(messageId))
+                        .count()
+        ).isEqualTo(1);
+    }
+
+    @Test
+    void retryOutbound_failedMessage_publishesSameMessageToKafka() {
+
+        MessageEntity message =
+                createOutboundMessage();
+
+        UUID messageId = message.getId();
+
+        authenticate(
+                createEmployeeForWorkspace(message)
+        );
+
+        // QUEUED -> PROCESSED + FAILED
+        messageService.markDeliveryFailed(
+                messageId
+        );
+
+        MessageEntity failed =
+                reload(messageId);
+
+        assertThat(failed.getProcessingStatus())
+                .isEqualTo(MessageProcessingStatus.PROCESSED);
+
+        assertThat(failed.getDeliveryStatus())
+                .isEqualTo(MessageDeliveryStatus.FAILED);
+
+        messageProcessingService.retryOutbound(
+                messageId
+        );
+
+        MessageEntity queued =
+                reload(messageId);
+
+        assertThat(queued.getId())
+                .isEqualTo(messageId);
+
+        assertThat(queued.getProcessingStatus())
+                .isEqualTo(MessageProcessingStatus.QUEUED);
+
+        assertThat(queued.getDeliveryStatus())
+                .isEqualTo(MessageDeliveryStatus.PENDING);
+    }
+
+
+    // =============================== //
+    // ACL Tests
+    // =============================== //
+
+    @Test
+    void retryOutbound_employeeWithWorkspaceAccess_isAllowed() {
+
+        OrganizationEntity organization =
+                createOrganization("Test Org");
+
+        WorkspaceEntity workspace =
+                createWorkspace(
+                        "Test Workspace",
+                        organization
+                );
+
+        EmployeeEntity employee =
+                createEmployee(
+                        "retry-employee",
+                        "retry-employee@test.local",
+                        UserRole.EMPLOYEE,
+                        organization
+                );
+
+        assignEmployeeToWorkspace(
+                employee,
+                workspace
+        );
+
+        MessageEntity message =
+                createOutboundMessage(workspace);
+
+        messageService.markDeliveryFailed(
+                message.getId()
+        );
+
+        authenticate(employee);
+
+        assertDoesNotThrow(() ->
+                messageProcessingService.retryOutbound(
+                        message.getId()
+                )
+        );
+    }
+
+    @Test
+    void retryOutbound_employeeWithoutWorkspaceAccess_isDenied() {
+
+        OrganizationEntity organization =
+                createOrganization("Test Org");
+
+        WorkspaceEntity workspace =
+                createWorkspace(
+                        "Test Workspace",
+                        organization
+                );
+
+        EmployeeEntity employee =
+                createEmployee(
+                        "retry-employee-no-access",
+                        "retry-employee-no-access@test.local",
+                        UserRole.EMPLOYEE,
+                        organization
+                );
+
+        MessageEntity message =
+                createOutboundMessage(workspace);
+
+        messageService.markDeliveryFailed(
+                message.getId()
+        );
+
+        authenticate(employee);
+
+        assertThrows(
+                AccessDeniedException.class,
+                () ->
+                        messageProcessingService.retryOutbound(
+                                message.getId()
+                        )
+        );
+    }
+
+    @Test
+    void retryOutbound_superAdminCanAccessWorkspaceInOwnOrganization() {
+
+        OrganizationEntity organization =
+                createOrganization("Test Org");
+
+        WorkspaceEntity workspace =
+                createWorkspace(
+                        "Test Workspace",
+                        organization
+                );
+
+        EmployeeEntity superAdmin =
+                createEmployee(
+                        "retry-super-admin",
+                        "retry-super-admin@test.local",
+                        UserRole.SUPER_ADMIN,
+                        organization
+                );
+
+        MessageEntity message =
+                createOutboundMessage(workspace);
+
+        messageService.markDeliveryFailed(
+                message.getId()
+        );
+
+        authenticate(superAdmin);
+
+        assertDoesNotThrow(() ->
+                messageProcessingService.retryOutbound(
+                        message.getId()
+                )
+        );
+    }
+
+    @Test
+    void retryOutbound_superAdminCannotAccessWorkspaceInAnotherOrganization() {
+
+        OrganizationEntity organization =
+                createOrganization("Test Org");
+
+        OrganizationEntity anotherOrganization =
+                createOrganization(
+                        "Another Organization"
+                );
+
+        WorkspaceEntity anotherWorkspace =
+                createWorkspace(
+                        "Another Workspace",
+                        anotherOrganization
+                );
+
+        EmployeeEntity superAdmin =
+                createEmployee(
+                        "retry-super-admin-other-org",
+                        "retry-super-admin-other-org@test.local",
+                        UserRole.SUPER_ADMIN,
+                        organization
+                );
+
+        MessageEntity message =
+                createOutboundMessage(
+                        anotherWorkspace
+                );
+
+        messageService.markDeliveryFailed(
+                message.getId()
+        );
+
+        authenticate(superAdmin);
+
+        assertThrows(
+                AccessDeniedException.class,
+                () ->
+                        messageProcessingService.retryOutbound(
+                                message.getId()
+                        )
+        );
+    }
+
+    // =========================================================
+    // HELPERS
+    // =========================================================
+
+    private void authenticate(
+            EmployeeEntity employee
+    ) {
+
+        UserPrincipal principal =
+                new UserPrincipal(
+                        employee.getUser()
+                );
+
+        UsernamePasswordAuthenticationToken authentication =
+                new UsernamePasswordAuthenticationToken(
+                        principal,
+                        null,
+                        principal.getAuthorities()
+                );
+
+        SecurityContextHolder
+                .getContext()
+                .setAuthentication(
+                        authentication
+                );
+    }
+
+    private OrganizationEntity createOrganization(
+            String name
+    ) {
+
+        OrganizationEntity organization =
+                new OrganizationEntity();
+
+        organization.setName(name);
+
+        return organizationRepository.save(
+                organization
+        );
+    }
+
+    private EmployeeEntity createEmployee(
+            String username,
+            String email,
+            UserRole role,
+            OrganizationEntity organization
+    ) {
+
+        UserEntity user =
+                new UserEntity();
+
+        user.setUsername(username);
+        user.setEmail(email);
+        user.setPasswordHash("password");
+        user.setRole(role);
+        user.setEnabled(true);
+
+        user = userRepository.save(user);
+
+        EmployeeEntity employee =
+                new EmployeeEntity();
+
+        employee.setUser(user);
+        employee.setOrganization(organization);
+
+        /*
+         * EmployeeEntity требует эти поля.
+         */
+        employee.setFirstName(username);
+        employee.setLastName("Test");
+
+        return employeeRepository.save(
+                employee
+        );
+    }
+
+    private WorkspaceEntity createWorkspace(
+            String name,
+            OrganizationEntity organization
+    ) {
+
+        WorkspaceEntity workspace =
+                new WorkspaceEntity();
+
+        workspace.setName(name);
+        workspace.setOrganization(organization);
+
+        return workspaceRepository.save(
+                workspace
+        );
+    }
+
+    private void assignEmployeeToWorkspace(
+            EmployeeEntity employee,
+            WorkspaceEntity workspace
+    ) {
+
+        EmployeeWorkspaceEntity assignment =
+                new EmployeeWorkspaceEntity();
+
+        assignment.setEmployee(employee);
+        assignment.setWorkspace(workspace);
+
+        employeeWorkspaceRepository.save(
+                assignment
+        );
+    }
+
+
     private MessageEntity createOutboundMessage() {
 
         OrganizationEntity organization =
@@ -820,9 +1187,11 @@ class MessageProcessingServiceIntegrationTest
         message.setContent("Outbound test message");
         message.setMetadata(null);
         message.setSentAt(Instant.now());
+
         message.setProcessingStatus(
                 MessageProcessingStatus.RECEIVED
         );
+
         message.setDeliveryStatus(
                 MessageDeliveryStatus.PENDING
         );
@@ -835,18 +1204,123 @@ class MessageProcessingServiceIntegrationTest
                 message.getId()
         );
 
-        // PROCESSING -> PROCESSED
-        messageService.markProcessed(
-                message.getId()
-        );
-
-        // PROCESSED -> QUEUED
+        // PROCESSING -> QUEUED
         messageService.markQueued(
                 message.getId()
         );
 
         return reload(message.getId());
     }
+
+    private EmployeeEntity createEmployeeForWorkspace(
+            MessageEntity message
+    ) {
+
+        WorkspaceEntity workspace =
+                message.getConversation()
+                        .getWorkspace();
+
+        EmployeeEntity employee =
+                createEmployee(
+                        "retry-test-"
+                                + UUID.randomUUID(),
+                        "retry-test-"
+                                + UUID.randomUUID()
+                                + "@test.local",
+                        UserRole.EMPLOYEE,
+                        workspace.getOrganization()
+                );
+
+        assignEmployeeToWorkspace(
+                employee,
+                workspace
+        );
+
+        return employee;
+    }
+
+    private MessageEntity createOutboundMessage(
+            WorkspaceEntity workspace
+    ) {
+
+        ChannelEntity channel =
+                channelRepository.saveAndFlush(
+                        TestDataFactory.channel(
+                                workspace,
+                                ChannelType.TELEGRAM,
+                                "Telegram outbound"
+                        )
+                );
+
+        ChannelAccountEntity channelAccount =
+                channelAccountRepository.saveAndFlush(
+                        TestDataFactory.channelAccount(
+                                channel,
+                                "telegram-company-outbound-"
+                                        + UUID.randomUUID(),
+                                "company_channel",
+                                "+79990000003",
+                                "Company Telegram"
+                        )
+                );
+
+        ClientAccountEntity clientAccount =
+                clientAccountRepository.saveAndFlush(
+                        TestDataFactory.clientAccount(
+                                null,
+                                ChannelType.TELEGRAM,
+                                "telegram-client-outbound-"
+                                        + UUID.randomUUID()
+                        )
+                );
+
+        ConversationEntity conversation =
+                conversationRepository.saveAndFlush(
+                        TestDataFactory.conversation(
+                                workspace,
+                                channelAccount,
+                                clientAccount
+                        )
+                );
+
+        MessageEntity message =
+                new MessageEntity(
+                        conversation,
+                        MessageType.TEXT,
+                        MessageDirection.OUTBOUND,
+                        MessageSenderType.EMPLOYEE
+                );
+
+        message.setClientAccount(null);
+        message.setExternalId(null);
+        message.setContent("Outbound test message");
+        message.setMetadata(null);
+        message.setSentAt(Instant.now());
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.RECEIVED
+        );
+
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.PENDING
+        );
+
+        message =
+                messageRepository.saveAndFlush(message);
+
+        // RECEIVED -> PROCESSING
+        messageService.startProcessing(
+                message.getId()
+        );
+
+        // PROCESSING -> QUEUED
+        messageService.markQueued(
+                message.getId()
+        );
+
+        return reload(message.getId());
+    }
+
 
     private MessageEntity reload(UUID messageId) {
 

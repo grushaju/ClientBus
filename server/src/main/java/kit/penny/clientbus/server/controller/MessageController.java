@@ -106,6 +106,18 @@ public class MessageController {
         );
     }
 
+    @PostMapping("/{messageId}/retry")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<MessageDto> retryOutbound(
+            @PathVariable UUID messageId
+    ) {
+        return ResponseEntity.ok(
+                messageProcessingService.retryOutbound(
+                        messageId
+                )
+        );
+    }
+
     @GetMapping("/{messageId}/attachments")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<MessageAttachmentDto>> getAttachments(

@@ -4,6 +4,7 @@ import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
 import kit.penny.clientbus.common.dto.message.*;
 import kit.penny.clientbus.common.enums.ChannelType;
+import kit.penny.clientbus.common.enums.MessageDirection;
 import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
 import kit.penny.clientbus.common.kafka.PlatformOutboundAttachment;
 import kit.penny.clientbus.server.kafka.producer.IOutboundMessagePublisher;
@@ -18,6 +19,7 @@ import kit.penny.clientbus.server.persistence.repository.MessageRepository;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.UUID;
 
 @Service
 public class MessageProcessingService
@@ -60,7 +62,8 @@ public class MessageProcessingService
     ) {
         attachments = normalizeAttachments(attachments);
 
-        MessageCreationResult result = getMessageCreationResult(request);
+        MessageCreationResult result =
+                getMessageCreationResult(request);
 
         MessageDto message = result.message();
 
@@ -106,7 +109,8 @@ public class MessageProcessingService
         InboundMessageRequest request =
                 event.message();
 
-        MessageCreationResult result = getMessageCreationResult(request);
+        MessageCreationResult result =
+                getMessageCreationResult(request);
 
         MessageDto message = result.message();
 
@@ -170,9 +174,12 @@ public class MessageProcessingService
                         )
                 );
 
-        boolean processingCompleted = false;
+        boolean queued = false;
 
         try {
+            /*
+             * RECEIVED -> PROCESSING
+             */
             message =
                     messageService.startProcessing(
                             message.id()
@@ -216,13 +223,6 @@ public class MessageProcessingService
                 );
             }
 
-            message =
-                    messageService.markProcessed(
-                            message.id()
-                    );
-
-            processingCompleted = true;
-
             List<MessageAttachmentEntity> messageAttachments =
                     messageAttachmentService.getAttachmentsForProcessing(
                             message.id()
@@ -252,11 +252,32 @@ public class MessageProcessingService
                             outboundAttachments
                     );
 
+            /*
+             * PROCESSING -> QUEUED
+             *
+             * После этого сообщение считается
+             * подготовленным к outbound delivery.
+             */
             message =
                     messageService.markQueued(
                             message.id()
                     );
 
+            queued = true;
+
+            /*
+             * Kafka принимает задачу на отправку.
+             *
+             * ВАЖНО:
+             * здесь больше НЕТ markProcessed().
+             *
+             * PROCESSED будет выставлен только после
+             * фактического результата доставки:
+             *
+             * UpdateMessageSendSucceeded
+             * или
+             * UpdateMessageSendFailed.
+             */
             outboundMessagePublisher.publish(
                     channelType,
                     command
@@ -266,8 +287,13 @@ public class MessageProcessingService
 
         } catch (RuntimeException e) {
 
-            if (!processingCompleted) {
+            if (!queued) {
 
+                /*
+                 * Ошибка произошла до QUEUED:
+                 *
+                 * PROCESSING -> FAILED
+                 */
                 try {
                     messageService.markProcessingFailed(
                             message.id()
@@ -278,6 +304,13 @@ public class MessageProcessingService
 
             } else {
 
+                /*
+                 * Ошибка произошла уже после QUEUED.
+                 *
+                 * Это delivery failure:
+                 *
+                 * QUEUED -> PROCESSED + FAILED
+                 */
                 try {
                     messageService.markDeliveryFailed(
                             message.id()
@@ -406,7 +439,7 @@ public class MessageProcessingService
             case SENT ->
                     throw new IllegalStateException(
                             "SENT platform events are not processed "
-                                    + "by the current synchronous outbound flow"
+                                    + "by the current asynchronous outbound flow"
                     );
 
             case DELIVERED ->
@@ -426,6 +459,141 @@ public class MessageProcessingService
         };
     }
 
+    @Override
+    @Transactional
+    public MessageDto retryOutbound(UUID messageId) {
+
+        MessageEntity messageEntity =
+                messageService.getMessageEntity(
+                        messageId
+                );
+
+        if (messageEntity.getDirection()
+                != MessageDirection.OUTBOUND) {
+
+            throw new IllegalStateException(
+                    "Message must be OUTBOUND before retry: "
+                            + messageId
+            );
+        }
+
+        /*
+         * PROCESSED + FAILED -> PROCESSING + PENDING
+         */
+        MessageDto message =
+                messageService.retryDelivery(
+                        messageId
+                );
+
+        boolean queued = false;
+
+        try {
+            ConversationEntity conversation =
+                    conversationService.findEntityForProcessing(
+                            messageEntity.getConversation().getId()
+                    );
+
+            ChannelAccountEntity channelAccount =
+                    conversation.getChannelAccount();
+
+            if (channelAccount == null) {
+                throw new IllegalStateException(
+                        "Conversation has no ChannelAccount: "
+                                + conversation.getId()
+                );
+            }
+
+            ChannelType channelType =
+                    channelAccount.getChannel()
+                            .getType();
+
+            if (channelType == null) {
+                throw new IllegalStateException(
+                        "ChannelAccount has no ChannelType: "
+                                + channelAccount.getId()
+                );
+            }
+
+            List<MessageAttachmentEntity> messageAttachments =
+                    messageAttachmentService
+                            .getAttachmentsForProcessing(
+                                    messageId
+                            );
+
+            List<PlatformOutboundAttachment> outboundAttachments =
+                    messageAttachments.stream()
+                            .map(attachment ->
+                                    new PlatformOutboundAttachment(
+                                            attachment.getType(),
+                                            attachment.getStorageKey(),
+                                            attachment.getFileName(),
+                                            attachment.getContentType(),
+                                            attachment.getSize()
+                                    )
+                            )
+                            .toList();
+
+            OutboundMessageKafkaCommand command =
+                    new OutboundMessageKafkaCommand(
+                            messageId,
+                            channelAccount.getId(),
+                            conversation.getClientAccount()
+                                    .getExternalId(),
+                            messageEntity.getType(),
+                            messageEntity.getContent(),
+                            outboundAttachments
+                    );
+
+            /*
+             * PROCESSING -> QUEUED
+             */
+            message =
+                    messageService.markQueued(
+                            messageId
+                    );
+
+            queued = true;
+
+            /*
+             * Kafka accepts outbound retry task.
+             * Actual delivery result will move the message to:
+             *
+             * QUEUED -> PROCESSED + SENT
+             * or
+             * QUEUED -> PROCESSED + FAILED
+             */
+            outboundMessagePublisher.publish(
+                    channelType,
+                    command
+            );
+
+            return message;
+
+        } catch (RuntimeException e) {
+
+            if (!queued) {
+                try {
+                    messageService.markProcessingFailed(
+                            messageId
+                    );
+                } catch (RuntimeException ignored) {
+                    // Preserve original exception.
+                }
+
+            } else {
+                try {
+                    messageService.markDeliveryFailed(
+                            messageId
+                    );
+                } catch (RuntimeException ignored) {
+                    // Preserve original exception.
+                }
+            }
+
+            throw e;
+        }
+    }
+
     private List<AttachmentContent> normalizeAttachments(
             List<AttachmentContent> attachments
     ) {
@@ -436,7 +604,9 @@ public class MessageProcessingService
         return List.copyOf(attachments);
     }
 
-    private MessageCreationResult getMessageCreationResult(InboundMessageRequest request) {
+    private MessageCreationResult getMessageCreationResult(
+            InboundMessageRequest request
+    ) {
         ChannelAccountEntity channelAccount =
                 channelAccountRepository
                         .findById(request.channelAccountId())

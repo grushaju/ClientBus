@@ -448,9 +448,9 @@ public class MessageService {
     }
 
     /**
-     * PROCESSED -> QUEUED.
+     * PROCESSING -> QUEUED.
      * <p>
-     * Сообщение подготовлено и поставлено
+     * Сообщение полностью подготовлено и поставлено
      * в асинхронный outbound Kafka flow.
      * <p>
      * Повторный QUEUED является идемпотентным.
@@ -468,10 +468,10 @@ public class MessageService {
         }
 
         if (message.getProcessingStatus()
-                != MessageProcessingStatus.PROCESSED) {
+                != MessageProcessingStatus.PROCESSING) {
 
             throw new IllegalStateException(
-                    "Message must be PROCESSED before QUEUED: "
+                    "Message must be PROCESSING before QUEUED: "
                             + messageId
             );
         }
@@ -486,12 +486,14 @@ public class MessageService {
     }
 
     /**
-     * QUEUED -> SENT.
+     * QUEUED -> PROCESSED + SENT.
      * <p>
-     * Вызывается KafkaOutboundMessageConsumer
-     * после успешной отправки через ChannelConnector.
+     * Вызывается только после подтверждения фактической
+     * отправки сообщения платформой.
      * <p>
-     * Повторный SENT является идемпотентным.
+     * Для Telegram это UpdateMessageSendSucceeded.
+     * <p>
+     * Повторный SENT с тем же externalId является идемпотентным.
      */
     @Transactional
     public MessageDto markSent(
@@ -513,10 +515,8 @@ public class MessageService {
                 message.getDeliveryStatus();
 
         /*
-         * Полностью обработанный повторный SENT.
-         *
-         * Если сообщение уже SENT с тем же externalId —
-         * это повторная доставка Kafka и ничего менять не нужно.
+         * Повторная доставка одного и того же
+         * UpdateMessageSendSucceeded.
          */
         if (deliveryStatus == MessageDeliveryStatus.SENT
                 && externalId.equals(message.getExternalId())) {
@@ -525,7 +525,7 @@ public class MessageService {
         }
 
         /*
-         * SENT с другим externalId означает конфликт.
+         * Уже SENT с другим externalId — конфликт.
          */
         if (deliveryStatus == MessageDeliveryStatus.SENT) {
 
@@ -536,8 +536,8 @@ public class MessageService {
         }
 
         /*
-         * До отправки сообщение должно находиться
-         * именно в QUEUED.
+         * Фактическая отправка допустима только
+         * для сообщения, находящегося в QUEUED.
          */
         if (processingStatus
                 != MessageProcessingStatus.QUEUED) {
@@ -557,8 +557,8 @@ public class MessageService {
         }
 
         /*
-         * Защищаемся от повторного externalId
-         * другого Message внутри Conversation.
+         * Защита от повторного externalId
+         * другого Message в Conversation.
          */
         messageRepository
                 .findByConversationIdAndExternalId(
@@ -585,6 +585,18 @@ public class MessageService {
 
         message.setDeliveryStatus(
                 MessageDeliveryStatus.SENT
+        );
+
+        /*
+         * Processing завершён только после того,
+         * как платформа подтвердила фактическую отправку.
+         */
+        message.setProcessingStatus(
+                MessageProcessingStatus.PROCESSED
+        );
+
+        message.setProcessedAt(
+                Instant.now()
         );
 
         return messageMapper.toDto(
@@ -756,9 +768,12 @@ public class MessageService {
     }
 
     /**
-     * PENDING / SENT -> FAILED.
+     * QUEUED -> PROCESSED + FAILED.
      * <p>
-     * Повторное получение FAILED является идемпотентным.
+     * Вызывается после окончательного подтверждения
+     * ошибки отправки платформой.
+     * <p>
+     * Повторный FAILED является идемпотентным.
      */
     @Transactional
     public MessageDto markDeliveryFailed(
@@ -770,25 +785,59 @@ public class MessageService {
 
         requireOutbound(message);
 
-        MessageDeliveryStatus status =
+        MessageDeliveryStatus deliveryStatus =
                 message.getDeliveryStatus();
 
+        MessageProcessingStatus processingStatus =
+                message.getProcessingStatus();
+
         /*
-         * Повторное FAILED не является ошибкой.
-         *
-         * Ничего не меняем и не сохраняем повторно.
+         * Уже FAILED — идемпотентный повтор.
          */
-        if (status == MessageDeliveryStatus.FAILED) {
+        if (deliveryStatus == MessageDeliveryStatus.FAILED) {
+
             return messageMapper.toDto(message);
         }
 
-        if (status != MessageDeliveryStatus.PENDING
-                && status != MessageDeliveryStatus.SENT) {
+        /*
+         * Delivery failure допустим только
+         * для активной outbound-попытки.
+         */
+        if (deliveryStatus != MessageDeliveryStatus.PENDING
+                && deliveryStatus != MessageDeliveryStatus.SENT) {
 
             throw new IllegalStateException(
                     "Message cannot be marked delivery FAILED "
                             + "from status: "
-                            + status
+                            + deliveryStatus
+            );
+        }
+
+        /*
+         * Нормальный путь:
+         *
+         * QUEUED -> PROCESSED
+         *
+         * Если Kafka/connector упал уже после QUEUED,
+         * processing всё равно считается завершённым.
+         */
+        if (processingStatus == MessageProcessingStatus.QUEUED) {
+
+            message.setProcessingStatus(
+                    MessageProcessingStatus.PROCESSED
+            );
+
+            message.setProcessedAt(
+                    Instant.now()
+            );
+
+        } else if (processingStatus
+                != MessageProcessingStatus.PROCESSED) {
+
+            throw new IllegalStateException(
+                    "Message must be QUEUED or PROCESSED "
+                            + "before delivery FAILED: "
+                            + messageId
             );
         }
 
@@ -799,6 +848,54 @@ public class MessageService {
         return messageMapper.toDto(
                 messageRepository.save(message)
         );
+    }
+
+    /**
+     * Повторная отправка сообщения со статусом FAILED
+     * @param messageId
+     * @return MessageDto
+     */
+
+    @Transactional
+    public MessageDto retryDelivery(UUID messageId) {
+
+        MessageEntity message =
+                getMessageEntityForProcessing(messageId);
+
+        requireOutbound(message);
+
+        if (message.getProcessingStatus()
+                != MessageProcessingStatus.PROCESSED) {
+
+            throw new IllegalStateException(
+                    "Message must be PROCESSED before retry: "
+                            + message.getId()
+            );
+        }
+
+        if (message.getDeliveryStatus()
+                != MessageDeliveryStatus.FAILED) {
+
+            throw new IllegalStateException(
+                    "Message must be FAILED before retry: "
+                            + message.getId()
+            );
+        }
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.PROCESSING
+        );
+
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.PENDING
+        );
+
+        message.setProcessedAt(null);
+
+        MessageEntity saved =
+                messageRepository.save(message);
+
+        return messageMapper.toDto(saved);
     }
 
     /**

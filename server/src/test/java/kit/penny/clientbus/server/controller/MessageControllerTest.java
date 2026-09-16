@@ -402,4 +402,27 @@ class MessageControllerTest {
                         attachmentId
                 );
     }
+
+    @Test
+    void retryOutbound_delegatesToProcessingService() {
+
+        when(messageProcessingService.retryOutbound(messageId))
+                .thenReturn(messageDto);
+
+        ResponseEntity<MessageDto> response =
+                controller.retryOutbound(messageId);
+
+        assertEquals(
+                200,
+                response.getStatusCode().value()
+        );
+
+        assertSame(
+                messageDto,
+                response.getBody()
+        );
+
+        verify(messageProcessingService)
+                .retryOutbound(messageId);
+    }
 }

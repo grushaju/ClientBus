@@ -2,6 +2,7 @@ package kit.penny.clientbus.server.service;
 
 import jakarta.persistence.EntityNotFoundException;
 import kit.penny.clientbus.common.dto.message.CreateInboundMessageRequest;
+import kit.penny.clientbus.common.dto.message.CreateOutboundMessageRequest;
 import kit.penny.clientbus.common.dto.message.MessageDto;
 import kit.penny.clientbus.common.enums.*;
 import kit.penny.clientbus.server.mapper.MessageMapper;
@@ -19,6 +20,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.time.Instant;
 import java.util.List;
@@ -106,6 +108,10 @@ class MessageServiceTest {
                 .thenReturn(Optional.of(message));
     }
 
+    // ============================================================
+    // CREATE INBOUND
+    // ============================================================
+
     @Test
     void createInboundMessage_newMessage_returnsExistedFalse() {
 
@@ -170,6 +176,25 @@ class MessageServiceTest {
                 request.metadata(),
                 savedMessage.getMetadata()
         );
+
+        assertEquals(
+                MessageProcessingStatus.RECEIVED,
+                savedMessage.getProcessingStatus()
+        );
+
+        assertNull(
+                savedMessage.getDeliveryStatus()
+        );
+
+        verify(conversationService)
+                .updateLastMessage(
+                        eq(conversation),
+                        any(),
+                        any()
+                );
+
+        verify(conversationService)
+                .incrementUnreadCount(conversation);
     }
 
     @Test
@@ -207,7 +232,6 @@ class MessageServiceTest {
                 messageService.createInboundMessage(request);
 
         assertNotNull(result);
-
         assertTrue(result.existed());
 
         assertSame(
@@ -215,17 +239,10 @@ class MessageServiceTest {
                 result.message()
         );
 
-        /*
-         * Повторный inbound не должен менять
-         * существующий Message.
-         */
         assertEquals(
                 "Hello",
                 message.getContent()
         );
-
-        verify(conversationRepository)
-                .findById(conversationId);
 
         verify(messageRepository)
                 .findByConversationIdAndExternalId(
@@ -383,12 +400,112 @@ class MessageServiceTest {
 
         stubMessageFound();
 
-        messageService.startProcessing(message.getId());
+        when(messageRepository.save(message))
+                .thenReturn(message);
+
+        when(messageMapper.toDto(message))
+                .thenReturn(expectedDto);
+
+        MessageDto result =
+                messageService.startProcessing(
+                        message.getId()
+                );
+
+        assertSame(
+                expectedDto,
+                result
+        );
 
         assertEquals(
                 MessageProcessingStatus.PROCESSING,
                 message.getProcessingStatus()
         );
+
+        verify(messageRepository)
+                .save(message);
+
+        verify(messageMapper)
+                .toDto(message);
+    }
+
+    @Test
+    void startProcessing_processingMessage_throwsException() {
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.PROCESSING
+        );
+
+        stubMessageFound();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageService.startProcessing(
+                        message.getId()
+                )
+        );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
+    }
+
+    @Test
+    void startProcessing_processedMessage_throwsException() {
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.PROCESSED
+        );
+
+        stubMessageFound();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageService.startProcessing(
+                        message.getId()
+                )
+        );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
+    }
+
+    @Test
+    void startProcessing_queuedMessage_throwsException() {
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.QUEUED
+        );
+
+        stubMessageFound();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageService.startProcessing(
+                        message.getId()
+                )
+        );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
+    }
+
+    @Test
+    void startProcessing_failedMessage_throwsException() {
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.FAILED
+        );
+
+        stubMessageFound();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageService.startProcessing(
+                        message.getId()
+                )
+        );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
     }
 
     @Test
@@ -400,12 +517,116 @@ class MessageServiceTest {
 
         stubMessageFound();
 
-        messageService.markProcessed(message.getId());
+        when(messageRepository.save(message))
+                .thenReturn(message);
+
+        when(messageMapper.toDto(message))
+                .thenReturn(expectedDto);
+
+        MessageDto result =
+                messageService.markProcessed(
+                        message.getId()
+                );
+
+        assertSame(
+                expectedDto,
+                result
+        );
 
         assertEquals(
                 MessageProcessingStatus.PROCESSED,
                 message.getProcessingStatus()
         );
+
+        assertNotNull(
+                message.getProcessedAt()
+        );
+
+        verify(messageRepository)
+                .save(message);
+
+        verify(messageMapper)
+                .toDto(message);
+    }
+
+    @Test
+    void markProcessed_receivedMessage_throwsException() {
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.RECEIVED
+        );
+
+        stubMessageFound();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageService.markProcessed(
+                        message.getId()
+                )
+        );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
+    }
+
+    @Test
+    void markProcessed_queuedMessage_throwsException() {
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.QUEUED
+        );
+
+        stubMessageFound();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageService.markProcessed(
+                        message.getId()
+                )
+        );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
+    }
+
+    @Test
+    void markProcessed_processedMessage_throwsException() {
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.PROCESSED
+        );
+
+        stubMessageFound();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageService.markProcessed(
+                        message.getId()
+                )
+        );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
+    }
+
+    @Test
+    void markProcessed_failedMessage_throwsException() {
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.FAILED
+        );
+
+        stubMessageFound();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageService.markProcessed(
+                        message.getId()
+                )
+        );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
     }
 
     @Test
@@ -417,23 +638,107 @@ class MessageServiceTest {
 
         stubMessageFound();
 
-        messageService.markProcessingFailed(message.getId());
+        when(messageRepository.save(message))
+                .thenReturn(message);
+
+        when(messageMapper.toDto(message))
+                .thenReturn(expectedDto);
+
+        MessageDto result =
+                messageService.markProcessingFailed(
+                        message.getId()
+                );
+
+        assertSame(
+                expectedDto,
+                result
+        );
 
         assertEquals(
                 MessageProcessingStatus.FAILED,
                 message.getProcessingStatus()
         );
+
+        assertNull(
+                message.getProcessedAt()
+        );
+
+        verify(messageRepository)
+                .save(message);
+
+        verify(messageMapper)
+                .toDto(message);
     }
 
-    // ============================================================
-// QUEUED STATE
-// ============================================================
+    @Test
+    void markProcessingFailed_receivedMessage_throwsException() {
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.RECEIVED
+        );
+
+        stubMessageFound();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageService.markProcessingFailed(
+                        message.getId()
+                )
+        );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
+    }
 
     @Test
-    void markQueued_processedMessage_changesStatusToQueued() {
+    void markProcessingFailed_queuedMessage_throwsException() {
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.QUEUED
+        );
+
+        stubMessageFound();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageService.markProcessingFailed(
+                        message.getId()
+                )
+        );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
+    }
+
+    @Test
+    void markProcessingFailed_processedMessage_throwsException() {
 
         message.setProcessingStatus(
                 MessageProcessingStatus.PROCESSED
+        );
+
+        stubMessageFound();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageService.markProcessingFailed(
+                        message.getId()
+                )
+        );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
+    }
+
+    // ============================================================
+    // QUEUED STATE
+    // ============================================================
+
+    @Test
+    void markQueued_processingMessage_changesStatusToQueued() {
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.PROCESSING
         );
 
         stubMessageFound();
@@ -521,10 +826,30 @@ class MessageServiceTest {
     }
 
     @Test
-    void markQueued_processingMessage_throwsException() {
+    void markQueued_processedMessage_throwsException() {
 
         message.setProcessingStatus(
-                MessageProcessingStatus.PROCESSING
+                MessageProcessingStatus.PROCESSED
+        );
+
+        stubMessageFound();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageService.markQueued(
+                        message.getId()
+                )
+        );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
+    }
+
+    @Test
+    void markQueued_failedMessage_throwsException() {
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.FAILED
         );
 
         stubMessageFound();
@@ -543,6 +868,7 @@ class MessageServiceTest {
     // ============================================================
     // DELIVERY STATE
     // ============================================================
+
     @Test
     void markSent_queuedOutboundMessage_changesDeliveryToSent() {
 
@@ -585,7 +911,7 @@ class MessageServiceTest {
         );
 
         assertEquals(
-                MessageProcessingStatus.QUEUED,
+                MessageProcessingStatus.PROCESSED,
                 message.getProcessingStatus()
         );
 
@@ -599,6 +925,14 @@ class MessageServiceTest {
                 message.getExternalId()
         );
 
+        assertNotNull(
+                message.getSentAt()
+        );
+
+        assertNotNull(
+                message.getProcessedAt()
+        );
+
         verify(messageRepository)
                 .findByConversationIdAndExternalId(
                         conversation.getId(),
@@ -610,6 +944,93 @@ class MessageServiceTest {
 
         verify(messageMapper)
                 .toDto(message);
+    }
+
+    @Test
+    void markSent_inboundMessage_throwsException() {
+
+        message.setDirection(
+                MessageDirection.INBOUND
+        );
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.QUEUED
+        );
+
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.PENDING
+        );
+
+        stubMessageFound();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageService.markSent(
+                        message.getId(),
+                        "telegram-message-123"
+                )
+        );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
+    }
+
+    @Test
+    void markSent_nullExternalId_throwsException() {
+
+        message.setDirection(
+                MessageDirection.OUTBOUND
+        );
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.QUEUED
+        );
+
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.PENDING
+        );
+
+        stubMessageFound();
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> messageService.markSent(
+                        message.getId(),
+                        null
+                )
+        );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
+    }
+
+    @Test
+    void markSent_blankExternalId_throwsException() {
+
+        message.setDirection(
+                MessageDirection.OUTBOUND
+        );
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.QUEUED
+        );
+
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.PENDING
+        );
+
+        stubMessageFound();
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> messageService.markSent(
+                        message.getId(),
+                        "   "
+                )
+        );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
     }
 
     @Test
@@ -659,7 +1080,7 @@ class MessageServiceTest {
         );
 
         message.setProcessingStatus(
-                MessageProcessingStatus.QUEUED
+                MessageProcessingStatus.PROCESSED
         );
 
         message.setDeliveryStatus(
@@ -669,6 +1090,15 @@ class MessageServiceTest {
         message.setExternalId(
                 "telegram-message-123"
         );
+
+        Instant sentAt =
+                Instant.parse("2026-08-26T10:05:00Z");
+
+        Instant processedAt =
+                Instant.parse("2026-08-26T10:05:01Z");
+
+        message.setSentAt(sentAt);
+        message.setProcessedAt(processedAt);
 
         stubMessageFound();
 
@@ -687,6 +1117,11 @@ class MessageServiceTest {
         );
 
         assertEquals(
+                MessageProcessingStatus.PROCESSED,
+                message.getProcessingStatus()
+        );
+
+        assertEquals(
                 MessageDeliveryStatus.SENT,
                 message.getDeliveryStatus()
         );
@@ -694,6 +1129,16 @@ class MessageServiceTest {
         assertEquals(
                 "telegram-message-123",
                 message.getExternalId()
+        );
+
+        assertEquals(
+                sentAt,
+                message.getSentAt()
+        );
+
+        assertEquals(
+                processedAt,
+                message.getProcessedAt()
         );
 
         verify(messageRepository, never())
@@ -711,7 +1156,7 @@ class MessageServiceTest {
         );
 
         message.setProcessingStatus(
-                MessageProcessingStatus.QUEUED
+                MessageProcessingStatus.PROCESSED
         );
 
         message.setDeliveryStatus(
@@ -744,7 +1189,7 @@ class MessageServiceTest {
         );
 
         message.setProcessingStatus(
-                MessageProcessingStatus.QUEUED
+                MessageProcessingStatus.PROCESSED
         );
 
         message.setDeliveryStatus(
@@ -753,8 +1198,25 @@ class MessageServiceTest {
 
         stubMessageFound();
 
-        messageService.markDelivered(
-                message.getId()
+        when(messageRepository.save(message))
+                .thenReturn(message);
+
+        when(messageMapper.toDto(message))
+                .thenReturn(expectedDto);
+
+        MessageDto result =
+                messageService.markDelivered(
+                        message.getId()
+                );
+
+        assertSame(
+                expectedDto,
+                result
+        );
+
+        assertEquals(
+                MessageProcessingStatus.PROCESSED,
+                message.getProcessingStatus()
         );
 
         assertEquals(
@@ -765,88 +1227,263 @@ class MessageServiceTest {
         assertNotNull(
                 message.getDeliveredAt()
         );
+
+        verify(messageRepository)
+                .save(message);
+
+        verify(messageMapper)
+                .toDto(message);
     }
 
     @Test
-    void markRead_sentMessage_changesDeliveryToRead() {
+    void markDelivered_inboundMessage_throwsException() {
 
-        message.setDirection(MessageDirection.OUTBOUND);
-        message.setProcessingStatus(
-                MessageProcessingStatus.PROCESSED
+        message.setDirection(
+                MessageDirection.INBOUND
         );
+
         message.setDeliveryStatus(
                 MessageDeliveryStatus.SENT
         );
 
         stubMessageFound();
 
-        messageService.markRead(message.getId());
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageService.markDelivered(
+                        message.getId()
+                )
+        );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
+    }
+
+    @Test
+    void markRead_sentMessage_changesDeliveryToRead() {
+
+        message.setDirection(
+                MessageDirection.OUTBOUND
+        );
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.PROCESSED
+        );
+
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.SENT
+        );
+
+        stubMessageFound();
+
+        when(messageRepository.save(message))
+                .thenReturn(message);
+
+        when(messageMapper.toDto(message))
+                .thenReturn(expectedDto);
+
+        MessageDto result =
+                messageService.markRead(
+                        message.getId()
+                );
+
+        assertSame(
+                expectedDto,
+                result
+        );
+
+        assertEquals(
+                MessageProcessingStatus.PROCESSED,
+                message.getProcessingStatus()
+        );
 
         assertEquals(
                 MessageDeliveryStatus.READ,
                 message.getDeliveryStatus()
         );
 
-        assertNotNull(message.getReadAt());
+        assertNotNull(
+                message.getReadAt()
+        );
+
+        verify(messageRepository)
+                .save(message);
+
+        verify(messageMapper)
+                .toDto(message);
     }
 
     @Test
     void markRead_deliveredMessage_changesDeliveryToRead() {
 
-        message.setDirection(MessageDirection.OUTBOUND);
+        message.setDirection(
+                MessageDirection.OUTBOUND
+        );
+
         message.setProcessingStatus(
                 MessageProcessingStatus.PROCESSED
         );
+
         message.setDeliveryStatus(
                 MessageDeliveryStatus.DELIVERED
         );
 
         stubMessageFound();
 
-        messageService.markRead(message.getId());
+        when(messageRepository.save(message))
+                .thenReturn(message);
+
+        when(messageMapper.toDto(message))
+                .thenReturn(expectedDto);
+
+        messageService.markRead(
+                message.getId()
+        );
+
+        assertEquals(
+                MessageProcessingStatus.PROCESSED,
+                message.getProcessingStatus()
+        );
 
         assertEquals(
                 MessageDeliveryStatus.READ,
                 message.getDeliveryStatus()
         );
 
-        assertNotNull(message.getReadAt());
+        assertNotNull(
+                message.getReadAt()
+        );
+
+        verify(messageRepository)
+                .save(message);
     }
 
     @Test
-    void markDeliveryFailed_pendingMessage_changesDeliveryToFailed() {
+    void markRead_inboundMessage_throwsException() {
 
-        message.setDirection(MessageDirection.OUTBOUND);
-        message.setDeliveryStatus(
-                MessageDeliveryStatus.PENDING
+        message.setDirection(
+                MessageDirection.INBOUND
         );
 
-        stubMessageFound();
-
-        messageService.markDeliveryFailed(message.getId());
-
-        assertEquals(
-                MessageDeliveryStatus.FAILED,
-                message.getDeliveryStatus()
-        );
-    }
-
-    @Test
-    void markDeliveryFailed_sentMessage_changesDeliveryToFailed() {
-
-        message.setDirection(MessageDirection.OUTBOUND);
         message.setDeliveryStatus(
                 MessageDeliveryStatus.SENT
         );
 
         stubMessageFound();
 
-        messageService.markDeliveryFailed(message.getId());
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageService.markRead(
+                        message.getId()
+                )
+        );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
+    }
+
+    @Test
+    void markDeliveryFailed_pendingMessage_changesDeliveryToFailed() {
+
+        message.setDirection(
+                MessageDirection.OUTBOUND
+        );
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.QUEUED
+        );
+
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.PENDING
+        );
+
+        stubMessageFound();
+
+        when(messageRepository.save(message))
+                .thenReturn(message);
+
+        when(messageMapper.toDto(message))
+                .thenReturn(expectedDto);
+
+        MessageDto result =
+                messageService.markDeliveryFailed(
+                        message.getId()
+                );
+
+        assertSame(
+                expectedDto,
+                result
+        );
+
+        assertEquals(
+                MessageProcessingStatus.PROCESSED,
+                message.getProcessingStatus()
+        );
 
         assertEquals(
                 MessageDeliveryStatus.FAILED,
                 message.getDeliveryStatus()
         );
+
+        assertNotNull(
+                message.getProcessedAt()
+        );
+
+        verify(messageRepository)
+                .save(message);
+
+        verify(messageMapper)
+                .toDto(message);
+    }
+
+    @Test
+    void markDeliveryFailed_sentMessage_changesDeliveryToFailed() {
+
+        message.setDirection(
+                MessageDirection.OUTBOUND
+        );
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.PROCESSED
+        );
+
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.SENT
+        );
+
+        stubMessageFound();
+
+        when(messageRepository.save(message))
+                .thenReturn(message);
+
+        when(messageMapper.toDto(message))
+                .thenReturn(expectedDto);
+
+        MessageDto result =
+                messageService.markDeliveryFailed(
+                        message.getId()
+                );
+
+        assertSame(
+                expectedDto,
+                result
+        );
+
+        assertEquals(
+                MessageProcessingStatus.PROCESSED,
+                message.getProcessingStatus()
+        );
+
+        assertEquals(
+                MessageDeliveryStatus.FAILED,
+                message.getDeliveryStatus()
+        );
+
+        verify(messageRepository)
+                .save(message);
+
+        verify(messageMapper)
+                .toDto(message);
     }
 
     // ============================================================
@@ -856,7 +1493,14 @@ class MessageServiceTest {
     @Test
     void markDelivered_pendingMessage_throwsException() {
 
-        message.setDirection(MessageDirection.OUTBOUND);
+        message.setDirection(
+                MessageDirection.OUTBOUND
+        );
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.PROCESSED
+        );
+
         message.setDeliveryStatus(
                 MessageDeliveryStatus.PENDING
         );
@@ -865,14 +1509,26 @@ class MessageServiceTest {
 
         assertThrows(
                 IllegalStateException.class,
-                () -> messageService.markDelivered(message.getId())
+                () -> messageService.markDelivered(
+                        message.getId()
+                )
         );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
     }
 
     @Test
     void markRead_pendingMessage_throwsException() {
 
-        message.setDirection(MessageDirection.OUTBOUND);
+        message.setDirection(
+                MessageDirection.OUTBOUND
+        );
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.PROCESSED
+        );
+
         message.setDeliveryStatus(
                 MessageDeliveryStatus.PENDING
         );
@@ -881,14 +1537,26 @@ class MessageServiceTest {
 
         assertThrows(
                 IllegalStateException.class,
-                () -> messageService.markRead(message.getId())
+                () -> messageService.markRead(
+                        message.getId()
+                )
         );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
     }
 
     @Test
     void markDeliveryFailed_deliveredMessage_throwsException() {
 
-        message.setDirection(MessageDirection.OUTBOUND);
+        message.setDirection(
+                MessageDirection.OUTBOUND
+        );
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.PROCESSED
+        );
+
         message.setDeliveryStatus(
                 MessageDeliveryStatus.DELIVERED
         );
@@ -897,14 +1565,26 @@ class MessageServiceTest {
 
         assertThrows(
                 IllegalStateException.class,
-                () -> messageService.markDeliveryFailed(message.getId())
+                () -> messageService.markDeliveryFailed(
+                        message.getId()
+                )
         );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
     }
 
     @Test
     void markDeliveryFailed_readMessage_throwsException() {
 
-        message.setDirection(MessageDirection.OUTBOUND);
+        message.setDirection(
+                MessageDirection.OUTBOUND
+        );
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.PROCESSED
+        );
+
         message.setDeliveryStatus(
                 MessageDeliveryStatus.READ
         );
@@ -913,8 +1593,13 @@ class MessageServiceTest {
 
         assertThrows(
                 IllegalStateException.class,
-                () -> messageService.markDeliveryFailed(message.getId())
+                () -> messageService.markDeliveryFailed(
+                        message.getId()
+                )
         );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
     }
 
     // ============================================================
@@ -924,7 +1609,14 @@ class MessageServiceTest {
     @Test
     void markDelivered_deliveredMessage_isIdempotent() {
 
-        message.setDirection(MessageDirection.OUTBOUND);
+        message.setDirection(
+                MessageDirection.OUTBOUND
+        );
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.PROCESSED
+        );
+
         message.setDeliveryStatus(
                 MessageDeliveryStatus.DELIVERED
         );
@@ -936,7 +1628,12 @@ class MessageServiceTest {
 
         stubMessageFound();
 
-        messageService.markDelivered(message.getId());
+        when(messageMapper.toDto(message))
+                .thenReturn(expectedDto);
+
+        messageService.markDelivered(
+                message.getId()
+        );
 
         assertEquals(
                 MessageDeliveryStatus.DELIVERED,
@@ -947,12 +1644,22 @@ class MessageServiceTest {
                 deliveredAt,
                 message.getDeliveredAt()
         );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
     }
 
     @Test
     void markRead_readMessage_isIdempotent() {
 
-        message.setDirection(MessageDirection.OUTBOUND);
+        message.setDirection(
+                MessageDirection.OUTBOUND
+        );
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.PROCESSED
+        );
+
         message.setDeliveryStatus(
                 MessageDeliveryStatus.READ
         );
@@ -964,7 +1671,12 @@ class MessageServiceTest {
 
         stubMessageFound();
 
-        messageService.markRead(message.getId());
+        when(messageMapper.toDto(message))
+                .thenReturn(expectedDto);
+
+        messageService.markRead(
+                message.getId()
+        );
 
         assertEquals(
                 MessageDeliveryStatus.READ,
@@ -975,63 +1687,107 @@ class MessageServiceTest {
                 readAt,
                 message.getReadAt()
         );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
     }
 
     @Test
     void markDeliveryFailed_failedMessage_isIdempotent() {
 
-        message.setDirection(MessageDirection.OUTBOUND);
+        message.setDirection(
+                MessageDirection.OUTBOUND
+        );
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.PROCESSED
+        );
+
         message.setDeliveryStatus(
                 MessageDeliveryStatus.FAILED
         );
 
+        Instant processedAt =
+                Instant.parse("2026-08-26T10:05:00Z");
+
+        message.setProcessedAt(processedAt);
+
         stubMessageFound();
 
-        messageService.markDeliveryFailed(message.getId());
+        when(messageMapper.toDto(message))
+                .thenReturn(expectedDto);
+
+        messageService.markDeliveryFailed(
+                message.getId()
+        );
+
+        assertEquals(
+                MessageProcessingStatus.PROCESSED,
+                message.getProcessingStatus()
+        );
 
         assertEquals(
                 MessageDeliveryStatus.FAILED,
                 message.getDeliveryStatus()
         );
+
+        assertEquals(
+                processedAt,
+                message.getProcessedAt()
+        );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
     }
+
     // ============================================================
-    // MarkReadUpTo
+    // MARK READ UP TO
     // ============================================================
+
     @Test
     void markReadUpTo_marksSentOutboundMessagesUpToWatermarkAsRead() {
-        UUID conversationId =
-                UUID.fromString("11111111-1111-1111-1111-111111111111");
 
-        ConversationEntity conversation = new ConversationEntity();
+        UUID conversationId =
+                UUID.fromString(
+                        "11111111-1111-1111-1111-111111111111"
+                );
+
+        ConversationEntity conversation =
+                new ConversationEntity();
+
         conversation.setId(conversationId);
 
-        MessageEntity message101 = message(
-                conversation,
-                "101",
-                MessageDirection.OUTBOUND,
-                MessageDeliveryStatus.SENT
-        );
+        MessageEntity message101 =
+                message(
+                        conversation,
+                        "101",
+                        MessageDirection.OUTBOUND,
+                        MessageDeliveryStatus.SENT
+                );
 
-        MessageEntity message102 = message(
-                conversation,
-                "102",
-                MessageDirection.OUTBOUND,
-                MessageDeliveryStatus.SENT
-        );
+        MessageEntity message102 =
+                message(
+                        conversation,
+                        "102",
+                        MessageDirection.OUTBOUND,
+                        MessageDeliveryStatus.SENT
+                );
 
-        MessageEntity message105 = message(
-                conversation,
-                "105",
-                MessageDirection.OUTBOUND,
-                MessageDeliveryStatus.SENT
-        );
+        MessageEntity message105 =
+                message(
+                        conversation,
+                        "105",
+                        MessageDirection.OUTBOUND,
+                        MessageDeliveryStatus.SENT
+                );
 
-        MessageEntity message106 = message(
-                conversation,
-                "106",
-                MessageDirection.OUTBOUND,
-                MessageDeliveryStatus.SENT
-        );
+        MessageEntity message106 =
+                message(
+                        conversation,
+                        "106",
+                        MessageDirection.OUTBOUND,
+                        MessageDeliveryStatus.SENT
+                );
 
         when(conversationRepository.findById(conversationId))
                 .thenReturn(Optional.of(conversation));
@@ -1086,39 +1842,48 @@ class MessageServiceTest {
 
     @Test
     void markReadUpTo_ignoresInvalidExternalIds() {
-        UUID conversationId =
-                UUID.fromString("11111111-1111-1111-1111-111111111111");
 
-        ConversationEntity conversation = new ConversationEntity();
+        UUID conversationId =
+                UUID.fromString(
+                        "11111111-1111-1111-1111-111111111111"
+                );
+
+        ConversationEntity conversation =
+                new ConversationEntity();
+
         conversation.setId(conversationId);
 
-        MessageEntity nullExternalId = message(
-                conversation,
-                null,
-                MessageDirection.OUTBOUND,
-                MessageDeliveryStatus.SENT
-        );
+        MessageEntity nullExternalId =
+                message(
+                        conversation,
+                        null,
+                        MessageDirection.OUTBOUND,
+                        MessageDeliveryStatus.SENT
+                );
 
-        MessageEntity blankExternalId = message(
-                conversation,
-                "   ",
-                MessageDirection.OUTBOUND,
-                MessageDeliveryStatus.SENT
-        );
+        MessageEntity blankExternalId =
+                message(
+                        conversation,
+                        "   ",
+                        MessageDirection.OUTBOUND,
+                        MessageDeliveryStatus.SENT
+                );
 
-        MessageEntity invalidExternalId = message(
-                conversation,
-                "telegram-message-id",
-                MessageDirection.OUTBOUND,
-                MessageDeliveryStatus.SENT
-        );
+        MessageEntity invalidExternalId =
+                message(
+                        conversation,
+                        "telegram-message-id",
+                        MessageDirection.OUTBOUND,
+                        MessageDeliveryStatus.SENT
+                );
 
-        MessageEntity validMessage = message(
-                conversation,
-                "100",
-                MessageDirection.OUTBOUND,
-                MessageDeliveryStatus.SENT
-        );
+        MessageEntity validMessage =
+                message(
+                        conversation,
+                        "100",
+                        MessageDirection.OUTBOUND,
+                        MessageDeliveryStatus.SENT
+                );
 
         when(conversationRepository.findById(conversationId))
                 .thenReturn(Optional.of(conversation));
@@ -1169,12 +1934,20 @@ class MessageServiceTest {
 
     @Test
     void markReadUpTo_doesNothingWhenWatermarkIsInvalid() {
+
         UUID conversationId =
-                UUID.fromString("11111111-1111-1111-1111-111111111111");
+                UUID.fromString(
+                        "11111111-1111-1111-1111-111111111111"
+                );
 
         messageService.markReadUpTo(
                 conversationId,
                 0
+        );
+
+        messageService.markReadUpTo(
+                conversationId,
+                -1
         );
 
         verifyNoInteractions(
@@ -1185,10 +1958,15 @@ class MessageServiceTest {
 
     @Test
     void markReadUpTo_doesNothingWhenNoSentMessagesExist() {
-        UUID conversationId =
-                UUID.fromString("11111111-1111-1111-1111-111111111111");
 
-        ConversationEntity conversation = new ConversationEntity();
+        UUID conversationId =
+                UUID.fromString(
+                        "11111111-1111-1111-1111-111111111111"
+                );
+
+        ConversationEntity conversation =
+                new ConversationEntity();
+
         conversation.setId(conversationId);
 
         when(conversationRepository.findById(conversationId))
@@ -1213,25 +1991,32 @@ class MessageServiceTest {
 
     @Test
     void markReadUpTo_doesNotMarkMessagesAboveWatermark() {
-        UUID conversationId =
-                UUID.fromString("11111111-1111-1111-1111-111111111111");
 
-        ConversationEntity conversation = new ConversationEntity();
+        UUID conversationId =
+                UUID.fromString(
+                        "11111111-1111-1111-1111-111111111111"
+                );
+
+        ConversationEntity conversation =
+                new ConversationEntity();
+
         conversation.setId(conversationId);
 
-        MessageEntity message106 = message(
-                conversation,
-                "106",
-                MessageDirection.OUTBOUND,
-                MessageDeliveryStatus.SENT
-        );
+        MessageEntity message106 =
+                message(
+                        conversation,
+                        "106",
+                        MessageDirection.OUTBOUND,
+                        MessageDeliveryStatus.SENT
+                );
 
-        MessageEntity message200 = message(
-                conversation,
-                "200",
-                MessageDirection.OUTBOUND,
-                MessageDeliveryStatus.SENT
-        );
+        MessageEntity message200 =
+                message(
+                        conversation,
+                        "200",
+                        MessageDirection.OUTBOUND,
+                        MessageDeliveryStatus.SENT
+                );
 
         when(conversationRepository.findById(conversationId))
                 .thenReturn(Optional.of(conversation));
@@ -1269,26 +2054,66 @@ class MessageServiceTest {
     }
 
     @Test
-    void markReadUpTo_usesSameReadTimestampForAllMessages() {
-        UUID conversationId =
-                UUID.fromString("11111111-1111-1111-1111-111111111111");
+    void markReadUpTo_unknownConversation_throwsException() {
 
-        ConversationEntity conversation = new ConversationEntity();
+        UUID conversationId =
+                UUID.fromString(
+                        "11111111-1111-1111-1111-111111111111"
+                );
+
+        when(conversationRepository.findById(conversationId))
+                .thenReturn(Optional.empty());
+
+        assertThrows(
+                EntityNotFoundException.class,
+                () -> messageService.markReadUpTo(
+                        conversationId,
+                        105
+                )
+        );
+
+        verify(conversationRepository)
+                .findById(conversationId);
+
+        verify(messageRepository, never())
+                .findAllByConversationIdAndDirectionAndDeliveryStatus(
+                        any(),
+                        any(),
+                        any()
+                );
+
+        verify(messageRepository, never())
+                .saveAll(anyList());
+    }
+
+    @Test
+    void markReadUpTo_usesSameReadTimestampForAllMessages() {
+
+        UUID conversationId =
+                UUID.fromString(
+                        "11111111-1111-1111-1111-111111111111"
+                );
+
+        ConversationEntity conversation =
+                new ConversationEntity();
+
         conversation.setId(conversationId);
 
-        MessageEntity message101 = message(
-                conversation,
-                "101",
-                MessageDirection.OUTBOUND,
-                MessageDeliveryStatus.SENT
-        );
+        MessageEntity message101 =
+                message(
+                        conversation,
+                        "101",
+                        MessageDirection.OUTBOUND,
+                        MessageDeliveryStatus.SENT
+                );
 
-        MessageEntity message102 = message(
-                conversation,
-                "102",
-                MessageDirection.OUTBOUND,
-                MessageDeliveryStatus.SENT
-        );
+        MessageEntity message102 =
+                message(
+                        conversation,
+                        "102",
+                        MessageDirection.OUTBOUND,
+                        MessageDeliveryStatus.SENT
+                );
 
         when(conversationRepository.findById(conversationId))
                 .thenReturn(Optional.of(conversation));
@@ -1317,6 +2142,350 @@ class MessageServiceTest {
 
         assertThat(message101.getReadAt())
                 .isEqualTo(message102.getReadAt());
+
+        verify(messageRepository)
+                .saveAll(List.of(
+                        message101,
+                        message102
+                ));
+    }
+
+// ============================================================
+// RETRY DELIVERY
+// ============================================================
+
+    @Test
+    void retryDelivery_failedOutboundMessage_changesStateToProcessingPending() {
+
+        message.setDirection(
+                MessageDirection.OUTBOUND
+        );
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.PROCESSED
+        );
+
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.FAILED
+        );
+
+        message.setExternalId(
+                "telegram-message-123"
+        );
+
+        Instant sentAt =
+                Instant.parse("2026-08-26T10:05:00Z");
+
+        Instant deliveredAt =
+                Instant.parse("2026-08-26T10:06:00Z");
+
+        Instant readAt =
+                Instant.parse("2026-08-26T10:07:00Z");
+
+        message.setSentAt(sentAt);
+        message.setDeliveredAt(deliveredAt);
+        message.setReadAt(readAt);
+        message.setProcessedAt(
+                Instant.parse("2026-08-26T10:05:01Z")
+        );
+
+        stubMessageFound();
+
+        when(messageRepository.save(message))
+                .thenReturn(message);
+
+        when(messageMapper.toDto(message))
+                .thenReturn(expectedDto);
+
+        MessageDto result =
+                messageService.retryDelivery(
+                        message.getId()
+                );
+
+        assertSame(
+                expectedDto,
+                result
+        );
+
+        assertEquals(
+                MessageProcessingStatus.PROCESSING,
+                message.getProcessingStatus()
+        );
+
+        assertEquals(
+                MessageDeliveryStatus.PENDING,
+                message.getDeliveryStatus()
+        );
+
+        assertEquals(
+                "telegram-message-123",
+                message.getExternalId()
+        );
+
+        assertEquals(
+                sentAt,
+                message.getSentAt()
+        );
+
+        assertEquals(
+                deliveredAt,
+                message.getDeliveredAt()
+        );
+
+        assertEquals(
+                readAt,
+                message.getReadAt()
+        );
+
+        assertNull(
+                message.getProcessedAt()
+        );
+
+        verify(messageRepository)
+                .save(message);
+
+        verify(messageMapper)
+                .toDto(message);
+    }
+
+    @Test
+    void retryDelivery_inboundMessage_throwsException() {
+
+        message.setDirection(
+                MessageDirection.INBOUND
+        );
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.PROCESSED
+        );
+
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.FAILED
+        );
+
+        stubMessageFound();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageService.retryDelivery(
+                        message.getId()
+                )
+        );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
+
+        verifyNoInteractions(messageMapper);
+    }
+
+    @Test
+    void retryDelivery_processingStatusIsNotProcessed_throwsException() {
+
+        message.setDirection(
+                MessageDirection.OUTBOUND
+        );
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.PROCESSING
+        );
+
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.FAILED
+        );
+
+        stubMessageFound();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageService.retryDelivery(
+                        message.getId()
+                )
+        );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
+
+        verifyNoInteractions(messageMapper);
+    }
+
+    @Test
+    void retryDelivery_deliveryStatusIsNotFailed_throwsException() {
+
+        message.setDirection(
+                MessageDirection.OUTBOUND
+        );
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.PROCESSED
+        );
+
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.SENT
+        );
+
+        stubMessageFound();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageService.retryDelivery(
+                        message.getId()
+                )
+        );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
+
+        verifyNoInteractions(messageMapper);
+    }
+
+    @Test
+    void retryDelivery_deliveredMessage_throwsException() {
+
+        message.setDirection(
+                MessageDirection.OUTBOUND
+        );
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.PROCESSED
+        );
+
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.DELIVERED
+        );
+
+        stubMessageFound();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageService.retryDelivery(
+                        message.getId()
+                )
+        );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
+
+        verifyNoInteractions(messageMapper);
+    }
+
+    @Test
+    void retryDelivery_readMessage_throwsException() {
+
+        message.setDirection(
+                MessageDirection.OUTBOUND
+        );
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.PROCESSED
+        );
+
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.READ
+        );
+
+        stubMessageFound();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageService.retryDelivery(
+                        message.getId()
+                )
+        );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
+
+        verifyNoInteractions(messageMapper);
+    }
+
+    @Test
+    void retryDelivery_receivedMessage_throwsException() {
+
+        message.setDirection(
+                MessageDirection.OUTBOUND
+        );
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.RECEIVED
+        );
+
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.FAILED
+        );
+
+        stubMessageFound();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageService.retryDelivery(
+                        message.getId()
+                )
+        );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
+
+        verifyNoInteractions(messageMapper);
+    }
+
+    @Test
+    void retryDelivery_queuedMessage_throwsException() {
+
+        message.setDirection(
+                MessageDirection.OUTBOUND
+        );
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.QUEUED
+        );
+
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.FAILED
+        );
+
+        stubMessageFound();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageService.retryDelivery(
+                        message.getId()
+                )
+        );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
+
+        verifyNoInteractions(messageMapper);
+    }
+
+    @Test
+    void retryDelivery_failedProcessingStatus_throwsException() {
+
+        message.setDirection(
+                MessageDirection.OUTBOUND
+        );
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.FAILED
+        );
+
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.FAILED
+        );
+
+        stubMessageFound();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageService.retryDelivery(
+                        message.getId()
+                )
+        );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
+
+        verifyNoInteractions(messageMapper);
     }
 
     private MessageEntity message(
@@ -1325,12 +2494,16 @@ class MessageServiceTest {
             MessageDirection direction,
             MessageDeliveryStatus deliveryStatus
     ) {
-        MessageEntity message = new MessageEntity();
+        MessageEntity message =
+                new MessageEntity();
 
         message.setConversation(conversation);
         message.setExternalId(externalId);
         message.setDirection(direction);
         message.setDeliveryStatus(deliveryStatus);
+        message.setProcessingStatus(
+                MessageProcessingStatus.PROCESSED
+        );
 
         return message;
     }
