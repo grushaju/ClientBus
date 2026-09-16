@@ -2061,6 +2061,107 @@ class MessageProcessingServiceTest {
     }
 
     @Test
+    void retryOutbound_kafkaPublicationFails_marksDeliveryFailed() {
+
+        UUID messageId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID channelAccountId = UUID.randomUUID();
+
+        MessageEntity messageEntity = message(
+                messageId,
+                conversationId,
+                MessageDirection.OUTBOUND,
+                MessageProcessingStatus.PROCESSED,
+                MessageDeliveryStatus.FAILED
+        );
+
+        ChannelAccountEntity channelAccount =
+                mock(ChannelAccountEntity.class);
+
+        ChannelEntity channel =
+                mock(ChannelEntity.class);
+
+        ConversationEntity conversation =
+                mock(ConversationEntity.class);
+
+        MessageDto retriedMessage =
+                mock(MessageDto.class);
+
+        when(messageService.getMessageEntity(messageId))
+                .thenReturn(messageEntity);
+
+        when(messageService.retryDelivery(messageId))
+                .thenReturn(retriedMessage);
+
+        when(conversationService.findEntityForProcessing(
+                conversationId
+        )).thenReturn(conversation);
+
+        when(conversation.getChannelAccount())
+                .thenReturn(channelAccount);
+
+        when(channelAccount.getId())
+                .thenReturn(channelAccountId);
+
+        when(channelAccount.getChannel())
+                .thenReturn(channel);
+
+        when(channel.getType())
+                .thenReturn(ChannelType.TELEGRAM);
+
+        when(conversation.getClientAccount())
+                .thenReturn(clientAccount);
+
+        clientAccount.setExternalId("123456");
+
+        when(messageAttachmentService.getAttachmentsForProcessing(
+                messageId
+        )).thenReturn(List.of());
+
+        when(messageService.markQueued(messageId))
+                .thenReturn(retriedMessage);
+
+        doThrow(
+                new IllegalStateException(
+                        "Kafka outbound message publication failed"
+                )
+        ).when(outboundMessagePublisher)
+                .publish(
+                        eq(ChannelType.TELEGRAM),
+                        any(OutboundMessageKafkaCommand.class)
+                );
+
+        when(messageService.markDeliveryFailed(messageId))
+                .thenReturn(retriedMessage);
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageProcessingService.retryOutbound(messageId)
+        );
+
+        verify(messageService)
+                .getMessageEntity(messageId);
+
+        verify(messageService)
+                .retryDelivery(messageId);
+
+        verify(messageService)
+                .markQueued(messageId);
+
+        verify(outboundMessagePublisher)
+                .publish(
+                        eq(ChannelType.TELEGRAM),
+                        any(OutboundMessageKafkaCommand.class)
+                );
+
+        verify(messageService)
+                .markDeliveryFailed(messageId);
+
+        verify(messageService, never())
+                .markProcessingFailed(messageId);
+    }
+
+    @Test
     void retryOutbound_failureBeforeQueued_marksProcessingFailed() {
 
         UUID messageId = UUID.randomUUID();
