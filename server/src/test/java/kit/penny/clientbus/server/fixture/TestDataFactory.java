@@ -1,9 +1,13 @@
 package kit.penny.clientbus.server.fixture;
 
 import kit.penny.clientbus.common.enums.ChannelType;
+import kit.penny.clientbus.common.enums.MessageAttachmentType;
 import kit.penny.clientbus.common.enums.UserRole;
 import kit.penny.clientbus.server.persistence.entity.*;
+import kit.penny.clientbus.server.service.AttachmentContent;
 
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 public final class TestDataFactory {
@@ -18,9 +22,12 @@ public final class TestDataFactory {
         );
     }
 
-    public static WorkspaceEntity workspace(OrganizationEntity organization) {
+    public static WorkspaceEntity workspace(
+            OrganizationEntity organization
+    ) {
 
-        return new WorkspaceEntity(organization,
+        return new WorkspaceEntity(
+                organization,
                 "Test Workspace " + UUID.randomUUID()
         );
     }
@@ -30,7 +37,10 @@ public final class TestDataFactory {
             String name
     ) {
 
-        return new WorkspaceEntity(organization, name);
+        return new WorkspaceEntity(
+                organization,
+                name
+        );
     }
 
     public static ClientEntity client(
@@ -136,6 +146,7 @@ public final class TestDataFactory {
     public static ChannelEntity channel(
             WorkspaceEntity workspace
     ) {
+
         return new ChannelEntity(
                 workspace,
                 ChannelType.TELEGRAM,
@@ -148,6 +159,7 @@ public final class TestDataFactory {
             ChannelType channelType,
             String name
     ) {
+
         return new ChannelEntity(
                 workspace,
                 channelType,
@@ -158,6 +170,7 @@ public final class TestDataFactory {
     public static ChannelAccountEntity channelAccount(
             ChannelEntity channel
     ) {
+
         return new ChannelAccountEntity(
                 channel,
                 "channel-external-id",
@@ -174,6 +187,7 @@ public final class TestDataFactory {
             String phone,
             String displayName
     ) {
+
         return new ChannelAccountEntity(
                 channel,
                 externalId,
@@ -188,10 +202,43 @@ public final class TestDataFactory {
             ChannelAccountEntity channelAccount,
             ClientAccountEntity clientAccount
     ) {
+
         return new ConversationEntity(
                 workspace,
                 channelAccount,
                 clientAccount
+        );
+    }
+
+    public static AttachmentContent attachmentContent() {
+
+        byte[] content =
+                "test-image-content".getBytes(
+                        StandardCharsets.UTF_8
+                );
+
+        return new AttachmentContent(
+                MessageAttachmentType.IMAGE,
+                "test-image.jpg",
+                "image/jpeg",
+                content.length,
+                new ByteArrayInputStream(content)
+        );
+    }
+
+    public static AttachmentContent attachmentContent(
+            MessageAttachmentType type,
+            String fileName,
+            String contentType,
+            byte[] content
+    ) {
+
+        return new AttachmentContent(
+                type,
+                fileName,
+                contentType,
+                content.length,
+                new ByteArrayInputStream(content)
         );
     }
 }

@@ -19,6 +19,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
+import java.util.UUID;
 
 @Component
 public class TelegramChannelConnector implements IChannelConnector {
@@ -51,7 +52,6 @@ public class TelegramChannelConnector implements IChannelConnector {
         TelegramClient telegramClient =
                 context.telegramClient();
 
-
         return switch (request.type()) {
             case TEXT -> sendText(
                     telegramClient,
@@ -83,13 +83,6 @@ public class TelegramChannelConnector implements IChannelConnector {
             long chatId,
             ChannelSendRequest request
     ) {
-        if (request.content() == null
-                || request.content().isBlank()) {
-            throw new IllegalArgumentException(
-                    "Telegram text message content must not be blank"
-            );
-        }
-
         TdApi.InputMessageText content =
                 new TdApi.InputMessageText(
                         new TdApi.FormattedText(
@@ -174,10 +167,12 @@ public class TelegramChannelConnector implements IChannelConnector {
                 );
             }
 
-            temporaryFile = Files.createTempFile(
-                    "clientbus-telegram-",
-                    getFileSuffix(attachment.fileName())
-            );
+            temporaryFile =
+                    createTemporaryFile(
+                            request.channelAccountId(),
+                            request.messageId(),
+                            attachment.fileName()
+                    );
 
             Files.copy(
                     inputStream,
@@ -208,37 +203,69 @@ public class TelegramChannelConnector implements IChannelConnector {
                             ))
                             .getObjectOrThrow();
 
+            /*
+             * IMPORTANT:
+             *
+             * message.id is TDLib's temporary outgoing message ID.
+             *
+             * The temporary file MUST NOT be deleted here.
+             * TDLib can still need it after SendMessage returns.
+             *
+             * The file is deleted by TelegramMessageSendListener
+             * after UpdateMessageSendSucceeded or
+             * UpdateMessageSendFailed.
+             */
             return new ConnectorSendResult(
                     String.valueOf(message.id)
             );
 
         } catch (IOException e) {
+            deleteTemporaryFile(temporaryFile);
+
             throw new IllegalStateException(
                     "Failed to prepare Telegram attachment",
                     e
             );
-        } finally {
+        } catch (RuntimeException e) {
             deleteTemporaryFile(temporaryFile);
+
+            throw e;
         }
+    }
+
+    private Path createTemporaryFile(
+            UUID channelAccountId,
+            UUID messageId,
+            String fileName
+    ) throws IOException {
+
+        String suffix =
+                getFileSuffix(fileName);
+
+        return Files.createTempFile(
+                "clientbus-telegram-"
+                        + channelAccountId
+                        + "-"
+                        + messageId
+                        + "-",
+                suffix
+        );
     }
 
     private TdApi.InputMessageContent createImageContent(
             TdApi.InputFileLocal inputFile,
             ChannelSendRequest request
     ) {
+        TdApi.InputPhoto inputPhoto =
+                new TdApi.InputPhoto(
+                        inputFile,
+                        null,
+                        null,
+                        new int[0],
+                        0,
+                        0
+                );
 
-        TdApi.InputPhoto inputPhoto = new TdApi.InputPhoto(
-                inputFile,
-                null,
-                null,
-                new int[0],
-                0,
-                0
-        );
-        /*
-         * Use the constructor of InputMessagePhoto from the exact
-         * TDLib version used by ClientBus.
-         */
         return new TdApi.InputMessagePhoto(
                 inputPhoto,
                 toFormattedText(request.content()),
@@ -252,17 +279,15 @@ public class TelegramChannelConnector implements IChannelConnector {
             TdApi.InputFileLocal inputFile,
             ChannelSendRequest request
     ) {
-        TdApi.InputAudio inputAudio = new TdApi.InputAudio(
-                inputFile,
-                null,
-                0,
-                "",
-                ""
-        );
-        /*
-         * Use the constructor of InputMessageAudio from the exact
-         * TDLib version used by ClientBus.
-         */
+        TdApi.InputAudio inputAudio =
+                new TdApi.InputAudio(
+                        inputFile,
+                        null,
+                        0,
+                        "",
+                        ""
+                );
+
         return new TdApi.InputMessageAudio(
                 inputAudio,
                 toFormattedText(request.content())
@@ -300,14 +325,16 @@ public class TelegramChannelConnector implements IChannelConnector {
             return ".tmp";
         }
 
-        int dotIndex = fileName.lastIndexOf('.');
+        int dotIndex =
+                fileName.lastIndexOf('.');
 
         if (dotIndex < 0
                 || dotIndex == fileName.length() - 1) {
             return ".tmp";
         }
 
-        String suffix = fileName.substring(dotIndex);
+        String suffix =
+                fileName.substring(dotIndex);
 
         if (suffix.length() > 16
                 || !suffix.matches("\\.[A-Za-z0-9]+")) {
@@ -317,23 +344,25 @@ public class TelegramChannelConnector implements IChannelConnector {
         return suffix;
     }
 
-    private void deleteTemporaryFile(Path temporaryFile) {
+    private void deleteTemporaryFile(
+            Path temporaryFile
+    ) {
         if (temporaryFile == null) {
             return;
         }
 
         try {
-            Files.deleteIfExists(temporaryFile);
-        } catch (IOException e) {
-            /*
-             * Do not turn a successful Telegram send into a Kafka retry
-             * solely because cleanup of the local temporary file failed.
-             */
-            // log warning here
+            Files.deleteIfExists(
+                    temporaryFile
+            );
+        } catch (IOException ignored) {
+            // Cleanup failure must not trigger another send attempt.
         }
     }
 
-    private void validateRequest(ChannelSendRequest request) {
+    private void validateRequest(
+            ChannelSendRequest request
+    ) {
         if (request == null) {
             throw new IllegalArgumentException(
                     "ChannelSendRequest must not be null"
@@ -343,6 +372,12 @@ public class TelegramChannelConnector implements IChannelConnector {
         if (request.channelAccountId() == null) {
             throw new IllegalArgumentException(
                     "channelAccountId must not be null"
+            );
+        }
+
+        if (request.messageId() == null) {
+            throw new IllegalArgumentException(
+                    "messageId must not be null"
             );
         }
 
@@ -360,6 +395,7 @@ public class TelegramChannelConnector implements IChannelConnector {
         }
 
         if (request.type() == MessageType.TEXT) {
+
             if (!request.attachments().isEmpty()) {
                 throw new IllegalArgumentException(
                         "Telegram TEXT message must not contain attachments"
@@ -404,6 +440,7 @@ public class TelegramChannelConnector implements IChannelConnector {
     ) {
         List<ChannelAttachment> attachments =
                 request.attachments();
+
         if (attachments.size() != 1) {
             throw new IllegalArgumentException(
                     "Telegram " + request.type()
@@ -435,8 +472,6 @@ public class TelegramChannelConnector implements IChannelConnector {
             );
         }
     }
-
-
 
     @FunctionalInterface
     private interface TelegramContentFactory {

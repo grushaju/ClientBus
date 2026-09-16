@@ -45,6 +45,33 @@ public class MessageService {
     }
 
     /**
+     * Получить Message с object-level Workspace ACL.
+     */
+    @Transactional
+    public MessageDto getMessage(
+            UUID messageId
+    ) {
+
+        MessageEntity message =
+                messageRepository.findById(messageId)
+                        .orElseThrow(() ->
+                                new EntityNotFoundException(
+                                        "Message not found: "
+                                                + messageId
+                                )
+                        );
+
+        currentUserService.requireWorkspaceAccess(
+                message.getConversation()
+                        .getWorkspace()
+                        .getId()
+        );
+
+        return messageMapper.toDto(message);
+    }
+
+
+    /**
      * Creates an inbound message received from a ChannelConnector.
      */
     @Transactional
@@ -250,7 +277,6 @@ public class MessageService {
         return messageMapper.toDto(message);
     }
 
-
     /**
      * Создаёт OUTBOUND Message как Forward
      * существующего Message.
@@ -292,9 +318,6 @@ public class MessageService {
 
         message.setClientAccount(null);
 
-        /*
-         * Forward сохраняет содержимое исходного сообщения.
-         */
         message.setContent(
                 sourceMessage.getContent()
         );
@@ -306,8 +329,8 @@ public class MessageService {
         /*
          * Это принципиально НЕ externalId источника.
          *
-         * externalId появится только после успешной
-         * отправки через ChannelConnector.
+         * externalId появится только после отправки
+         * через ChannelConnector.
          */
         message.setExternalId(null);
 
@@ -486,6 +509,105 @@ public class MessageService {
     }
 
     /**
+     * Registers the external platform message ID after the platform
+     * accepted the outbound send request.
+     *
+     * <p>
+     * This method does NOT mark the message as SENT.
+     * The message remains:
+     *
+     * <pre>
+     * processing = QUEUED
+     * delivery   = PENDING
+     * externalId = platform message ID
+     * </pre>
+     *
+     * <p>
+     * For Telegram this method is called immediately after
+     * SendMessage returns its TdApi.Message.
+     *
+     * <p>
+     * Actual delivery completion is handled asynchronously by
+     * UpdateMessageSendSucceeded / UpdateMessageSendFailed.
+     */
+    @Transactional
+    public MessageDto registerExternalId(
+            UUID messageId,
+            String externalId
+    ) {
+
+        MessageEntity message =
+                getMessageEntityForProcessing(messageId);
+
+        requireOutbound(message);
+
+        validateExternalId(externalId);
+
+        if (message.getProcessingStatus()
+                != MessageProcessingStatus.QUEUED) {
+
+            throw new IllegalStateException(
+                    "Message must be QUEUED before registering externalId: "
+                            + messageId
+            );
+        }
+
+        if (message.getDeliveryStatus()
+                != MessageDeliveryStatus.PENDING) {
+
+            throw new IllegalStateException(
+                    "Message must be PENDING before registering externalId: "
+                            + messageId
+            );
+        }
+
+        String currentExternalId =
+                message.getExternalId();
+
+        if (currentExternalId != null) {
+
+            if (currentExternalId.equals(externalId)) {
+
+                return messageMapper.toDto(message);
+            }
+
+            throw new IllegalStateException(
+                    "Message is already registered with another externalId: "
+                            + messageId
+            );
+        }
+
+        /*
+         * Защита от повторного externalId
+         * другого Message в Conversation.
+         */
+        messageRepository
+                .findByConversationIdAndExternalId(
+                        message.getConversation().getId(),
+                        externalId
+                )
+                .ifPresent(existing -> {
+
+                    if (!existing.getId()
+                            .equals(message.getId())) {
+
+                        throw new IllegalStateException(
+                                "Message with externalId already exists: "
+                                        + externalId
+                        );
+                    }
+                });
+
+        message.setExternalId(
+                externalId
+        );
+
+        return messageMapper.toDto(
+                messageRepository.save(message)
+        );
+    }
+
+    /**
      * QUEUED -> PROCESSED + SENT.
      * <p>
      * Вызывается только после подтверждения фактической
@@ -619,20 +741,14 @@ public class MessageService {
 
         requireOutbound(message);
 
-        MessageDeliveryStatus status =
-                message.getDeliveryStatus();
+        if (message.getDeliveryStatus()
+                == MessageDeliveryStatus.DELIVERED) {
 
-        /*
-         * Повторное DELIVERED не является ошибкой.
-         *
-         * Ничего не меняем и не сохраняем повторно,
-         * чтобы не перезаписать deliveredAt.
-         */
-        if (status == MessageDeliveryStatus.DELIVERED) {
             return messageMapper.toDto(message);
         }
 
-        if (status != MessageDeliveryStatus.SENT) {
+        if (message.getDeliveryStatus()
+                != MessageDeliveryStatus.SENT) {
 
             throw new IllegalStateException(
                     "Message must be SENT before DELIVERED: "
@@ -654,7 +770,7 @@ public class MessageService {
     }
 
     /**
-     * SENT / DELIVERED -> READ.
+     * SENT/DELIVERED -> READ.
      * <p>
      * Повторное получение READ является идемпотентным.
      */
@@ -668,21 +784,17 @@ public class MessageService {
 
         requireOutbound(message);
 
-        MessageDeliveryStatus status =
-                message.getDeliveryStatus();
+        if (message.getDeliveryStatus()
+                == MessageDeliveryStatus.READ) {
 
-        /*
-         * Повторное READ не является ошибкой.
-         *
-         * Ничего не меняем и не сохраняем повторно,
-         * чтобы не перезаписать readAt.
-         */
-        if (status == MessageDeliveryStatus.READ) {
             return messageMapper.toDto(message);
         }
 
-        if (status != MessageDeliveryStatus.SENT
-                && status != MessageDeliveryStatus.DELIVERED) {
+        MessageDeliveryStatus deliveryStatus =
+                message.getDeliveryStatus();
+
+        if (deliveryStatus != MessageDeliveryStatus.SENT
+                && deliveryStatus != MessageDeliveryStatus.DELIVERED) {
 
             throw new IllegalStateException(
                     "Message must be SENT or DELIVERED before READ: "
@@ -704,45 +816,37 @@ public class MessageService {
     }
 
     /**
-     * Помечает прочитанными все outbound-сообщения Conversation,
-     * для которых Telegram external message ID не превышает watermark.
-     *
-     * Telegram UpdateChatReadOutbox является watermark-событием:
-     * если пользователь прочитал сообщение N, все предыдущие
-     * исходящие сообщения этого чата с ID <= N также прочитаны.
+     * Marks all Telegram outbound messages up to the supplied
+     * Telegram message ID as READ.
      */
     @Transactional
     public void markReadUpTo(
             UUID conversationId,
             long lastReadOutboxMessageId
     ) {
-        if (lastReadOutboxMessageId <= 0) {
+
+        if (conversationId == null
+                || lastReadOutboxMessageId <= 0) {
+
             return;
         }
-
-        ConversationEntity conversation =
-                getConversation(conversationId);
 
         var messages =
                 messageRepository
                         .findAllByConversationIdAndDirectionAndDeliveryStatus(
-                                conversation.getId(),
+                                conversationId,
                                 MessageDirection.OUTBOUND,
                                 MessageDeliveryStatus.SENT
                         );
-
-        if (messages.isEmpty()) {
-            return;
-        }
-
-        Instant readAt = Instant.now();
 
         for (MessageEntity message : messages) {
 
             String externalId =
                     message.getExternalId();
 
-            if (externalId == null || externalId.isBlank()) {
+            if (externalId == null
+                    || externalId.isBlank()) {
+
                 continue;
             }
 
@@ -751,16 +855,19 @@ public class MessageService {
             try {
                 telegramMessageId =
                         Long.parseLong(externalId);
-            } catch (NumberFormatException ignored) {
+            } catch (NumberFormatException e) {
                 continue;
             }
 
             if (telegramMessageId <= lastReadOutboxMessageId) {
+
                 message.setDeliveryStatus(
                         MessageDeliveryStatus.READ
                 );
 
-                message.setReadAt(readAt);
+                message.setReadAt(
+                        Instant.now()
+                );
             }
         }
 
@@ -768,12 +875,20 @@ public class MessageService {
     }
 
     /**
-     * QUEUED -> PROCESSED + FAILED.
+     * Marks an outbound message as delivery failed.
+     *
      * <p>
-     * Вызывается после окончательного подтверждения
-     * ошибки отправки платформой.
+     * PENDING -> FAILED
+     * or
+     * SENT -> FAILED.
+     *
      * <p>
-     * Повторный FAILED является идемпотентным.
+     * If processing is still QUEUED, processing is completed
+     * at the same time because the asynchronous delivery attempt
+     * has reached its terminal state.
+     *
+     * <p>
+     * Repeated FAILED notification is idempotent.
      */
     @Transactional
     public MessageDto markDeliveryFailed(
@@ -785,43 +900,30 @@ public class MessageService {
 
         requireOutbound(message);
 
-        MessageDeliveryStatus deliveryStatus =
-                message.getDeliveryStatus();
-
-        MessageProcessingStatus processingStatus =
-                message.getProcessingStatus();
-
-        /*
-         * Уже FAILED — идемпотентный повтор.
-         */
-        if (deliveryStatus == MessageDeliveryStatus.FAILED) {
+        if (message.getDeliveryStatus()
+                == MessageDeliveryStatus.FAILED) {
 
             return messageMapper.toDto(message);
         }
 
-        /*
-         * Delivery failure допустим только
-         * для активной outbound-попытки.
-         */
+        MessageDeliveryStatus deliveryStatus =
+                message.getDeliveryStatus();
+
         if (deliveryStatus != MessageDeliveryStatus.PENDING
                 && deliveryStatus != MessageDeliveryStatus.SENT) {
 
             throw new IllegalStateException(
-                    "Message cannot be marked delivery FAILED "
-                            + "from status: "
-                            + deliveryStatus
+                    "Message must be PENDING or SENT before FAILED: "
+                            + messageId
             );
         }
 
-        /*
-         * Нормальный путь:
-         *
-         * QUEUED -> PROCESSED
-         *
-         * Если Kafka/connector упал уже после QUEUED,
-         * processing всё равно считается завершённым.
-         */
-        if (processingStatus == MessageProcessingStatus.QUEUED) {
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.FAILED
+        );
+
+        if (message.getProcessingStatus()
+                == MessageProcessingStatus.QUEUED) {
 
             message.setProcessingStatus(
                     MessageProcessingStatus.PROCESSED
@@ -831,19 +933,14 @@ public class MessageService {
                     Instant.now()
             );
 
-        } else if (processingStatus
+        } else if (message.getProcessingStatus()
                 != MessageProcessingStatus.PROCESSED) {
 
             throw new IllegalStateException(
-                    "Message must be QUEUED or PROCESSED "
-                            + "before delivery FAILED: "
+                    "Message must be QUEUED or PROCESSED before FAILED: "
                             + messageId
             );
         }
-
-        message.setDeliveryStatus(
-                MessageDeliveryStatus.FAILED
-        );
 
         return messageMapper.toDto(
                 messageRepository.save(message)
@@ -851,87 +948,153 @@ public class MessageService {
     }
 
     /**
-     * Повторная отправка сообщения со статусом FAILED
-     * @param messageId
-     * @return MessageDto
+     * Resets a failed outbound delivery for another send attempt.
+     *
+     * <p>
+     * PROCESSED + FAILED -> PROCESSING + PENDING
+     *
+     * <p>
+     * The state transition is performed atomically in the database
+     * to prevent concurrent retries of the same message.
      */
+    @Transactional
+    public MessageDto retryDelivery(
+            UUID messageId
+    ) {
+
+        /*
+         * First load the message with object-level ACL.
+         *
+         * The entity itself is not modified here because the actual
+         * state transition is performed by the atomic UPDATE below.
+         */
+        getMessageEntity(messageId);
+
+        int updatedRows =
+                messageRepository.retryDelivery(
+                        messageId,
+                        MessageDirection.OUTBOUND,
+                        MessageProcessingStatus.PROCESSED,
+                        MessageDeliveryStatus.FAILED,
+                        MessageProcessingStatus.PROCESSING,
+                        MessageDeliveryStatus.PENDING
+                );
+
+        if (updatedRows != 1) {
+
+            MessageEntity message =
+                    getMessageEntity(messageId);
+
+            requireOutbound(message);
+
+            if (message.getProcessingStatus()
+                    != MessageProcessingStatus.PROCESSED) {
+
+                throw new IllegalStateException(
+                        "Message must be PROCESSED before retry: "
+                                + messageId
+                );
+            }
+
+            if (message.getDeliveryStatus()
+                    != MessageDeliveryStatus.FAILED) {
+
+                throw new IllegalStateException(
+                        "Message must be FAILED before retry: "
+                                + messageId
+                );
+            }
+
+            throw new IllegalStateException(
+                    "Message retry state transition failed: "
+                            + messageId
+            );
+        }
+
+        /*
+         * The repository method performs a bulk update, so the
+         * persistence context may contain stale entity state.
+         *
+         * Re-read the entity before mapping it to DTO.
+         */
+        MessageEntity retriedMessage =
+                getMessageEntity(messageId);
+
+        return messageMapper.toDto(
+                retriedMessage
+        );
+    }
 
     @Transactional
-    public MessageDto retryDelivery(UUID messageId) {
+    public MessageDto registerPendingExternalId(
+            UUID messageId,
+            String externalId
+    ) {
 
         MessageEntity message =
                 getMessageEntityForProcessing(messageId);
 
         requireOutbound(message);
 
+        validateExternalId(externalId);
+
         if (message.getProcessingStatus()
-                != MessageProcessingStatus.PROCESSED) {
+                != MessageProcessingStatus.QUEUED) {
 
             throw new IllegalStateException(
-                    "Message must be PROCESSED before retry: "
-                            + message.getId()
+                    "Message must be QUEUED before registering externalId: "
+                            + messageId
             );
         }
 
         if (message.getDeliveryStatus()
-                != MessageDeliveryStatus.FAILED) {
+                != MessageDeliveryStatus.PENDING) {
 
             throw new IllegalStateException(
-                    "Message must be FAILED before retry: "
-                            + message.getId()
+                    "Message must be PENDING before registering externalId: "
+                            + messageId
             );
         }
 
-        message.setProcessingStatus(
-                MessageProcessingStatus.PROCESSING
-        );
+        String currentExternalId =
+                message.getExternalId();
 
-        message.setDeliveryStatus(
-                MessageDeliveryStatus.PENDING
-        );
+        if (currentExternalId != null) {
 
-        message.setProcessedAt(null);
+            if (currentExternalId.equals(externalId)) {
+                return messageMapper.toDto(message);
+            }
 
-        MessageEntity saved =
-                messageRepository.save(message);
+            throw new IllegalStateException(
+                    "Message is already registered with another externalId: "
+                            + messageId
+            );
+        }
 
-        return messageMapper.toDto(saved);
-    }
+        messageRepository
+                .findByConversationIdAndExternalId(
+                        message.getConversation().getId(),
+                        externalId
+                )
+                .ifPresent(existing -> {
 
-    /**
-     * Получить Message с object-level Workspace ACL.
-     */
-    @Transactional
-    public MessageDto getMessage(
-            UUID messageId
-    ) {
+                    if (!existing.getId()
+                            .equals(message.getId())) {
 
-        MessageEntity message =
-                messageRepository.findById(messageId)
-                        .orElseThrow(() ->
-                                new EntityNotFoundException(
-                                        "Message not found: "
-                                                + messageId
-                                )
+                        throw new IllegalStateException(
+                                "Message with externalId already exists: "
+                                        + externalId
                         );
+                    }
+                });
 
-        currentUserService.requireWorkspaceAccess(
-                message.getConversation()
-                        .getWorkspace()
-                        .getId()
+        message.setExternalId(externalId);
+
+        return messageMapper.toDto(
+                messageRepository.save(message)
         );
-
-        return messageMapper.toDto(message);
     }
 
-    /**
-     * Получить MessageEntity для application processing.
-     * <p>
-     * ACL не выполняется здесь.
-     * Вызывающий orchestration service обязан
-     * выполнить необходимую ACL.
-     */
-    @Transactional
     public MessageEntity getMessageEntityForProcessing(
             UUID messageId
     ) {
@@ -946,29 +1109,18 @@ public class MessageService {
                 );
     }
 
-    /**
-     * Получить MessageEntity с Workspace ACL.
-     * <p>
-     * Используется application layer,
-     * когда нужен сам Entity для дальнейшей операции.
-     */
-    @Transactional
     public MessageEntity getMessageEntity(
             UUID messageId
     ) {
 
         MessageEntity message =
-                messageRepository
-                        .findById(messageId)
-                        .orElseThrow(() ->
-                                new EntityNotFoundException(
-                                        "Message not found: "
-                                                + messageId
-                                )
-                        );
+                getMessageEntityForProcessing(
+                        messageId
+                );
 
         currentUserService.requireWorkspaceAccess(
-                message.getConversation()
+                message
+                        .getConversation()
                         .getWorkspace()
                         .getId()
         );
@@ -990,7 +1142,6 @@ public class MessageService {
                 );
     }
 
-
     private void requireOutbound(
             MessageEntity message
     ) {
@@ -998,27 +1149,10 @@ public class MessageService {
         if (message.getDirection()
                 != MessageDirection.OUTBOUND) {
 
-            throw new IllegalStateException(
-                    "Operation is allowed only for OUTBOUND messages: "
-                            + message.getId()
-            );
-        }
-    }
-
-    private void validateInboundRequest(
-            CreateInboundMessageRequest request
-    ) {
-
-        if (request.type() == null) {
-
             throw new IllegalArgumentException(
-                    "Message type is required"
+                    "Message must be OUTBOUND"
             );
         }
-
-        validateExternalId(
-                request.externalId()
-        );
     }
 
     private void validateExternalId(
@@ -1034,42 +1168,48 @@ public class MessageService {
         }
     }
 
+    private void validateInboundRequest(
+            CreateInboundMessageRequest request
+    ) {
+
+        if (request == null) {
+            throw new IllegalArgumentException(
+                    "Inbound message request must not be null"
+            );
+        }
+
+        if (request.conversationId() == null) {
+            throw new IllegalArgumentException(
+                    "conversationId must not be null"
+            );
+        }
+
+        if (request.externalId() == null
+                || request.externalId().isBlank()) {
+
+            throw new IllegalArgumentException(
+                    "externalId must not be blank"
+            );
+        }
+
+        if (request.type() == null) {
+            throw new IllegalArgumentException(
+                    "message type must not be null"
+            );
+        }
+    }
+
     private String createPreview(
             MessageEntity message
     ) {
 
-        if (message.getContent() != null
-                && !message.getContent().isBlank()) {
+        if (message.getContent() == null
+                || message.getContent().isBlank()) {
 
-            String content =
-                    message.getContent().trim();
-
-            if (content.length() <= 500) {
-                return content;
-            }
-
-            return content.substring(0, 497) + "...";
+            return message.getType().name();
         }
 
-        return switch (message.getType()) {
-
-            case TEXT -> "";
-
-            case IMAGE -> "[Фото]";
-
-            case VIDEO -> "[Видео]";
-
-            case AUDIO -> "[Аудио]";
-
-            case DOCUMENT -> "[Документ]";
-
-            case STICKER -> "[Стикер]";
-
-            case LOCATION -> "[Локация]";
-
-            case CONTACT -> "[Контакт]";
-
-            case SYSTEM -> "[Системное сообщение]";
-        };
+        return message.getContent();
     }
+
 }

@@ -7,7 +7,7 @@ import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
 import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
 import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
 import kit.penny.clientbus.server.persistence.repository.ConversationRepository;
-import kit.penny.clientbus.server.service.MessageProcessingService;
+import kit.penny.clientbus.server.persistence.repository.MessageRepository;
 import kit.penny.clientbus.server.service.MessageService;
 import kit.penny.clientbus.server.storage.IAttachmentStorage;
 import kit.penny.tdlib.client.TelegramClient;
@@ -64,6 +64,8 @@ class TelegramContextFactoryTest {
                 Mockito.mock(ConversationRepository.class);
         MessageService messageService =
                 Mockito.mock(MessageService.class);
+        MessageRepository messageRepository =
+                Mockito.mock(MessageRepository.class);
         IInboundEventPublisher inboundEventPublisher =
                 Mockito.mock(IInboundEventPublisher.class);
         IAttachmentStorage attachmentStorage =
@@ -76,6 +78,7 @@ class TelegramContextFactoryTest {
                         channelRepository,
                         conversationRepository,
                         messageService,
+                        messageRepository,
                         inboundEventPublisher,
                         attachmentStorage
                 );
@@ -220,6 +223,8 @@ class TelegramContextFactoryTest {
                 Mockito.mock(ConversationRepository.class);
         MessageService messageService =
                 Mockito.mock(MessageService.class);
+        MessageRepository messageRepository =
+                Mockito.mock(MessageRepository.class);
         IInboundEventPublisher inboundEventPublisher =
                 Mockito.mock(IInboundEventPublisher.class);
         IAttachmentStorage attachmentStorage =
@@ -232,6 +237,7 @@ class TelegramContextFactoryTest {
                         channelRepository,
                         conversationRepository,
                         messageService,
+                        messageRepository,
                         inboundEventPublisher,
                         attachmentStorage
                 );

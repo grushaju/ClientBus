@@ -8,6 +8,7 @@ import kit.penny.clientbus.server.connector.telegram.client.TelegramClientContex
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientManager;
 import kit.penny.clientbus.server.service.ChannelAttachment;
 import kit.penny.clientbus.server.service.ChannelSendRequest;
+import kit.penny.clientbus.server.service.MessageService;
 import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.query.TdlibResponse;
 import org.drinkless.tdlib.TdApi;

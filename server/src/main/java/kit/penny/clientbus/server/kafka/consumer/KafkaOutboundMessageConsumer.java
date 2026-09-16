@@ -1,15 +1,12 @@
 package kit.penny.clientbus.server.kafka.consumer;
 
-import kit.penny.clientbus.common.dto.message.PlatformMessageEvent;
 import kit.penny.clientbus.common.enums.ChannelType;
-import kit.penny.clientbus.common.enums.PlatformMessageEventType;
 import kit.penny.clientbus.common.kafka.KafkaEvent;
 import kit.penny.clientbus.common.kafka.KafkaEventType;
 import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
 import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
 import kit.penny.clientbus.server.connector.ConnectorSendResult;
 import kit.penny.clientbus.server.connector.IChannelConnector;
-import kit.penny.clientbus.server.kafka.producer.IPlatformEventPublisher;
 import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
 import kit.penny.clientbus.server.mapper.OutboundMessageKafkaCommandMapper;
 import kit.penny.clientbus.server.service.ChannelSendRequest;
@@ -70,13 +67,12 @@ public class KafkaOutboundMessageConsumer {
 
         if (result.externalId() == null
                 || result.externalId().isBlank()) {
-
             throw new IllegalStateException(
                     "Connector returned blank externalId"
             );
         }
 
-        messageService.markSent(
+        messageService.registerPendingExternalId(
                 command.messageId(),
                 result.externalId()
         );
