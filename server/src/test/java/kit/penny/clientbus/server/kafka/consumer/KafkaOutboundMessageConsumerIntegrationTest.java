@@ -74,6 +74,11 @@ class KafkaOutboundMessageConsumerIntegrationTest
             "clientbus-outbound-test-"
                     + UUID.randomUUID();
 
+    private static final String EXTERNAL_MESSAGE_ID =
+            "telegram-external-message-123";
+
+    private static final long ASYNC_TIMEOUT_MILLIS = 15_000L;
+
     @Autowired
     private KafkaTemplate<String, Object> kafkaTemplate;
 
@@ -218,6 +223,20 @@ class KafkaOutboundMessageConsumerIntegrationTest
                 any(ChannelSendRequest.class)
         );
 
+        String externalMessageId =
+                EXTERNAL_MESSAGE_ID;
+
+        MessageEntity pendingMessage =
+                awaitPendingMessageWithExternalId(
+                        messageId,
+                        externalMessageId
+                );
+
+        messageService.markSent(
+                messageId,
+                externalMessageId
+        );
+
         MessageEntity sentMessage =
                 awaitMessageStatus(
                         messageId,
@@ -225,7 +244,7 @@ class KafkaOutboundMessageConsumerIntegrationTest
                 );
 
         assertEquals(
-                MessageProcessingStatus.QUEUED,
+                MessageProcessingStatus.PROCESSED,
                 sentMessage.getProcessingStatus()
         );
 
@@ -389,6 +408,20 @@ class KafkaOutboundMessageConsumerIntegrationTest
                 channelAttachment.content().readAllBytes()
         );
 
+        String externalMessageId =
+                EXTERNAL_MESSAGE_ID;
+
+        MessageEntity pendingMessage =
+                awaitPendingMessageWithExternalId(
+                        messageId,
+                        externalMessageId
+                );
+
+        messageService.markSent(
+                messageId,
+                externalMessageId
+        );
+
         MessageEntity sentMessage =
                 awaitMessageStatus(
                         messageId,
@@ -396,7 +429,7 @@ class KafkaOutboundMessageConsumerIntegrationTest
                 );
 
         assertEquals(
-                MessageProcessingStatus.QUEUED,
+                MessageProcessingStatus.PROCESSED,
                 sentMessage.getProcessingStatus()
         );
 
@@ -506,10 +539,6 @@ class KafkaOutboundMessageConsumerIntegrationTest
                 messageId
         );
 
-        messageService.markProcessed(
-                messageId
-        );
-
         messageService.markQueued(
                 messageId
         );
@@ -602,6 +631,63 @@ class KafkaOutboundMessageConsumerIntegrationTest
                         );
             }
         }
+    }
+
+    private MessageEntity awaitPendingMessageWithExternalId(
+            UUID messageId,
+            String expectedExternalId
+    ) {
+        long deadline =
+                System.currentTimeMillis()
+                        + ASYNC_TIMEOUT_MILLIS;
+
+        while (System.currentTimeMillis() < deadline) {
+            entityManager.clear();
+
+            MessageEntity message =
+                    messageRepository.findById(messageId)
+                            .orElseThrow();
+
+            if (message.getDeliveryStatus()
+                    == MessageDeliveryStatus.PENDING
+                    && expectedExternalId.equals(
+                    message.getExternalId()
+            )) {
+
+                return message;
+            }
+
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+
+                throw new IllegalStateException(
+                        "Interrupted while waiting for pending message: "
+                                + messageId,
+                        e
+                );
+            }
+        }
+
+        entityManager.clear();
+
+        MessageEntity message =
+                messageRepository.findById(messageId)
+                        .orElseThrow();
+
+        throw new AssertionError(
+                "Message did not reach PENDING with externalId "
+                        + expectedExternalId
+                        + ": messageId="
+                        + messageId
+                        + ", processingStatus="
+                        + message.getProcessingStatus()
+                        + ", deliveryStatus="
+                        + message.getDeliveryStatus()
+                        + ", externalId="
+                        + message.getExternalId()
+        );
     }
 
     private record QueuedOutboundMessage(

@@ -131,7 +131,7 @@ class KafkaOutboundMessageFailureIntegrationTest
             DynamicPropertyRegistry registry
     ) {
         registry.add(
-                "clientbus.kafka.consumer.outbound-group-id",
+                "spring.kafka.consumer.outbound-group-id",
                 () -> CONSUMER_GROUP
         );
     }
@@ -215,6 +215,27 @@ class KafkaOutboundMessageFailureIntegrationTest
                         .times(3)
         ).send(any());
 
+        MessageEntity pendingMessage =
+                awaitMessageStatus(
+                        messageId,
+                        MessageDeliveryStatus.PENDING
+                );
+
+        assertEquals(
+                MessageProcessingStatus.QUEUED,
+                pendingMessage.getProcessingStatus()
+        );
+
+        assertEquals(
+                EXTERNAL_MESSAGE_ID,
+                pendingMessage.getExternalId()
+        );
+
+        messageService.markSent(
+                messageId,
+                EXTERNAL_MESSAGE_ID
+        );
+
         MessageEntity sentMessage =
                 awaitMessageStatus(
                         messageId,
@@ -222,7 +243,7 @@ class KafkaOutboundMessageFailureIntegrationTest
                 );
 
         assertEquals(
-                MessageProcessingStatus.QUEUED,
+                MessageProcessingStatus.PROCESSED,
                 sentMessage.getProcessingStatus()
         );
 
@@ -306,7 +327,7 @@ class KafkaOutboundMessageFailureIntegrationTest
                 );
 
         assertEquals(
-                MessageProcessingStatus.QUEUED,
+                MessageProcessingStatus.PROCESSED,
                 failedMessage.getProcessingStatus()
         );
 
@@ -489,10 +510,6 @@ class KafkaOutboundMessageFailureIntegrationTest
                 clientAccount.getExternalId();
 
         messageService.startProcessing(
-                messageId
-        );
-
-        messageService.markProcessed(
                 messageId
         );
 

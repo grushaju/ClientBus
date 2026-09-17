@@ -152,9 +152,10 @@ class TelegramChannelConnectorTest {
                 );
 
         assertNotNull(temporaryFileDuringSend);
-        assertFalse(
+
+        assertTrue(
                 Files.exists(temporaryFileDuringSend),
-                "Temporary Telegram file must be deleted after send"
+                "Temporary Telegram file must remain until Telegram send completion"
         );
     }
 
@@ -175,9 +176,10 @@ class TelegramChannelConnectorTest {
                 );
 
         assertNotNull(temporaryFileDuringSend);
-        assertFalse(
+
+        assertTrue(
                 Files.exists(temporaryFileDuringSend),
-                "Temporary Telegram file must be deleted after send"
+                "Temporary Telegram file must remain until Telegram send completion"
         );
     }
 

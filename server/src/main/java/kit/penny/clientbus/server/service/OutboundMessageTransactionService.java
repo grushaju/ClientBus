@@ -193,6 +193,22 @@ public class OutboundMessageTransactionService {
         }
 
         /*
+         * Capture all values that are needed after retryDelivery().
+         *
+         * retryDelivery() performs a bulk update with
+         * clearAutomatically = true, therefore messageEntity
+         * must not be accessed after that call.
+         */
+        UUID conversationId =
+                messageEntity.getConversation().getId();
+
+        var messageType =
+                messageEntity.getType();
+
+        String messageContent =
+                messageEntity.getContent();
+
+        /*
          * PROCESSED + FAILED
          *          ->
          * PROCESSING + PENDING
@@ -205,7 +221,7 @@ public class OutboundMessageTransactionService {
         try {
             ConversationEntity conversation =
                     conversationService.findEntityForProcessing(
-                            messageEntity.getConversation().getId()
+                            conversationId
                     );
 
             ChannelAccountEntity channelAccount =
@@ -254,8 +270,8 @@ public class OutboundMessageTransactionService {
                             channelAccount.getId(),
                             conversation.getClientAccount()
                                     .getExternalId(),
-                            messageEntity.getType(),
-                            messageEntity.getContent(),
+                            messageType,
+                            messageContent,
                             outboundAttachments
                     );
 

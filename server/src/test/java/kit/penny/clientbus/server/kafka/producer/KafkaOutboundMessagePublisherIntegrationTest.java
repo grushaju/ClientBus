@@ -119,6 +119,9 @@ class KafkaOutboundMessagePublisherIntegrationTest
         UUID channelAccountId =
                 queuedMessage.channelAccountId();
 
+        String externalMessageId =
+                "telegram-external-message-123";
+
         OutboundMessageKafkaCommand command =
                 new OutboundMessageKafkaCommand(
                         messageId,
@@ -142,6 +145,17 @@ class KafkaOutboundMessagePublisherIntegrationTest
                 any()
         );
 
+        MessageEntity pendingMessage =
+                awaitPendingMessageWithExternalId(
+                        messageId,
+                        externalMessageId
+                );
+
+        messageService.markSent(
+                messageId,
+                externalMessageId
+        );
+
         MessageEntity sentMessage =
                 awaitMessageStatus(
                         messageId,
@@ -150,7 +164,7 @@ class KafkaOutboundMessagePublisherIntegrationTest
 
         assertThat(sentMessage.getProcessingStatus())
                 .isEqualTo(
-                        MessageProcessingStatus.QUEUED
+                        MessageProcessingStatus.PROCESSED
                 );
 
         assertThat(sentMessage.getDeliveryStatus())
@@ -160,7 +174,7 @@ class KafkaOutboundMessagePublisherIntegrationTest
 
         assertThat(sentMessage.getExternalId())
                 .isEqualTo(
-                        "telegram-external-message-123"
+                        externalMessageId
                 );
     }
 
@@ -255,10 +269,6 @@ class KafkaOutboundMessagePublisherIntegrationTest
                 messageId
         );
 
-        messageService.markProcessed(
-                messageId
-        );
-
         messageService.markQueued(
                 messageId
         );
@@ -327,6 +337,68 @@ class KafkaOutboundMessagePublisherIntegrationTest
 
         return message;
     }
+
+    private MessageEntity awaitPendingMessageWithExternalId(
+            UUID messageId,
+            String expectedExternalId
+    ) {
+
+        long deadline =
+                System.currentTimeMillis()
+                        + ASYNC_TIMEOUT_MILLIS;
+
+        while (
+                System.currentTimeMillis()
+                        < deadline
+        ) {
+
+            entityManager.clear();
+
+            MessageEntity message =
+                    messageRepository
+                            .findById(messageId)
+                            .orElseThrow();
+
+            if (
+                    message.getDeliveryStatus()
+                            == MessageDeliveryStatus.PENDING
+                            && expectedExternalId.equals(
+                            message.getExternalId()
+                    )
+            ) {
+                return message;
+            }
+
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+
+                throw new AssertionError(
+                        "Interrupted while waiting for pending externalId",
+                        e
+                );
+            }
+        }
+
+        entityManager.clear();
+
+        MessageEntity message =
+                messageRepository
+                        .findById(messageId)
+                        .orElseThrow();
+
+        assertThat(message.getDeliveryStatus())
+                .as("Message delivery status after asynchronous processing")
+                .isEqualTo(MessageDeliveryStatus.PENDING);
+
+        assertThat(message.getExternalId())
+                .as("Message externalId after asynchronous processing")
+                .isEqualTo(expectedExternalId);
+
+        return message;
+    }
+
 
     private record QueuedOutboundMessage(
             UUID messageId,

@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-09-14 14:27:23
+- Generated: 2026-09-17 15:47:17
 - Branch: `main`
-- Commit: `be4ef51`
+- Commit: `d0c446d`
 
 ## Project Structure
 
@@ -105,11 +105,6 @@
 - `PlatformMessageKafkaEvent.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/PlatformMessageKafkaEvent.java`
 - `PlatformOutboundAttachment.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/PlatformOutboundAttachment.java`
 
-#### `src/main/resources`
-
-
-#### `src/test/java`
-
 ### server
 
 #### `src/main/java`
@@ -143,6 +138,10 @@
 - `IChannelConnectorRegistry.java` — `server/src/main/java/kit/penny/clientbus/server/connector/IChannelConnectorRegistry.java`
 - `IChannelEventHandler.java` — `server/src/main/java/kit/penny/clientbus/server/connector/IChannelEventHandler.java`
 
+##### `kit.penny.clientbus.server.connector.telegram`
+
+- `TelegramChannelConnector.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/TelegramChannelConnector.java`
+
 ##### `kit.penny.clientbus.server.connector.telegram.account`
 
 - `TelegramChannelAccountService.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/account/TelegramChannelAccountService.java`
@@ -161,6 +160,8 @@
 - `TelegramClientManager.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/client/TelegramClientManager.java`
 - `TelegramContextFactory.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/client/TelegramContextFactory.java`
 - `TelegramInboundMessageListener.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/client/TelegramInboundMessageListener.java`
+- `TelegramMessageReadListener.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/client/TelegramMessageReadListener.java`
+- `TelegramMessageSendListener.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/client/TelegramMessageSendListener.java`
 
 ##### `kit.penny.clientbus.server.connector.telegram.config`
 
@@ -297,6 +298,7 @@
 - `MessageProcessingService.java` — `server/src/main/java/kit/penny/clientbus/server/service/MessageProcessingService.java`
 - `MessageService.java` — `server/src/main/java/kit/penny/clientbus/server/service/MessageService.java`
 - `OrganizationService.java` — `server/src/main/java/kit/penny/clientbus/server/service/OrganizationService.java`
+- `OutboundMessageTransactionService.java` — `server/src/main/java/kit/penny/clientbus/server/service/OutboundMessageTransactionService.java`
 - `WorkspaceService.java` — `server/src/main/java/kit/penny/clientbus/server/service/WorkspaceService.java`
 
 ##### `kit.penny.clientbus.server.storage`
@@ -322,6 +324,10 @@
 
 - `ChannelEventHandlerTest.java` — `server/src/test/java/kit/penny/clientbus/server/connector/ChannelEventHandlerTest.java`
 
+##### `kit.penny.clientbus.server.connector.telegram`
+
+- `TelegramChannelConnectorTest.java` — `server/src/test/java/kit/penny/clientbus/server/connector/telegram/TelegramChannelConnectorTest.java`
+
 ##### `kit.penny.clientbus.server.connector.telegram.account`
 
 - `TelegramChannelAccountServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/connector/telegram/account/TelegramChannelAccountServiceTest.java`
@@ -337,6 +343,8 @@
 - `TelegramClientManagerTest.java` — `server/src/test/java/kit/penny/clientbus/server/connector/telegram/client/TelegramClientManagerTest.java`
 - `TelegramContextFactoryTest.java` — `server/src/test/java/kit/penny/clientbus/server/connector/telegram/client/TelegramContextFactoryTest.java`
 - `TelegramInboundMessageListenerTest.java` — `server/src/test/java/kit/penny/clientbus/server/connector/telegram/client/TelegramInboundMessageListenerTest.java`
+- `TelegramMessageReadListenerIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/connector/telegram/client/TelegramMessageReadListenerIntegrationTest.java`
+- `TelegramMessageReadListenerTest.java` — `server/src/test/java/kit/penny/clientbus/server/connector/telegram/client/TelegramMessageReadListenerTest.java`
 
 ##### `kit.penny.clientbus.server.connector.telegram.startup`
 
@@ -362,15 +370,19 @@
 - `ConversationApiIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/integration/ConversationApiIntegrationTest.java`
 - `MessageInboundFlowIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/integration/MessageInboundFlowIntegrationTest.java`
 - `OutboundMessageAsyncFlowIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/integration/OutboundMessageAsyncFlowIntegrationTest.java`
+- `OutboundMessageKafkaFailureIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/integration/OutboundMessageKafkaFailureIntegrationTest.java`
+- `TelegramOutboundMessageFlowIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/integration/TelegramOutboundMessageFlowIntegrationTest.java`
 
 ##### `kit.penny.clientbus.server.kafka.config`
 
+- `KafkaErrorHandlerConfigTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/config/KafkaErrorHandlerConfigTest.java`
 - `KafkaEventJsonDeserializerTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/config/KafkaEventJsonDeserializerTest.java`
 
 ##### `kit.penny.clientbus.server.kafka.consumer`
 
 - `KafkaInboundEventConsumerIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaInboundEventConsumerIntegrationTest.java`
 - `KafkaInboundEventConsumerTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaInboundEventConsumerTest.java`
+- `KafkaOutboundMessageConsumerAtLeastOnceTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaOutboundMessageConsumerAtLeastOnceTest.java`
 - `KafkaOutboundMessageConsumerDlqIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaOutboundMessageConsumerDlqIntegrationTest.java`
 - `KafkaOutboundMessageConsumerIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaOutboundMessageConsumerIntegrationTest.java`
 - `KafkaOutboundMessageConsumerTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaOutboundMessageConsumerTest.java`
@@ -382,6 +394,7 @@
 - `KafkaInboundEventPublisherIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/producer/KafkaInboundEventPublisherIntegrationTest.java`
 - `KafkaInboundEventPublisherTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/producer/KafkaInboundEventPublisherTest.java`
 - `KafkaOutboundMessagePublisherIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/producer/KafkaOutboundMessagePublisherIntegrationTest.java`
+- `KafkaOutboundMessagePublisherTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/producer/KafkaOutboundMessagePublisherTest.java`
 - `KafkaPlatformEventPublisherIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/producer/KafkaPlatformEventPublisherIntegrationTest.java`
 - `KafkaPlatformEventPublisherTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/producer/KafkaPlatformEventPublisherTest.java`
 
@@ -432,9 +445,11 @@
 
 - `ui/src/main/resources/application.properties`
 
+#### `src/test/java`
+
 ## Summary
 
 - Maven modules: 4
-- Java files: 224
-- Git commit: `be4ef51`
+- Java files: 236
+- Git commit: `d0c446d`
 

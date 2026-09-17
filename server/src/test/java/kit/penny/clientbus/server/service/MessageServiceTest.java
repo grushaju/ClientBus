@@ -964,7 +964,7 @@ class MessageServiceTest {
         stubMessageFound();
 
         assertThrows(
-                IllegalStateException.class,
+                IllegalArgumentException.class,
                 () -> messageService.markSent(
                         message.getId(),
                         "telegram-message-123"
@@ -1249,7 +1249,7 @@ class MessageServiceTest {
         stubMessageFound();
 
         assertThrows(
-                IllegalStateException.class,
+                IllegalArgumentException.class,
                 () -> messageService.markDelivered(
                         message.getId()
                 )
@@ -1372,7 +1372,7 @@ class MessageServiceTest {
         stubMessageFound();
 
         assertThrows(
-                IllegalStateException.class,
+                IllegalArgumentException.class,
                 () -> messageService.markRead(
                         message.getId()
                 )
@@ -1789,8 +1789,6 @@ class MessageServiceTest {
                         MessageDeliveryStatus.SENT
                 );
 
-        when(conversationRepository.findById(conversationId))
-                .thenReturn(Optional.of(conversation));
 
         when(messageRepository
                 .findAllByConversationIdAndDirectionAndDeliveryStatus(
@@ -1885,8 +1883,6 @@ class MessageServiceTest {
                         MessageDeliveryStatus.SENT
                 );
 
-        when(conversationRepository.findById(conversationId))
-                .thenReturn(Optional.of(conversation));
 
         when(messageRepository
                 .findAllByConversationIdAndDirectionAndDeliveryStatus(
@@ -1964,14 +1960,6 @@ class MessageServiceTest {
                         "11111111-1111-1111-1111-111111111111"
                 );
 
-        ConversationEntity conversation =
-                new ConversationEntity();
-
-        conversation.setId(conversationId);
-
-        when(conversationRepository.findById(conversationId))
-                .thenReturn(Optional.of(conversation));
-
         when(messageRepository
                 .findAllByConversationIdAndDirectionAndDeliveryStatus(
                         conversationId,
@@ -1985,8 +1973,17 @@ class MessageServiceTest {
                 105
         );
 
+        verify(messageRepository)
+                .findAllByConversationIdAndDirectionAndDeliveryStatus(
+                        conversationId,
+                        MessageDirection.OUTBOUND,
+                        MessageDeliveryStatus.SENT
+                );
+
         verify(messageRepository, never())
                 .saveAll(anyList());
+
+        verifyNoInteractions(conversationRepository);
     }
 
     @Test
@@ -2018,8 +2015,6 @@ class MessageServiceTest {
                         MessageDeliveryStatus.SENT
                 );
 
-        when(conversationRepository.findById(conversationId))
-                .thenReturn(Optional.of(conversation));
 
         when(messageRepository
                 .findAllByConversationIdAndDirectionAndDeliveryStatus(
@@ -2054,36 +2049,37 @@ class MessageServiceTest {
     }
 
     @Test
-    void markReadUpTo_unknownConversation_throwsException() {
+    void markReadUpTo_unknownConversation_doesNothing() {
 
         UUID conversationId =
                 UUID.fromString(
                         "11111111-1111-1111-1111-111111111111"
                 );
 
-        when(conversationRepository.findById(conversationId))
-                .thenReturn(Optional.empty());
-
-        assertThrows(
-                EntityNotFoundException.class,
-                () -> messageService.markReadUpTo(
+        when(messageRepository
+                .findAllByConversationIdAndDirectionAndDeliveryStatus(
                         conversationId,
-                        105
-                )
+                        MessageDirection.OUTBOUND,
+                        MessageDeliveryStatus.SENT
+                ))
+                .thenReturn(List.of());
+
+        messageService.markReadUpTo(
+                conversationId,
+                105
         );
 
-        verify(conversationRepository)
-                .findById(conversationId);
-
-        verify(messageRepository, never())
+        verify(messageRepository)
                 .findAllByConversationIdAndDirectionAndDeliveryStatus(
-                        any(),
-                        any(),
-                        any()
+                        conversationId,
+                        MessageDirection.OUTBOUND,
+                        MessageDeliveryStatus.SENT
                 );
 
         verify(messageRepository, never())
                 .saveAll(anyList());
+
+        verifyNoInteractions(conversationRepository);
     }
 
     @Test
@@ -2115,8 +2111,6 @@ class MessageServiceTest {
                         MessageDeliveryStatus.SENT
                 );
 
-        when(conversationRepository.findById(conversationId))
-                .thenReturn(Optional.of(conversation));
 
         when(messageRepository
                 .findAllByConversationIdAndDirectionAndDeliveryStatus(
@@ -2191,8 +2185,31 @@ class MessageServiceTest {
 
         stubMessageFound();
 
-        when(messageRepository.save(message))
-                .thenReturn(message);
+        when(messageRepository.retryDelivery(
+                messageId,
+                MessageDirection.OUTBOUND,
+                MessageProcessingStatus.PROCESSED,
+                MessageDeliveryStatus.FAILED,
+                MessageProcessingStatus.PROCESSING,
+                MessageDeliveryStatus.PENDING
+        )).thenAnswer(invocation -> {
+
+            message.setProcessingStatus(
+                    MessageProcessingStatus.PROCESSING
+            );
+
+            message.setDeliveryStatus(
+                    MessageDeliveryStatus.PENDING
+            );
+
+            message.setProcessedAt(null);
+            message.setSentAt(null);
+            message.setDeliveredAt(null);
+            message.setReadAt(null);
+            message.setExternalId(null);
+
+            return 1;
+        });
 
         when(messageMapper.toDto(message))
                 .thenReturn(expectedDto);
@@ -2217,23 +2234,19 @@ class MessageServiceTest {
                 message.getDeliveryStatus()
         );
 
-        assertEquals(
-                "telegram-message-123",
+        assertNull(
                 message.getExternalId()
         );
 
-        assertEquals(
-                sentAt,
+        assertNull(
                 message.getSentAt()
         );
 
-        assertEquals(
-                deliveredAt,
+        assertNull(
                 message.getDeliveredAt()
         );
 
-        assertEquals(
-                readAt,
+        assertNull(
                 message.getReadAt()
         );
 
@@ -2242,7 +2255,14 @@ class MessageServiceTest {
         );
 
         verify(messageRepository)
-                .save(message);
+                .retryDelivery(
+                        messageId,
+                        MessageDirection.OUTBOUND,
+                        MessageProcessingStatus.PROCESSED,
+                        MessageDeliveryStatus.FAILED,
+                        MessageProcessingStatus.PROCESSING,
+                        MessageDeliveryStatus.PENDING
+                );
 
         verify(messageMapper)
                 .toDto(message);
@@ -2266,7 +2286,7 @@ class MessageServiceTest {
         stubMessageFound();
 
         assertThrows(
-                IllegalStateException.class,
+                IllegalArgumentException.class,
                 () -> messageService.retryDelivery(
                         message.getId()
                 )

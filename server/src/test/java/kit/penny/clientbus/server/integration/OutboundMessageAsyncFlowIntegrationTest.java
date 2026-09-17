@@ -225,9 +225,8 @@ class OutboundMessageAsyncFlowIntegrationTest
         ).send(any());
 
         MessageEntity pendingMessage =
-                awaitMessageStatus(
-                        messageId,
-                        MessageDeliveryStatus.PENDING
+                awaitPendingMessageWithExternalId(
+                        messageId
                 );
 
         assertEquals(
@@ -298,9 +297,8 @@ class OutboundMessageAsyncFlowIntegrationTest
                 );
     }
 
-    private MessageEntity awaitMessageStatus(
-            UUID messageId,
-            MessageDeliveryStatus expectedStatus
+    private MessageEntity awaitPendingMessageWithExternalId(
+            UUID messageId
     ) throws InterruptedException {
 
         long deadline =
@@ -316,8 +314,12 @@ class OutboundMessageAsyncFlowIntegrationTest
                             .findById(messageId)
                             .orElseThrow();
 
-            if (message.getDeliveryStatus()
-                    == expectedStatus) {
+            if (message.getProcessingStatus()
+                    == MessageProcessingStatus.QUEUED
+                    && message.getDeliveryStatus()
+                    == MessageDeliveryStatus.PENDING
+                    && message.getExternalId() != null
+                    && !message.getExternalId().isBlank()) {
 
                 return message;
             }
@@ -335,8 +337,17 @@ class OutboundMessageAsyncFlowIntegrationTest
                         .orElseThrow();
 
         assertEquals(
-                expectedStatus,
+                MessageProcessingStatus.QUEUED,
+                message.getProcessingStatus()
+        );
+
+        assertEquals(
+                MessageDeliveryStatus.PENDING,
                 message.getDeliveryStatus()
+        );
+
+        assertNotNull(
+                message.getExternalId()
         );
 
         return message;

@@ -867,7 +867,9 @@ public class MessageService {
             }
         }
 
-        messageRepository.saveAll(messages);
+        if (!messages.isEmpty()) {
+            messageRepository.saveAll(messages);
+        }
     }
 
     /**
