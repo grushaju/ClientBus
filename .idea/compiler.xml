@@ -9,13 +9,13 @@
         <module name="server" />
         <module name="common" />
         <module name="ui" />
-        <module name="UI" />
         <module name="Server" />
         <module name="Common" />
       </profile>
     </annotationProcessing>
     <bytecodeTargetLevel>
       <module name="ClientBus" target="23" />
+      <module name="UI" target="21" />
     </bytecodeTargetLevel>
   </component>
   <component name="JavacSettings">

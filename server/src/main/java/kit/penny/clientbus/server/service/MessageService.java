@@ -15,6 +15,8 @@ import kit.penny.clientbus.server.persistence.entity.MessageEntity;
 import kit.penny.clientbus.server.persistence.repository.ConversationRepository;
 import kit.penny.clientbus.server.persistence.repository.MessageRepository;
 import kit.penny.clientbus.server.security.service.CurrentUserService;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
@@ -68,6 +70,33 @@ public class MessageService {
         );
 
         return messageMapper.toDto(message);
+    }
+
+    @Transactional
+    public Page<MessageDto> getConversationMessages(
+            UUID conversationId,
+            Pageable pageable
+    ) {
+
+        ConversationEntity conversation =
+                conversationRepository.findById(conversationId)
+                        .orElseThrow(() ->
+                                new EntityNotFoundException(
+                                        "Conversation not found: "
+                                                + conversationId
+                                )
+                        );
+
+        currentUserService.requireWorkspaceAccess(
+                conversation.getWorkspace().getId()
+        );
+
+        return messageRepository
+                .findAllByConversationIdOrderBySentAtDescCreatedAtDesc(
+                        conversationId,
+                        pageable
+                )
+                .map(messageMapper::toDto);
     }
 
 

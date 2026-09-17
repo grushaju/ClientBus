@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-09-17 15:47:17
+- Generated: 2026-09-17 21:50:20
 - Branch: `main`
-- Commit: `d0c446d`
+- Commit: `c32aacd`
 
 ## Project Structure
 
@@ -309,6 +309,11 @@
 - `StoredAttachment.java` — `server/src/main/java/kit/penny/clientbus/server/storage/StoredAttachment.java`
 - `StoredAttachmentMetadata.java` — `server/src/main/java/kit/penny/clientbus/server/storage/StoredAttachmentMetadata.java`
 
+##### `kit.penny.clientbus.server.web`
+
+- `SpaController.java` — `server/src/main/java/kit/penny/clientbus/server/web/SpaController.java`
+- `SpaWebConfig.java` — `server/src/main/java/kit/penny/clientbus/server/web/SpaWebConfig.java`
+
 #### `src/main/resources`
 
 - `server/src/main/resources/application.yml`
@@ -433,23 +438,9 @@
 - `server/src/test/resources/application-test.yml`
 - `server/src/test/resources/db/migration/V0__init_schemas.sql`
 
-### ui
-
-#### `src/main/java`
-
-##### `kit.penny.clientbus.ui`
-
-- `UiApplication.java` — `ui/src/main/java/kit/penny/clientbus/ui/UiApplication.java`
-
-#### `src/main/resources`
-
-- `ui/src/main/resources/application.properties`
-
-#### `src/test/java`
-
 ## Summary
 
-- Maven modules: 4
-- Java files: 236
-- Git commit: `d0c446d`
+- Maven modules: 3
+- Java files: 237
+- Git commit: `c32aacd`
 

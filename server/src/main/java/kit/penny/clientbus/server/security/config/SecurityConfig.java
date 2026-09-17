@@ -43,6 +43,20 @@ public class SecurityConfig {
 
                 .authorizeHttpRequests(auth -> auth
 
+                        // React SPA
+                        .requestMatchers(
+                                "/",
+                                "/index.html",
+                                "/favicon.ico",
+                                "/assets/**",
+                                "/inbox/**",
+                                "/clients/**",
+                                "/channels/**",
+                                "/employees/**",
+                                "/workspaces/**",
+                                "/settings/**"
+                        ).permitAll()
+
                         // Authentication API
                         .requestMatchers(
                                 "/api/auth/**"

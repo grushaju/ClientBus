@@ -21,6 +21,7 @@ public class EmployeeMapper {
                 employee.getFirstName(),
                 employee.getLastName(),
                 employee.getPhone(),
+                user.getRole(),
                 user.isEnabled(),
                 employee.getCreatedAt(),
                 employee.getUpdatedAt()

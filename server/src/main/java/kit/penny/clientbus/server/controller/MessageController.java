@@ -17,6 +17,8 @@ import kit.penny.clientbus.server.service.MessageAttachmentService;
 import kit.penny.clientbus.server.service.MessageService;
 import kit.penny.clientbus.server.storage.StoredAttachment;
 import org.springframework.core.io.InputStreamResource;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -58,6 +60,35 @@ public class MessageController {
     ) {
         return ResponseEntity.ok(
                 messageService.getMessage(messageId)
+        );
+    }
+
+    @GetMapping("/conversation/{conversationId}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Page<MessageDto>> getConversationMessages(
+            @PathVariable UUID conversationId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size
+    ) {
+        if (page < 0) {
+            throw new IllegalArgumentException(
+                    "Page must be greater than or equal to 0"
+            );
+        }
+
+        if (size <= 0) {
+            throw new IllegalArgumentException(
+                    "Size must be greater than 0"
+            );
+        }
+
+        int pageSize = Math.min(size, 100);
+
+        return ResponseEntity.ok(
+                messageService.getConversationMessages(
+                        conversationId,
+                        PageRequest.of(page, pageSize)
+                )
         );
     }
 

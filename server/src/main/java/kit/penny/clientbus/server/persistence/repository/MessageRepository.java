@@ -4,6 +4,8 @@ import kit.penny.clientbus.common.enums.MessageDeliveryStatus;
 import kit.penny.clientbus.common.enums.MessageDirection;
 import kit.penny.clientbus.common.enums.MessageProcessingStatus;
 import kit.penny.clientbus.server.persistence.entity.MessageEntity;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -38,11 +40,6 @@ public interface MessageRepository
             UUID conversationId
     );
 
-    List<MessageEntity>
-    findAllByConversationIdOrderBySentAtDescCreatedAtDesc(
-            UUID conversationId
-    );
-
     Optional<MessageEntity>
     findFirstByConversationIdOrderBySentAtDescCreatedAtDesc(
             UUID conversationId
@@ -71,6 +68,11 @@ public interface MessageRepository
     findByConversationChannelAccountIdAndExternalId(
             UUID channelAccountId,
             String externalId
+    );
+
+    Page<MessageEntity> findAllByConversationIdOrderBySentAtDescCreatedAtDesc(
+            UUID conversationId,
+            Pageable pageable
     );
 
     @Modifying(

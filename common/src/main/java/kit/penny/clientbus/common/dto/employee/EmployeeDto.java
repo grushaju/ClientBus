@@ -1,5 +1,7 @@
 package kit.penny.clientbus.common.dto.employee;
 
+import kit.penny.clientbus.common.enums.UserRole;
+
 import java.time.Instant;
 import java.util.UUID;
 
@@ -11,6 +13,7 @@ public record EmployeeDto(
         String firstName,
         String lastName,
         String phone,
+        UserRole role,
         boolean enabled,
         Instant createdAt,
         Instant updatedAt
