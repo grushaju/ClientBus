@@ -250,16 +250,19 @@ public final class TelegramMessageSendListener {
                     message.getId()
             );
 
+            TdApi.Error error = notification.error;
+
             log.warn(
                     "Telegram message send failed: "
                             + "channelAccountId={}, messageId={}, "
                             + "oldMessageId={}, telegramMessageId={}, "
-                            + "error={}",
+                            + "errorCode={}, errorMessage={}",
                     channelAccountId,
                     message.getId(),
                     oldMessageId,
                     telegramMessageId,
-                    notification.error
+                    error == null ? null : error.code,
+                    error == null ? null : error.message
             );
         }
 

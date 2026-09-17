@@ -213,10 +213,6 @@ public class MessageService {
                 request.metadata()
         );
 
-        message.setSentAt(
-                Instant.now()
-        );
-
         message.setProcessingStatus(
                 MessageProcessingStatus.RECEIVED
         );

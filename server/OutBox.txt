@@ -1,0 +1,404 @@
+Outbox здесь нужен как буфер между транзакционной БД и Kafka, чтобы убрать race condition, который мы сейчас поймали.
+
+1. Что именно сейчас неправильно
+
+Сейчас:
+
+@Transactional processOutbound()
+        │
+        ├── INSERT Message
+        ├── Message → QUEUED
+        │
+        └── Kafka.publish()
+                 │
+                 ▼
+              Kafka
+                 │
+                 ▼
+        Consumer thread
+                 │
+                 └── SELECT Message
+                         │
+                         └── ❌ Message ещё не committed
+
+Kafka не знает ничего о транзакции PostgreSQL.
+
+Поэтому publish() может успешно положить сообщение в Kafka, пока транзакция с Message ещё находится в процессе.
+
+2. Что делает Outbox
+
+Мы вместо этого записываем Kafka-команду в PostgreSQL в рамках той же транзакции:
+
+@Transactional processOutbound()
+        │
+        ├── Message → QUEUED
+        │
+        ├── MessageAttachment
+        │
+        └── KafkaOutbox
+              │
+              │ SAME TRANSACTION
+              ▼
+            COMMIT
+
+После commit:
+
+PostgreSQL
+   │
+   │ Outbox record
+   ▼
+Outbox Publisher
+   │
+   ▼
+Kafka
+   │
+   ▼
+KafkaOutboundMessageConsumer
+   │
+   ▼
+Telegram
+
+То есть Kafka никогда не получит outbound-команду раньше, чем Message гарантированно существует в committed БД.
+
+3. Что будет храниться в Outbox
+
+Я бы хранил примерно:
+
+KafkaOutbox
+────────────────────────────────────────
+id
+eventId
+eventType
+topic
+messageKey
+payload
+status
+attempts
+availableAt
+createdAt
+publishedAt
+lastError
+
+Например:
+
+id           = UUID
+eventId      = UUID
+eventType    = OUTBOUND_MESSAGE
+topic        = clientbus.outbound.telegram
+messageKey   = channelAccountId
+payload      = JSON KafkaEvent<OutboundMessageKafkaCommand>
+status       = PENDING
+attempts     = 0
+availableAt  = now
+createdAt    = now
+publishedAt  = null
+lastError    = null
+Почему хранить именно KafkaEvent
+
+Не стоит превращать Outbox в ещё один отдельный формат сообщений.
+
+У тебя уже есть:
+
+KafkaEvent<OutboundMessageKafkaCommand>
+
+Поэтому Outbox должен хранить готовый Kafka payload, который publisher потом просто отправляет.
+
+Это уменьшает количество мест, где может отличаться serialization.
+
+4. Жизненный цикл Outbox
+
+Например, пользователь отправил картинку.
+
+Шаг 1
+
+Создаётся:
+
+Message
+processing = RECEIVED
+delivery   = PENDING
+Шаг 2
+
+После подготовки:
+
+Message
+processing = QUEUED
+delivery   = PENDING
+Шаг 3
+
+В той же транзакции создаётся:
+
+KafkaOutbox
+status = PENDING
+Шаг 4
+
+PostgreSQL делает:
+
+COMMIT
+
+Теперь гарантировано существуют оба объекта:
+
+Message
+   +
+KafkaOutbox
+5. Отдельный publisher
+
+После commit отдельный процесс/worker читает:
+
+KafkaOutbox
+WHERE status = PENDING
+  AND availableAt <= now
+
+и отправляет:
+
+KafkaOutbox
+      │
+      ▼
+KafkaTemplate.send(...)
+      │
+      ├── success
+      │
+      │     ↓
+      │  status = PUBLISHED
+      │
+      └── failure
+            │
+            ↓
+       attempts++
+       availableAt = retry time
+       lastError = ...
+6. Самое важное — гарантия
+
+Представь:
+
+Message INSERT       ✅
+Outbox INSERT        ✅
+COMMIT               ✅
+
+После этого приложение падает.
+
+Kafka ещё ничего не получил.
+
+После рестарта Outbox publisher увидит:
+
+PENDING
+
+и отправит его.
+
+То есть команда не потеряна.
+
+Теперь обратная ситуация.
+
+Message INSERT       ❌
+Outbox INSERT        ❌
+ROLLBACK
+
+Kafka при этом вообще ничего не увидит.
+
+То есть не будет:
+
+Kafka command
+       ↓
+Message not found
+
+— именно той проблемы, которую мы сейчас обнаружили.
+
+7. А если Kafka отправился, а DB update Outbox не успел?
+
+Это фундаментальный момент.
+
+Например:
+
+Outbox = PENDING
+       ↓
+Kafka.send()
+       ↓
+Kafka успешно принял
+       ↓
+приложение упало
+       ↓
+Outbox всё ещё PENDING
+
+После рестарта мы отправим его ещё раз.
+
+Поэтому Outbox даёт гарантию:
+
+at-least-once delivery в Kafka
+
+а не exactly-once.
+
+8. Поэтому consumer должен быть idempotent
+
+И здесь у нас уже есть очень хорошая основа.
+
+У тебя есть:
+
+messageId
+
+внутри:
+
+OutboundMessageKafkaCommand
+
+и consumer уже проверяет:
+
+QUEUED
++
+PENDING
++
+externalId != null
+
+и в таком случае повторную отправку не делает.
+
+Это как раз механизм защиты от повторной Kafka delivery.
+
+Но есть нюанс:
+
+Kafka send
+   ↓
+Telegram send
+   ↓
+process dies
+   ↓
+externalId не успел сохраниться
+   ↓
+Kafka retry
+   ↓
+Telegram send AGAIN
+
+Это другая проблема, которую мы уже сознательно отложили до TelegramSendAttempt.
+
+Outbox её не решает полностью.
+
+9. Что произойдёт с текущим IOutboundMessagePublisher
+
+Сейчас:
+
+IOutboundMessagePublisher
+        ↓
+KafkaTemplate
+        ↓
+Kafka
+
+Я бы изменил семантику.
+
+Бизнес-код:
+
+messageProcessingService.processOutbound(...)
+
+не должен больше непосредственно обращаться к Kafka.
+
+Вместо:
+
+outboundMessagePublisher.publish(
+    channelType,
+    command
+);
+
+будет концептуально:
+
+outboundMessagePublisher.publish(
+    channelType,
+    command
+);
+
+но реализация IOutboundMessagePublisher будет:
+
+создать KafkaEvent
+       ↓
+создать KafkaOutbox
+       ↓
+save()
+
+а не KafkaTemplate.send().
+
+То есть название интерфейса можно оставить, если хотим минимально менять код, но его реальная семантика станет:
+
+"зафиксировать Kafka-сообщение для последующей публикации".
+
+Я бы даже рассмотрел переименование в:
+
+IKafkaOutboxPublisher
+
+или
+
+IKafkaEventPublisher
+
+но это уже вопрос чистоты API, а не функциональности.
+
+10. Как выглядит вся система после изменения
+                    PostgreSQL
+                       │
+          ┌────────────┴────────────┐
+          │                         │
+      Message                 KafkaOutbox
+      QUEUED                    PENDING
+          │                         │
+          └────────── COMMIT ───────┘
+                                    │
+                                    ▼
+                            Outbox Publisher
+                                    │
+                                    ▼
+                                  Kafka
+                                    │
+                                    ▼
+                     KafkaOutboundMessageConsumer
+                                    │
+                                    ▼
+                         isAlreadyAccepted()
+                                    │
+                                    ▼
+                         ChannelConnector
+                                    │
+                                    ▼
+                              Telegram
+                                    │
+                         ┌──────────┴──────────┐
+                         ▼                     ▼
+              UpdateMessageSendSucceeded   Failed
+                         │                     │
+                         ▼                     ▼
+                       SENT                  FAILED
+                    PROCESSED              PROCESSED
+11. Что Outbox НЕ должен делать
+
+Я бы не смешивал в нём:
+
+состояние Message;
+состояние доставки Telegram;
+attachment storage;
+retry Telegram;
+externalId;
+sentAt;
+deliveredAt;
+readAt.
+
+Outbox отвечает только за:
+
+"Эта команда должна быть опубликована в Kafka."
+
+А Message отвечает за:
+
+"Что произошло с бизнес-сообщением и его доставкой?"
+
+Это две разные ответственности.
+
+Итого
+
+Главная гарантия будет такой:
+
+Message + Attachments + Outbox
+             │
+             │ одна DB transaction
+             ▼
+           COMMIT
+             │
+             ▼
+      Outbox → Kafka
+
+вместо текущего опасного:
+
+Message + Attachments
+        │
+        ├── Kafka
+        │
+        └── DB COMMIT

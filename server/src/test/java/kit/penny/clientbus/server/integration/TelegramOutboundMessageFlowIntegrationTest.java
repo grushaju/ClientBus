@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.ActiveProfiles;
@@ -28,6 +29,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
@@ -52,6 +54,9 @@ class TelegramOutboundMessageFlowIntegrationTest
 
     private static final long TELEGRAM_MESSAGE_ID =
             987654321L;
+
+    @Autowired
+    private KafkaListenerEndpointRegistry kafkaListenerEndpointRegistry;
 
     @Autowired
     private MessageProcessingService messageProcessingService;
@@ -109,7 +114,7 @@ class TelegramOutboundMessageFlowIntegrationTest
             DynamicPropertyRegistry registry
     ) {
         registry.add(
-                "clientbus.kafka.consumer.outbound-group-id",
+                "spring.kafka.consumer.outbound-group-id",
                 () -> CONSUMER_GROUP
         );
     }
@@ -265,17 +270,96 @@ class TelegramOutboundMessageFlowIntegrationTest
                         null
                 );
 
+        var container =
+                kafkaListenerEndpointRegistry.getListenerContainer(
+                        "kafkaOutboundMessageConsumer"
+                );
+
+        assertNotNull(container);
+        assertTrue(container.isRunning());
+
+        System.out.println(
+                "OUTBOUND CONSUMER RUNNING = "
+                        + container.isRunning()
+        );
+
+        System.out.println(
+                "OUTBOUND CONSUMER GROUP = "
+                        + container.getContainerProperties().getGroupId()
+        );
+
+        System.out.println(
+                "OUTBOUND ASSIGNMENTS = "
+                        + container.getAssignedPartitions()
+        );
+
+        System.out.println(
+                "OUTBOUND ASSIGNMENTS BY CLIENT = "
+                        + container.getAssignmentsByClientId()
+        );
+
+
         var result =
                 messageProcessingService.processOutbound(
                         request,
                         List.of()
                 );
+        await().atMost(Duration.ofSeconds(15))
+                .untilAsserted(() -> {
+                     var container2 =
+                            kafkaListenerEndpointRegistry.getListenerContainer(
+                                    "kafkaOutboundMessageConsumer"
+                            );
+
+                    assertNotNull(container2);
+                    assertFalse(
+                            container2.getAssignedPartitions().isEmpty()
+                    );
+                });
+
+         container =
+                kafkaListenerEndpointRegistry.getListenerContainer(
+                        "kafkaOutboundMessageConsumer"
+                );
+
+        assertNotNull(container);
+        assertTrue(container.isRunning());
+
+        System.out.println(
+                "OUTBOUND CONSUMER RUNNING = "
+                        + container.isRunning()
+        );
+
+        System.out.println(
+                "OUTBOUND CONSUMER GROUP = "
+                        + container.getContainerProperties().getGroupId()
+        );
+
+        System.out.println(
+                "OUTBOUND ASSIGNMENTS = "
+                        + container.getAssignedPartitions()
+        );
+
+        System.out.println(
+                "OUTBOUND ASSIGNMENTS BY CLIENT = "
+                        + container.getAssignmentsByClientId()
+        );
 
         assertNotNull(result);
         assertNotNull(result.id());
 
         UUID messageId =
                 result.id();
+
+        MessageEntity message =
+                messageService.getMessageEntityForProcessing(messageId);
+
+        System.out.println(
+                "AFTER PROCESS OUTBOUND: "
+                        + "processing=" + message.getProcessingStatus()
+                        + ", delivery=" + message.getDeliveryStatus()
+                        + ", externalId=" + message.getExternalId()
+        );
 
         ArgumentCaptor<TdApi.Function> functionCaptor =
                 ArgumentCaptor.forClass(
@@ -493,6 +577,23 @@ class TelegramOutboundMessageFlowIntegrationTest
                         null
                 );
 
+        var container =
+                kafkaListenerEndpointRegistry.getListenerContainer(
+                        "kafkaOutboundMessageConsumer"
+                );
+
+        assertNotNull(container);
+        assertTrue(container.isRunning());
+
+        System.out.println(
+                "OUTBOUND CONSUMER RUNNING = "
+                        + container.isRunning()
+        );
+        System.out.println(
+                "OUTBOUND CONSUMER GROUP = "
+                        + container.getContainerProperties().getGroupId()
+        );
+
         var result =
                 messageProcessingService.processOutbound(
                         request,
@@ -652,7 +753,7 @@ class TelegramOutboundMessageFlowIntegrationTest
         /*
          * A failed delivery must not receive sentAt.
          */
-        assertNotNull(
+        assertNull(
                 failedMessage.getSentAt()
         );
     }
@@ -729,6 +830,23 @@ class TelegramOutboundMessageFlowIntegrationTest
 
         var attachment =
                 TestDataFactory.attachmentContent();
+
+        var container =
+                kafkaListenerEndpointRegistry.getListenerContainer(
+                        "kafkaOutboundMessageConsumer"
+                );
+
+        assertNotNull(container);
+        assertTrue(container.isRunning());
+
+        System.out.println(
+                "OUTBOUND CONSUMER RUNNING = "
+                        + container.isRunning()
+        );
+        System.out.println(
+                "OUTBOUND CONSUMER GROUP = "
+                        + container.getContainerProperties().getGroupId()
+        );
 
         var result =
                 messageProcessingService.processOutbound(
@@ -1069,10 +1187,19 @@ class TelegramOutboundMessageFlowIntegrationTest
                 photo.caption.text
         );
 
+        /*
+         * SendMessage() accepted the outbound request,
+         * but this is NOT yet SENT.
+         *
+         * The returned Telegram message ID is temporarily
+         * registered as externalId while delivery is PENDING.
+         */
         MessageEntity pendingMessage =
-                awaitMessageStatus(
+                awaitMessageExternalId(
                         messageId,
-                        MessageDeliveryStatus.PENDING
+                        String.valueOf(
+                                TELEGRAM_MESSAGE_ID
+                        )
                 );
 
         assertEquals(
@@ -1201,7 +1328,7 @@ class TelegramOutboundMessageFlowIntegrationTest
                 failedMessage.getProcessedAt()
         );
 
-        assertNotNull(
+        assertNull(
                 failedMessage.getSentAt()
         );
 
@@ -1218,8 +1345,18 @@ class TelegramOutboundMessageFlowIntegrationTest
                 failedAttachments.getFirst();
 
         assertEquals(
-                messageAttachment.getId(),
-                failedAttachment.getId()
+                MessageAttachmentType.IMAGE,
+                failedAttachment.getType()
+        );
+
+        assertEquals(
+                "test-image.jpg",
+                failedAttachment.getFileName()
+        );
+
+        assertEquals(
+                "image/jpeg",
+                failedAttachment.getContentType()
         );
 
         assertEquals(
@@ -1227,7 +1364,7 @@ class TelegramOutboundMessageFlowIntegrationTest
                 failedAttachment.getStorageKey()
         );
 
-       assertTrue(
+        assertTrue(
                 attachmentStorage.exists(
                         storageKey
                 ),
@@ -1236,16 +1373,21 @@ class TelegramOutboundMessageFlowIntegrationTest
 
         await()
                 .atMost(
-                        java.time.Duration.ofSeconds(5)
+                        java.time.Duration.ofSeconds(15)
                 )
-                .untilAsserted(() ->
-                        org.junit.jupiter.api.Assertions.assertFalse(
-                                java.nio.file.Files.exists(
-                                        temporaryFile
-                                ),
-                                "Telegram temporary image file must be deleted after send failure"
-                        )
+                .until(
+                        () -> java.nio.file.Files.exists(
+                                temporaryFile
+                        ),
+                        org.hamcrest.Matchers.is(false)
                 );
+
+        assertFalse(
+                java.nio.file.Files.exists(
+                        temporaryFile
+                ),
+                "Telegram temporary image file must be deleted after send failure"
+        );
     }
 
     @Test

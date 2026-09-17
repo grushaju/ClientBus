@@ -777,6 +777,172 @@ class KafkaOutboundMessageConsumerTest {
         );
     }
 
+    @Test
+    void shouldSendMessageWhenExternalIdIsEmpty() {
+
+        OutboundMessageKafkaCommand command =
+                validCommand();
+
+        UUID messageId = command.messageId();
+
+        ChannelSendRequest request =
+                new ChannelSendRequest(
+                        command.messageId(),
+                        command.channelAccountId(),
+                        command.recipientExternalId(),
+                        command.type(),
+                        command.content(),
+                        List.of()
+                );
+
+        KafkaEvent<OutboundMessageKafkaCommand> event =
+                outboundEvent(
+                        command,
+                        UUID.randomUUID()
+                );
+
+        MessageEntity message =
+                messageInPendingState(
+                        messageId,
+                        ""
+                );
+
+        when(messageService.getMessageEntityForProcessing(messageId))
+                .thenReturn(message);
+
+        when(commandMapper.toRequest(command))
+                .thenReturn(request);
+
+        when(channelConnectorRegistry.getConnector(
+                ChannelType.TELEGRAM
+        )).thenReturn(connector);
+
+        when(connector.send(request))
+                .thenReturn(
+                        new ConnectorSendResult("external-123")
+                );
+
+        consumer.consume(
+                event,
+                "clientbus.outbound.telegram"
+        );
+
+        verify(connector)
+                .send(request);
+
+        verify(messageService)
+                .registerPendingExternalId(
+                        messageId,
+                        "external-123"
+                );
+    }
+
+    @Test
+    void shouldSendMessageWhenExternalIdIsWhitespace() {
+
+        OutboundMessageKafkaCommand command =
+                validCommand();
+
+        UUID messageId = command.messageId();
+
+        ChannelSendRequest request =
+                new ChannelSendRequest(
+                        command.messageId(),
+                        command.channelAccountId(),
+                        command.recipientExternalId(),
+                        command.type(),
+                        command.content(),
+                        List.of()
+                );
+
+        KafkaEvent<OutboundMessageKafkaCommand> event =
+                outboundEvent(
+                        command,
+                        UUID.randomUUID()
+                );
+
+        MessageEntity message =
+                messageInPendingState(
+                        messageId,
+                        "   "
+                );
+
+        when(messageService.getMessageEntityForProcessing(messageId))
+                .thenReturn(message);
+
+        when(commandMapper.toRequest(command))
+                .thenReturn(request);
+
+        when(channelConnectorRegistry.getConnector(
+                ChannelType.TELEGRAM
+        )).thenReturn(connector);
+
+        when(connector.send(request))
+                .thenReturn(
+                        new ConnectorSendResult("external-456")
+                );
+
+        consumer.consume(
+                event,
+                "clientbus.outbound.telegram"
+        );
+
+        verify(connector)
+                .send(request);
+
+        verify(messageService)
+                .registerPendingExternalId(
+                        messageId,
+                        "external-456"
+                );
+    }
+
+    @Test
+    void shouldPropagateMessageNotFoundException() {
+
+        OutboundMessageKafkaCommand command =
+                validCommand();
+
+        UUID messageId = command.messageId();
+
+        KafkaEvent<OutboundMessageKafkaCommand> event =
+                outboundEvent(
+                        command,
+                        UUID.randomUUID()
+                );
+
+        when(messageService.getMessageEntityForProcessing(messageId))
+                .thenThrow(
+                        new jakarta.persistence.EntityNotFoundException(
+                                "Message not found: " + messageId
+                        )
+                );
+
+        assertThatThrownBy(() ->
+                consumer.consume(
+                        event,
+                        "clientbus.outbound.telegram"
+                )
+        )
+                .isInstanceOf(
+                        jakarta.persistence.EntityNotFoundException.class
+                )
+                .hasMessage(
+                        "Message not found: " + messageId
+                );
+
+        verify(messageService)
+                .getMessageEntityForProcessing(messageId);
+
+        verifyNoInteractions(
+                channelConnectorRegistry,
+                commandMapper,
+                connector
+        );
+    }
+
+
+
     private MessageEntity messageInPendingState(
             UUID messageId,
             String externalId
