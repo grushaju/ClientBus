@@ -255,13 +255,13 @@ public class ConversationController {
     /**
      * Взять Conversation на себя.
      *
-     * EMPLOYEE / SUPER_ADMIN.
+     * Только EMPLOYEE
      *
      * Нельзя забрать Conversation,
      * назначенный другому Employee.
      */
     @PostMapping("/{conversationId}/assignment/me")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasRole('EMPLOYEE')")
     public ResponseEntity<ConversationDto> assignmentToMe(
             @PathVariable UUID conversationId
     ) {
@@ -276,12 +276,12 @@ public class ConversationController {
     /**
      * Снять с себя назначение.
      *
-     * EMPLOYEE / SUPER_ADMIN.
+     * Только EMPLOYEE .
      *
      * Нельзя снять назначение другого Employee.
      */
     @DeleteMapping("/{conversationId}/assignment/me")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasRole('EMPLOYEE')")
     public ResponseEntity<ConversationDto> unassignmentFromMe(
             @PathVariable UUID conversationId
     ) {
@@ -297,7 +297,7 @@ public class ConversationController {
      * Пометить Conversation прочитанным.
      */
     @PostMapping("/{conversationId}/read")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasRole('EMPLOYEE')")
     public ResponseEntity<ConversationDto> markAsRead(
             @PathVariable UUID conversationId
     ) {

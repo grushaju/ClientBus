@@ -1,14 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <module type="GENERAL_MODULE" version="4">
-  <component name="NewModuleRootManager" LANGUAGE_LEVEL="JDK_21">
-    <output url="file://$MODULE_DIR$/out/production/ClientBus" />
-    <output-test url="file://$MODULE_DIR$/out/test/ClientBus" />
-    <exclude-output />
-    <content url="file://$MODULE_DIR$" />
-    <orderEntry type="inheritedJdk" />
-    <orderEntry type="sourceFolder" forTests="false" />
-    <orderEntry type="module" module-name="Common" exported="" />
-    <orderEntry type="module" module-name="Server" exported="" />
-    <orderEntry type="module" module-name="UI" exported="" />
+  <component name="AdditionalModuleElements">
+    <content url="file://$MODULE_DIR$" dumb="true">
+      <excludeFolder url="file://$MODULE_DIR$/.idea/dataSources" />
+      <excludeFolder url="file://$MODULE_DIR$/.idea/httpRequests" />
+      <excludeFolder url="file://$MODULE_DIR$/scripts" />
+      <excludeFolder url="file://$MODULE_DIR$/ui/dist" />
+    </content>
   </component>
 </module>

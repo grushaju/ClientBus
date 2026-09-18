@@ -11,6 +11,7 @@ import kit.penny.clientbus.common.dto.clientaccount.ClientAccountDto;
 import kit.penny.clientbus.server.service.ClientService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -29,6 +30,7 @@ public class ClientController {
     }
 
     @PostMapping
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ClientDto> createClient(
             @RequestBody CreateClientRequest request
     ) {
@@ -42,6 +44,7 @@ public class ClientController {
     }
 
     @GetMapping("/workspace/{workspaceId}")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<ClientDto>> getClientsByWorkspace(
             @PathVariable UUID workspaceId
     ) {
@@ -52,6 +55,7 @@ public class ClientController {
     }
 
     @GetMapping("/workspace/{workspaceId}/without-accounts")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<ClientDto>> getClientsWithoutAccounts(
             @PathVariable UUID workspaceId
     ) {
@@ -64,6 +68,7 @@ public class ClientController {
     }
 
     @GetMapping("/workspace/{workspaceId}/search")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<ClientDto>> searchClients(
             @PathVariable UUID workspaceId,
             @RequestParam(required = false) String query
@@ -78,6 +83,7 @@ public class ClientController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ClientDto> getClient(
             @PathVariable UUID id
     ) {
@@ -87,6 +93,7 @@ public class ClientController {
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ClientDto> updateClient(
             @PathVariable UUID id,
             @RequestBody UpdateClientRequest request
@@ -97,6 +104,7 @@ public class ClientController {
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Void> deleteClient(
             @PathVariable UUID id
     ) {
@@ -106,6 +114,7 @@ public class ClientController {
     }
 
     @PostMapping("/{clientId}/clientaccounts")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ClientAccountDto> addClientAccount(
             @PathVariable UUID clientId,
             @Valid @RequestBody AddClientAccountRequest request
@@ -123,6 +132,7 @@ public class ClientController {
     }
 
     @PostMapping("/{clientId}/clientaccounts/{accountId}")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ClientAccountDto> assignClientAccount(
             @PathVariable UUID clientId,
             @PathVariable UUID accountId
@@ -138,6 +148,7 @@ public class ClientController {
     }
 
     @PostMapping("/{clientId}/clientaccounts/{accountId}/reassign")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ClientAccountDto> reassignClientAccount(
             @PathVariable UUID accountId,
             @PathVariable UUID clientId
@@ -153,6 +164,7 @@ public class ClientController {
     }
 
     @DeleteMapping("/clientaccounts/{accountId}")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ClientAccountDto> unassignClientAccount(
             @PathVariable UUID accountId
     ) {
@@ -166,6 +178,7 @@ public class ClientController {
     }
 
     @GetMapping("/{clientId}/clientaccounts")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<ClientAccountDto>> getAccounts(
             @PathVariable UUID clientId
     ) {

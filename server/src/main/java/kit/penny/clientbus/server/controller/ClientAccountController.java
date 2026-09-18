@@ -10,6 +10,7 @@ import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.server.service.ClientAccountService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -30,6 +31,7 @@ public class ClientAccountController {
     }
 
     @PostMapping
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ClientAccountDto> createClientAccount(
             @Valid
             @RequestBody CreateClientAccountRequest request
@@ -44,6 +46,7 @@ public class ClientAccountController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ClientAccountDto> getClientAccount(
             @PathVariable UUID id
     ) {
@@ -54,6 +57,7 @@ public class ClientAccountController {
     }
 
     @GetMapping("/client/{clientId}")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<ClientAccountDto>> getClientAccountsByClient(
             @PathVariable UUID clientId
     ) {
@@ -66,6 +70,7 @@ public class ClientAccountController {
     }
 
     @GetMapping("/client/{clientId}/type/{channelType}")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<ClientAccountDto>> getClientAccountsByType(
             @PathVariable UUID clientId,
             @PathVariable ChannelType channelType
@@ -80,6 +85,7 @@ public class ClientAccountController {
     }
 
     @GetMapping("/unassigned")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<ClientAccountDto>> getUnassignedAccounts(
             @RequestParam(required = false) ChannelType channelType
     ) {
@@ -98,6 +104,7 @@ public class ClientAccountController {
     }
 
     @GetMapping("/client/{clientId}/search")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<ClientAccountDto>> searchClientAccounts(
             @PathVariable UUID clientId,
             @RequestParam String query
@@ -112,6 +119,7 @@ public class ClientAccountController {
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ClientAccountDto> updateClientAccount(
             @PathVariable UUID id,
             @Valid
@@ -127,6 +135,7 @@ public class ClientAccountController {
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Void> deleteClientAccount(
             @PathVariable UUID id
     ) {

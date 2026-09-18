@@ -12,6 +12,7 @@ import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.server.service.ChannelService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -36,6 +37,7 @@ public class ChannelController {
     // =========================================================
 
     @PostMapping
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ChannelDto> createChannel(
             @Valid
             @RequestBody CreateChannelRequest request
@@ -50,6 +52,7 @@ public class ChannelController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ChannelDto> getChannel(
             @PathVariable UUID id
     ) {
@@ -60,6 +63,7 @@ public class ChannelController {
     }
 
     @GetMapping("/workspace/{workspaceId}")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<ChannelDto>> getChannelsByWorkspace(
             @PathVariable UUID workspaceId
     ) {
@@ -74,6 +78,7 @@ public class ChannelController {
     @GetMapping(
             "/workspace/{workspaceId}/type/{type}"
     )
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<ChannelDto>> getChannelsByType(
             @PathVariable UUID workspaceId,
             @PathVariable ChannelType type
@@ -88,6 +93,7 @@ public class ChannelController {
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     public ResponseEntity<ChannelDto> updateChannel(
             @PathVariable UUID id,
             @Valid
@@ -103,6 +109,7 @@ public class ChannelController {
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     public ResponseEntity<Void> deleteChannel(
             @PathVariable UUID id
     ) {
@@ -119,6 +126,7 @@ public class ChannelController {
     // =========================================================
 
     @GetMapping("/{channelId}/account")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ChannelAccountDto> getChannelAccount(
             @PathVariable UUID channelId
     ) {
@@ -131,6 +139,7 @@ public class ChannelController {
     }
 
     @PutMapping("/{channelId}/account")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     public ResponseEntity<ChannelAccountDto> updateChannelAccount(
             @PathVariable UUID channelId,
             @Valid

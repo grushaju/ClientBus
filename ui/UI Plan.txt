@@ -1,0 +1,71 @@
+план UI:
+
+1. Application Shell
+- Router
+- Auth
+- Workspace Context
+- Layout
+- Sidebar / Header
+2. Inbox
+- список Conversation
+- свои / неназначенные
+- Conversation View
+- назначение
+- освобождение / взятие
+- сообщения
+- attachments
+3. Clients
+- список клиентов
+- поиск
+- карточка Client
+- CRUD
+- ClientAccount
+- привязка / отвязка аккаунтов
+- создание Client из ClientAccount без клиента
+4. Channels
+- список Channel
+- создание / редактирование / удаление
+- ChannelAccount
+- подключение аккаунтов через connectors
+5. Workspaces
+- CRUD Workspace
+- статистика/связанные сущности
+- доступно SUPER_ADMIN
+6. Employees
+- CRUD Employee
+- enable/disable
+- credentials
+- назначение Employee → Workspace
+- доступно SUPER_ADMIN
+7. Интеграционная логика
+- единый API layer
+- обработка ошибок
+- loading/empty states
+- permissions
+- pagination/filtering
+- realtime, если backend готов
+8. Финальная UI-полировка
+- UX всех сценариев
+- confirmation dialogs
+- notifications
+- accessibility
+- responsive behavior
+- keyboard navigation
+9. CSS / Design System — ПОСЛЕДНИМ
+- цветовая система
+- typography
+- spacing
+- borders/radius/shadows
+- buttons
+- inputs/selects
+- tables
+- cards
+- modal/dialog
+- dropdown
+- badges/statuses
+- sidebar/header
+- Inbox layout
+- message bubbles
+- Client/Employee/Workspace cards
+- responsive breakpoints
+- dark/light theme, если решим его делать

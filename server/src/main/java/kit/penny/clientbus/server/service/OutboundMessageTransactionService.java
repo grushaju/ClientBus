@@ -8,10 +8,8 @@ import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.common.enums.MessageDirection;
 import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
 import kit.penny.clientbus.common.kafka.PlatformOutboundAttachment;
-import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
-import kit.penny.clientbus.server.persistence.entity.ConversationEntity;
-import kit.penny.clientbus.server.persistence.entity.MessageAttachmentEntity;
-import kit.penny.clientbus.server.persistence.entity.MessageEntity;
+import kit.penny.clientbus.server.persistence.entity.*;
+import kit.penny.clientbus.server.security.service.CurrentUserService;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -23,15 +21,17 @@ public class OutboundMessageTransactionService {
     private final ConversationService conversationService;
     private final MessageService messageService;
     private final MessageAttachmentService messageAttachmentService;
+    private final CurrentUserService currentUserService;
 
     public OutboundMessageTransactionService(
             ConversationService conversationService,
             MessageService messageService,
-            MessageAttachmentService messageAttachmentService
-    ) {
+            MessageAttachmentService messageAttachmentService,
+            CurrentUserService currentUserService) {
         this.conversationService = conversationService;
         this.messageService = messageService;
         this.messageAttachmentService = messageAttachmentService;
+        this.currentUserService = currentUserService;
     }
 
     @Transactional
@@ -242,6 +242,17 @@ public class OutboundMessageTransactionService {
                 throw new IllegalStateException(
                         "ChannelAccount has no ChannelType: "
                                 + channelAccount.getId()
+                );
+            }
+
+            EmployeeEntity currentEmployee = currentUserService.getCurrentEmployee();
+            EmployeeEntity assignedEmployee = conversation.getAssignedEmployee();
+            if (currentUserService.isEmployee() &
+                    (assignedEmployee == null || assignedEmployee.equals(currentEmployee))
+            ) {
+                throw new IllegalStateException(
+                        "Current employee is not assigned to the conversation: "
+                                + conversationId
                 );
             }
 

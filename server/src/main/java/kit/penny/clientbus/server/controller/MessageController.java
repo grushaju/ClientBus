@@ -96,7 +96,7 @@ public class MessageController {
             value = "/outbound",
             consumes = MediaType.MULTIPART_FORM_DATA_VALUE
     )
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasRole('EMPLOYEE')")
     public ResponseEntity<MessageDto> processOutbound(
             @Parameter(
                     name = "request",
@@ -127,7 +127,7 @@ public class MessageController {
     }
 
     @PostMapping("/forward")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasRole('EMPLOYEE')")
     public ResponseEntity<MessageDto> forwardMessage(
             @Valid
             @RequestBody ForwardMessageRequest request
@@ -138,7 +138,7 @@ public class MessageController {
     }
 
     @PostMapping("/{messageId}/retry")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasRole('EMPLOYEE')")
     public ResponseEntity<MessageDto> retryOutbound(
             @PathVariable UUID messageId
     ) {
@@ -150,7 +150,7 @@ public class MessageController {
     }
 
     @GetMapping("/{messageId}/attachments")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasRole('EMPLOYEE')")
     public ResponseEntity<List<MessageAttachmentDto>> getAttachments(
             @PathVariable UUID messageId
     ) {

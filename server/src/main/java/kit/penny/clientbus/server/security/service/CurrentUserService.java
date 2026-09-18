@@ -1,5 +1,6 @@
 package kit.penny.clientbus.server.security.service;
 
+import kit.penny.clientbus.server.persistence.entity.ConversationEntity;
 import kit.penny.clientbus.server.persistence.entity.EmployeeEntity;
 import kit.penny.clientbus.server.persistence.repository.EmployeeRepository;
 import kit.penny.clientbus.server.persistence.repository.EmployeeWorkspaceRepository;
@@ -211,6 +212,29 @@ public class CurrentUserService {
         }
 
         return workspaceId;
+    }
+
+    private void requireConversationAccess(
+            ConversationEntity conversation
+    ) {
+        requireWorkspaceAccess(
+                conversation.getWorkspace().getId()
+        );
+
+        if (isSuperAdmin()) {
+            return;
+        }
+
+        EmployeeEntity assigned =
+                conversation.getAssignedEmployee();
+
+        if (assigned != null
+                && !assigned.getId().equals(
+                getCurrentEmployeeId())
+        ) {
+
+            throw new AccessDeniedException("");
+        }
     }
 
     public boolean isAuthenticated() {
