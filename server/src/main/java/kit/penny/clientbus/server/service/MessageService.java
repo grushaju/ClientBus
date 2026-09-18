@@ -63,6 +63,10 @@ public class MessageService {
                                 )
                         );
 
+        currentUserService.requireConversationAccess(
+                message.getConversation()
+        );
+
         currentUserService.requireWorkspaceAccess(
                 message.getConversation()
                         .getWorkspace()
@@ -86,6 +90,8 @@ public class MessageService {
                                                 + conversationId
                                 )
                         );
+
+        currentUserService.requireConversationAccess(conversation);
 
         currentUserService.requireWorkspaceAccess(
                 conversation.getWorkspace().getId()
@@ -1144,6 +1150,10 @@ public class MessageService {
                 getMessageEntityForProcessing(
                         messageId
                 );
+
+        currentUserService.requireConversationAccess(
+                message.getConversation()
+        );
 
         currentUserService.requireWorkspaceAccess(
                 message

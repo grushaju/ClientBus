@@ -24,6 +24,7 @@ export async function apiFetch(
 
     if (
         init.body &&
+        !(init.body instanceof FormData) &&
         !headers.has('Content-Type')
     ) {
         headers.set(

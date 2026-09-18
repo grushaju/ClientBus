@@ -53,6 +53,7 @@ public class ChannelService {
     public ChannelDto createChannel(
             CreateChannelRequest request
     ) {
+        currentUserService.requireSuperAdmin();
 
         currentUserService.requireWorkspaceAccess(
                 request.workspaceId()
@@ -147,6 +148,8 @@ public class ChannelService {
         ChannelEntity channel =
                 findChannel(id);
 
+        currentUserService.requireSuperAdmin();
+
         requireChannelWorkspaceAccess(channel);
 
         channelMapper.updateEntity(
@@ -162,6 +165,8 @@ public class ChannelService {
 
         ChannelEntity channel =
                 findChannel(id);
+
+        currentUserService.requireSuperAdmin();
 
         requireChannelWorkspaceAccess(channel);
 
@@ -200,6 +205,8 @@ public class ChannelService {
         ChannelEntity channel =
                 findChannel(channelId);
 
+        currentUserService.requireSuperAdmin();
+
         requireChannelWorkspaceAccess(channel);
 
         ChannelAccountEntity account =
@@ -220,6 +227,8 @@ public class ChannelService {
 
         ChannelEntity channel =
                 findChannel(channelId);
+
+        currentUserService.requireSuperAdmin();
 
         requireChannelWorkspaceAccess(channel);
 

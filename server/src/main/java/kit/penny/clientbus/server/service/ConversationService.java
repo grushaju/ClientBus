@@ -760,6 +760,8 @@ public class ConversationService {
         ConversationEntity conversation =
                 getConversationEntity(conversationId);
 
+        currentUserService.requireConversationAccess(conversation);
+
         requireConversationAccess(conversation);
 
         conversation.setUnreadCount(0);

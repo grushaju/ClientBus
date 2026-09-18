@@ -226,6 +226,46 @@ public class ClientAccountService {
     }
 
     @Transactional
+    public List<ClientAccountDto> getClientAccountsByIds(
+            List<UUID> ids
+    ) {
+
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+
+        if (currentUserService.isSuperAdmin()) {
+
+            return clientAccountRepository
+                    .findAllByIdsAndOrganizationId(
+                            ids,
+                            currentUserService
+                                    .getCurrentOrganizationId()
+                    )
+                    .stream()
+                    .map(clientAccountMapper::toDto)
+                    .toList();
+        }
+
+        if (currentUserService.isEmployee()) {
+
+            return clientAccountRepository
+                    .findAllByIdsAndEmployeeId(
+                            ids,
+                            currentUserService
+                                    .getCurrentEmployeeId()
+                    )
+                    .stream()
+                    .map(clientAccountMapper::toDto)
+                    .toList();
+        }
+
+        throw new AccessDeniedException(
+                "Unsupported user role"
+        );
+    }
+
+    @Transactional
     public List<ClientAccountDto> searchClientAccounts(
             UUID clientId,
             String query

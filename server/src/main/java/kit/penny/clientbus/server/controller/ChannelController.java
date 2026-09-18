@@ -37,7 +37,7 @@ public class ChannelController {
     // =========================================================
 
     @PostMapping
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     public ResponseEntity<ChannelDto> createChannel(
             @Valid
             @RequestBody CreateChannelRequest request

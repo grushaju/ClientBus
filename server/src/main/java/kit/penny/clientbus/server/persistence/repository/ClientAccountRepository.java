@@ -66,4 +66,32 @@ public interface ClientAccountRepository
             String externalId
     );
 
+    @Query("""
+        SELECT DISTINCT a
+        FROM ClientAccountEntity a
+        JOIN ConversationEntity c
+          ON c.clientAccount.id = a.id
+        WHERE a.id IN :ids
+          AND c.workspace.organization.id = :organizationId
+        """)
+    List<ClientAccountEntity> findAllByIdsAndOrganizationId(
+            @Param("ids") List<UUID> ids,
+            @Param("organizationId") UUID organizationId
+    );
+
+    @Query("""
+        SELECT DISTINCT a
+        FROM ClientAccountEntity a
+        JOIN ConversationEntity c
+          ON c.clientAccount.id = a.id
+        JOIN EmployeeWorkspaceEntity ew
+          ON ew.workspace.id = c.workspace.id
+        WHERE a.id IN :ids
+          AND ew.employee.id = :employeeId
+        """)
+    List<ClientAccountEntity> findAllByIdsAndEmployeeId(
+            @Param("ids") List<UUID> ids,
+            @Param("employeeId") UUID employeeId
+    );
+
 }

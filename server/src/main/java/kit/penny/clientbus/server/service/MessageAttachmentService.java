@@ -477,6 +477,10 @@ public class MessageAttachmentService {
                                 )
                         );
 
+        currentUserService.requireConversationAccess(
+                message.getConversation()
+        );
+
         currentUserService.requireWorkspaceAccess(
                 message.getConversation()
                         .getWorkspace()

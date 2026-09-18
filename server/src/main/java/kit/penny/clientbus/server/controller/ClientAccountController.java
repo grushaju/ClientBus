@@ -30,6 +30,17 @@ public class ClientAccountController {
         this.clientAccountService = clientAccountService;
     }
 
+    @GetMapping("/by-ids")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<List<ClientAccountDto>> getClientAccountsByIds(
+            @RequestParam List<UUID> ids
+    ) {
+
+        return ResponseEntity.ok(
+                clientAccountService.getClientAccountsByIds(ids)
+        );
+    }
+
     @PostMapping
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ClientAccountDto> createClientAccount(

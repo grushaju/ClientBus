@@ -214,7 +214,7 @@ public class CurrentUserService {
         return workspaceId;
     }
 
-    private void requireConversationAccess(
+    public void requireConversationAccess(
             ConversationEntity conversation
     ) {
         requireWorkspaceAccess(
@@ -233,7 +233,7 @@ public class CurrentUserService {
                 getCurrentEmployeeId())
         ) {
 
-            throw new AccessDeniedException("");
+            throw new AccessDeniedException("Conversation is assigned to another employee");
         }
     }
 
