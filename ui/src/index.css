@@ -367,12 +367,19 @@ a {
 }
 
 .conversation-list-item-platform {
-    margin-top: 3px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+    font-size: 12px;
+}
 
-    color: #6b7280;
+.conversation-list-item-platform strong {
+    font-weight: 600;
+}
 
-    font-size: 11px;
-    text-transform: uppercase;
+.conversation-list-item-platform span {
+    color: #888;
 }
 
 .conversation-list-item-bottom {
@@ -417,6 +424,35 @@ a {
 
     font-size: 11px;
     font-weight: 600;
+}
+
+.platform-icon {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+}
+
+.platform-icon svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.conversation-list-item-platform {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    font-size: 12px;
+}
+
+.conversation-list-item-platform strong {
+    font-weight: 600;
+}
+
+.conversation-list-item-platform span {
+    color: #888;
 }
 
 /* =========================================================
@@ -706,6 +742,16 @@ a {
     color: #4b5563;
 
     font-size: 12px;
+}
+
+.message-attachment-image {
+    display: block;
+    max-width: 320px;
+    max-height: 320px;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    border-radius: 10px;
 }
 
 /* =========================================================

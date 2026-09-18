@@ -1,6 +1,7 @@
 import { apiFetch } from './apiClient'
 
 import type {
+    MessageAttachmentDto,
     MessageDto,
     MessagePage,
     MessageType
@@ -18,9 +19,31 @@ export async function getConversationMessages(
     return response.json()
 }
 
+export async function getMessageAttachments(
+    messageId: string
+): Promise<MessageAttachmentDto[]> {
+    const response = await apiFetch(
+        `/api/messages/${messageId}/attachments`
+    )
+
+    return response.json()
+}
+
+export async function getMessageAttachmentBlob(
+    messageId: string,
+    attachmentId: string
+): Promise<Blob> {
+    const response = await apiFetch(
+        `/api/messages/${messageId}/attachments/${attachmentId}`
+    )
+
+    return response.blob()
+}
+
 export async function sendOutboundMessage(
     conversationId: string,
-    content: string,
+    type: MessageType,
+    content: string | null,
     attachments: File[] = [],
     replyToMessageId: string | null = null
 ): Promise<MessageDto> {
@@ -28,7 +51,7 @@ export async function sendOutboundMessage(
 
     const request = {
         conversationId,
-        type: 'TEXT' as MessageType,
+        type,
         content,
         metadata: null,
         replyToMessageId

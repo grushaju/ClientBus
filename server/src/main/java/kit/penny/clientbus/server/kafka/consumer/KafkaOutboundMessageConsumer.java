@@ -1,6 +1,5 @@
 package kit.penny.clientbus.server.kafka.consumer;
 
-import kit.penny.clientbus.common.dto.message.MessageDto;
 import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.common.enums.MessageDeliveryStatus;
 import kit.penny.clientbus.common.enums.MessageProcessingStatus;
@@ -10,11 +9,14 @@ import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
 import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
 import kit.penny.clientbus.server.connector.ConnectorSendResult;
 import kit.penny.clientbus.server.connector.IChannelConnector;
+import kit.penny.clientbus.server.connector.telegram.startup.TelegramClientStartupService;
 import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
 import kit.penny.clientbus.server.mapper.OutboundMessageKafkaCommandMapper;
 import kit.penny.clientbus.server.persistence.entity.MessageEntity;
 import kit.penny.clientbus.server.service.ChannelSendRequest;
 import kit.penny.clientbus.server.service.MessageService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.handler.annotation.Header;
@@ -22,6 +24,9 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class KafkaOutboundMessageConsumer {
+
+    private static final Logger log =
+            LoggerFactory.getLogger(KafkaOutboundMessageConsumer.class);
 
     private final ChannelConnectorRegistry channelConnectorRegistry;
     private final OutboundMessageKafkaCommandMapper commandMapper;
@@ -54,38 +59,106 @@ public class KafkaOutboundMessageConsumer {
         OutboundMessageKafkaCommand command =
                 event.payload();
 
+        log.info(
+                "Processing outbound message: messageId={},  " +
+                        "channelType={}, topic={}, type={}, contentPresent={}, " +
+                        "attachmentCount={}",
+                command.messageId(),
+                channelType,
+                topic,
+                command.type(),
+                command.content() != null && !command.content().isBlank(),
+                command.attachments() != null
+                        ? command.attachments().size()
+                        : 0
+        );
+
         if (isAlreadyAcceptedForDelivery(command.messageId())) {
+            log.info(
+                    "Skipping outbound message: already accepted for delivery, " +
+                            "messageId={}",
+                    command.messageId()
+            );
             return;
         }
 
-        IChannelConnector connector =
-                channelConnectorRegistry.getConnector(channelType);
+        IChannelConnector connector;
 
-        ChannelSendRequest request =
-                commandMapper.toRequest(command);
-
-        ConnectorSendResult result =
-                connector.send(request);
-
-        if (result == null) {
-            throw new IllegalStateException(
-                    "Connector returned null send result"
+        try {
+            connector =
+                    channelConnectorRegistry.getConnector(channelType);
+        } catch (Exception e) {
+            log.error(
+                    "Failed to resolve channel connector: messageId={}, " +
+                            "channelType={}, topic={}",
+                    command.messageId(),
+                    channelType,
+                    topic,
+                    e
             );
+            throw e;
         }
 
-        if (result.externalId() == null
-                || result.externalId().isBlank()) {
-            throw new IllegalStateException(
-                    "Connector returned blank externalId"
-            );
-        }
-
-        messageService.registerPendingExternalId(
+        log.debug(
+                "Resolved outbound connector: messageId={}, channelType={}, " +
+                        "connector={}",
                 command.messageId(),
-                result.externalId()
+                channelType,
+                connector.getClass().getSimpleName()
+        );
+
+        ChannelSendRequest request;
+
+        try {
+            request =
+                    commandMapper.toRequest(command);
+        } catch (Exception e) {
+            log.error(
+                    "Failed to map outbound command to connector request: " +
+                            "messageId={}, channelType={}",
+                    command.messageId(),
+                    channelType,
+                    e
+            );
+            throw e;
+        }
+
+        log.debug(
+                "Outbound connector request prepared: messageId={}, " +
+                        "channelType={}, connector={}",
+                command.messageId(),
+                channelType,
+                connector.getClass().getSimpleName()
+        );
+
+        ConnectorSendResult result;
+
+        try {
+            result =
+                    connector.send(request);
+        } catch (Exception e) {
+            log.error(
+                    "Connector threw exception while sending outbound message: " +
+                            "messageId={}, channelType={}, " +
+                            "connector={}",
+                    command.messageId(),
+                    channelType,
+                    connector.getClass().getSimpleName(),
+                    e
+            );
+            throw e;
+        }
+
+        log.info(
+                "Outbound connector send completed: messageId={}, " +
+                        "channelType={}, connector={}, " +
+                        "result={}",
+                command.messageId(),
+                channelType,
+                connector.getClass().getSimpleName(),
+                result
         );
     }
-
     private boolean isAlreadyAcceptedForDelivery(
             java.util.UUID messageId
     ) {

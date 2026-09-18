@@ -1,22 +1,25 @@
 import { Link } from 'react-router-dom'
 
 import type {
-    ConversationListItem
+    ConversationListItem,
 } from '../../api/types/conversation'
+
+import PlatformIcon from '../common/platform/PlatformIcon'
+import PlatformName from '../common/platform/PlatformName'
 
 interface ConversationListItemProps {
     item: ConversationListItem
-    active?: boolean
+    active: boolean
 }
 
 function ConversationListItemComponent({
-    item,
-    active = false
-}: ConversationListItemProps) {
+                                           item,
+                                           active,
+                                       }: ConversationListItemProps) {
     const {
         conversation,
         clientAccount,
-        channel
+        channel,
     } = item
 
     const clientName =
@@ -30,6 +33,10 @@ function ConversationListItemComponent({
         channel?.type ??
         clientAccount?.channelType ??
         'UNKNOWN'
+
+    const channelName =
+        channel?.name ||
+        'Без названия'
 
     const timestamp =
         conversation.lastMessageAt ??
@@ -52,13 +59,22 @@ function ConversationListItemComponent({
 
                     <time>
                         {formatConversationTime(
-                            timestamp
+                            timestamp,
                         )}
                     </time>
                 </div>
 
                 <div className="conversation-list-item-platform">
-                    {platform}
+                    <PlatformIcon
+                        type={platform}
+                        size={16}
+                    />
+
+                    <strong>
+                        {channelName}
+                    </strong>
+
+                    <PlatformName type={platform}/>
                 </div>
 
                 <div className="conversation-list-item-bottom">
@@ -71,9 +87,7 @@ function ConversationListItemComponent({
 
                     {conversation.unreadCount > 0 && (
                         <span className="unread-badge">
-                            {
-                                conversation.unreadCount
-                            }
+                            {conversation.unreadCount}
                         </span>
                     )}
                 </div>
@@ -83,7 +97,7 @@ function ConversationListItemComponent({
 }
 
 function formatConversationTime(
-    value: string
+    value: string,
 ): string {
     const date = new Date(value)
 
@@ -94,17 +108,20 @@ function formatConversationTime(
     const now = new Date()
 
     const sameDay =
-        date.getFullYear() === now.getFullYear() &&
-        date.getMonth() === now.getMonth() &&
-        date.getDate() === now.getDate()
+        date.getFullYear() ===
+        now.getFullYear() &&
+        date.getMonth() ===
+        now.getMonth() &&
+        date.getDate() ===
+        now.getDate()
 
     if (sameDay) {
         return date.toLocaleTimeString(
             'ru-RU',
             {
                 hour: '2-digit',
-                minute: '2-digit'
-            }
+                minute: '2-digit',
+            },
         )
     }
 
@@ -112,8 +129,8 @@ function formatConversationTime(
         'ru-RU',
         {
             day: '2-digit',
-            month: '2-digit'
-        }
+            month: '2-digit',
+        },
     )
 }
 

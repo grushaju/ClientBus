@@ -19,6 +19,7 @@ import kit.penny.clientbus.server.storage.StoredAttachment;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -27,6 +28,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 
@@ -188,14 +190,20 @@ public class MessageController {
             mediaType = MediaType.APPLICATION_OCTET_STREAM;
         }
 
+        ContentDisposition contentDisposition =
+                ContentDisposition.attachment()
+                        .filename(
+                                stored.fileName(),
+                                StandardCharsets.UTF_8
+                        )
+                        .build();
+
         return ResponseEntity.ok()
                 .contentType(mediaType)
                 .contentLength(stored.size())
                 .header(
                         HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=\""
-                                + stored.fileName()
-                                + "\""
+                        contentDisposition.toString()
                 )
                 .body(resource);
     }

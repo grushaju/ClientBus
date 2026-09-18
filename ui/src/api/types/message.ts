@@ -1,3 +1,45 @@
+export interface MessageDto {
+    id: string
+    conversationId: string
+    type: MessageType
+    direction: MessageDirection
+    senderType: MessageSenderType
+    clientAccountId: string | null
+    employeeId: string | null
+    replyToMessageId: string | null
+    forwardedFromMessageId: string | null
+    externalId: string | null
+    content: string | null
+    metadata: string | null
+    sentAt: string | null
+    createdAt: string
+    processingStatus: MessageProcessingStatus
+    deliveryStatus: MessageDeliveryStatus
+    processedAt: string | null
+    deliveredAt: string | null
+    readAt: string | null
+}
+
+export interface OutboundMessageRequest {
+    conversationId: string
+    type: MessageType
+    content: string | null
+    metadata: string | null
+    replyToMessageId: string | null
+}
+
+export interface MessagePage {
+    content: MessageDto[]
+    totalElements: number
+    totalPages: number
+    size: number
+    number: number
+    first: boolean
+    last: boolean
+    numberOfElements: number
+    empty: boolean
+}
+
 export type MessageType =
     | 'TEXT'
     | 'IMAGE'
@@ -31,6 +73,21 @@ export type MessageDeliveryStatus =
     | 'DELIVERED'
     | 'READ'
     | 'FAILED'
+
+export type MessageAttachmentType =
+    | 'IMAGE'
+    | 'AUDIO'
+
+export interface MessageAttachmentDto {
+    id: string
+    messageId: string
+    type: MessageAttachmentType
+    fileName: string
+    contentType: string
+    size: number
+    storageKey: string
+    createdAt: string
+}
 
 export interface MessageDto {
     id: string
