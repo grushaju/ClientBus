@@ -152,7 +152,7 @@ public class MessageController {
     }
 
     @GetMapping("/{messageId}/attachments")
-    @PreAuthorize("hasRole('EMPLOYEE')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<MessageAttachmentDto>> getAttachments(
             @PathVariable UUID messageId
     ) {

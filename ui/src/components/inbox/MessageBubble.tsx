@@ -1,41 +1,37 @@
 import {
     useEffect,
-    useState
+    useState,
 } from 'react'
 
 import {
     getMessageAttachmentBlob,
-    getMessageAttachments
+    getMessageAttachments,
 } from '../../api/messageApi'
 
 import type {
     MessageAttachmentDto,
-    MessageDto
+    MessageDto,
 } from '../../api/types/message'
+
+import ImageViewer from './ImageViewer'
 
 interface MessageBubbleProps {
     message: MessageDto
 }
 
 function MessageBubble({
-                           message
+                           message,
                        }: MessageBubbleProps) {
     const isOutbound =
-        message.direction ===
-        'OUTBOUND'
+        message.direction === 'OUTBOUND'
 
     const isSystem =
-        message.senderType ===
-        'SYSTEM'
+        message.senderType === 'SYSTEM'
 
     const className = [
         'message-row',
-        isOutbound
-            ? 'outbound'
-            : 'inbound',
-        isSystem
-            ? 'system'
-            : ''
+        isOutbound ? 'outbound' : 'inbound',
+        isSystem ? 'system' : '',
     ]
         .filter(Boolean)
         .join(' ')
@@ -47,7 +43,6 @@ function MessageBubble({
     return (
         <div className={className}>
             <div className="message-bubble">
-
                 {message.content && (
                     <div className="message-content">
                         {message.content}
@@ -65,24 +60,27 @@ function MessageBubble({
                     message.type !== 'TEXT' && (
                         <div className="message-type">
                             {getMessageTypeLabel(
-                                message.type
+                                message.type,
                             )}
                         </div>
                     )}
 
                 <div className="message-meta">
-                    <time>
-                        {formatMessageTime(
+                    <time
+                        dateTime={
                             message.sentAt ??
                             message.createdAt
+                        }
+                    >
+                        {formatMessageTime(
+                            message.sentAt ??
+                            message.createdAt,
                         )}
                     </time>
 
                     {isOutbound && (
-                        <span>
-                            {getDeliveryLabel(
-                                message
-                            )}
+                        <span className="message-delivery-status">
+                            {getDeliveryLabel(message)}
                         </span>
                     )}
                 </div>
@@ -96,21 +94,21 @@ interface MessageAttachmentsProps {
 }
 
 function MessageAttachments({
-                                message
+                                message,
                             }: MessageAttachmentsProps) {
     const [
         attachments,
-        setAttachments
+        setAttachments,
     ] = useState<MessageAttachmentDto[]>([])
 
     const [
         loading,
-        setLoading
+        setLoading,
     ] = useState(true)
 
     const [
         error,
-        setError
+        setError,
     ] = useState<string | null>(null)
 
     useEffect(() => {
@@ -123,7 +121,7 @@ function MessageAttachments({
             try {
                 const result =
                     await getMessageAttachments(
-                        message.id
+                        message.id,
                     )
 
                 if (!cancelled) {
@@ -134,7 +132,7 @@ function MessageAttachments({
                     setError(
                         err instanceof Error
                             ? err.message
-                            : 'Не удалось загрузить вложение'
+                            : 'Не удалось загрузить вложения',
                     )
                 }
             } finally {
@@ -162,7 +160,7 @@ function MessageAttachments({
     if (error) {
         return (
             <div className="message-attachments-error">
-                Не удалось загрузить вложение
+                Не удалось загрузить вложения
             </div>
         )
     }
@@ -191,16 +189,21 @@ interface MessageAttachmentProps {
 
 function MessageAttachment({
                                messageId,
-                               attachment
+                               attachment,
                            }: MessageAttachmentProps) {
     const [
         url,
-        setUrl
+        setUrl,
     ] = useState<string | null>(null)
 
     const [
         error,
-        setError
+        setError,
+    ] = useState(false)
+
+    const [
+        viewerOpen,
+        setViewerOpen,
     ] = useState(false)
 
     useEffect(() => {
@@ -212,7 +215,7 @@ function MessageAttachment({
                 const blob =
                     await getMessageAttachmentBlob(
                         messageId,
-                        attachment.id
+                        attachment.id,
                     )
 
                 if (cancelled) {
@@ -241,7 +244,7 @@ function MessageAttachment({
         }
     }, [
         messageId,
-        attachment.id
+        attachment.id,
     ])
 
     if (error) {
@@ -262,12 +265,31 @@ function MessageAttachment({
 
     if (attachment.type === 'IMAGE') {
         return (
-            <img
-                className="message-attachment-image"
-                src={url}
-                alt={attachment.fileName}
-                loading="lazy"
-            />
+            <>
+                <button
+                    type="button"
+                    className="message-attachment-image-button"
+                    onClick={() => setViewerOpen(true)}
+                    aria-label={`Открыть ${attachment.fileName}`}
+                >
+                    <img
+                        className="message-attachment-image"
+                        src={url}
+                        alt={attachment.fileName}
+                        loading="lazy"
+                    />
+                </button>
+
+                {viewerOpen && (
+                    <ImageViewer
+                        src={url}
+                        alt={attachment.fileName}
+                        onClose={() =>
+                            setViewerOpen(false)
+                        }
+                    />
+                )}
+            </>
         )
     }
 
@@ -291,7 +313,7 @@ function MessageAttachment({
 }
 
 function formatMessageTime(
-    value: string
+    value: string,
 ): string {
     const date = new Date(value)
 
@@ -303,13 +325,13 @@ function formatMessageTime(
         'ru-RU',
         {
             hour: '2-digit',
-            minute: '2-digit'
-        }
+            minute: '2-digit',
+        },
     )
 }
 
 function getMessageTypeLabel(
-    type: MessageDto['type']
+    type: MessageDto['type'],
 ): string {
     switch (type) {
         case 'VIDEO':
@@ -336,37 +358,27 @@ function getMessageTypeLabel(
 }
 
 function getDeliveryLabel(
-    message: MessageDto
+    message: MessageDto,
 ): string {
-    if (
-        message.deliveryStatus ===
-        'READ'
-    ) {
-        return 'Прочитано'
-    }
+    switch (message.deliveryStatus) {
+        case 'READ':
+            return 'Прочитано'
 
-    if (
-        message.deliveryStatus ===
-        'DELIVERED'
-    ) {
-        return 'Доставлено'
-    }
+        case 'DELIVERED':
+            return 'Доставлено'
 
-    if (
-        message.deliveryStatus ===
-        'SENT'
-    ) {
-        return 'Отправлено'
-    }
+        case 'SENT':
+            return 'Отправлено'
 
-    if (
-        message.deliveryStatus ===
-        'FAILED'
-    ) {
-        return 'Ошибка'
-    }
+        case 'FAILED':
+            return 'Ошибка'
 
-    return 'Отправляется'
+        case 'PENDING':
+            return 'Отправляется'
+
+        default:
+            return ''
+    }
 }
 
 export default MessageBubble

@@ -1,23 +1,40 @@
-import { useCallback, useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
 import {
+    useCallback,
+    useEffect,
+    useState,
+} from 'react'
+
+import { useParams } from 'react-router-dom'
+
+import {
+    assignConversation,
     assignConversationToMe,
-    getConversation,
+    getConversation, unassignConversation,
     unassignConversationFromMe,
 } from '../../api/conversationApi'
+
 import { getClientAccount } from '../../api/clientAccountApi'
+
+import { getWorkspaceChannels } from '../../api/channelApi'
+
 import type {
+    ChannelSummary,
     ClientAccountSummary,
     ConversationDto,
 } from '../../api/types/conversation'
+
 import { useAuth } from '../../auth/AuthContext'
+
 import ConversationHeader from './ConversationHeader'
+import ConversationClientPanel from './ConversationClientPanel'
 import MessageComposer from './MessageComposer'
 import MessageList from './MessageList'
 import { useConversationMessages } from './useConversationMessages'
+import {EmployeeDto} from "../../auth/types";
 
 function ConversationView() {
     const { conversationId } = useParams()
+
     const {
         currentEmployee,
         isEmployee,
@@ -30,8 +47,20 @@ function ConversationView() {
     const [clientAccount, setClientAccount] =
         useState<ClientAccountSummary | null>(null)
 
-    const [loading, setLoading] = useState(false)
-    const [error, setError] = useState<string | null>(null)
+    const [channel, setChannel] =
+        useState<ChannelSummary | null>(null)
+
+    const [loading, setLoading] =
+        useState(false)
+
+    const [error, setError] =
+        useState<string | null>(null)
+
+    const [employees, setEmployees] =
+        useState<EmployeeDto[]>([])
+
+    const [actionError, setActionError] =
+        useState<string | null>(null)
 
     const {
         messages,
@@ -44,27 +73,59 @@ function ConversationView() {
         if (!conversationId) {
             setConversation(null)
             setClientAccount(null)
+            setChannel(null)
             return
         }
-
-        const id = conversationId
 
         setLoading(true)
         setError(null)
 
         try {
-            const result = await getConversation(id)
+            const result =
+                await getConversation(
+                    conversationId,
+                )
 
             setConversation(result)
 
             try {
-                const account = await getClientAccount(
-                    result.clientAccountId,
+                const account =
+                    await getClientAccount(
+                        result.clientAccountId,
+                    )
+
+                console.log(
+                    'ClientAccount loaded:',
+                    account,
                 )
 
                 setClientAccount(account)
-            } catch {
+            } catch (err) {
+                console.error(
+                    'ClientAccount load failed:',
+                    result.clientAccountId,
+                    err,
+                )
+
                 setClientAccount(null)
+            }
+
+            try {
+                const channels =
+                    await getWorkspaceChannels(
+                        result.workspaceId,
+                    )
+
+                const matchingChannel =
+                    channels.find(
+                        item =>
+                            item.account?.id ===
+                            result.channelAccountId,
+                    ) ?? null
+
+                setChannel(matchingChannel)
+            } catch {
+                setChannel(null)
             }
         } catch (err) {
             setError(
@@ -72,6 +133,10 @@ function ConversationView() {
                     ? err.message
                     : 'Не удалось загрузить диалог',
             )
+
+            setConversation(null)
+            setClientAccount(null)
+            setChannel(null)
         } finally {
             setLoading(false)
         }
@@ -115,14 +180,18 @@ function ConversationView() {
 
     const canSend =
         isEmployee &&
-        conversation.assignedEmployeeId === currentEmployee?.id
+        conversation.assignedEmployeeId ===
+        currentEmployee?.id
 
     const handleTake = async () => {
         if (!isEmployee) {
             return
         }
 
-        await assignConversationToMe(conversation.id)
+        await assignConversationToMe(
+            conversation.id,
+        )
+
         await loadConversation()
     }
 
@@ -131,8 +200,52 @@ function ConversationView() {
             return
         }
 
-        await unassignConversationFromMe(conversation.id)
+        await unassignConversationFromMe(
+            conversation.id,
+        )
+
         await loadConversation()
+    }
+
+    const handleAssign = async (employeeId: string) => {
+        if (!isSuperAdmin) return
+
+        setActionError(null)
+
+        try {
+            await assignConversation(
+                conversation.id,
+                employeeId,
+            )
+
+            await loadConversation()
+        } catch (err) {
+            setActionError(
+                err instanceof Error
+                    ? err.message
+                    : 'Не удалось назначить сотрудника',
+            )
+        }
+    }
+
+    const handleUnassign = async () => {
+        if (!isSuperAdmin) return
+
+        setActionError(null)
+
+        try {
+            await unassignConversation(
+                conversation.id,
+            )
+
+            await loadConversation()
+        } catch (err) {
+            setActionError(
+                err instanceof Error
+                    ? err.message
+                    : 'Не удалось снять назначение',
+            )
+        }
     }
 
     const handleMessageSent = async () => {
@@ -140,33 +253,46 @@ function ConversationView() {
         await loadConversation()
     }
 
-
     return (
         <div className="conversation-view">
-            <ConversationHeader
+            <div className="conversation-main">
+                <ConversationHeader
+                    conversation={conversation}
+                    clientAccount={clientAccount}
+                    channel={channel}
+                    employees={employees}
+                    currentEmployeeId={currentEmployee?.id ?? null}
+                    isEmployee={isEmployee}
+                    isSuperAdmin={isSuperAdmin}
+                    actionError={actionError}
+                    onTake={handleTake}
+                    onRelease={handleRelease}
+                    onAssign={handleAssign}
+                    onUnassign={handleUnassign}
+                />
+
+                <MessageList
+                    messages={messages}
+                    loading={messagesLoading}
+                    error={messagesError}
+                />
+
+                {canSend && (
+                    <MessageComposer
+                        conversationId={
+                            conversation.id
+                        }
+                        onSent={handleMessageSent}
+                    />
+                )}
+            </div>
+
+            <ConversationClientPanel
                 conversation={conversation}
                 clientAccount={clientAccount}
-                isEmployee={isEmployee}
-                isSuperAdmin={isSuperAdmin}
-                onTake={handleTake}
-                onRelease={handleRelease}
+                channel={channel}
+                onChanged={loadConversation}
             />
-
-            <MessageList
-                messages={messages}
-                loading={messagesLoading}
-                error={messagesError}
-            />
-
-            {canSend && (
-                <MessageComposer
-                    conversationId={conversation.id}
-                    onSent={async () => {
-                        await reloadMessages()
-                        await loadConversation()
-                    }}
-                />
-            )}
         </div>
     )
 }

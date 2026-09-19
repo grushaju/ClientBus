@@ -30,3 +30,13 @@ export async function getClientAccountsByIds(
 
     return response.json()
 }
+
+export async function getClientAccountsByClient(
+    clientId: string,
+): Promise<ClientAccountSummary[]> {
+    const response = await apiFetch(
+        `/api/clientaccounts/client/${clientId}`,
+    )
+
+    return response.json()
+}

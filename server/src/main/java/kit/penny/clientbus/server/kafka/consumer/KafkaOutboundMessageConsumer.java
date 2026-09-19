@@ -149,6 +149,22 @@ public class KafkaOutboundMessageConsumer {
             throw e;
         }
 
+        try {
+            messageService.registerPendingExternalId(
+                    command.messageId(),
+                    result.externalId()
+            );
+        } catch (Exception e) {
+            log.error(
+                    "Message service threw exception while registering pending externalId: " +
+                            "messageId={}," +
+                            "externalId={}",
+                    command.messageId(),
+                    result.externalId(),
+                    e
+            );
+            throw e;
+        }
         log.info(
                 "Outbound connector send completed: messageId={}, " +
                         "channelType={}, connector={}, " +

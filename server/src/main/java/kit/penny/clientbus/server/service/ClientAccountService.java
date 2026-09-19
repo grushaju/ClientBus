@@ -12,6 +12,7 @@ import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ClientEntity;
 import kit.penny.clientbus.server.persistence.repository.ClientAccountRepository;
 import kit.penny.clientbus.server.persistence.repository.ClientRepository;
+import kit.penny.clientbus.server.persistence.repository.ConversationRepository;
 import kit.penny.clientbus.server.security.service.CurrentUserService;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -26,17 +27,19 @@ public class ClientAccountService {
     private final ClientRepository clientRepository;
     private final ClientAccountMapper clientAccountMapper;
     private final CurrentUserService currentUserService;
+    private final ConversationRepository conversationRepository;
 
     public ClientAccountService(
             ClientAccountRepository clientAccountRepository,
             ClientRepository clientRepository,
             ClientAccountMapper clientAccountMapper,
-            CurrentUserService currentUserService
+            CurrentUserService currentUserService, ConversationRepository conversationRepository
     ) {
         this.clientAccountRepository = clientAccountRepository;
         this.clientRepository = clientRepository;
         this.clientAccountMapper = clientAccountMapper;
         this.currentUserService = currentUserService;
+        this.conversationRepository = conversationRepository;
     }
 
     @Transactional
@@ -344,13 +347,46 @@ public class ClientAccountService {
             ClientAccountEntity account
     ) {
 
-        if (account.getClient() == null) {
-            requireSuperAdmin();
+        if (currentUserService.isSuperAdmin()) {
+
+            boolean accessible =
+                    !conversationRepository
+                            .findAllByClientAccountIdAndOrganizationIdOrderByLastMessageAtDesc(
+                                    account.getId(),
+                                    currentUserService.getCurrentOrganizationId()
+                            )
+                            .isEmpty();
+
+            if (!accessible) {
+                throw new AccessDeniedException(
+                        "ClientAccount is not accessible"
+                );
+            }
+
             return;
         }
 
-        requireClientWorkspaceAccess(
-                account.getClient()
+        if (currentUserService.isEmployee()) {
+
+            boolean accessible =
+                    !conversationRepository
+                            .findAllByClientAccountIdAndEmployeeIdOrderByLastMessageAtDesc(
+                                    account.getId(),
+                                    currentUserService.getCurrentEmployeeId()
+                            )
+                            .isEmpty();
+
+            if (!accessible) {
+                throw new AccessDeniedException(
+                        "ClientAccount is not accessible"
+                );
+            }
+
+            return;
+        }
+
+        throw new AccessDeniedException(
+                "Unsupported user role"
         );
     }
 

@@ -6,3 +6,13 @@ export async function getCurrentEmployee(): Promise<EmployeeDto> {
 
     return response.json()
 }
+
+export async function getWorkspaceEmployees(
+    workspaceId: string,
+): Promise<EmployeeDto[]> {
+    const response = await apiFetch(
+        `/api/employees/workspace/${workspaceId}`,
+    )
+
+    return response.json()
+}

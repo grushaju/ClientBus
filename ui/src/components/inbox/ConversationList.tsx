@@ -197,7 +197,7 @@ function ConversationList() {
         <div className="conversation-list">
             <div className="conversation-list-header">
                 <div>
-                    <h2>Inbox</h2>
+                    <h2>Диалоги</h2>
 
                     <span className="conversation-list-workspace">
                         {currentWorkspace.name}
