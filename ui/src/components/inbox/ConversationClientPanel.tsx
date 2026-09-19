@@ -34,11 +34,11 @@ interface Props {
 }
 
 function ConversationClientPanel({
-    conversation,
-    clientAccount,
-    channel,
-    onChanged,
-}: Props) {
+                                     conversation,
+                                     clientAccount,
+                                     channel,
+                                     onChanged,
+                                 }: Props) {
     const [client, setClient] =
         useState<ClientDto | null>(null)
 
@@ -58,6 +58,9 @@ function ConversationClientPanel({
         useState(false)
 
     const [showLinkForm, setShowLinkForm] =
+        useState(false)
+
+    const [showOtherAccounts, setShowOtherAccounts] =
         useState(false)
 
     const [firstName, setFirstName] =
@@ -82,6 +85,8 @@ function ConversationClientPanel({
         let cancelled = false
 
         async function loadClient() {
+            setShowOtherAccounts(false)
+
             if (!clientAccount?.clientId) {
                 setClient(null)
                 setClientAccounts([])
@@ -181,11 +186,11 @@ function ConversationClientPanel({
             const created =
                 await createClient({
                     workspaceId:
-                        conversation.workspaceId,
+                    conversation.workspaceId,
                     firstName:
-                        normalizedFirstName,
+                    normalizedFirstName,
                     lastName:
-                        normalizedLastName,
+                    normalizedLastName,
                     phoneList:
                         phone.trim()
                             ? [phone.trim()]
@@ -197,9 +202,14 @@ function ConversationClientPanel({
                 clientAccount.id,
             )
 
+            const updatedAccount: ClientAccountSummary = {
+                ...clientAccount,
+                clientId: created.id,
+            }
+
             setClient(created)
             setClientAccounts([
-                clientAccount,
+                updatedAccount,
             ])
 
             setShowCreateForm(false)
@@ -277,8 +287,15 @@ function ConversationClientPanel({
                 clientAccount.id,
             )
 
+            const orphanAccount: ClientAccountSummary = {
+                ...clientAccount,
+                clientId: null,
+            }
+
             setClient(null)
-            setClientAccounts([])
+            setClientAccounts([
+                orphanAccount,
+            ])
 
             await onChanged()
         } catch (err) {
@@ -308,10 +325,21 @@ function ConversationClientPanel({
         clientAccount?.externalId ||
         'Неизвестный аккаунт'
 
-    const platformType =
-        clientAccount?.channelType ||
-        channel?.type ||
-        'UNKNOWN'
+    const currentAccount =
+        clientAccount
+            ? clientAccounts.find(
+            account =>
+                account.id ===
+                clientAccount.id,
+        ) ?? clientAccount
+            : null
+
+    const otherAccounts =
+        clientAccounts.filter(
+            account =>
+                account.id !==
+                clientAccount?.id,
+        )
 
     return (
         <aside className="conversation-client-panel">
@@ -601,103 +629,204 @@ function ConversationClientPanel({
                 )}
             </div>
 
-            {clientAccount && (
+            {currentAccount && (
                 <div className="conversation-client-panel-section">
                     <h3>Аккаунты</h3>
 
                     <div className="conversation-accounts-list">
-                        {(clientAccounts.length > 0
-                                ? clientAccounts
-                                : [clientAccount]
-                        ).map(account => {
-                            const name =
-                                account.displayName ||
-                                account.username ||
-                                account.phone ||
-                                account.externalId
-
-                            const isCurrent =
-                                account.id === clientAccount.id
-
-                            return (
-                                <div
-                                    key={account.id}
-                                    className={
-                                        isCurrent
-                                            ? 'conversation-account-card conversation-account-card-current'
-                                            : 'conversation-account-card'
+                        <div className="conversation-account-card conversation-account-card-current">
+                            <div className="conversation-account-platform">
+                                <PlatformIcon
+                                    type={
+                                        currentAccount.channelType
                                     }
-                                >
-                                    <div className="conversation-account-platform">
-                                        <PlatformIcon
-                                            type={account.channelType}
-                                            size={20}
-                                        />
+                                    size={20}
+                                />
 
-                                        <PlatformName
-                                            type={account.channelType}
-                                        />
+                                <PlatformName
+                                    type={
+                                        currentAccount.channelType
+                                    }
+                                />
 
-                                        {isCurrent && (
-                                            <span className="conversation-account-current">
+                                <span className="conversation-account-current">
                                     Текущий
                                 </span>
-                                        )}
-                                    </div>
+                            </div>
 
-                                    <div className="conversation-client-field">
-                                        <span>Имя</span>
+                            <div className="conversation-client-field">
+                                <span>Имя</span>
+                                <strong>
+                                    {currentAccount.displayName ||
+                                        currentAccount.username ||
+                                        currentAccount.phone ||
+                                        currentAccount.externalId}
+                                </strong>
+                            </div>
 
-                                        <strong>
-                                            {name}
-                                        </strong>
-                                    </div>
+                            <div className="conversation-client-field">
+                                <span>ID платформы</span>
+                                <strong>
+                                    {
+                                        currentAccount.externalId
+                                    }
+                                </strong>
+                            </div>
 
-                                    <div className="conversation-client-field">
-                                        <span>ID платформы</span>
-
-                                        <strong>
-                                            {account.externalId}
-                                        </strong>
-                                    </div>
-
-                                    {account.username && (
-                                        <div className="conversation-client-field">
-                                            <span>Username</span>
-
-                                            <strong>
-                                                @{account.username}
-                                            </strong>
-                                        </div>
-                                    )}
-
-                                    {account.phone && (
-                                        <div className="conversation-client-field">
-                                            <span>Телефон</span>
-
-                                            <strong>
-                                                {account.phone}
-                                            </strong>
-                                        </div>
-                                    )}
-
-                                    {isCurrent && (
-                                        <button
-                                            type="button"
-                                            className="conversation-client-secondary-button"
-                                            onClick={() =>
-                                                void handleUnlink()
-                                            }
-                                            disabled={actionLoading}
-                                        >
-                                            {actionLoading
-                                                ? 'Выполняется…'
-                                                : 'Отвязать аккаунт'}
-                                        </button>
-                                    )}
+                            {currentAccount.username && (
+                                <div className="conversation-client-field">
+                                    <span>Username</span>
+                                    <strong>
+                                        @
+                                        {
+                                            currentAccount.username
+                                        }
+                                    </strong>
                                 </div>
-                            )
-                        })}
+                            )}
+
+                            {currentAccount.phone && (
+                                <div className="conversation-client-field">
+                                    <span>Телефон</span>
+                                    <strong>
+                                        {
+                                            currentAccount.phone
+                                        }
+                                    </strong>
+                                </div>
+                            )}
+
+                            {currentAccount.clientId !== null && (
+                                <button
+                                    type="button"
+                                    className="conversation-client-secondary-button"
+                                    onClick={() =>
+                                        void handleUnlink()
+                                    }
+                                    disabled={
+                                        actionLoading
+                                    }
+                                >
+                                    {actionLoading
+                                        ? 'Выполняется…'
+                                        : 'Отвязать аккаунт'}
+                                </button>
+                            )}
+                        </div>
+
+                        {otherAccounts.length > 0 && (
+                            <>
+                                <button
+                                    type="button"
+                                    className="conversation-accounts-toggle"
+                                    onClick={() =>
+                                        setShowOtherAccounts(
+                                            value => !value,
+                                        )
+                                    }
+                                >
+                                    <span>
+                                        Другие (
+                                        {
+                                            otherAccounts.length
+                                        }
+                                        )
+                                    </span>
+
+                                    <span>
+                                        {showOtherAccounts
+                                            ? '▴'
+                                            : '▾'}
+                                    </span>
+                                </button>
+
+                                {showOtherAccounts &&
+                                    otherAccounts.map(
+                                        account => {
+                                            const name =
+                                                account.displayName ||
+                                                account.username ||
+                                                account.phone ||
+                                                account.externalId
+
+                                            return (
+                                                <div
+                                                    key={
+                                                        account.id
+                                                    }
+                                                    className="conversation-account-card"
+                                                >
+                                                    <div className="conversation-account-platform">
+                                                        <PlatformIcon
+                                                            type={
+                                                                account.channelType
+                                                            }
+                                                            size={
+                                                                20
+                                                            }
+                                                        />
+
+                                                        <PlatformName
+                                                            type={
+                                                                account.channelType
+                                                            }
+                                                        />
+                                                    </div>
+
+                                                    <div className="conversation-client-field">
+                                                        <span>
+                                                            Имя
+                                                        </span>
+                                                        <strong>
+                                                            {
+                                                                name
+                                                            }
+                                                        </strong>
+                                                    </div>
+
+                                                    <div className="conversation-client-field">
+                                                        <span>
+                                                            ID платформы
+                                                        </span>
+                                                        <strong>
+                                                            {
+                                                                account.externalId
+                                                            }
+                                                        </strong>
+                                                    </div>
+
+                                                    {account.username && (
+                                                        <div className="conversation-client-field">
+                                                            <span>
+                                                                Username
+                                                            </span>
+                                                            <strong>
+                                                                @
+                                                                {
+                                                                    account.username
+                                                                }
+                                                            </strong>
+                                                        </div>
+                                                    )}
+
+                                                    {account.phone && (
+                                                        <div className="conversation-client-field">
+                                                            <span>
+                                                                Телефон
+                                                            </span>
+                                                            <strong>
+                                                                {
+                                                                    account.phone
+                                                                }
+                                                            </strong>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )
+                                        },
+                                    )}
+                            </>
+                        )}
                     </div>
                 </div>
             )}
@@ -712,7 +841,7 @@ function ConversationClientPanel({
                 <h3>Канал</h3>
 
                 {channel ? (
-                    <>
+                    <div className="conversation-channel-card">
                         <div className="conversation-channel-info">
                             <PlatformIcon
                                 type={channel.type}
@@ -735,10 +864,7 @@ function ConversationClientPanel({
                         </div>
 
                         <div className="conversation-client-field">
-                            <span>
-                                Статус
-                            </span>
-
+                            <span>Статус</span>
                             <strong>
                                 {channel.status}
                             </strong>
@@ -758,7 +884,7 @@ function ConversationClientPanel({
                                 </strong>
                             </div>
                         )}
-                    </>
+                    </div>
                 ) : (
                     <div className="conversation-client-panel-state">
                         Канал не найден

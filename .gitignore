@@ -3,3 +3,5 @@
 /ui/dist/
 /ui/node_modules/
 /server/data/
+/data/
+/data/telegram/

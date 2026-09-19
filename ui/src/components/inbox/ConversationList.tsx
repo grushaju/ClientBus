@@ -1,45 +1,99 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import {
+    useNavigate,
+    useParams,
+    useSearchParams,
+} from 'react-router-dom'
+
 import {
     getEmployeeConversations,
     getUnassignedConversations,
     getWorkspaceConversations,
 } from '../../api/conversationApi'
+
 import { getClientAccountsByIds } from '../../api/clientAccountApi'
 import { getWorkspaceChannels } from '../../api/channelApi'
+
 import type {
     ChannelSummary,
     ConversationListItem,
 } from '../../api/types/conversation'
+
 import { useAuth } from '../../auth/AuthContext'
 import { useWorkspace } from '../../workspace/WorkspaceContext'
+
 import ConversationListItemComponent from './ConversationListItem'
 
 type Tab = 'mine' | 'unassigned' | 'all'
 
 function ConversationList() {
     const navigate = useNavigate()
+
     const { conversationId } = useParams<{
         conversationId?: string
     }>()
 
-    const { currentEmployee, isSuperAdmin, isEmployee } = useAuth()
+    const [searchParams] = useSearchParams()
+
+    const {
+        currentEmployee,
+        isSuperAdmin,
+        isEmployee,
+    } = useAuth()
+
     const { currentWorkspace } = useWorkspace()
 
+    const initialTab: Tab =
+        searchParams.get('tab') === 'unassigned'
+            ? 'unassigned'
+            : 'mine'
+
     const [tab, setTab] = useState<Tab>(
-        isSuperAdmin ? 'all' : 'mine',
+        isSuperAdmin ? 'all' : initialTab,
     )
-    const [items, setItems] = useState<ConversationListItem[]>([])
-    const [loading, setLoading] = useState(false)
-    const [error, setError] = useState<string | null>(null)
+
+    const [items, setItems] =
+        useState<ConversationListItem[]>([])
+
+    const [loading, setLoading] =
+        useState(false)
+
+    const [error, setError] =
+        useState<string | null>(null)
 
     useEffect(() => {
         if (isSuperAdmin) {
             setTab('all')
-        } else if (isEmployee && tab === 'all') {
+            return
+        }
+
+        if (isEmployee && tab === 'all') {
             setTab('mine')
         }
-    }, [isEmployee, isSuperAdmin, tab])
+    }, [
+        isEmployee,
+        isSuperAdmin,
+        tab,
+    ])
+
+    useEffect(() => {
+        if (isSuperAdmin) {
+            return
+        }
+
+        const urlTab =
+            searchParams.get('tab')
+
+        if (
+            urlTab === 'mine' ||
+            urlTab === 'unassigned'
+        ) {
+            setTab(urlTab)
+        }
+    }, [
+        isSuperAdmin,
+        searchParams,
+    ])
 
     useEffect(() => {
         if (!currentWorkspace) {
@@ -52,8 +106,11 @@ function ConversationList() {
             return
         }
 
-        const workspaceId = currentWorkspace.id
-        const employeeId = currentEmployee?.id
+        const workspaceId =
+            currentWorkspace.id
+
+        const employeeId =
+            currentEmployee?.id
 
         const load = async () => {
             setLoading(true)
@@ -64,22 +121,33 @@ function ConversationList() {
 
                 if (isSuperAdmin) {
                     conversations =
-                        await getWorkspaceConversations(workspaceId)
-                } else if (tab === 'unassigned') {
+                        await getWorkspaceConversations(
+                            workspaceId,
+                        )
+                } else if (
+                    tab === 'unassigned'
+                ) {
                     conversations =
-                        await getUnassignedConversations(workspaceId)
+                        await getUnassignedConversations(
+                            workspaceId,
+                        )
                 } else {
                     conversations =
-                        await getEmployeeConversations(employeeId!)
+                        await getEmployeeConversations(
+                            employeeId!,
+                        )
                 }
 
                 const channels =
-                    await getWorkspaceChannels(workspaceId)
+                    await getWorkspaceChannels(
+                        workspaceId,
+                    )
 
-                const channelByAccountId = new Map<
-                    string,
-                    ChannelSummary
-                >()
+                const channelByAccountId =
+                    new Map<
+                        string,
+                        ChannelSummary
+                    >()
 
                 for (const channel of channels) {
                     if (channel.account) {
@@ -104,40 +172,56 @@ function ConversationList() {
                         clientAccountIds,
                     )
 
-                const clientAccountById = new Map(
-                    clientAccounts.map(account => [
-                        account.id,
-                        account,
-                    ]),
-                )
-
-                const enrichedItems: ConversationListItem[] =
-                    conversations.map(conversation => ({
-                        conversation,
-                        clientAccount:
-                            clientAccountById.get(
-                                conversation.clientAccountId,
-                            ) ?? null,
-                        channel:
-                            channelByAccountId.get(
-                                conversation.channelAccountId,
-                            ) ?? null,
-                    }))
-
-                enrichedItems.sort((a, b) => {
-                    const aTime =
-                        a.conversation.lastMessageAt ??
-                        a.conversation.updatedAt
-
-                    const bTime =
-                        b.conversation.lastMessageAt ??
-                        b.conversation.updatedAt
-
-                    return (
-                        new Date(bTime).getTime() -
-                        new Date(aTime).getTime()
+                const clientAccountById =
+                    new Map(
+                        clientAccounts.map(
+                            account => [
+                                account.id,
+                                account,
+                            ],
+                        ),
                     )
-                })
+
+                const enrichedItems:
+                    ConversationListItem[] =
+                    conversations.map(
+                        conversation => ({
+                            conversation,
+                            clientAccount:
+                                clientAccountById.get(
+                                    conversation.clientAccountId,
+                                ) ?? null,
+                            channel:
+                                channelByAccountId.get(
+                                    conversation.channelAccountId,
+                                ) ?? null,
+                        }),
+                    )
+
+                enrichedItems.sort(
+                    (a, b) => {
+                        const aTime =
+                            a.conversation
+                                .lastMessageAt ??
+                            a.conversation
+                                .updatedAt
+
+                        const bTime =
+                            b.conversation
+                                .lastMessageAt ??
+                            b.conversation
+                                .updatedAt
+
+                        return (
+                            new Date(
+                                bTime,
+                            ).getTime() -
+                            new Date(
+                                aTime,
+                            ).getTime()
+                        )
+                    },
+                )
 
                 setItems(enrichedItems)
             } catch (err) {
@@ -146,6 +230,7 @@ function ConversationList() {
                         ? err.message
                         : 'Не удалось загрузить диалоги',
                 )
+
                 setItems([])
             } finally {
                 setLoading(false)
@@ -174,16 +259,38 @@ function ConversationList() {
             return
         }
 
-        navigate(`/inbox/${items[0].conversation.id}`, {
-            replace: true,
-        })
+        navigate(
+            `/inbox/${items[0].conversation.id}?tab=${tab}`,
+            {
+                replace: true,
+            },
+        )
     }, [
         conversationId,
         error,
         items,
         loading,
         navigate,
+        tab,
     ])
+
+    const handleTabChange = (
+        nextTab: Tab,
+    ) => {
+        setTab(nextTab)
+
+        const conversationPath =
+            conversationId
+                ? `/inbox/${conversationId}`
+                : '/inbox'
+
+        navigate(
+            `${conversationPath}?tab=${nextTab}`,
+            {
+                replace: true,
+            },
+        )
+    }
 
     if (!currentWorkspace) {
         return (
@@ -209,25 +316,34 @@ function ConversationList() {
                         <button
                             type="button"
                             className={
-                                tab === 'mine' ? 'active' : ''
+                                tab === 'mine'
+                                    ? 'active'
+                                    : ''
                             }
-                            onClick={() => setTab('mine')}
+                            onClick={() =>
+                                handleTabChange(
+                                    'mine',
+                                )
+                            }
                         >
-                            Мои
+                            Мои диалоги
                         </button>
 
                         <button
                             type="button"
                             className={
-                                tab === 'unassigned'
+                                tab ===
+                                'unassigned'
                                     ? 'active'
                                     : ''
                             }
                             onClick={() =>
-                                setTab('unassigned')
+                                handleTabChange(
+                                    'unassigned',
+                                )
                             }
                         >
-                            Неназначенные
+                            Свободные
                         </button>
                     </div>
                 )}
@@ -245,26 +361,32 @@ function ConversationList() {
                 </div>
             )}
 
-            {!loading && !error && items.length === 0 && (
-                <div className="conversation-list-state">
-                    Диалогов нет
-                </div>
-            )}
+            {!loading &&
+                !error &&
+                items.length === 0 && (
+                    <div className="conversation-list-state">
+                        Диалогов нет
+                    </div>
+                )}
 
-            {!loading && !error && items.length > 0 && (
-                <div className="conversation-list-items">
-                    {items.map(item => (
-                        <ConversationListItemComponent
-                            key={item.conversation.id}
-                            item={item}
-                            active={
-                                item.conversation.id ===
-                                conversationId
-                            }
-                        />
-                    ))}
-                </div>
-            )}
+            {!loading &&
+                !error &&
+                items.length > 0 && (
+                    <div className="conversation-list-items">
+                        {items.map(item => (
+                            <ConversationListItemComponent
+                                key={
+                                    item.conversation.id
+                                }
+                                item={item}
+                                active={
+                                    item.conversation.id ===
+                                    conversationId
+                                }
+                            />
+                        ))}
+                    </div>
+                )}
         </div>
     )
 }

@@ -4,18 +4,24 @@ import {
     useState,
 } from 'react'
 
-import { useParams } from 'react-router-dom'
+import {
+    useNavigate,
+    useParams,
+} from 'react-router-dom'
 
 import {
     assignConversation,
     assignConversationToMe,
-    getConversation, unassignConversation,
+    getConversation,
+    unassignConversation,
     unassignConversationFromMe,
 } from '../../api/conversationApi'
 
 import { getClientAccount } from '../../api/clientAccountApi'
 
 import { getWorkspaceChannels } from '../../api/channelApi'
+
+import { getWorkspaceEmployees } from '../../api/employeeApi'
 
 import type {
     ChannelSummary,
@@ -25,15 +31,20 @@ import type {
 
 import { useAuth } from '../../auth/AuthContext'
 
+import type { EmployeeDto } from '../../auth/types'
+
 import ConversationHeader from './ConversationHeader'
 import ConversationClientPanel from './ConversationClientPanel'
 import MessageComposer from './MessageComposer'
 import MessageList from './MessageList'
 import { useConversationMessages } from './useConversationMessages'
-import {EmployeeDto} from "../../auth/types";
 
 function ConversationView() {
-    const { conversationId } = useParams()
+    const {
+        conversationId,
+    } = useParams()
+
+    const navigate = useNavigate()
 
     const {
         currentEmployee,
@@ -69,78 +80,106 @@ function ConversationView() {
         reloadMessages,
     } = useConversationMessages(conversationId)
 
-    const loadConversation = useCallback(async () => {
-        if (!conversationId) {
-            setConversation(null)
-            setClientAccount(null)
-            setChannel(null)
-            return
-        }
-
-        setLoading(true)
-        setError(null)
-
-        try {
-            const result =
-                await getConversation(
-                    conversationId,
-                )
-
-            setConversation(result)
-
-            try {
-                const account =
-                    await getClientAccount(
-                        result.clientAccountId,
-                    )
-
-                console.log(
-                    'ClientAccount loaded:',
-                    account,
-                )
-
-                setClientAccount(account)
-            } catch (err) {
-                console.error(
-                    'ClientAccount load failed:',
-                    result.clientAccountId,
-                    err,
-                )
-
+    const loadConversation = useCallback(
+        async () => {
+            if (!conversationId) {
+                setConversation(null)
                 setClientAccount(null)
+                setChannel(null)
+                setEmployees([])
+                return
             }
+
+            setLoading(true)
+            setError(null)
 
             try {
-                const channels =
-                    await getWorkspaceChannels(
-                        result.workspaceId,
+                const result =
+                    await getConversation(
+                        conversationId,
                     )
 
-                const matchingChannel =
-                    channels.find(
-                        item =>
-                            item.account?.id ===
-                            result.channelAccountId,
-                    ) ?? null
+                setConversation(result)
 
-                setChannel(matchingChannel)
-            } catch {
+                try {
+                    const account =
+                        await getClientAccount(
+                            result.clientAccountId,
+                        )
+
+                    setClientAccount(account)
+                } catch (err) {
+                    console.error(
+                        'ClientAccount load failed:',
+                        result.clientAccountId,
+                        err,
+                    )
+
+                    setClientAccount(null)
+                }
+
+                try {
+                    const channels =
+                        await getWorkspaceChannels(
+                            result.workspaceId,
+                        )
+
+                    const matchingChannel =
+                        channels.find(
+                            item =>
+                                item.account?.id ===
+                                result.channelAccountId,
+                        ) ?? null
+
+                    setChannel(
+                        matchingChannel,
+                    )
+                } catch {
+                    setChannel(null)
+                }
+
+                if (isSuperAdmin) {
+                    try {
+                        const workspaceEmployees =
+                            await getWorkspaceEmployees(
+                                result.workspaceId,
+                            )
+
+                        setEmployees(
+                            workspaceEmployees,
+                        )
+                    } catch (err) {
+                        console.error(
+                            'Workspace employees load failed:',
+                            result.workspaceId,
+                            err,
+                        )
+
+                        setEmployees([])
+                    }
+                } else {
+                    setEmployees([])
+                }
+            } catch (err) {
+                setError(
+                    err instanceof Error
+                        ? err.message
+                        : 'Не удалось загрузить диалог',
+                )
+
+                setConversation(null)
+                setClientAccount(null)
                 setChannel(null)
+                setEmployees([])
+            } finally {
+                setLoading(false)
             }
-        } catch (err) {
-            setError(
-                err instanceof Error
-                    ? err.message
-                    : 'Не удалось загрузить диалог',
-            )
-
-            setConversation(null)
-            setClientAccount(null)
-            setChannel(null)
-        } finally {
-            setLoading(false)
-        }
-    }, [conversationId])
+        },
+        [
+            conversationId,
+            isSuperAdmin,
+        ],
+    )
 
     useEffect(() => {
         void loadConversation()
@@ -193,6 +232,13 @@ function ConversationView() {
         )
 
         await loadConversation()
+
+        navigate(
+            `/inbox/${conversation.id}?tab=mine`,
+            {
+                replace: true,
+            },
+        )
     }
 
     const handleRelease = async () => {
@@ -205,10 +251,21 @@ function ConversationView() {
         )
 
         await loadConversation()
+
+        navigate(
+            `/inbox/${conversation.id}?tab=unassigned`,
+            {
+                replace: true,
+            },
+        )
     }
 
-    const handleAssign = async (employeeId: string) => {
-        if (!isSuperAdmin) return
+    const handleAssign = async (
+        employeeId: string,
+    ) => {
+        if (!isSuperAdmin) {
+            return
+        }
 
         setActionError(null)
 
@@ -229,7 +286,9 @@ function ConversationView() {
     }
 
     const handleUnassign = async () => {
-        if (!isSuperAdmin) return
+        if (!isSuperAdmin) {
+            return
+        }
 
         setActionError(null)
 
@@ -261,7 +320,10 @@ function ConversationView() {
                     clientAccount={clientAccount}
                     channel={channel}
                     employees={employees}
-                    currentEmployeeId={currentEmployee?.id ?? null}
+                    currentEmployeeId={
+                        currentEmployee?.id ??
+                        null
+                    }
                     isEmployee={isEmployee}
                     isSuperAdmin={isSuperAdmin}
                     actionError={actionError}
@@ -282,7 +344,9 @@ function ConversationView() {
                         conversationId={
                             conversation.id
                         }
-                        onSent={handleMessageSent}
+                        onSent={
+                            handleMessageSent
+                        }
                     />
                 )}
             </div>

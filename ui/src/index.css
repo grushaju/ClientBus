@@ -269,34 +269,39 @@ a {
     font-size: 13px;
 }
 
-.inbox-tabs {
+.conversation-list-tabs {
     display: flex;
-    gap: 4px;
+    gap: 6px;
 
-    padding: 10px 12px;
-
-    border-bottom: 1px solid #e5e7eb;
+    margin-top: 14px;
 }
 
-.inbox-tabs button {
+.conversation-list-tabs button {
     flex: 1;
+    min-width: 0;
 
-    padding: 7px 10px;
+    padding: 9px 10px;
 
-    border: 0;
-    border-radius: 6px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
 
-    background: transparent;
+    background: #ffffff;
     color: #6b7280;
+
+    font-size: 13px;
+    font-weight: 500;
+
+    white-space: nowrap;
 }
 
-.inbox-tabs button:hover {
-    background: #f3f4f6;
+.conversation-list-tabs button:hover {
+    background: #f9fafb;
 }
 
-.inbox-tabs button.active {
-    background: #e5e7eb;
-    color: #111827;
+.conversation-list-tabs button.active {
+    border-color: #93c5fd;
+    background: #f8fbff;
+    color: #1d4ed8;
     font-weight: 600;
 }
 
@@ -547,13 +552,11 @@ a {
     margin-bottom: 14px;
 }
 
-.conversation-client-card {
-    display: flex;
-    align-items: center;
-
-    gap: 10px;
-
-    margin-bottom: 16px;
+.conversation-channel-card {
+    border: 1px solid #f0b4b4;
+    border-radius: 8px;
+    padding: 12px;
+    background: #fff8f8;
 }
 
 .conversation-client-avatar {
@@ -600,23 +603,22 @@ a {
 
 .conversation-client-field {
     display: flex;
-    flex-direction: column;
-
-    gap: 4px;
-
-    margin-top: 12px;
-
-    font-size: 13px;
+    align-items: baseline;
+    gap: 8px;
 }
 
 .conversation-client-field > span {
-    color: #9ca3af;
-
-    font-size: 11px;
+    flex: 0 0 90px;
+    color: #6b7280;
+    font-size: 12px;
 }
 
 .conversation-client-field > strong {
-    overflow-wrap: anywhere;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
 }
 
 .conversation-client-orphan {
@@ -756,6 +758,34 @@ a {
 
     font-size: 13px;
     font-weight: 600;
+}
+
+.conversation-accounts-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 4px;
+    border: 0;
+    background: transparent;
+    color: #6b7280;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.conversation-accounts-toggle:hover {
+    color: #111827;
+}
+
+.conversation-account-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 12px;
+}
+
+.conversation-account-card-current {
+    border-color: #93c5fd;
+    background: #f8fbff;
 }
 
 .conversation-channel-info {

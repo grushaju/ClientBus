@@ -42,13 +42,15 @@ export async function createClient(
 export async function assignClientAccount(
     clientId: string,
     accountId: string,
-): Promise<void> {
-    await apiFetch(
+): Promise<ClientAccountSummary> {
+    const response = await apiFetch(
         `/api/clients/${clientId}/clientaccounts/${accountId}`,
         {
             method: 'POST',
         },
     )
+
+    return response.json()
 }
 
 export async function unassignClientAccount(

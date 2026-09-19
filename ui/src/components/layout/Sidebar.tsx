@@ -12,7 +12,7 @@ function Sidebar() {
         <aside className="sidebar">
             <nav className="sidebar-nav">
                 <NavLink to="/inbox">
-                    Inbox
+                    Диалоги
                 </NavLink>
 
                 <NavLink to="/clients">
@@ -30,7 +30,7 @@ function Sidebar() {
                         </NavLink>
 
                         <NavLink to="/workspaces">
-                            Workspaces
+                            Пространства
                         </NavLink>
                     </>
                 )}
