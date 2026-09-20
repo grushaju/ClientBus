@@ -6,9 +6,9 @@ import {
 } from 'react-router-dom'
 
 import {
-    getEmployeeConversations,
     getUnassignedConversations,
     getWorkspaceConversations,
+    getWorkspaceEmployeeConversations,
 } from '../../api/conversationApi'
 
 import { getClientAccountsByIds } from '../../api/clientAccountApi'
@@ -16,6 +16,7 @@ import { getWorkspaceChannels } from '../../api/channelApi'
 
 import type {
     ChannelSummary,
+    ConversationDto,
     ConversationListItem,
 } from '../../api/types/conversation'
 
@@ -23,8 +24,11 @@ import { useAuth } from '../../auth/AuthContext'
 import { useWorkspace } from '../../workspace/WorkspaceContext'
 
 import ConversationListItemComponent from './ConversationListItem'
+import type {
+    ConversationListTab,
+} from './ConversationListItem'
 
-type Tab = 'mine' | 'unassigned' | 'all'
+type Tab = ConversationListTab
 
 function ConversationList() {
     const navigate = useNavigate()
@@ -33,7 +37,8 @@ function ConversationList() {
         conversationId?: string
     }>()
 
-    const [searchParams] = useSearchParams()
+    const [searchParams] =
+        useSearchParams()
 
     const {
         currentEmployee,
@@ -41,19 +46,26 @@ function ConversationList() {
         isEmployee,
     } = useAuth()
 
-    const { currentWorkspace } = useWorkspace()
+    const { currentWorkspace } =
+        useWorkspace()
 
     const initialTab: Tab =
-        searchParams.get('tab') === 'unassigned'
+        searchParams.get('tab') ===
+        'unassigned'
             ? 'unassigned'
             : 'mine'
 
-    const [tab, setTab] = useState<Tab>(
-        isSuperAdmin ? 'all' : initialTab,
-    )
+    const [tab, setTab] =
+        useState<Tab>(
+            isSuperAdmin
+                ? 'all'
+                : initialTab,
+        )
 
     const [items, setItems] =
-        useState<ConversationListItem[]>([])
+        useState<ConversationListItem[]>(
+            [],
+        )
 
     const [loading, setLoading] =
         useState(false)
@@ -67,7 +79,10 @@ function ConversationList() {
             return
         }
 
-        if (isEmployee && tab === 'all') {
+        if (
+            isEmployee &&
+            tab === 'all'
+        ) {
             setTab('mine')
         }
     }, [
@@ -101,7 +116,10 @@ function ConversationList() {
             return
         }
 
-        if (isEmployee && !currentEmployee) {
+        if (
+            isEmployee &&
+            !currentEmployee
+        ) {
             setItems([])
             return
         }
@@ -117,7 +135,8 @@ function ConversationList() {
             setError(null)
 
             try {
-                let conversations
+                let conversations:
+                    ConversationDto[]
 
                 if (isSuperAdmin) {
                     conversations =
@@ -133,7 +152,8 @@ function ConversationList() {
                         )
                 } else {
                     conversations =
-                        await getEmployeeConversations(
+                        await getWorkspaceEmployeeConversations(
+                            workspaceId,
                             employeeId!,
                         )
                 }
@@ -149,8 +169,13 @@ function ConversationList() {
                         ChannelSummary
                     >()
 
-                for (const channel of channels) {
-                    if (channel.account) {
+                for (
+                    const channel of
+                    channels
+                ) {
+                    if (
+                        channel.account
+                    ) {
                         channelByAccountId.set(
                             channel.account.id,
                             channel,
@@ -198,32 +223,11 @@ function ConversationList() {
                         }),
                     )
 
-                enrichedItems.sort(
-                    (a, b) => {
-                        const aTime =
-                            a.conversation
-                                .lastMessageAt ??
-                            a.conversation
-                                .updatedAt
-
-                        const bTime =
-                            b.conversation
-                                .lastMessageAt ??
-                            b.conversation
-                                .updatedAt
-
-                        return (
-                            new Date(
-                                bTime,
-                            ).getTime() -
-                            new Date(
-                                aTime,
-                            ).getTime()
-                        )
-                    },
+                setItems(
+                    sortConversationItems(
+                        enrichedItems,
+                    ),
                 )
-
-                setItems(enrichedItems)
             } catch (err) {
                 setError(
                     err instanceof Error
@@ -247,7 +251,95 @@ function ConversationList() {
     ])
 
     useEffect(() => {
-        if (loading || error) {
+        const handleConversationUpdated = (
+            event: Event,
+        ) => {
+            const customEvent =
+                event as CustomEvent<ConversationDto>
+
+            const updated =
+                customEvent.detail
+
+            if (!updated?.id) {
+                return
+            }
+
+            setItems(
+                currentItems => {
+                    const existing =
+                        currentItems.find(
+                            item =>
+                                item.conversation.id ===
+                                updated.id,
+                        )
+
+                    if (!existing) {
+                        return currentItems
+                    }
+
+                    const shouldRemain =
+                        isSuperAdmin ||
+                        (
+                            tab === 'mine' &&
+                            updated.assignedEmployeeId ===
+                                currentEmployee?.id
+                        ) ||
+                        (
+                            tab === 'unassigned' &&
+                            updated.assignedEmployeeId ===
+                                null
+                        )
+
+                    if (!shouldRemain) {
+                        return currentItems.filter(
+                            item =>
+                                item.conversation.id !==
+                                updated.id,
+                        )
+                    }
+
+                    const updatedItems =
+                        currentItems.map(
+                            item =>
+                                item.conversation.id ===
+                                updated.id
+                                    ? {
+                                          ...item,
+                                          conversation:
+                                              updated,
+                                      }
+                                    : item,
+                        )
+
+                    return sortConversationItems(
+                        updatedItems,
+                    )
+                },
+            )
+        }
+
+        window.addEventListener(
+            'clientbus:conversation-updated',
+            handleConversationUpdated,
+        )
+
+        return () => {
+            window.removeEventListener(
+                'clientbus:conversation-updated',
+                handleConversationUpdated,
+            )
+        }
+    }, [
+        currentEmployee?.id,
+        isSuperAdmin,
+        tab,
+    ])
+
+    useEffect(() => {
+        if (
+            loading ||
+            error
+        ) {
             return
         }
 
@@ -255,7 +347,9 @@ function ConversationList() {
             return
         }
 
-        if (items.length === 0) {
+        if (
+            items.length === 0
+        ) {
             return
         }
 
@@ -316,7 +410,8 @@ function ConversationList() {
                         <button
                             type="button"
                             className={
-                                tab === 'mine'
+                                tab ===
+                                'mine'
                                     ? 'active'
                                     : ''
                             }
@@ -355,11 +450,12 @@ function ConversationList() {
                 </div>
             )}
 
-            {!loading && error && (
-                <div className="conversation-list-state conversation-list-error">
-                    {error}
-                </div>
-            )}
+            {!loading &&
+                error && (
+                    <div className="conversation-list-state conversation-list-error">
+                        {error}
+                    </div>
+                )}
 
             {!loading &&
                 !error &&
@@ -373,21 +469,60 @@ function ConversationList() {
                 !error &&
                 items.length > 0 && (
                     <div className="conversation-list-items">
-                        {items.map(item => (
-                            <ConversationListItemComponent
-                                key={
-                                    item.conversation.id
-                                }
-                                item={item}
-                                active={
-                                    item.conversation.id ===
-                                    conversationId
-                                }
-                            />
-                        ))}
+                        {items.map(
+                            item => (
+                                <ConversationListItemComponent
+                                    key={
+                                        item
+                                            .conversation
+                                            .id
+                                    }
+                                    item={
+                                        item
+                                    }
+                                    active={
+                                        item
+                                            .conversation
+                                            .id ===
+                                        conversationId
+                                    }
+                                    tab={
+                                        tab
+                                    }
+                                />
+                            ),
+                        )}
                     </div>
                 )}
         </div>
+    )
+}
+
+function sortConversationItems(
+    items: ConversationListItem[],
+): ConversationListItem[] {
+    return [...items].sort(
+        (a, b) => {
+            const aTime =
+                a.conversation
+                    .lastMessageAt
+                    ? new Date(
+                          a.conversation
+                              .lastMessageAt,
+                      ).getTime()
+                    : 0
+
+            const bTime =
+                b.conversation
+                    .lastMessageAt
+                    ? new Date(
+                          b.conversation
+                              .lastMessageAt,
+                      ).getTime()
+                    : 0
+
+            return bTime - aTime
+        },
     )
 }
 

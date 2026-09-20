@@ -23,6 +23,17 @@ export async function getWorkspaceConversations(
     return response.json()
 }
 
+export async function getWorkspaceEmployeeConversations(
+    workspaceId: string,
+    employeeId: string,
+): Promise<ConversationDto[]> {
+    const response = await apiFetch(
+        `/api/conversations/workspace/${workspaceId}/employee/${employeeId}`,
+    )
+
+    return response.json()
+}
+
 export async function getEmployeeConversations(
     employeeId: string
 ): Promise<ConversationDto[]> {

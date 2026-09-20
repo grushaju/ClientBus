@@ -7,14 +7,21 @@ import type {
 import PlatformIcon from '../common/platform/PlatformIcon'
 import PlatformName from '../common/platform/PlatformName'
 
+export type ConversationListTab =
+    | 'mine'
+    | 'unassigned'
+    | 'all'
+
 interface ConversationListItemProps {
     item: ConversationListItem
     active: boolean
+    tab: ConversationListTab
 }
 
 function ConversationListItemComponent({
                                            item,
                                            active,
+                                           tab,
                                        }: ConversationListItemProps) {
     const {
         conversation,
@@ -44,7 +51,7 @@ function ConversationListItemComponent({
 
     return (
         <Link
-            to={`/inbox/${conversation.id}`}
+            to={`/inbox/${conversation.id}?tab=${tab}`}
             className={
                 `conversation-list-item ${
                     active ? 'active' : ''
@@ -74,7 +81,7 @@ function ConversationListItemComponent({
                         {channelName}
                     </strong>
 
-                    <PlatformName type={platform}/>
+                    <PlatformName type={platform} />
                 </div>
 
                 <div className="conversation-list-item-bottom">
@@ -109,11 +116,11 @@ function formatConversationTime(
 
     const sameDay =
         date.getFullYear() ===
-        now.getFullYear() &&
+            now.getFullYear() &&
         date.getMonth() ===
-        now.getMonth() &&
+            now.getMonth() &&
         date.getDate() ===
-        now.getDate()
+            now.getDate()
 
     if (sameDay) {
         return date.toLocaleTimeString(

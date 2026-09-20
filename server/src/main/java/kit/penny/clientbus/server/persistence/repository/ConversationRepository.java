@@ -185,6 +185,25 @@ public interface ConversationRepository
             UUID employeeId
     );
 
+    @Query("""
+        SELECT c
+        FROM ConversationEntity c
+        JOIN EmployeeWorkspaceEntity ew
+          ON ew.workspace.id = c.workspace.id
+        WHERE c.workspace.id = :workspaceId
+          AND c.assignedEmployee.id = :employeeId
+          AND ew.employee.id = :employeeId
+        ORDER BY c.lastMessageAt DESC
+        """)
+    List<ConversationEntity>
+    findAllByWorkspaceIdAndAssignedEmployeeIdAndEmployeeAccessOrderByLastMessageAtDesc(
+            @Param("workspaceId")
+            UUID workspaceId,
+
+            @Param("employeeId")
+            UUID employeeId
+    );
+
     /*
      * ---------------------------------------------------------
      * Unread count

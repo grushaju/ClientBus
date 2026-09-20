@@ -86,6 +86,30 @@ public class ConversationController {
     }
 
     /**
+     * Conversation Employee в конкретном Workspace.
+     * <p>
+     * EMPLOYEE может получить только свои Conversation
+     * в Workspace, к которому имеет доступ.
+     */
+    @GetMapping("/workspace/{workspaceId}/employee/{employeeId}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<List<ConversationDto>>
+    getWorkspaceEmployeeConversations(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID employeeId
+    ) {
+
+        return ResponseEntity.ok(
+                conversationService
+                        .getWorkspaceEmployeeConversations(
+                                workspaceId,
+                                employeeId
+                        )
+        );
+    }
+
+
+    /**
      * Все Conversation ClientAccount.
      */
     @GetMapping("/client-account/{clientAccountId}")

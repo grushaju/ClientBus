@@ -253,6 +253,42 @@ public class ConversationService {
     }
 
     /**
+     * Получить все Conversation Workspace и Employee
+     */
+    @Transactional(readOnly = true)
+    public List<ConversationDto> getWorkspaceEmployeeConversations(
+            UUID workspaceId,
+            UUID employeeId
+    ) {
+
+        currentUserService.requireWorkspaceAccess(
+                workspaceId
+        );
+
+        if (currentUserService.isEmployee()) {
+
+            currentUserService.requireSelf(employeeId);
+
+        } else {
+
+            currentUserService.requireSuperAdmin();
+
+            currentUserService.requireEmployeeInCurrentOrganization(
+                    employeeId
+            );
+        }
+
+        return conversationRepository
+                .findAllByWorkspaceIdAndAssignedEmployeeIdAndEmployeeAccessOrderByLastMessageAtDesc(
+                        workspaceId,
+                        employeeId
+                )
+                .stream()
+                .map(conversationMapper::toDto)
+                .toList();
+    }
+
+    /**
      * Получить все Conversation ClientAccount,
      * доступные текущему пользователю.
      */

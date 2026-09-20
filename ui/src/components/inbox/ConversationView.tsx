@@ -13,6 +13,7 @@ import {
     assignConversation,
     assignConversationToMe,
     getConversation,
+    markConversationAsRead,
     unassignConversation,
     unassignConversationFromMe,
 } from '../../api/conversationApi'
@@ -44,7 +45,8 @@ function ConversationView() {
         conversationId,
     } = useParams()
 
-    const navigate = useNavigate()
+    const navigate =
+        useNavigate()
 
     const {
         currentEmployee,
@@ -53,13 +55,19 @@ function ConversationView() {
     } = useAuth()
 
     const [conversation, setConversation] =
-        useState<ConversationDto | null>(null)
+        useState<ConversationDto | null>(
+            null,
+        )
 
     const [clientAccount, setClientAccount] =
-        useState<ClientAccountSummary | null>(null)
+        useState<ClientAccountSummary | null>(
+            null,
+        )
 
     const [channel, setChannel] =
-        useState<ChannelSummary | null>(null)
+        useState<ChannelSummary | null>(
+            null,
+        )
 
     const [loading, setLoading] =
         useState(false)
@@ -76,110 +84,156 @@ function ConversationView() {
     const {
         messages,
         loading: messagesLoading,
+        loadingOlder: messagesLoadingOlder,
+        hasMore: messagesHasMore,
         error: messagesError,
         reloadMessages,
+        loadOlderMessages,
     } = useConversationMessages(conversationId)
 
-    const loadConversation = useCallback(
-        async () => {
-            if (!conversationId) {
-                setConversation(null)
-                setClientAccount(null)
-                setChannel(null)
-                setEmployees([])
-                return
-            }
+    const publishConversationUpdate = (
+        updatedConversation: ConversationDto,
+    ) => {
+        window.dispatchEvent(
+            new CustomEvent(
+                'clientbus:conversation-updated',
+                {
+                    detail:
+                    updatedConversation,
+                },
+            ),
+        )
+    }
 
-            setLoading(true)
-            setError(null)
-
-            try {
-                const result =
-                    await getConversation(
-                        conversationId,
-                    )
-
-                setConversation(result)
-
-                try {
-                    const account =
-                        await getClientAccount(
-                            result.clientAccountId,
-                        )
-
-                    setClientAccount(account)
-                } catch (err) {
-                    console.error(
-                        'ClientAccount load failed:',
-                        result.clientAccountId,
-                        err,
-                    )
-
+    const loadConversation =
+        useCallback(
+            async () => {
+                if (!conversationId) {
+                    setConversation(null)
                     setClientAccount(null)
+                    setChannel(null)
+                    setEmployees([])
+                    return
                 }
+
+                setLoading(true)
+                setError(null)
 
                 try {
-                    const channels =
-                        await getWorkspaceChannels(
-                            result.workspaceId,
+                    let result =
+                        await getConversation(
+                            conversationId,
                         )
 
-                    const matchingChannel =
-                        channels.find(
-                            item =>
-                                item.account?.id ===
-                                result.channelAccountId,
-                        ) ?? null
+                    /*
+                     * Only EMPLOYEE is an operator and therefore
+                     * marks the conversation as read.
+                     */
+                    if (isEmployee) {
+                        try {
+                            result =
+                                await markConversationAsRead(
+                                    result.id,
+                                )
+                        } catch (err) {
+                            console.error(
+                                'Conversation read failed:',
+                                result.id,
+                                err,
+                            )
+                        }
+                    }
 
-                    setChannel(
-                        matchingChannel,
+                    setConversation(result)
+
+                    publishConversationUpdate(
+                        result,
                     )
-                } catch {
-                    setChannel(null)
-                }
 
-                if (isSuperAdmin) {
                     try {
-                        const workspaceEmployees =
-                            await getWorkspaceEmployees(
-                                result.workspaceId,
+                        const account =
+                            await getClientAccount(
+                                result.clientAccountId,
                             )
 
-                        setEmployees(
-                            workspaceEmployees,
+                        setClientAccount(
+                            account,
                         )
                     } catch (err) {
                         console.error(
-                            'Workspace employees load failed:',
-                            result.workspaceId,
+                            'ClientAccount load failed:',
+                            result.clientAccountId,
                             err,
                         )
 
+                        setClientAccount(
+                            null,
+                        )
+                    }
+
+                    try {
+                        const channels =
+                            await getWorkspaceChannels(
+                                result.workspaceId,
+                            )
+
+                        const matchingChannel =
+                            channels.find(
+                                item =>
+                                    item.account?.id ===
+                                    result.channelAccountId,
+                            ) ?? null
+
+                        setChannel(
+                            matchingChannel,
+                        )
+                    } catch {
+                        setChannel(null)
+                    }
+
+                    if (isSuperAdmin) {
+                        try {
+                            const workspaceEmployees =
+                                await getWorkspaceEmployees(
+                                    result.workspaceId,
+                                )
+
+                            setEmployees(
+                                workspaceEmployees,
+                            )
+                        } catch (err) {
+                            console.error(
+                                'Workspace employees load failed:',
+                                result.workspaceId,
+                                err,
+                            )
+
+                            setEmployees([])
+                        }
+                    } else {
                         setEmployees([])
                     }
-                } else {
-                    setEmployees([])
-                }
-            } catch (err) {
-                setError(
-                    err instanceof Error
-                        ? err.message
-                        : 'Не удалось загрузить диалог',
-                )
+                } catch (err) {
+                    setError(
+                        err instanceof Error
+                            ? err.message
+                            : 'Не удалось загрузить диалог',
+                    )
 
-                setConversation(null)
-                setClientAccount(null)
-                setChannel(null)
-                setEmployees([])
-            } finally {
-                setLoading(false)
-            }
-        },
-        [
-            conversationId,
-            isSuperAdmin,
-        ],
-    )
+                    setConversation(null)
+                    setClientAccount(null)
+                    setChannel(null)
+                    setEmployees([])
+                } finally {
+                    setLoading(false)
+                }
+            },
+            [
+                conversationId,
+                isEmployee,
+                isSuperAdmin,
+            ],
+        )
 
     useEffect(() => {
         void loadConversation()
@@ -222,121 +276,171 @@ function ConversationView() {
         conversation.assignedEmployeeId ===
         currentEmployee?.id
 
-    const handleTake = async () => {
-        if (!isEmployee) {
-            return
-        }
+    const handleTake =
+        async () => {
+            if (!isEmployee) {
+                return
+            }
 
-        await assignConversationToMe(
-            conversation.id,
-        )
+            const updated =
+                await assignConversationToMe(
+                    conversation.id,
+                )
 
-        await loadConversation()
-
-        navigate(
-            `/inbox/${conversation.id}?tab=mine`,
-            {
-                replace: true,
-            },
-        )
-    }
-
-    const handleRelease = async () => {
-        if (!isEmployee) {
-            return
-        }
-
-        await unassignConversationFromMe(
-            conversation.id,
-        )
-
-        await loadConversation()
-
-        navigate(
-            `/inbox/${conversation.id}?tab=unassigned`,
-            {
-                replace: true,
-            },
-        )
-    }
-
-    const handleAssign = async (
-        employeeId: string,
-    ) => {
-        if (!isSuperAdmin) {
-            return
-        }
-
-        setActionError(null)
-
-        try {
-            await assignConversation(
-                conversation.id,
-                employeeId,
+            setConversation(updated)
+            publishConversationUpdate(
+                updated,
             )
 
+            navigate(
+                `/inbox/${conversation.id}?tab=mine`,
+                {
+                    replace: true,
+                },
+            )
+        }
+
+    const handleRelease =
+        async () => {
+            if (!isEmployee) {
+                return
+            }
+
+            const updated =
+                await unassignConversationFromMe(
+                    conversation.id,
+                )
+
+            setConversation(updated)
+            publishConversationUpdate(
+                updated,
+            )
+
+            navigate(
+                `/inbox/${conversation.id}?tab=unassigned`,
+                {
+                    replace: true,
+                },
+            )
+        }
+
+    const handleAssign =
+        async (
+            employeeId: string,
+        ) => {
+            if (!isSuperAdmin) {
+                return
+            }
+
+            setActionError(null)
+
+            try {
+                const updated =
+                    await assignConversation(
+                        conversation.id,
+                        employeeId,
+                    )
+
+                setConversation(
+                    updated,
+                )
+
+                publishConversationUpdate(
+                    updated,
+                )
+            } catch (err) {
+                setActionError(
+                    err instanceof Error
+                        ? err.message
+                        : 'Не удалось назначить сотрудника',
+                )
+            }
+        }
+
+    const handleUnassign =
+        async () => {
+            if (!isSuperAdmin) {
+                return
+            }
+
+            setActionError(null)
+
+            try {
+                const updated =
+                    await unassignConversation(
+                        conversation.id,
+                    )
+
+                setConversation(
+                    updated,
+                )
+
+                publishConversationUpdate(
+                    updated,
+                )
+            } catch (err) {
+                setActionError(
+                    err instanceof Error
+                        ? err.message
+                        : 'Не удалось снять назначение',
+                )
+            }
+        }
+
+    const handleMessageSent =
+        async () => {
+            await reloadMessages()
             await loadConversation()
-        } catch (err) {
-            setActionError(
-                err instanceof Error
-                    ? err.message
-                    : 'Не удалось назначить сотрудника',
-            )
         }
-    }
-
-    const handleUnassign = async () => {
-        if (!isSuperAdmin) {
-            return
-        }
-
-        setActionError(null)
-
-        try {
-            await unassignConversation(
-                conversation.id,
-            )
-
-            await loadConversation()
-        } catch (err) {
-            setActionError(
-                err instanceof Error
-                    ? err.message
-                    : 'Не удалось снять назначение',
-            )
-        }
-    }
-
-    const handleMessageSent = async () => {
-        await reloadMessages()
-        await loadConversation()
-    }
 
     return (
         <div className="conversation-view">
             <div className="conversation-main">
                 <ConversationHeader
-                    conversation={conversation}
-                    clientAccount={clientAccount}
+                    conversation={
+                        conversation
+                    }
+                    clientAccount={
+                        clientAccount
+                    }
                     channel={channel}
-                    employees={employees}
+                    employees={
+                        employees
+                    }
                     currentEmployeeId={
                         currentEmployee?.id ??
                         null
                     }
-                    isEmployee={isEmployee}
-                    isSuperAdmin={isSuperAdmin}
-                    actionError={actionError}
-                    onTake={handleTake}
-                    onRelease={handleRelease}
-                    onAssign={handleAssign}
-                    onUnassign={handleUnassign}
+                    isEmployee={
+                        isEmployee
+                    }
+                    isSuperAdmin={
+                        isSuperAdmin
+                    }
+                    actionError={
+                        actionError
+                    }
+                    onTake={
+                        handleTake
+                    }
+                    onRelease={
+                        handleRelease
+                    }
+                    onAssign={
+                        handleAssign
+                    }
+                    onUnassign={
+                        handleUnassign
+                    }
                 />
 
                 <MessageList
                     messages={messages}
                     loading={messagesLoading}
+                    loadingOlder={messagesLoadingOlder}
+                    hasMore={messagesHasMore}
                     error={messagesError}
+                    onLoadOlder={loadOlderMessages}
                 />
 
                 {canSend && (
@@ -352,10 +456,16 @@ function ConversationView() {
             </div>
 
             <ConversationClientPanel
-                conversation={conversation}
-                clientAccount={clientAccount}
+                conversation={
+                    conversation
+                }
+                clientAccount={
+                    clientAccount
+                }
                 channel={channel}
-                onChanged={loadConversation}
+                onChanged={
+                    loadConversation
+                }
             />
         </div>
     )
