@@ -5,7 +5,6 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import kit.penny.clientbus.common.dto.message.InboundMessageRequest;
 import kit.penny.clientbus.common.dto.message.MessageDto;
-import kit.penny.clientbus.common.dto.message.OutboundMessageRequest;
 import kit.penny.clientbus.common.enums.*;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.integration.AbstractIntegrationTest;
@@ -21,7 +20,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -761,11 +759,21 @@ class MessageProcessingServiceIntegrationTest
 
         UUID messageId = message.getId();
 
-        messageService.markDeliveryFailed(messageId);
+        EmployeeEntity employee =
+                createEmployeeForWorkspace(message);
 
-        authenticate(
-                createEmployeeForWorkspace(message)
+        message.getConversation()
+                .setAssignedEmployee(employee);
+
+        conversationRepository.saveAndFlush(
+                message.getConversation()
         );
+
+        messageService.markDeliveryFailed(
+                messageId
+        );
+
+        authenticate(employee);
 
         MessageEntity failed =
                 messageRepository.findById(messageId)
@@ -778,7 +786,9 @@ class MessageProcessingServiceIntegrationTest
                 .isEqualTo(MessageDeliveryStatus.FAILED);
 
         MessageDto result =
-                messageProcessingService.retryOutbound(messageId);
+                messageProcessingService.retryOutbound(
+                        messageId
+                );
 
         assertThat(result.id())
                 .isEqualTo(messageId);
@@ -812,9 +822,17 @@ class MessageProcessingServiceIntegrationTest
 
         UUID messageId = message.getId();
 
-        authenticate(
-                createEmployeeForWorkspace(message)
+        EmployeeEntity employee =
+                createEmployeeForWorkspace(message);
+
+        message.getConversation()
+                .setAssignedEmployee(employee);
+
+        conversationRepository.saveAndFlush(
+                message.getConversation()
         );
+
+        authenticate(employee);
 
         // QUEUED -> PROCESSED + FAILED
         messageService.markDeliveryFailed(
@@ -851,47 +869,6 @@ class MessageProcessingServiceIntegrationTest
     // =============================== //
     // ACL Tests
     // =============================== //
-
-    @Test
-    void retryOutbound_employeeWithWorkspaceAccess_isAllowed() {
-
-        OrganizationEntity organization =
-                createOrganization("Test Org");
-
-        WorkspaceEntity workspace =
-                createWorkspace(
-                        "Test Workspace",
-                        organization
-                );
-
-        EmployeeEntity employee =
-                createEmployee(
-                        "retry-employee",
-                        "retry-employee@test.local",
-                        UserRole.EMPLOYEE,
-                        organization
-                );
-
-        assignEmployeeToWorkspace(
-                employee,
-                workspace
-        );
-
-        MessageEntity message =
-                createOutboundMessage(workspace);
-
-        messageService.markDeliveryFailed(
-                message.getId()
-        );
-
-        authenticate(employee);
-
-        assertDoesNotThrow(() ->
-                messageProcessingService.retryOutbound(
-                        message.getId()
-                )
-        );
-    }
 
     @Test
     void retryOutbound_employeeWithoutWorkspaceAccess_isDenied() {
@@ -1009,6 +986,97 @@ class MessageProcessingServiceIntegrationTest
                         messageProcessingService.retryOutbound(
                                 message.getId()
                         )
+        );
+    }
+
+    @Test
+    void retryOutbound_employeeWithWorkspaceAccessButNotAssigned_isDenied() {
+
+        OrganizationEntity organization =
+                createOrganization("Test Org");
+
+        WorkspaceEntity workspace =
+                createWorkspace(
+                        "Test Workspace",
+                        organization
+                );
+
+        EmployeeEntity employee =
+                createEmployee(
+                        "retry-employee-not-assigned",
+                        "retry-employee-not-assigned@test.local",
+                        UserRole.EMPLOYEE,
+                        organization
+                );
+
+        assignEmployeeToWorkspace(
+                employee,
+                workspace
+        );
+
+        MessageEntity message =
+                createOutboundMessage(workspace);
+
+        messageService.markDeliveryFailed(
+                message.getId()
+        );
+
+        authenticate(employee);
+
+        assertThrows(
+                IllegalStateException.class,
+                () ->
+                        messageProcessingService.retryOutbound(
+                                message.getId()
+                        )
+        );
+    }
+
+    @Test
+    void retryOutbound_employeeAssignedToConversation_isAllowed() {
+
+        OrganizationEntity organization =
+                createOrganization("Test Org");
+
+        WorkspaceEntity workspace =
+                createWorkspace(
+                        "Test Workspace",
+                        organization
+                );
+
+        EmployeeEntity employee =
+                createEmployee(
+                        "retry-employee-assigned",
+                        "retry-employee-assigned@test.local",
+                        UserRole.EMPLOYEE,
+                        organization
+                );
+
+        assignEmployeeToWorkspace(
+                employee,
+                workspace
+        );
+
+        MessageEntity message =
+                createOutboundMessage(workspace);
+
+        message.getConversation()
+                .setAssignedEmployee(employee);
+
+        conversationRepository.saveAndFlush(
+                message.getConversation()
+        );
+
+        messageService.markDeliveryFailed(
+                message.getId()
+        );
+
+        authenticate(employee);
+
+        assertDoesNotThrow(() ->
+                messageProcessingService.retryOutbound(
+                        message.getId()
+                )
         );
     }
 

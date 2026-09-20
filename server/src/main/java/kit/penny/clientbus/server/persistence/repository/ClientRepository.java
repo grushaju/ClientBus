@@ -15,97 +15,168 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Repository
-public interface ClientRepository extends JpaRepository<ClientEntity, UUID> {
+public interface ClientRepository
+        extends JpaRepository<ClientEntity, UUID> {
 
-    // Базовые поиски по workspace
-    List<ClientEntity> findAllByWorkspaceId(UUID workspaceId);
+    List<ClientEntity> findAllByOrganizationId(
+            UUID organizationId
+    );
 
-    Page<ClientEntity> findPagedAllByWorkspaceId(UUID workspaceId, Pageable pageable);
+    Page<ClientEntity> findAllByOrganizationId(
+            UUID organizationId,
+            Pageable pageable
+    );
 
-    List<ClientEntity> findAllByWorkspaceIdAndIsEnabledTrue(UUID workspaceId);
+    List<ClientEntity> findAllByOrganizationIdAndIsEnabledTrue(
+            UUID organizationId
+    );
 
-    List<ClientEntity> findAllByWorkspaceIdAndIsEnabledFalse(UUID workspaceId);
+    List<ClientEntity> findAllByOrganizationIdAndIsEnabledFalse(
+            UUID organizationId
+    );
 
-    // Поиск по имени и фамилии
-    List<ClientEntity> findByFirstNameContainingIgnoreCase(String firstName);
+    List<ClientEntity> findByOrganizationIdAndFirstNameContainingIgnoreCase(
+            UUID organizationId,
+            String firstName
+    );
 
-    List<ClientEntity> findByLastNameContainingIgnoreCase(String lastName);
+    List<ClientEntity> findByOrganizationIdAndLastNameContainingIgnoreCase(
+            UUID organizationId,
+            String lastName
+    );
 
-    List<ClientEntity> findByFirstNameContainingIgnoreCaseAndLastNameContainingIgnoreCase(
-            String firstName, String lastName);
-
-    List<ClientEntity> findByWorkspaceIdAndFirstNameContainingIgnoreCase(
-            UUID workspaceId, String firstName);
-
-    List<ClientEntity> findByWorkspaceIdAndLastNameContainingIgnoreCase(
-            UUID workspaceId, String lastName);
-
-    // Поиск по имени и фамилии в рамках workspace
-    List<ClientEntity> findByWorkspaceIdAndFirstNameContainingIgnoreCaseAndLastNameContainingIgnoreCase(
-            UUID workspaceId, String firstName, String lastName);
-
-    // Поиск по телефону (через вложенную коллекцию)
-    @Query("SELECT c FROM ClientEntity c JOIN c.phoneList p WHERE p = :phone")
-    Optional<ClientEntity> findByPhone(@Param("phone") String phone);
-
-    @Query("SELECT c FROM ClientEntity c JOIN c.phoneList p WHERE p = :phone AND c.workspace.id = :workspaceId")
-    Optional<ClientEntity> findByPhoneAndWorkspaceId(@Param("phone") String phone,
-                                                     @Param("workspaceId") UUID workspaceId);
-
-    @Query("SELECT c FROM ClientEntity c JOIN c.phoneList p WHERE p LIKE CONCAT(:prefix, '%')")
-    List<ClientEntity> findByPhoneStartingWith(@Param("prefix") String prefix);
-
-    // Сложные поиски
-    @Query("SELECT c FROM ClientEntity c WHERE c.workspace.id = :workspaceId AND " +
-            "(LOWER(c.firstName) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
-            "LOWER(c.lastName) LIKE LOWER(CONCAT('%', :query, '%')))")
-    List<ClientEntity> searchClients(@Param("workspaceId") UUID workspaceId,
-                                     @Param("query") String query);
-
-    @Query("SELECT c FROM ClientEntity c WHERE c.workspace.id = :workspaceId AND " +
-            "c.isEnabled = true AND " +
-            "(LOWER(c.firstName) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
-            "LOWER(c.lastName) LIKE LOWER(CONCAT('%', :query, '%')))")
-    List<ClientEntity> searchActiveClients(@Param("workspaceId") UUID workspaceId,
-                                           @Param("query") String query);
-
-    boolean existsByIdAndWorkspaceId(
-            UUID clientId,
-            UUID workspaceId
+    List<ClientEntity>
+    findByOrganizationIdAndFirstNameContainingIgnoreCaseAndLastNameContainingIgnoreCase(
+            UUID organizationId,
+            String firstName,
+            String lastName
     );
 
     @Query("""
-    SELECT c
-    FROM ClientEntity c
-    WHERE c.workspace.id = :workspaceId
-      AND NOT EXISTS (
-          SELECT ca.id
-          FROM ClientAccountEntity ca
-          WHERE ca.client.id = c.id
-      )
-    """)
-    List<ClientEntity> findClientsWithoutAccounts(
-            @Param("workspaceId") UUID workspaceId
+        SELECT c
+        FROM ClientEntity c
+        JOIN c.phoneList p
+        WHERE p = :phone
+        """)
+    Optional<ClientEntity> findByPhone(
+            @Param("phone") String phone
     );
 
-    // Подсчеты
-    @Query("SELECT COUNT(c) FROM ClientEntity c WHERE c.workspace.id = :workspaceId AND c.isEnabled = true")
-    long countActiveClientsByWorkspace(@Param("workspaceId") UUID workspaceId);
+    @Query("""
+        SELECT c
+        FROM ClientEntity c
+        JOIN c.phoneList p
+        WHERE p = :phone
+          AND c.organization.id = :organizationId
+        """)
+    Optional<ClientEntity> findByPhoneAndOrganizationId(
+            @Param("phone") String phone,
+            @Param("organizationId") UUID organizationId
+    );
 
-    @Query("SELECT COUNT(c) FROM ClientEntity c WHERE c.workspace.id = :workspaceId AND c.isEnabled = false")
-    long countDisabledClientsByWorkspace(@Param("workspaceId") UUID workspaceId);
+    @Query("""
+        SELECT c
+        FROM ClientEntity c
+        JOIN c.phoneList p
+        WHERE p LIKE CONCAT(:prefix, '%')
+        """)
+    List<ClientEntity> findByPhoneStartingWith(
+            @Param("prefix") String prefix
+    );
 
-    long countByWorkspaceId(UUID workspaceId);
+    @Query("""
+        SELECT c
+        FROM ClientEntity c
+        WHERE c.organization.id = :organizationId
+          AND (
+               LOWER(c.firstName)
+                   LIKE LOWER(CONCAT('%', :query, '%'))
+            OR LOWER(c.lastName)
+                   LIKE LOWER(CONCAT('%', :query, '%'))
+          )
+        """)
+    List<ClientEntity> searchClients(
+            @Param("organizationId") UUID organizationId,
+            @Param("query") String query
+    );
 
-    // Обновления
+    @Query("""
+        SELECT c
+        FROM ClientEntity c
+        WHERE c.organization.id = :organizationId
+          AND c.isEnabled = true
+          AND (
+               LOWER(c.firstName)
+                   LIKE LOWER(CONCAT('%', :query, '%'))
+            OR LOWER(c.lastName)
+                   LIKE LOWER(CONCAT('%', :query, '%'))
+          )
+        """)
+    List<ClientEntity> searchActiveClients(
+            @Param("organizationId") UUID organizationId,
+            @Param("query") String query
+    );
+
+    boolean existsByIdAndOrganizationId(
+            UUID clientId,
+            UUID organizationId
+    );
+
+    @Query("""
+        SELECT c
+        FROM ClientEntity c
+        WHERE c.organization.id = :organizationId
+          AND NOT EXISTS (
+              SELECT ca.id
+              FROM ClientAccountEntity ca
+              WHERE ca.client.id = c.id
+          )
+        """)
+    List<ClientEntity> findClientsWithoutAccounts(
+            @Param("organizationId") UUID organizationId
+    );
+
+    @Query("""
+        SELECT COUNT(c)
+        FROM ClientEntity c
+        WHERE c.organization.id = :organizationId
+          AND c.isEnabled = true
+        """)
+    long countActiveClientsByOrganization(
+            @Param("organizationId") UUID organizationId
+    );
+
+    @Query("""
+        SELECT COUNT(c)
+        FROM ClientEntity c
+        WHERE c.organization.id = :organizationId
+          AND c.isEnabled = false
+        """)
+    long countDisabledClientsByOrganization(
+            @Param("organizationId") UUID organizationId
+    );
+
+    long countByOrganizationId(
+            UUID organizationId
+    );
 
     @Modifying
     @Transactional
-    @Query("DELETE FROM ClientEntity c WHERE c.workspace.id = :workspaceId")
-    void deleteAllByWorkspaceId(@Param("workspaceId") UUID workspaceId);
+    @Query("""
+        DELETE FROM ClientEntity c
+        WHERE c.organization.id = :organizationId
+        """)
+    void deleteAllByOrganizationId(
+            @Param("organizationId") UUID organizationId
+    );
 
     @Modifying
     @Transactional
-    @Query("DELETE FROM ClientEntity c WHERE c.id IN :clientIds")
-    void deleteAllByIds(@Param("clientIds") List<UUID> clientIds);
+    @Query("""
+        DELETE FROM ClientEntity c
+        WHERE c.id IN :clientIds
+        """)
+    void deleteAllByIds(
+            @Param("clientIds") List<UUID> clientIds
+    );
 }

@@ -4,7 +4,7 @@ import kit.penny.clientbus.common.dto.client.ClientDto;
 import kit.penny.clientbus.common.dto.client.CreateClientRequest;
 import kit.penny.clientbus.common.dto.client.UpdateClientRequest;
 import kit.penny.clientbus.server.persistence.entity.ClientEntity;
-import kit.penny.clientbus.server.persistence.entity.WorkspaceEntity;
+import kit.penny.clientbus.server.persistence.entity.OrganizationEntity;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -20,7 +20,7 @@ public class ClientMapper {
 
         return new ClientDto(
                 entity.getId(),
-                entity.getWorkspace().getId(),
+                entity.getOrganization().getId(),
                 entity.getFirstName(),
                 entity.getLastName(),
                 List.copyOf(entity.getPhoneList()),
@@ -32,17 +32,20 @@ public class ClientMapper {
 
     public ClientEntity toEntity(
             CreateClientRequest request,
-            WorkspaceEntity workspace
+            OrganizationEntity organization
     ) {
-        ClientEntity entity = new ClientEntity(
-                request.firstName(),
-                request.lastName(),
-                workspace
-        );
+        ClientEntity entity =
+                new ClientEntity(
+                        request.firstName(),
+                        request.lastName(),
+                        organization
+                );
 
         entity.setPhoneList(
                 request.phoneList() != null
-                        ? new ArrayList<>(request.phoneList())
+                        ? new ArrayList<>(
+                        request.phoneList()
+                )
                         : new ArrayList<>()
         );
 
@@ -54,21 +57,29 @@ public class ClientMapper {
             UpdateClientRequest request
     ) {
         if (request.firstName() != null) {
-            entity.setFirstName(request.firstName());
+            entity.setFirstName(
+                    request.firstName()
+            );
         }
 
         if (request.lastName() != null) {
-            entity.setLastName(request.lastName());
+            entity.setLastName(
+                    request.lastName()
+            );
         }
 
         if (request.phoneList() != null) {
             entity.setPhoneList(
-                    new ArrayList<>(request.phoneList())
+                    new ArrayList<>(
+                            request.phoneList()
+                    )
             );
         }
 
         if (request.enabled() != null) {
-            entity.setEnabled(request.enabled());
+            entity.setEnabled(
+                    request.enabled()
+            );
         }
     }
 }

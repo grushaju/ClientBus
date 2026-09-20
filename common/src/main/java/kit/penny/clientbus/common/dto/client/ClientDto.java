@@ -6,7 +6,7 @@ import java.util.UUID;
 
 public record ClientDto(
         UUID id,
-        UUID workspaceId,
+        UUID organizationId,
         String firstName,
         String lastName,
         List<String> phoneList,

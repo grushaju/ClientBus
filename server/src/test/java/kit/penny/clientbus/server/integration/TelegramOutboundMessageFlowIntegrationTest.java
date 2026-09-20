@@ -49,8 +49,7 @@ class TelegramOutboundMessageFlowIntegrationTest
             "clientbus-telegram-outbound-e2e-test-"
                     + UUID.randomUUID();
 
-    private static final long TELEGRAM_CHAT_ID =
-            123456789L;
+    private long telegramChatId;
 
     private static final long TELEGRAM_MESSAGE_ID =
             987654321L;
@@ -122,12 +121,19 @@ class TelegramOutboundMessageFlowIntegrationTest
     @BeforeEach
     void setUp() {
 
+        telegramChatId  =
+                100000000L
+                        + Math.floorMod(
+                        UUID.randomUUID().getLeastSignificantBits(),
+                        900000000L
+                );
+
         TdApi.Message telegramMessage =
                 new TdApi.Message(
                         TELEGRAM_MESSAGE_ID,
                         null,
                         null,
-                        TELEGRAM_CHAT_ID,
+                        telegramChatId,
                         null,
                         null,
                         false,
@@ -247,7 +253,7 @@ class TelegramOutboundMessageFlowIntegrationTest
                                 null,
                                 ChannelType.TELEGRAM,
                                 String.valueOf(
-                                        TELEGRAM_CHAT_ID
+                                        telegramChatId
                                 )
                         )
                 );
@@ -386,7 +392,7 @@ class TelegramOutboundMessageFlowIntegrationTest
                 (TdApi.SendMessage) function;
 
         assertEquals(
-                TELEGRAM_CHAT_ID,
+                telegramChatId,
                 sendMessage.chatId
         );
 
@@ -469,7 +475,7 @@ class TelegramOutboundMessageFlowIntegrationTest
                 new TdApi.UpdateMessageSendSucceeded(
                         createTelegramMessage(
                                 TELEGRAM_MESSAGE_ID,
-                                TELEGRAM_CHAT_ID
+                                telegramChatId
                         ),
                         TELEGRAM_MESSAGE_ID
                 )
@@ -554,7 +560,7 @@ class TelegramOutboundMessageFlowIntegrationTest
                                 null,
                                 ChannelType.TELEGRAM,
                                 String.valueOf(
-                                        TELEGRAM_CHAT_ID
+                                        telegramChatId
                                 )
                         )
                 );
@@ -631,7 +637,7 @@ class TelegramOutboundMessageFlowIntegrationTest
                 (TdApi.SendMessage) function;
 
         assertEquals(
-                TELEGRAM_CHAT_ID,
+                telegramChatId,
                 sendMessage.chatId
         );
 
@@ -710,7 +716,7 @@ class TelegramOutboundMessageFlowIntegrationTest
                 new TdApi.UpdateMessageSendFailed(
                         createTelegramMessage(
                                 TELEGRAM_MESSAGE_ID,
-                                TELEGRAM_CHAT_ID
+                                telegramChatId
                         ),
                         TELEGRAM_MESSAGE_ID,
                         telegramError
@@ -805,7 +811,7 @@ class TelegramOutboundMessageFlowIntegrationTest
                                 null,
                                 ChannelType.TELEGRAM,
                                 String.valueOf(
-                                        TELEGRAM_CHAT_ID
+                                        telegramChatId
                                 )
                         )
                 );
@@ -884,7 +890,7 @@ class TelegramOutboundMessageFlowIntegrationTest
                 (TdApi.SendMessage) function;
 
         assertEquals(
-                TELEGRAM_CHAT_ID,
+                telegramChatId,
                 sendMessage.chatId
         );
 
@@ -994,7 +1000,7 @@ class TelegramOutboundMessageFlowIntegrationTest
                 new TdApi.UpdateMessageSendSucceeded(
                         createTelegramMessage(
                                 TELEGRAM_MESSAGE_ID,
-                                TELEGRAM_CHAT_ID
+                                telegramChatId
                         ),
                         TELEGRAM_MESSAGE_ID
                 )
@@ -1093,7 +1099,7 @@ class TelegramOutboundMessageFlowIntegrationTest
                                 null,
                                 ChannelType.TELEGRAM,
                                 String.valueOf(
-                                        TELEGRAM_CHAT_ID
+                                        telegramChatId
                                 )
                         )
                 );
@@ -1155,7 +1161,7 @@ class TelegramOutboundMessageFlowIntegrationTest
                 (TdApi.SendMessage) function;
 
         assertEquals(
-                TELEGRAM_CHAT_ID,
+                telegramChatId,
                 sendMessage.chatId
         );
 
@@ -1294,7 +1300,7 @@ class TelegramOutboundMessageFlowIntegrationTest
                 new TdApi.UpdateMessageSendFailed(
                         createTelegramMessage(
                                 TELEGRAM_MESSAGE_ID,
-                                TELEGRAM_CHAT_ID
+                                telegramChatId
                         ),
                         TELEGRAM_MESSAGE_ID,
                         telegramError
@@ -1406,10 +1412,11 @@ class TelegramOutboundMessageFlowIntegrationTest
                         )
                 );
 
-        authenticateEmployee(
-                organization,
-                workspace
-        );
+        EmployeeEntity employee =
+                authenticateEmployee(
+                        organization,
+                        workspace
+                );
 
         ChannelEntity channel =
                 channelRepository.saveAndFlush(
@@ -1437,7 +1444,7 @@ class TelegramOutboundMessageFlowIntegrationTest
                                 null,
                                 ChannelType.TELEGRAM,
                                 String.valueOf(
-                                        TELEGRAM_CHAT_ID
+                                        telegramChatId
                                 )
                         )
                 );
@@ -1449,6 +1456,13 @@ class TelegramOutboundMessageFlowIntegrationTest
                                 channelAccount,
                                 clientAccount
                         )
+                );
+
+        conversation.setAssignedEmployee(employee);
+
+        conversation =
+                conversationRepository.saveAndFlush(
+                        conversation
                 );
 
         OutboundMessageRequest request =
@@ -1466,7 +1480,7 @@ class TelegramOutboundMessageFlowIntegrationTest
         TdApi.Message firstTelegramMessage =
                 createTelegramMessage(
                         TELEGRAM_MESSAGE_ID,
-                        TELEGRAM_CHAT_ID
+                        telegramChatId
                 );
 
         long retryTelegramMessageId =
@@ -1475,7 +1489,7 @@ class TelegramOutboundMessageFlowIntegrationTest
         TdApi.Message retryTelegramMessage =
                 createTelegramMessage(
                         retryTelegramMessageId,
-                        TELEGRAM_CHAT_ID
+                        telegramChatId
                 );
 
         when(
@@ -1648,6 +1662,7 @@ class TelegramOutboundMessageFlowIntegrationTest
                 );
 
         assertNotNull(retriedResult);
+
         assertEquals(
                 messageId,
                 retriedResult.id()
@@ -1730,7 +1745,7 @@ class TelegramOutboundMessageFlowIntegrationTest
                         retryFunction;
 
         assertEquals(
-                TELEGRAM_CHAT_ID,
+                telegramChatId,
                 retrySend.chatId
         );
 
@@ -1909,11 +1924,10 @@ class TelegramOutboundMessageFlowIntegrationTest
         );
     }
 
-    private void authenticateEmployee(
+    private EmployeeEntity authenticateEmployee(
             OrganizationEntity organization,
             WorkspaceEntity workspace
     ) {
-
         UserEntity user =
                 userRepository.saveAndFlush(
                         TestDataFactory.user(
@@ -1956,6 +1970,8 @@ class TelegramOutboundMessageFlowIntegrationTest
                                 principal.getAuthorities()
                         )
                 );
+
+        return employee;
     }
 
     private MessageEntity awaitMessageExternalId(

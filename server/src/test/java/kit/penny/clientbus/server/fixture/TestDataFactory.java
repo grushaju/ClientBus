@@ -44,14 +44,14 @@ public final class TestDataFactory {
     }
 
     public static ClientEntity client(
-            WorkspaceEntity workspace
+            OrganizationEntity organization
     ) {
 
         ClientEntity client =
                 new ClientEntity(
                         "Ivan",
                         "Ivanov",
-                        workspace
+                        organization
                 );
 
         client.addPhone("+79990000001");
@@ -60,7 +60,7 @@ public final class TestDataFactory {
     }
 
     public static ClientEntity client(
-            WorkspaceEntity workspace,
+            OrganizationEntity organization,
             String firstName,
             String lastName
     ) {
@@ -68,7 +68,7 @@ public final class TestDataFactory {
         return new ClientEntity(
                 firstName,
                 lastName,
-                workspace
+                organization
         );
     }
 

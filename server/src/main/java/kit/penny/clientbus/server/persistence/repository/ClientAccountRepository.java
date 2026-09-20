@@ -22,7 +22,8 @@ public interface ClientAccountRepository
             ChannelType channelType
     );
 
-    Optional<ClientAccountEntity> findByClientIdAndChannelTypeAndExternalId(
+    Optional<ClientAccountEntity>
+    findByClientIdAndChannelTypeAndExternalId(
             UUID clientId,
             ChannelType channelType,
             String externalId
@@ -30,7 +31,8 @@ public interface ClientAccountRepository
 
     List<ClientAccountEntity> findAllByClientIsNull();
 
-    List<ClientAccountEntity> findAllByClientIsNullAndChannelType(
+    List<ClientAccountEntity>
+    findAllByClientIsNullAndChannelType(
             ChannelType channelType
     );
 
@@ -39,10 +41,14 @@ public interface ClientAccountRepository
         FROM ClientAccountEntity a
         WHERE a.client.id = :clientId
           AND (
-               LOWER(a.username) LIKE LOWER(CONCAT('%', :query, '%'))
-            OR LOWER(a.phone) LIKE LOWER(CONCAT('%', :query, '%'))
-            OR LOWER(a.externalId) LIKE LOWER(CONCAT('%', :query, '%'))
-            OR LOWER(a.displayName) LIKE LOWER(CONCAT('%', :query, '%'))
+               LOWER(a.username)
+                   LIKE LOWER(CONCAT('%', :query, '%'))
+            OR LOWER(a.phone)
+                   LIKE LOWER(CONCAT('%', :query, '%'))
+            OR LOWER(a.externalId)
+                   LIKE LOWER(CONCAT('%', :query, '%'))
+            OR LOWER(a.displayName)
+                   LIKE LOWER(CONCAT('%', :query, '%'))
           )
         """)
     List<ClientAccountEntity> searchByClient(
@@ -50,7 +56,11 @@ public interface ClientAccountRepository
             @Param("query") String query
     );
 
-    Optional<ClientAccountEntity> findByChannelTypeAndExternalId(
+    /*
+     * Глобальная идентичность аккаунта.
+     */
+    Optional<ClientAccountEntity>
+    findByChannelTypeAndExternalId(
             ChannelType channelType,
             String externalId
     );
@@ -60,12 +70,10 @@ public interface ClientAccountRepository
             String externalId
     );
 
-    boolean existsByClientIdAndChannelTypeAndExternalId(
-            UUID clientId,
-            ChannelType channelType,
-            String externalId
-    );
-
+    /*
+     * Account виден SUPER_ADMIN только если у него
+     * есть Conversation внутри текущей Organization.
+     */
     @Query("""
         SELECT DISTINCT a
         FROM ClientAccountEntity a
@@ -79,6 +87,10 @@ public interface ClientAccountRepository
             @Param("organizationId") UUID organizationId
     );
 
+    /*
+     * Account виден EMPLOYEE только если у него есть
+     * Conversation в Workspace, доступном Employee.
+     */
     @Query("""
         SELECT DISTINCT a
         FROM ClientAccountEntity a
@@ -94,4 +106,37 @@ public interface ClientAccountRepository
             @Param("employeeId") UUID employeeId
     );
 
+    /*
+     * Orphan Account всё ещё может существовать только
+     * благодаря Conversation.
+     *
+     * Поэтому для SUPER_ADMIN нельзя отдавать все
+     * client IS NULL аккаунты из всей БД.
+     */
+    @Query("""
+        SELECT DISTINCT a
+        FROM ClientAccountEntity a
+        JOIN ConversationEntity c
+          ON c.clientAccount.id = a.id
+        WHERE a.client IS NULL
+          AND c.workspace.organization.id = :organizationId
+        """)
+    List<ClientAccountEntity> findAllUnassignedByOrganizationId(
+            @Param("organizationId") UUID organizationId
+    );
+
+    @Query("""
+        SELECT DISTINCT a
+        FROM ClientAccountEntity a
+        JOIN ConversationEntity c
+          ON c.clientAccount.id = a.id
+        WHERE a.client IS NULL
+          AND a.channelType = :channelType
+          AND c.workspace.organization.id = :organizationId
+        """)
+    List<ClientAccountEntity>
+    findAllUnassignedByOrganizationIdAndChannelType(
+            @Param("organizationId") UUID organizationId,
+            @Param("channelType") ChannelType channelType
+    );
 }

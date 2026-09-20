@@ -20,65 +20,60 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/clients")
 @SecurityRequirement(name = "bearerAuth")
-@Tag(name = "Клиенты", description = "API для управления клиентами")
+@Tag(
+        name = "Клиенты",
+        description = "API для управления клиентами"
+)
 public class ClientController {
 
     private final ClientService clientService;
 
-    public ClientController(ClientService clientService) {
+    public ClientController(
+            ClientService clientService
+    ) {
         this.clientService = clientService;
     }
 
     @PostMapping
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ClientDto> createClient(
-            @RequestBody CreateClientRequest request
+            @Valid @RequestBody CreateClientRequest request
     ) {
-
-        ClientDto created =
-                clientService.createClient(request);
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(created);
+                .body(
+                        clientService.createClient(request)
+                );
     }
 
-    @GetMapping("/workspace/{workspaceId}")
+    @GetMapping
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<List<ClientDto>> getClientsByWorkspace(
-            @PathVariable UUID workspaceId
-    ) {
+    public ResponseEntity<List<ClientDto>> getClients() {
 
         return ResponseEntity.ok(
-                clientService.getClientsByWorkspace(workspaceId)
+                clientService.getClients()
         );
     }
 
-    @GetMapping("/workspace/{workspaceId}/without-accounts")
+    @GetMapping("/without-accounts")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<List<ClientDto>> getClientsWithoutAccounts(
-            @PathVariable UUID workspaceId
-    ) {
+    public ResponseEntity<List<ClientDto>>
+    getClientsWithoutAccounts() {
 
         return ResponseEntity.ok(
-                clientService.getClientsWithoutAccounts(
-                        workspaceId
-                )
+                clientService.getClientsWithoutAccounts()
         );
     }
 
-    @GetMapping("/workspace/{workspaceId}/search")
+    @GetMapping("/search")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<ClientDto>> searchClients(
-            @PathVariable UUID workspaceId,
             @RequestParam(required = false) String query
     ) {
 
         return ResponseEntity.ok(
-                clientService.searchClients(
-                        workspaceId,
-                        query
-                )
+                clientService.searchClients(query)
         );
     }
 
@@ -87,6 +82,7 @@ public class ClientController {
     public ResponseEntity<ClientDto> getClient(
             @PathVariable UUID id
     ) {
+
         return ResponseEntity.ok(
                 clientService.getClient(id)
         );
@@ -96,10 +92,14 @@ public class ClientController {
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ClientDto> updateClient(
             @PathVariable UUID id,
-            @RequestBody UpdateClientRequest request
+            @Valid @RequestBody UpdateClientRequest request
     ) {
+
         return ResponseEntity.ok(
-                clientService.updateClient(id, request)
+                clientService.updateClient(
+                        id,
+                        request
+                )
         );
     }
 
@@ -108,6 +108,7 @@ public class ClientController {
     public ResponseEntity<Void> deleteClient(
             @PathVariable UUID id
     ) {
+
         clientService.deleteClient(id);
 
         return ResponseEntity.noContent().build();
@@ -115,71 +116,78 @@ public class ClientController {
 
     @PostMapping("/{clientId}/clientaccounts")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<ClientAccountDto> addClientAccount(
+    public ResponseEntity<ClientAccountDto>
+    addClientAccount(
             @PathVariable UUID clientId,
             @Valid @RequestBody AddClientAccountRequest request
     ) {
 
-        ClientAccountDto account =
-                clientService.addClientAccount(
-                        clientId,
-                        request
-                );
-
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(account);
+                .body(
+                        clientService.addClientAccount(
+                                clientId,
+                                request
+                        )
+                );
     }
 
     @PostMapping("/{clientId}/clientaccounts/{accountId}")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<ClientAccountDto> assignClientAccount(
+    public ResponseEntity<ClientAccountDto>
+    assignClientAccount(
             @PathVariable UUID clientId,
             @PathVariable UUID accountId
     ) {
 
-        ClientAccountDto account =
+        return ResponseEntity.ok(
                 clientService.assignClientAccount(
                         clientId,
                         accountId
-                );
-
-        return ResponseEntity.ok(account);
+                )
+        );
     }
 
-    @PostMapping("/{clientId}/clientaccounts/{accountId}/reassign")
+    @PostMapping(
+            "/{clientId}/clientaccounts/{accountId}/reassign"
+    )
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<ClientAccountDto> reassignClientAccount(
-            @PathVariable UUID accountId,
-            @PathVariable UUID clientId
-    ) {
-
-        ClientAccountDto account =
-                clientService.reassignClientAccount(
-                        accountId,
-                        clientId
-                );
-
-        return ResponseEntity.ok(account);
-    }
-
-    @DeleteMapping("/clientaccounts/{accountId}")
-    @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<ClientAccountDto> unassignClientAccount(
+    public ResponseEntity<ClientAccountDto>
+    reassignClientAccount(
+            @PathVariable UUID clientId,
             @PathVariable UUID accountId
     ) {
 
-        ClientAccountDto account =
-                clientService.unassignClientAccount(
-                        accountId
-                );
+        return ResponseEntity.ok(
+                clientService.reassignClientAccount(
+                        accountId,
+                        clientId
+                )
+        );
+    }
 
-        return ResponseEntity.ok(account);
+    @DeleteMapping(
+            "/{clientId}/clientaccounts/{accountId}"
+    )
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ClientAccountDto>
+    unassignClientAccount(
+            @PathVariable UUID clientId,
+            @PathVariable UUID accountId
+    ) {
+
+        return ResponseEntity.ok(
+                clientService.unassignClientAccount(
+                        clientId,
+                        accountId
+                )
+        );
     }
 
     @GetMapping("/{clientId}/clientaccounts")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<List<ClientAccountDto>> getAccounts(
+    public ResponseEntity<List<ClientAccountDto>>
+    getAccounts(
             @PathVariable UUID clientId
     ) {
 

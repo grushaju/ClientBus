@@ -61,7 +61,7 @@ class ClientAccountRepositoryTest
         client =
                 clientRepository.save(
                         TestDataFactory.client(
-                                workspace
+                                organization
                         )
                 );
     }
@@ -276,7 +276,7 @@ class ClientAccountRepositoryTest
         ClientEntity anotherClient =
                 clientRepository.save(
                         TestDataFactory.client(
-                                workspace,
+                                organization,
                                 "Petr",
                                 "Petrov"
                         )

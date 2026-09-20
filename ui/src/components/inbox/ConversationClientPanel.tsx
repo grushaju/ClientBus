@@ -143,7 +143,6 @@ function ConversationClientPanel({
         try {
             const result =
                 await getWorkspaceClients(
-                    conversation.workspaceId,
                 )
 
             setClients(result)
@@ -284,6 +283,7 @@ function ConversationClientPanel({
 
         try {
             await unassignClientAccount(
+                clientAccount.clientId,
                 clientAccount.id,
             )
 

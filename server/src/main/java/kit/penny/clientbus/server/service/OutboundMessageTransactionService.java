@@ -8,7 +8,11 @@ import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.common.enums.MessageDirection;
 import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
 import kit.penny.clientbus.common.kafka.PlatformOutboundAttachment;
-import kit.penny.clientbus.server.persistence.entity.*;
+import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
+import kit.penny.clientbus.server.persistence.entity.ConversationEntity;
+import kit.penny.clientbus.server.persistence.entity.EmployeeEntity;
+import kit.penny.clientbus.server.persistence.entity.MessageAttachmentEntity;
+import kit.penny.clientbus.server.persistence.entity.MessageEntity;
 import kit.penny.clientbus.server.security.service.CurrentUserService;
 import org.springframework.stereotype.Service;
 
@@ -178,8 +182,15 @@ public class OutboundMessageTransactionService {
             );
         }
 
+        /*
+         * Technical load without normal message ACL.
+         *
+         * Retry has its own authorization rules:
+         *  - SUPER_ADMIN: allowed for workspaces in own organization
+         *  - EMPLOYEE: only assigned conversation
+         */
         MessageEntity messageEntity =
-                messageService.getMessageEntity(
+                messageService.getMessageEntityForProcessing(
                         messageId
                 );
 
@@ -196,8 +207,8 @@ public class OutboundMessageTransactionService {
          * Capture all values that are needed after retryDelivery().
          *
          * retryDelivery() performs a bulk update with
-         * clearAutomatically = true, therefore messageEntity
-         * must not be accessed after that call.
+         * clearAutomatically = true, therefore all lazy
+         * associations must not be accessed afterwards.
          */
         UUID conversationId =
                 messageEntity.getConversation().getId();
@@ -208,21 +219,45 @@ public class OutboundMessageTransactionService {
         String messageContent =
                 messageEntity.getContent();
 
-        /*
-         * PROCESSED + FAILED
-         *          ->
-         * PROCESSING + PENDING
-         */
-        MessageDto message =
-                messageService.retryDelivery(
-                        messageId
-                );
-
         try {
             ConversationEntity conversation =
                     conversationService.findEntityForProcessing(
                             conversationId
                     );
+
+            /*
+             * Workspace access is the first authorization boundary.
+             *
+             * This guarantees that an employee without access
+             * to the workspace receives AccessDeniedException
+             * before the employee-assignment check.
+             */
+            currentUserService.requireWorkspaceAccess(
+                    conversation.getWorkspace().getId()
+            );
+
+            /*
+             * EMPLOYEE may retry only a conversation assigned
+             * to the current employee.
+             */
+            if (currentUserService.isEmployee()) {
+                EmployeeEntity currentEmployee =
+                        currentUserService.getCurrentEmployee();
+
+                EmployeeEntity assignedEmployee =
+                        conversation.getAssignedEmployee();
+
+                if (assignedEmployee == null
+                        || !assignedEmployee.getId().equals(
+                        currentEmployee.getId()
+                )) {
+
+                    throw new IllegalStateException(
+                            "Current employee is not assigned to the conversation: "
+                                    + conversationId
+                    );
+                }
+            }
 
             ChannelAccountEntity channelAccount =
                     conversation.getChannelAccount();
@@ -233,6 +268,14 @@ public class OutboundMessageTransactionService {
                                 + conversation.getId()
                 );
             }
+
+            /*
+             * Capture values before retryDelivery().
+             *
+             * retryDelivery() clears the persistence context.
+             */
+            UUID channelAccountId =
+                    channelAccount.getId();
 
             ChannelType channelType =
                     channelAccount.getChannel()
@@ -245,16 +288,19 @@ public class OutboundMessageTransactionService {
                 );
             }
 
-            EmployeeEntity currentEmployee = currentUserService.getCurrentEmployee();
-            EmployeeEntity assignedEmployee = conversation.getAssignedEmployee();
-            if (currentUserService.isEmployee() &
-                    (assignedEmployee == null || assignedEmployee.equals(currentEmployee))
-            ) {
-                throw new IllegalStateException(
-                        "Current employee is not assigned to the conversation: "
-                                + conversationId
-                );
-            }
+            String clientAccountExternalId =
+                    conversation.getClientAccount()
+                            .getExternalId();
+
+            /*
+             * PROCESSED + FAILED
+             *          ->
+             * PROCESSING + PENDING
+             */
+            MessageDto message =
+                    messageService.retryDelivery(
+                            messageId
+                    );
 
             List<MessageAttachmentEntity> messageAttachments =
                     messageAttachmentService
@@ -278,9 +324,8 @@ public class OutboundMessageTransactionService {
             OutboundMessageKafkaCommand command =
                     new OutboundMessageKafkaCommand(
                             messageId,
-                            channelAccount.getId(),
-                            conversation.getClientAccount()
-                                    .getExternalId(),
+                            channelAccountId,
+                            clientAccountExternalId,
                             messageType,
                             messageContent,
                             outboundAttachments

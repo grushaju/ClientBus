@@ -10,10 +10,11 @@ import kit.penny.clientbus.server.mapper.ClientAccountMapper;
 import kit.penny.clientbus.server.mapper.ClientMapper;
 import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ClientEntity;
-import kit.penny.clientbus.server.persistence.entity.WorkspaceEntity;
+import kit.penny.clientbus.server.persistence.entity.OrganizationEntity;
 import kit.penny.clientbus.server.persistence.repository.ClientAccountRepository;
 import kit.penny.clientbus.server.persistence.repository.ClientRepository;
-import kit.penny.clientbus.server.persistence.repository.WorkspaceRepository;
+import kit.penny.clientbus.server.persistence.repository.OrganizationRepository;
+import kit.penny.clientbus.server.persistence.repository.ConversationRepository;
 import kit.penny.clientbus.server.security.service.CurrentUserService;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -27,46 +28,52 @@ import java.util.UUID;
 public class ClientService {
 
     private final ClientRepository clientRepository;
-    private final WorkspaceRepository workspaceRepository;
+    private final OrganizationRepository organizationRepository;
     private final ClientAccountRepository clientAccountRepository;
     private final ClientMapper clientMapper;
     private final ClientAccountMapper clientAccountMapper;
     private final CurrentUserService currentUserService;
+    private final ConversationRepository conversationRepository;
 
     public ClientService(
             ClientRepository clientRepository,
-            WorkspaceRepository workspaceRepository,
+            OrganizationRepository organizationRepository,
             ClientAccountRepository clientAccountRepository,
             ClientMapper clientMapper,
             ClientAccountMapper clientAccountMapper,
-            CurrentUserService currentUserService
+            CurrentUserService currentUserService,
+            ConversationRepository conversationRepository
     ) {
         this.clientRepository = clientRepository;
-        this.workspaceRepository = workspaceRepository;
+        this.organizationRepository = organizationRepository;
         this.clientAccountRepository = clientAccountRepository;
         this.clientMapper = clientMapper;
         this.clientAccountMapper = clientAccountMapper;
         this.currentUserService = currentUserService;
+        this.conversationRepository = conversationRepository;
     }
 
-    public ClientDto createClient(CreateClientRequest request) {
+    public ClientDto createClient(
+            CreateClientRequest request
+    ) {
 
-        currentUserService.requireWorkspaceAccess(
-                request.workspaceId()
-        );
+        UUID organizationId =
+                currentUserService.getCurrentOrganizationId();
 
-        WorkspaceEntity workspace =
-                workspaceRepository
-                        .findById(request.workspaceId())
+        OrganizationEntity organization =
+                organizationRepository.findById(organizationId)
                         .orElseThrow(() ->
                                 new EntityNotFoundException(
-                                        "Workspace not found: "
-                                                + request.workspaceId()
+                                        "Organization not found: "
+                                                + organizationId
                                 )
                         );
 
         ClientEntity entity =
-                clientMapper.toEntity(request, workspace);
+                clientMapper.toEntity(
+                        request,
+                        organization
+                );
 
         ClientEntity saved =
                 clientRepository.saveAndFlush(entity);
@@ -75,16 +82,13 @@ public class ClientService {
     }
 
     @Transactional(readOnly = true)
-    public List<ClientDto> getClientsByWorkspace(
-            UUID workspaceId
-    ) {
+    public List<ClientDto> getClients() {
 
-        currentUserService.requireWorkspaceAccess(
-                workspaceId
-        );
+        UUID organizationId =
+                currentUserService.getCurrentOrganizationId();
 
         return clientRepository
-                .findAllByWorkspaceId(workspaceId)
+                .findAllByOrganizationId(organizationId)
                 .stream()
                 .map(clientMapper::toDto)
                 .toList();
@@ -92,16 +96,21 @@ public class ClientService {
 
     @Transactional(readOnly = true)
     public List<ClientDto> searchClients(
-            UUID workspaceId,
             String query
     ) {
 
-        currentUserService.requireWorkspaceAccess(
-                workspaceId
-        );
+        UUID organizationId =
+                currentUserService.getCurrentOrganizationId();
+
+        if (query == null || query.isBlank()) {
+            return getClients();
+        }
 
         return clientRepository
-                .searchClients(workspaceId, query)
+                .searchClients(
+                        organizationId,
+                        query.trim()
+                )
                 .stream()
                 .map(clientMapper::toDto)
                 .toList();
@@ -118,7 +127,7 @@ public class ClientService {
                                 )
                         );
 
-        requireClientWorkspaceAccess(entity);
+        requireClientOrganizationAccess(entity);
 
         return clientMapper.toDto(entity);
     }
@@ -136,9 +145,12 @@ public class ClientService {
                                 )
                         );
 
-        requireClientWorkspaceAccess(entity);
+        requireClientOrganizationAccess(entity);
 
-        clientMapper.updateEntity(entity, request);
+        clientMapper.updateEntity(
+                entity,
+                request
+        );
 
         ClientEntity saved =
                 clientRepository.saveAndFlush(entity);
@@ -156,22 +168,19 @@ public class ClientService {
                                 )
                         );
 
-        requireClientWorkspaceAccess(entity);
+        requireClientOrganizationAccess(entity);
 
         clientRepository.delete(entity);
     }
 
     @Transactional(readOnly = true)
-    public List<ClientDto> getClientsWithoutAccounts(
-            UUID workspaceId
-    ) {
+    public List<ClientDto> getClientsWithoutAccounts() {
 
-        currentUserService.requireWorkspaceAccess(
-                workspaceId
-        );
+        UUID organizationId =
+                currentUserService.getCurrentOrganizationId();
 
         return clientRepository
-                .findClientsWithoutAccounts(workspaceId)
+                .findClientsWithoutAccounts(organizationId)
                 .stream()
                 .map(clientMapper::toDto)
                 .toList();
@@ -183,14 +192,7 @@ public class ClientService {
     ) {
 
         ClientEntity client =
-                clientRepository.findById(clientId)
-                        .orElseThrow(() ->
-                                new EntityNotFoundException(
-                                        "Client not found: " + clientId
-                                )
-                        );
-
-        requireClientWorkspaceAccess(client);
+                getAccessibleClient(clientId);
 
         boolean alreadyExists =
                 clientAccountRepository
@@ -212,14 +214,26 @@ public class ClientService {
                 new ClientAccountEntity();
 
         account.setClient(client);
-        account.setChannelType(request.channelType());
-        account.setExternalId(request.externalId());
-        account.setUsername(request.username());
-        account.setPhone(request.phone());
-        account.setDisplayName(request.displayName());
+        account.setChannelType(
+                request.channelType()
+        );
+        account.setExternalId(
+                request.externalId()
+        );
+        account.setUsername(
+                request.username()
+        );
+        account.setPhone(
+                request.phone()
+        );
+        account.setDisplayName(
+                request.displayName()
+        );
 
         account =
-                clientAccountRepository.saveAndFlush(account);
+                clientAccountRepository.saveAndFlush(
+                        account
+                );
 
         return clientAccountMapper.toDto(account);
     }
@@ -230,14 +244,7 @@ public class ClientService {
     ) {
 
         ClientEntity client =
-                clientRepository.findById(clientId)
-                        .orElseThrow(() ->
-                                new EntityNotFoundException(
-                                        "Client not found: " + clientId
-                                )
-                        );
-
-        requireClientWorkspaceAccess(client);
+                getAccessibleClient(clientId);
 
         ClientAccountEntity account =
                 clientAccountRepository.findById(accountId)
@@ -248,6 +255,12 @@ public class ClientService {
                                 )
                         );
 
+        /*
+         * Account глобальный.
+         *
+         * Если он уже связан с Client — переназначение
+         * через этот use case запрещено.
+         */
         if (account.getClient() != null) {
 
             if (account.getClient().getId().equals(clientId)) {
@@ -260,9 +273,12 @@ public class ClientService {
         }
 
         /*
-         * Unassigned account has no workspace.
-         * Access is controlled by the target client's workspace.
+         * Для orphan account дополнительно проверяем,
+         * что account существует в текущей Organization
+         * через Conversation.
          */
+        requireAccountInCurrentOrganization(account);
+
         account.setClient(client);
 
         return clientAccountMapper.toDto(account);
@@ -283,15 +299,9 @@ public class ClientService {
                         );
 
         ClientEntity newClient =
-                clientRepository.findById(newClientId)
-                        .orElseThrow(() ->
-                                new EntityNotFoundException(
-                                        "Client not found: "
-                                                + newClientId
-                                )
-                        );
+                getAccessibleClient(newClientId);
 
-        requireClientWorkspaceAccess(newClient);
+        requireAccountInCurrentOrganization(account);
 
         account.setClient(newClient);
 
@@ -299,8 +309,12 @@ public class ClientService {
     }
 
     public ClientAccountDto unassignClientAccount(
+            UUID clientId,
             UUID accountId
     ) {
+
+        ClientEntity client =
+                getAccessibleClient(clientId);
 
         ClientAccountEntity account =
                 clientAccountRepository.findById(accountId)
@@ -311,12 +325,19 @@ public class ClientService {
                                 )
                         );
 
-        if (account.getClient() != null) {
-            requireClientWorkspaceAccess(
-                    account.getClient()
+        if (account.getClient() == null) {
+            throw new IllegalStateException(
+                    "Client account is not assigned"
             );
-        } else {
-            requireSuperAdmin();
+        }
+
+        if (!account.getClient()
+                .getId()
+                .equals(client.getId())) {
+
+            throw new AccessDeniedException(
+                    "Client account belongs to another client"
+            );
         }
 
         account.setClient(null);
@@ -329,15 +350,7 @@ public class ClientService {
             UUID clientId
     ) {
 
-        ClientEntity client =
-                clientRepository.findById(clientId)
-                        .orElseThrow(() ->
-                                new EntityNotFoundException(
-                                        "Client not found: " + clientId
-                                )
-                        );
-
-        requireClientWorkspaceAccess(client);
+        getAccessibleClient(clientId);
 
         return clientAccountRepository
                 .findAllByClientId(clientId)
@@ -346,26 +359,60 @@ public class ClientService {
                 .toList();
     }
 
-    private void requireClientWorkspaceAccess(
+    private ClientEntity getAccessibleClient(
+            UUID clientId
+    ) {
+
+        ClientEntity client =
+                clientRepository.findById(clientId)
+                        .orElseThrow(() ->
+                                new EntityNotFoundException(
+                                        "Client not found: "
+                                                + clientId
+                                )
+                        );
+
+        requireClientOrganizationAccess(client);
+
+        return client;
+    }
+
+    private void requireClientOrganizationAccess(
             ClientEntity client
     ) {
 
-        if (client.getWorkspace() == null) {
-            throw new IllegalStateException(
-                    "Client has no workspace: " + client.getId()
+        UUID currentOrganizationId =
+                currentUserService
+                        .getCurrentOrganizationId();
+
+        if (!currentOrganizationId.equals(
+                client.getOrganization().getId()
+        )) {
+            throw new AccessDeniedException(
+                    "Client is not accessible"
             );
         }
-
-        currentUserService.requireWorkspaceAccess(
-                client.getWorkspace().getId()
-        );
     }
 
-    private void requireSuperAdmin() {
+    private void requireAccountInCurrentOrganization(
+            ClientAccountEntity account
+    ) {
 
-        if (!currentUserService.isSuperAdmin()) {
+        UUID organizationId =
+                currentUserService
+                        .getCurrentOrganizationId();
+
+        boolean accessible =
+                !conversationRepository
+                        .findAllByClientAccountIdAndOrganizationIdOrderByLastMessageAtDesc(
+                                account.getId(),
+                                organizationId
+                        )
+                        .isEmpty();
+
+        if (!accessible) {
             throw new AccessDeniedException(
-                    "SUPER_ADMIN role is required"
+                    "Client account is not accessible"
             );
         }
     }

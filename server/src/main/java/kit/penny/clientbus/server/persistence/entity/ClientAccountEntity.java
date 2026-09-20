@@ -11,9 +11,8 @@ import java.util.UUID;
         name = "clientaccount",
         uniqueConstraints = {
                 @UniqueConstraint(
-                        name = "clientaccount_client_type_external_uix",
+                        name = "clientaccount_type_external_uix",
                         columnNames = {
-                                "clientid",
                                 "channeltype",
                                 "externalid"
                         }
@@ -24,7 +23,11 @@ public class ClientAccountEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    @Column(nullable = false, updatable = false, name = "clientaccountid")
+    @Column(
+            nullable = false,
+            updatable = false,
+            name = "clientaccountid"
+    )
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -51,7 +54,8 @@ public class ClientAccountEntity {
             nullable = false,
             length = 20
     )
-    private ClientAccountState state = ClientAccountState.ACTIVE;
+    private ClientAccountState state =
+            ClientAccountState.ACTIVE;
 
     @Column(
             name = "externalid",

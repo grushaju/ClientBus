@@ -11,10 +11,12 @@ import kit.penny.clientbus.server.mapper.ClientAccountMapper;
 import kit.penny.clientbus.server.mapper.ClientMapper;
 import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ClientEntity;
-import kit.penny.clientbus.server.persistence.entity.WorkspaceEntity;
+import kit.penny.clientbus.server.persistence.entity.ConversationEntity;
+import kit.penny.clientbus.server.persistence.entity.OrganizationEntity;
 import kit.penny.clientbus.server.persistence.repository.ClientAccountRepository;
 import kit.penny.clientbus.server.persistence.repository.ClientRepository;
-import kit.penny.clientbus.server.persistence.repository.WorkspaceRepository;
+import kit.penny.clientbus.server.persistence.repository.ConversationRepository;
+import kit.penny.clientbus.server.persistence.repository.OrganizationRepository;
 import kit.penny.clientbus.server.security.service.CurrentUserService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,6 +24,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.util.List;
 import java.util.Optional;
@@ -38,7 +41,7 @@ class ClientServiceTest {
     private ClientRepository clientRepository;
 
     @Mock
-    private WorkspaceRepository workspaceRepository;
+    private OrganizationRepository organizationRepository;
 
     @Mock
     private ClientAccountRepository clientAccountRepository;
@@ -52,33 +55,36 @@ class ClientServiceTest {
     @Mock
     private CurrentUserService currentUserService;
 
+    @Mock
+    private ConversationRepository conversationRepository;
+
     @InjectMocks
     private ClientService clientService;
 
+    private UUID organizationId;
     private UUID clientId;
-    private UUID workspaceId;
     private UUID accountId;
 
+    private OrganizationEntity organization;
     private ClientEntity client;
-    private WorkspaceEntity workspace;
     private ClientAccountEntity account;
 
     @BeforeEach
     void setUp() {
 
+        organizationId = UUID.randomUUID();
         clientId = UUID.randomUUID();
-        workspaceId = UUID.randomUUID();
         accountId = UUID.randomUUID();
 
-        workspace = new WorkspaceEntity();
-        workspace.setId(workspaceId);
-        workspace.setName("Test Workspace");
+        organization = new OrganizationEntity();
+        organization.setId(organizationId);
+        organization.setName("Test Organization");
 
         client = new ClientEntity();
         client.setId(clientId);
         client.setFirstName("Ivan");
         client.setLastName("Ivanov");
-        client.setWorkspace(workspace);
+        client.setOrganization(organization);
         client.setEnabled(true);
 
         account = new ClientAccountEntity();
@@ -101,7 +107,6 @@ class ClientServiceTest {
 
         CreateClientRequest request =
                 new CreateClientRequest(
-                        workspaceId,
                         "Ivan",
                         "Ivanov",
                         List.of("+79990000000")
@@ -109,10 +114,10 @@ class ClientServiceTest {
 
         ClientDto expectedDto = mock(ClientDto.class);
 
-        when(workspaceRepository.findById(workspaceId))
-                .thenReturn(Optional.of(workspace));
+        when(organizationRepository.findById(organizationId))
+                .thenReturn(Optional.of(organization));
 
-        when(clientMapper.toEntity(request, workspace))
+        when(clientMapper.toEntity(request, organization))
                 .thenReturn(client);
 
         when(clientRepository.saveAndFlush(client))
@@ -121,19 +126,22 @@ class ClientServiceTest {
         when(clientMapper.toDto(client))
                 .thenReturn(expectedDto);
 
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
+
         ClientDto result =
                 clientService.createClient(request);
 
         assertSame(expectedDto, result);
 
         verify(currentUserService)
-                .requireWorkspaceAccess(workspaceId);
+                .getCurrentOrganizationId();
 
-        verify(workspaceRepository)
-                .findById(workspaceId);
+        verify(organizationRepository)
+                .findById(organizationId);
 
         verify(clientMapper)
-                .toEntity(request, workspace);
+                .toEntity(request, organization);
 
         verify(clientRepository)
                 .saveAndFlush(client);
@@ -143,19 +151,19 @@ class ClientServiceTest {
     }
 
     @Test
-    void createClient_workspaceNotFound() {
+    void createClient_organizationNotFound() {
 
         CreateClientRequest request =
                 new CreateClientRequest(
-                        workspaceId,
                         "Ivan",
                         "Ivanov",
                         List.of()
                 );
 
-        when(workspaceRepository.findById(workspaceId))
+        when(organizationRepository.findById(organizationId))
                 .thenReturn(Optional.empty());
-
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
         EntityNotFoundException exception =
                 assertThrows(
                         EntityNotFoundException.class,
@@ -163,15 +171,15 @@ class ClientServiceTest {
                 );
 
         assertEquals(
-                "Workspace not found: " + workspaceId,
+                "Organization not found: " + organizationId,
                 exception.getMessage()
         );
 
         verify(currentUserService)
-                .requireWorkspaceAccess(workspaceId);
+                .getCurrentOrganizationId();
 
-        verify(workspaceRepository)
-                .findById(workspaceId);
+        verify(organizationRepository)
+                .findById(organizationId);
 
         verifyNoInteractions(clientMapper);
         verifyNoInteractions(clientRepository);
@@ -192,6 +200,9 @@ class ClientServiceTest {
         when(clientMapper.toDto(client))
                 .thenReturn(expectedDto);
 
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
+
         ClientDto result =
                 clientService.getClient(clientId);
 
@@ -201,7 +212,7 @@ class ClientServiceTest {
                 .findById(clientId);
 
         verify(currentUserService)
-                .requireWorkspaceAccess(workspaceId);
+                .getCurrentOrganizationId();
 
         verify(clientMapper)
                 .toDto(client);
@@ -231,6 +242,38 @@ class ClientServiceTest {
         verifyNoInteractions(clientMapper);
     }
 
+    @Test
+    void getClient_fromAnotherOrganization_denied() {
+
+        OrganizationEntity anotherOrganization =
+                new OrganizationEntity();
+
+        anotherOrganization.setId(UUID.randomUUID());
+        anotherOrganization.setName("Another Organization");
+
+        client.setOrganization(anotherOrganization);
+
+        when(clientRepository.findById(clientId))
+                .thenReturn(Optional.of(client));
+
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
+
+        assertThrows(
+                AccessDeniedException.class,
+                () -> clientService.getClient(clientId)
+        );
+
+        verify(clientRepository)
+                .findById(clientId);
+
+        verify(currentUserService)
+                .getCurrentOrganizationId();
+
+        verify(clientMapper, never())
+                .toDto(any());
+    }
+
     // =========================================================
     // UPDATE CLIENT
     // =========================================================
@@ -257,6 +300,9 @@ class ClientServiceTest {
         when(clientMapper.toDto(client))
                 .thenReturn(expectedDto);
 
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
+
         ClientDto result =
                 clientService.updateClient(
                         clientId,
@@ -269,7 +315,7 @@ class ClientServiceTest {
                 .findById(clientId);
 
         verify(currentUserService)
-                .requireWorkspaceAccess(workspaceId);
+                .getCurrentOrganizationId();
 
         verify(clientMapper)
                 .updateEntity(client, request);
@@ -326,13 +372,16 @@ class ClientServiceTest {
         when(clientRepository.findById(clientId))
                 .thenReturn(Optional.of(client));
 
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
+
         clientService.deleteClient(clientId);
 
         verify(clientRepository)
                 .findById(clientId);
 
         verify(currentUserService)
-                .requireWorkspaceAccess(workspaceId);
+                .getCurrentOrganizationId();
 
         verify(clientRepository)
                 .delete(client);
@@ -365,6 +414,122 @@ class ClientServiceTest {
     }
 
     // =========================================================
+    // GET CLIENTS
+    // =========================================================
+
+    @Test
+    void getClients_success() {
+
+        ClientEntity client2 = new ClientEntity();
+        client2.setId(UUID.randomUUID());
+        client2.setFirstName("Petr");
+        client2.setLastName("Petrov");
+        client2.setOrganization(organization);
+
+        ClientDto dto1 = mock(ClientDto.class);
+        ClientDto dto2 = mock(ClientDto.class);
+
+        when(clientRepository.findAllByOrganizationId(organizationId))
+                .thenReturn(List.of(client, client2));
+
+        when(clientMapper.toDto(client))
+                .thenReturn(dto1);
+
+        when(clientMapper.toDto(client2))
+                .thenReturn(dto2);
+
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
+
+        List<ClientDto> result =
+                clientService.getClients();
+
+        assertEquals(2, result.size());
+        assertSame(dto1, result.get(0));
+        assertSame(dto2, result.get(1));
+
+        verify(currentUserService)
+                .getCurrentOrganizationId();
+
+        verify(clientRepository)
+                .findAllByOrganizationId(organizationId);
+
+        verify(clientMapper)
+                .toDto(client);
+
+        verify(clientMapper)
+                .toDto(client2);
+    }
+
+    // =========================================================
+    // SEARCH CLIENTS
+    // =========================================================
+
+    @Test
+    void searchClients_success() {
+
+        ClientDto expectedDto =
+                mock(ClientDto.class);
+
+        when(clientRepository.searchClients(
+                organizationId,
+                "ivan"
+        )).thenReturn(List.of(client));
+
+        when(clientMapper.toDto(client))
+                .thenReturn(expectedDto);
+
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
+
+        List<ClientDto> result =
+                clientService.searchClients("ivan");
+
+        assertEquals(1, result.size());
+        assertSame(expectedDto, result.getFirst());
+
+        verify(currentUserService)
+                .getCurrentOrganizationId();
+
+        verify(clientRepository)
+                .searchClients(
+                        organizationId,
+                        "ivan"
+                );
+
+        verify(clientMapper)
+                .toDto(client);
+    }
+
+    @Test
+    void searchClients_blankQuery_returnsAllClients() {
+
+        ClientDto expectedDto =
+                mock(ClientDto.class);
+
+        when(clientRepository.findAllByOrganizationId(organizationId))
+                .thenReturn(List.of(client));
+
+        when(clientMapper.toDto(client))
+                .thenReturn(expectedDto);
+
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
+
+        List<ClientDto> result =
+                clientService.searchClients("   ");
+
+        assertEquals(1, result.size());
+        assertSame(expectedDto, result.getFirst());
+
+        verify(clientRepository)
+                .findAllByOrganizationId(organizationId);
+
+        verify(clientRepository, never())
+                .searchClients(any(), any());
+    }
+
+    // =========================================================
     // CLIENTS WITHOUT ACCOUNTS
     // =========================================================
 
@@ -375,12 +540,12 @@ class ClientServiceTest {
         client2.setId(UUID.randomUUID());
         client2.setFirstName("Petr");
         client2.setLastName("Petrov");
-        client2.setWorkspace(workspace);
+        client2.setOrganization(organization);
 
         ClientDto dto1 = mock(ClientDto.class);
         ClientDto dto2 = mock(ClientDto.class);
 
-        when(clientRepository.findClientsWithoutAccounts(workspaceId))
+        when(clientRepository.findClientsWithoutAccounts(organizationId))
                 .thenReturn(List.of(client, client2));
 
         when(clientMapper.toDto(client))
@@ -389,18 +554,21 @@ class ClientServiceTest {
         when(clientMapper.toDto(client2))
                 .thenReturn(dto2);
 
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
+
         List<ClientDto> result =
-                clientService.getClientsWithoutAccounts(workspaceId);
+                clientService.getClientsWithoutAccounts();
 
         assertEquals(2, result.size());
         assertSame(dto1, result.get(0));
         assertSame(dto2, result.get(1));
 
         verify(currentUserService)
-                .requireWorkspaceAccess(workspaceId);
+                .getCurrentOrganizationId();
 
         verify(clientRepository)
-                .findClientsWithoutAccounts(workspaceId);
+                .findClientsWithoutAccounts(organizationId);
 
         verify(clientMapper)
                 .toDto(client);
@@ -442,6 +610,9 @@ class ClientServiceTest {
         when(clientAccountMapper.toDto(account2))
                 .thenReturn(dto2);
 
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
+
         List<ClientAccountDto> result =
                 clientService.getClientAccounts(clientId);
 
@@ -454,7 +625,7 @@ class ClientServiceTest {
                 .findById(clientId);
 
         verify(currentUserService)
-                .requireWorkspaceAccess(workspaceId);
+                .getCurrentOrganizationId();
 
         verify(clientAccountRepository)
                 .findAllByClientId(clientId);
@@ -520,12 +691,15 @@ class ClientServiceTest {
                 ))
                 .thenReturn(false);
 
-        when(clientAccountRepository.saveAndFlush(any(
-                ClientAccountEntity.class
-        ))).thenReturn(account);
+        when(clientAccountRepository.saveAndFlush(
+                any(ClientAccountEntity.class)
+        )).thenReturn(account);
 
         when(clientAccountMapper.toDto(account))
                 .thenReturn(expectedDto);
+
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
 
         ClientAccountDto result =
                 clientService.addClientAccount(
@@ -539,7 +713,7 @@ class ClientServiceTest {
                 .findById(clientId);
 
         verify(currentUserService)
-                .requireWorkspaceAccess(workspaceId);
+                .getCurrentOrganizationId();
 
         verify(clientAccountRepository)
                 .existsByChannelTypeAndExternalId(
@@ -613,6 +787,9 @@ class ClientServiceTest {
                 ))
                 .thenReturn(true);
 
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
+
         IllegalStateException exception =
                 assertThrows(
                         IllegalStateException.class,
@@ -631,7 +808,7 @@ class ClientServiceTest {
                 .findById(clientId);
 
         verify(currentUserService)
-                .requireWorkspaceAccess(workspaceId);
+                .getCurrentOrganizationId();
 
         verify(clientAccountRepository)
                 .existsByChannelTypeAndExternalId(
@@ -673,8 +850,18 @@ class ClientServiceTest {
         when(clientAccountRepository.findById(accountId))
                 .thenReturn(Optional.of(unassignedAccount));
 
+        when(conversationRepository
+                .findAllByClientAccountIdAndOrganizationIdOrderByLastMessageAtDesc(
+                        accountId,
+                        organizationId
+                ))
+                .thenReturn(List.of(mock(ConversationEntity.class)));
+
         when(clientAccountMapper.toDto(unassignedAccount))
                 .thenReturn(expectedDto);
+
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
 
         ClientAccountDto result =
                 clientService.assignClientAccount(
@@ -692,17 +879,20 @@ class ClientServiceTest {
         verify(clientRepository)
                 .findById(clientId);
 
-        verify(currentUserService)
-                .requireWorkspaceAccess(workspaceId);
+        verify(currentUserService, times(2))
+                .getCurrentOrganizationId();
 
         verify(clientAccountRepository)
                 .findById(accountId);
 
+        verify(conversationRepository)
+                .findAllByClientAccountIdAndOrganizationIdOrderByLastMessageAtDesc(
+                        accountId,
+                        organizationId
+                );
+
         verify(clientAccountMapper)
                 .toDto(unassignedAccount);
-
-        verify(clientAccountRepository, never())
-                .save(any());
     }
 
     @Test
@@ -728,8 +918,8 @@ class ClientServiceTest {
         verify(clientRepository)
                 .findById(clientId);
 
-        verifyNoInteractions(currentUserService);
         verifyNoInteractions(clientAccountRepository);
+        verifyNoInteractions(conversationRepository);
     }
 
     @Test
@@ -740,6 +930,9 @@ class ClientServiceTest {
 
         when(clientAccountRepository.findById(accountId))
                 .thenReturn(Optional.empty());
+
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
 
         EntityNotFoundException exception =
                 assertThrows(
@@ -759,19 +952,20 @@ class ClientServiceTest {
                 .findById(clientId);
 
         verify(currentUserService)
-                .requireWorkspaceAccess(workspaceId);
+                .getCurrentOrganizationId();
 
         verify(clientAccountRepository)
                 .findById(accountId);
 
+        verifyNoInteractions(conversationRepository);
         verifyNoInteractions(clientAccountMapper);
     }
 
     @Test
     void assignClientAccount_alreadyAssignedToSameClient() {
 
-        ClientDto expectedDto =
-                mock(ClientDto.class);
+        ClientAccountDto accountDto =
+                mock(ClientAccountDto.class);
 
         when(clientRepository.findById(clientId))
                 .thenReturn(Optional.of(client));
@@ -779,11 +973,11 @@ class ClientServiceTest {
         when(clientAccountRepository.findById(accountId))
                 .thenReturn(Optional.of(account));
 
-        ClientAccountDto accountDto =
-                mock(ClientAccountDto.class);
-
         when(clientAccountMapper.toDto(account))
                 .thenReturn(accountDto);
+
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
 
         ClientAccountDto result =
                 clientService.assignClientAccount(
@@ -798,11 +992,14 @@ class ClientServiceTest {
                 account.getClient()
         );
 
-        verify(currentUserService)
-                .requireWorkspaceAccess(workspaceId);
-
         verify(clientAccountMapper)
                 .toDto(account);
+
+        verify(conversationRepository, never())
+                .findAllByClientAccountIdAndOrganizationIdOrderByLastMessageAtDesc(
+                        any(),
+                        any()
+                );
     }
 
     @Test
@@ -811,10 +1008,8 @@ class ClientServiceTest {
         ClientEntity anotherClient =
                 new ClientEntity();
 
-        anotherClient.setId(
-                UUID.randomUUID()
-        );
-        anotherClient.setWorkspace(workspace);
+        anotherClient.setId(UUID.randomUUID());
+        anotherClient.setOrganization(organization);
 
         account.setClient(anotherClient);
 
@@ -823,6 +1018,9 @@ class ClientServiceTest {
 
         when(clientAccountRepository.findById(accountId))
                 .thenReturn(Optional.of(account));
+
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
 
         IllegalStateException exception =
                 assertThrows(
@@ -838,8 +1036,58 @@ class ClientServiceTest {
                 exception.getMessage()
         );
 
-        verify(currentUserService)
-                .requireWorkspaceAccess(workspaceId);
+        verify(clientAccountMapper, never())
+                .toDto(any());
+
+        verify(conversationRepository, never())
+                .findAllByClientAccountIdAndOrganizationIdOrderByLastMessageAtDesc(
+                        any(),
+                        any()
+                );
+    }
+
+    @Test
+    void assignClientAccount_accountNotInCurrentOrganization() {
+
+        ClientAccountEntity unassignedAccount =
+                new ClientAccountEntity();
+
+        unassignedAccount.setId(accountId);
+        unassignedAccount.setClient(null);
+        unassignedAccount.setChannelType(ChannelType.TELEGRAM);
+        unassignedAccount.setExternalId("telegram-123");
+
+        when(clientRepository.findById(clientId))
+                .thenReturn(Optional.of(client));
+
+        when(clientAccountRepository.findById(accountId))
+                .thenReturn(Optional.of(unassignedAccount));
+
+        when(conversationRepository
+                .findAllByClientAccountIdAndOrganizationIdOrderByLastMessageAtDesc(
+                        accountId,
+                        organizationId
+                ))
+                .thenReturn(List.of());
+
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
+
+        AccessDeniedException exception =
+                assertThrows(
+                        AccessDeniedException.class,
+                        () -> clientService.assignClientAccount(
+                                clientId,
+                                accountId
+                        )
+                );
+
+        assertEquals(
+                "Client account is not accessible",
+                exception.getMessage()
+        );
+
+        assertNull(unassignedAccount.getClient());
 
         verify(clientAccountMapper, never())
                 .toDto(any());
@@ -859,7 +1107,7 @@ class ClientServiceTest {
                 new ClientEntity();
 
         newClient.setId(newClientId);
-        newClient.setWorkspace(workspace);
+        newClient.setOrganization(organization);
 
         ClientAccountDto expectedDto =
                 mock(ClientAccountDto.class);
@@ -870,8 +1118,18 @@ class ClientServiceTest {
         when(clientRepository.findById(newClientId))
                 .thenReturn(Optional.of(newClient));
 
+        when(conversationRepository
+                .findAllByClientAccountIdAndOrganizationIdOrderByLastMessageAtDesc(
+                        accountId,
+                        organizationId
+                ))
+                .thenReturn(List.of(mock(ConversationEntity.class)));
+
         when(clientAccountMapper.toDto(account))
                 .thenReturn(expectedDto);
+
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
 
         ClientAccountDto result =
                 clientService.reassignClientAccount(
@@ -892,8 +1150,14 @@ class ClientServiceTest {
         verify(clientRepository)
                 .findById(newClientId);
 
-        verify(currentUserService)
-                .requireWorkspaceAccess(workspaceId);
+        verify(currentUserService, times(2))
+                .getCurrentOrganizationId();
+
+        verify(conversationRepository)
+                .findAllByClientAccountIdAndOrganizationIdOrderByLastMessageAtDesc(
+                        accountId,
+                        organizationId
+                );
 
         verify(clientAccountMapper)
                 .toDto(account);
@@ -927,6 +1191,7 @@ class ClientServiceTest {
 
         verifyNoInteractions(clientRepository);
         verifyNoInteractions(currentUserService);
+        verifyNoInteractions(conversationRepository);
     }
 
     @Test
@@ -961,7 +1226,55 @@ class ClientServiceTest {
         verify(clientRepository)
                 .findById(newClientId);
 
-        verifyNoInteractions(currentUserService);
+        verifyNoInteractions(conversationRepository);
+        verify(clientAccountMapper, never())
+                .toDto(any());
+    }
+
+    @Test
+    void reassignClientAccount_accountNotInCurrentOrganization() {
+
+        UUID newClientId =
+                UUID.randomUUID();
+
+        ClientEntity newClient =
+                new ClientEntity();
+
+        newClient.setId(newClientId);
+        newClient.setOrganization(organization);
+
+        when(clientAccountRepository.findById(accountId))
+                .thenReturn(Optional.of(account));
+
+        when(clientRepository.findById(newClientId))
+                .thenReturn(Optional.of(newClient));
+
+        when(conversationRepository
+                .findAllByClientAccountIdAndOrganizationIdOrderByLastMessageAtDesc(
+                        accountId,
+                        organizationId
+                ))
+                .thenReturn(List.of());
+
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
+
+        AccessDeniedException exception =
+                assertThrows(
+                        AccessDeniedException.class,
+                        () -> clientService.reassignClientAccount(
+                                accountId,
+                                newClientId
+                        )
+                );
+
+        assertEquals(
+                "Client account is not accessible",
+                exception.getMessage()
+        );
+
+        assertSame(client, account.getClient());
+
         verify(clientAccountMapper, never())
                 .toDto(any());
     }
@@ -976,14 +1289,21 @@ class ClientServiceTest {
         ClientAccountDto expectedDto =
                 mock(ClientAccountDto.class);
 
+        when(clientRepository.findById(clientId))
+                .thenReturn(Optional.of(client));
+
         when(clientAccountRepository.findById(accountId))
                 .thenReturn(Optional.of(account));
 
         when(clientAccountMapper.toDto(account))
                 .thenReturn(expectedDto);
 
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
+
         ClientAccountDto result =
                 clientService.unassignClientAccount(
+                        clientId,
                         accountId
                 );
 
@@ -991,26 +1311,65 @@ class ClientServiceTest {
 
         assertNull(account.getClient());
 
+        verify(clientRepository)
+                .findById(clientId);
+
         verify(clientAccountRepository)
                 .findById(accountId);
 
         verify(currentUserService)
-                .requireWorkspaceAccess(workspaceId);
+                .getCurrentOrganizationId();
 
         verify(clientAccountMapper)
                 .toDto(account);
     }
 
     @Test
-    void unassignClientAccount_accountNotFound() {
+    void unassignClientAccount_clientNotFound() {
 
-        when(clientAccountRepository.findById(accountId))
+        when(clientRepository.findById(clientId))
                 .thenReturn(Optional.empty());
 
         EntityNotFoundException exception =
                 assertThrows(
                         EntityNotFoundException.class,
                         () -> clientService.unassignClientAccount(
+                                clientId,
+                                accountId
+                        )
+                );
+
+        assertEquals(
+                "Client not found: " + clientId,
+                exception.getMessage()
+        );
+
+        verify(clientRepository)
+                .findById(clientId);
+
+        verifyNoInteractions(
+                clientAccountRepository,
+                clientAccountMapper
+        );
+    }
+
+    @Test
+    void unassignClientAccount_accountNotFound() {
+
+        when(clientRepository.findById(clientId))
+                .thenReturn(Optional.of(client));
+
+        when(clientAccountRepository.findById(accountId))
+                .thenReturn(Optional.empty());
+
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
+
+        EntityNotFoundException exception =
+                assertThrows(
+                        EntityNotFoundException.class,
+                        () -> clientService.unassignClientAccount(
+                                clientId,
                                 accountId
                         )
                 );
@@ -1020,10 +1379,55 @@ class ClientServiceTest {
                 exception.getMessage()
         );
 
+        verify(clientRepository)
+                .findById(clientId);
+
         verify(clientAccountRepository)
                 .findById(accountId);
 
-        verifyNoInteractions(currentUserService);
         verifyNoInteractions(clientAccountMapper);
+    }
+
+    @Test
+    void unassignClientAccount_accountBelongsToAnotherClient() {
+
+        ClientEntity anotherClient =
+                new ClientEntity();
+
+        anotherClient.setId(UUID.randomUUID());
+        anotherClient.setOrganization(organization);
+
+        account.setClient(anotherClient);
+
+        when(clientRepository.findById(clientId))
+                .thenReturn(Optional.of(client));
+
+        when(clientAccountRepository.findById(accountId))
+                .thenReturn(Optional.of(account));
+
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
+
+        AccessDeniedException exception =
+                assertThrows(
+                        AccessDeniedException.class,
+                        () -> clientService.unassignClientAccount(
+                                clientId,
+                                accountId
+                        )
+                );
+
+        assertEquals(
+                "Client account belongs to another client",
+                exception.getMessage()
+        );
+
+        assertSame(
+                anotherClient,
+                account.getClient()
+        );
+
+        verify(clientAccountMapper, never())
+                .toDto(any());
     }
 }

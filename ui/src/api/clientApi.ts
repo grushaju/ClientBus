@@ -16,10 +16,9 @@ export async function getClient(
 }
 
 export async function getWorkspaceClients(
-    workspaceId: string,
 ): Promise<ClientDto[]> {
     const response = await apiFetch(
-        `/api/clients/workspace/${workspaceId}`,
+        `/api/clients`,
     )
 
     return response.json()
@@ -54,10 +53,11 @@ export async function assignClientAccount(
 }
 
 export async function unassignClientAccount(
+    clientId: string|null,
     accountId: string,
 ): Promise<void> {
     await apiFetch(
-        `/api/clients/clientaccounts/${accountId}`,
+        `/api/clients/${clientId}/clientaccounts/${accountId}`,
         {
             method: 'DELETE',
         },

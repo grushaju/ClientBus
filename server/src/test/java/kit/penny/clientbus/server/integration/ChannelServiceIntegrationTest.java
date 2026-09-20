@@ -2,6 +2,7 @@ package kit.penny.clientbus.server.integration;
 
 import jakarta.persistence.EntityManager;
 import kit.penny.clientbus.common.enums.ChannelType;
+import kit.penny.clientbus.common.enums.UserRole;
 import kit.penny.clientbus.server.connector.ChannelAccountLifecycleRegistry;
 import kit.penny.clientbus.server.connector.IChannelAccountLifecycle;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
@@ -107,7 +108,7 @@ class ChannelServiceIntegrationTest
                         TestDataFactory.workspace(organization)
                 );
 
-        authenticate(workspace);
+        authenticateAsSuperAdmin(workspace);
 
         ChannelEntity channel =
                 channelRepository.saveAndFlush(
@@ -155,7 +156,7 @@ class ChannelServiceIntegrationTest
                         TestDataFactory.workspace(organization)
                 );
 
-        authenticate(workspace);
+        authenticateAsSuperAdmin(workspace);
 
         ChannelEntity channel =
                 channelRepository.saveAndFlush(
@@ -197,7 +198,7 @@ class ChannelServiceIntegrationTest
         );
     }
 
-    private void authenticate(
+    private void authenticateAsSuperAdmin(
             WorkspaceEntity workspace
     ) {
 
@@ -210,6 +211,9 @@ class ChannelServiceIntegrationTest
                                 "$2a$10$test"
                         )
                 );
+
+        user.setRole(UserRole.SUPER_ADMIN);
+        user = userRepository.saveAndFlush(user);
 
         EmployeeEntity employee =
                 employeeRepository.saveAndFlush(

@@ -991,17 +991,15 @@ public class MessageService {
      * to prevent concurrent retries of the same message.
      */
     @Transactional
-    public MessageDto retryDelivery(
-            UUID messageId
-    ) {
+    public MessageDto retryDelivery(UUID messageId) {
 
         /*
-         * First load the message with object-level ACL.
+         * Only load the entity here.
          *
-         * The entity itself is not modified here because the actual
-         * state transition is performed by the atomic UPDATE below.
+         * Retry-specific conversation ACL is checked
+         * by OutboundMessageTransactionService.
          */
-        getMessageEntity(messageId);
+        getMessageEntityForProcessing(messageId);
 
         int updatedRows =
                 messageRepository.retryDelivery(
@@ -1044,12 +1042,6 @@ public class MessageService {
             );
         }
 
-        /*
-         * The repository method performs a bulk update, so the
-         * persistence context may contain stale entity state.
-         *
-         * Re-read the entity before mapping it to DTO.
-         */
         MessageEntity retriedMessage =
                 getMessageEntity(messageId);
 

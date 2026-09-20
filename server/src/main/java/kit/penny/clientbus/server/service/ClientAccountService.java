@@ -33,7 +33,8 @@ public class ClientAccountService {
             ClientAccountRepository clientAccountRepository,
             ClientRepository clientRepository,
             ClientAccountMapper clientAccountMapper,
-            CurrentUserService currentUserService, ConversationRepository conversationRepository
+            CurrentUserService currentUserService,
+            ConversationRepository conversationRepository
     ) {
         this.clientAccountRepository = clientAccountRepository;
         this.clientRepository = clientRepository;
@@ -42,6 +43,17 @@ public class ClientAccountService {
         this.conversationRepository = conversationRepository;
     }
 
+    /**
+     * Создание ClientAccount.
+     *
+     * Если clientId указан — аккаунт сразу привязывается
+     * к Client текущей Organization.
+     *
+     * Если clientId не указан — создаётся orphan account.
+     * Ручное создание orphan account разрешено только SUPER_ADMIN.
+     *
+     * Для inbound аккаунты создаются через getOrCreateForInbound().
+     */
     @Transactional
     public ClientAccountDto createClientAccount(
             CreateClientAccountRequest request
@@ -60,21 +72,30 @@ public class ClientAccountService {
                             )
                     );
 
-            requireClientWorkspaceAccess(client);
+            requireClientOrganizationAccess(client);
 
         } else {
             requireSuperAdmin();
         }
 
+        /*
+         * ClientAccount — глобальная identity.
+         *
+         * Поэтому комбинация
+         * (channelType, externalId)
+         * должна быть уникальной независимо от Client.
+         */
         if (clientAccountRepository
-                .existsByClientIdAndChannelTypeAndExternalId(
-                        request.clientId(),
+                .existsByChannelTypeAndExternalId(
                         request.channelType(),
                         request.externalId()
                 )) {
 
             throw new IllegalStateException(
-                    "Account already exists"
+                    "Account already exists: "
+                            + request.channelType()
+                            + " / "
+                            + request.externalId()
             );
         }
 
@@ -89,6 +110,14 @@ public class ClientAccountService {
         return clientAccountMapper.toDto(entity);
     }
 
+    /**
+     * Inbound identity resolution.
+     *
+     * ClientAccount глобален для всей системы:
+     * один (channelType, externalId) = один реальный аккаунт клиента.
+     *
+     * Client намеренно не создаётся и не назначается здесь.
+     */
     @Transactional
     public ClientAccountEntity getOrCreateForInbound(
             ChannelType channelType,
@@ -116,9 +145,11 @@ public class ClientAccountService {
                         externalId
                 )
                 .map(entity -> {
+
                     entity.setUsername(username);
                     entity.setPhone(phone);
                     entity.setDisplayName(displayName);
+
                     return entity;
                 })
                 .orElseGet(() -> {
@@ -133,10 +164,9 @@ public class ClientAccountService {
                     entity.setDisplayName(displayName);
 
                     /*
-                     * Client намеренно НЕ устанавливаем.
+                     * Client создаётся отдельным use case.
                      *
-                     * Client создаётся только сотрудником
-                     * отдельным use case.
+                     * Inbound только создаёт identity аккаунта.
                      */
                     entity.setClient(null);
 
@@ -148,6 +178,11 @@ public class ClientAccountService {
                 });
     }
 
+    /**
+     * Получить ClientAccount.
+     *
+     * Доступ определяется через Conversation.
+     */
     @Transactional
     public ClientAccountDto getClientAccount(UUID id) {
 
@@ -164,6 +199,12 @@ public class ClientAccountService {
         return clientAccountMapper.toDto(entity);
     }
 
+    /**
+     * Все аккаунты конкретного Client.
+     *
+     * Client принадлежит Organization, поэтому
+     * Workspace здесь больше не участвует.
+     */
     @Transactional
     public List<ClientAccountDto> getClientAccountsByClient(
             UUID clientId
@@ -172,7 +213,7 @@ public class ClientAccountService {
         ClientEntity client =
                 getClient(clientId);
 
-        requireClientWorkspaceAccess(client);
+        requireClientOrganizationAccess(client);
 
         return clientAccountRepository
                 .findAllByClientId(clientId)
@@ -190,7 +231,7 @@ public class ClientAccountService {
         ClientEntity client =
                 getClient(clientId);
 
-        requireClientWorkspaceAccess(client);
+        requireClientOrganizationAccess(client);
 
         return clientAccountRepository
                 .findAllByClientIdAndChannelType(
@@ -202,13 +243,28 @@ public class ClientAccountService {
                 .toList();
     }
 
+    /**
+     * Orphan accounts.
+     *
+     * Orphan ClientAccount всё равно должен иметь
+     * хотя бы одну Conversation, иначе он не имеет
+     * контекста принадлежности к Organization.
+     *
+     * Поэтому список определяется через Conversation,
+     * а не просто через client IS NULL.
+     */
     @Transactional
     public List<ClientAccountDto> getUnassignedAccounts() {
 
         requireSuperAdmin();
 
+        UUID organizationId =
+                currentUserService.getCurrentOrganizationId();
+
         return clientAccountRepository
-                .findAllByClientIsNull()
+                .findAllUnassignedByOrganizationId(
+                        organizationId
+                )
                 .stream()
                 .map(clientAccountMapper::toDto)
                 .toList();
@@ -221,13 +277,29 @@ public class ClientAccountService {
 
         requireSuperAdmin();
 
+        UUID organizationId =
+                currentUserService.getCurrentOrganizationId();
+
         return clientAccountRepository
-                .findAllByClientIsNullAndChannelType(channelType)
+                .findAllUnassignedByOrganizationIdAndChannelType(
+                        organizationId,
+                        channelType
+                )
                 .stream()
                 .map(clientAccountMapper::toDto)
                 .toList();
     }
 
+    /**
+     * Batch lookup ClientAccounts.
+     *
+     * SUPER_ADMIN:
+     * аккаунт должен иметь Conversation в текущей Organization.
+     *
+     * EMPLOYEE:
+     * аккаунт должен иметь Conversation в Workspace,
+     * доступном текущему Employee.
+     */
     @Transactional
     public List<ClientAccountDto> getClientAccountsByIds(
             List<UUID> ids
@@ -277,7 +349,7 @@ public class ClientAccountService {
         ClientEntity client =
                 getClient(clientId);
 
-        requireClientWorkspaceAccess(client);
+        requireClientOrganizationAccess(client);
 
         if (query == null || query.isBlank()) {
             return getClientAccountsByClient(clientId);
@@ -343,6 +415,16 @@ public class ClientAccountService {
                 );
     }
 
+    /**
+     * Доступ к ClientAccount определяется через Conversation.
+     *
+     * SUPER_ADMIN:
+     * любой Conversation аккаунта в текущей Organization.
+     *
+     * EMPLOYEE:
+     * Conversation аккаунта в Workspace,
+     * доступном Employee.
+     */
     private void requireAccountAccess(
             ClientAccountEntity account
     ) {
@@ -353,7 +435,8 @@ public class ClientAccountService {
                     !conversationRepository
                             .findAllByClientAccountIdAndOrganizationIdOrderByLastMessageAtDesc(
                                     account.getId(),
-                                    currentUserService.getCurrentOrganizationId()
+                                    currentUserService
+                                            .getCurrentOrganizationId()
                             )
                             .isEmpty();
 
@@ -372,7 +455,8 @@ public class ClientAccountService {
                     !conversationRepository
                             .findAllByClientAccountIdAndEmployeeIdOrderByLastMessageAtDesc(
                                     account.getId(),
-                                    currentUserService.getCurrentEmployeeId()
+                                    currentUserService
+                                            .getCurrentEmployeeId()
                             )
                             .isEmpty();
 
@@ -390,19 +474,33 @@ public class ClientAccountService {
         );
     }
 
-    private void requireClientWorkspaceAccess(
+    /**
+     * Client принадлежит Organization.
+     *
+     * Workspace здесь принципиально не проверяется.
+     */
+    private void requireClientOrganizationAccess(
             ClientEntity client
     ) {
 
-        if (client.getWorkspace() == null) {
+        UUID organizationId =
+                currentUserService.getCurrentOrganizationId();
+
+        if (client.getOrganization() == null) {
             throw new IllegalStateException(
-                    "Client has no workspace: " + client.getId()
+                    "Client has no organization: "
+                            + client.getId()
             );
         }
 
-        currentUserService.requireWorkspaceAccess(
-                client.getWorkspace().getId()
-        );
+        if (!client.getOrganization()
+                .getId()
+                .equals(organizationId)) {
+
+            throw new AccessDeniedException(
+                    "Client is not accessible"
+            );
+        }
     }
 
     private void requireSuperAdmin() {

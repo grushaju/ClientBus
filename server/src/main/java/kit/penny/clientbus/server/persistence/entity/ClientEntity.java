@@ -19,9 +19,9 @@ public class ClientEntity {
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "workspaceid", nullable = false,
-            foreignKey = @ForeignKey(name = "fk_client_workspace"))
-    private WorkspaceEntity workspace;
+    @JoinColumn(name = "organizationid", nullable = false,
+            foreignKey = @ForeignKey(name = "fk_client_organization"))
+    private OrganizationEntity organization;
 
     @Column(name = "firstname", nullable = false, length = 50)
     private String firstName;
@@ -60,10 +60,10 @@ public class ClientEntity {
     public ClientEntity() {
     }
 
-    public ClientEntity(String firstName, String lastName, WorkspaceEntity workspace) {
+    public ClientEntity(String firstName, String lastName, OrganizationEntity organization) {
         this.firstName = firstName;
         this.lastName = lastName;
-        this.workspace = workspace;
+        this.organization = organization;
     }
 
     // Геттеры и сеттеры
@@ -75,12 +75,12 @@ public class ClientEntity {
         this.id = id;
     }
 
-    public WorkspaceEntity getWorkspace() {
-        return workspace;
+    public OrganizationEntity getOrganization() {
+        return organization;
     }
 
-    public void setWorkspace(WorkspaceEntity workspace) {
-        this.workspace = workspace;
+    public void setOrganization(OrganizationEntity organization) {
+        this.organization = organization;
     }
 
     public String getFirstName() {
@@ -159,7 +159,7 @@ public class ClientEntity {
                 ", lastName='" + lastName + '\'' +
                 ", phones=" + phoneList +
                 ", isEnabled=" + isEnabled +
-                ", workspaceId=" + (workspace != null ? workspace.getId() : null) +
+                ", organizationId=" + (organization != null ? organization.getId() : null) +
                 '}';
     }
 }
