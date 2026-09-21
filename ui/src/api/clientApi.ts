@@ -3,7 +3,7 @@ import type {
     ClientDto,
     CreateClientRequest,
 } from './types/client'
-import {ClientAccountSummary} from "./types/conversation";
+import type { ClientAccountSummary } from './types/conversation'
 
 export async function getClient(
     clientId: string,
@@ -15,8 +15,7 @@ export async function getClient(
     return response.json()
 }
 
-export async function getWorkspaceClients(
-): Promise<ClientDto[]> {
+export async function getClients(): Promise<ClientDto[]> {
     const response = await apiFetch(
         `/api/clients`,
     )
@@ -53,7 +52,7 @@ export async function assignClientAccount(
 }
 
 export async function unassignClientAccount(
-    clientId: string|null,
+    clientId: string | null,
     accountId: string,
 ): Promise<void> {
     await apiFetch(

@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-09-17 21:50:20
+- Generated: 2026-09-21 16:52:10
 - Branch: `main`
-- Commit: `c32aacd`
+- Commit: `7dc0100`
 
 ## Project Structure
 
@@ -45,6 +45,7 @@
 
 - `ConversationDto.java` — `common/src/main/java/kit/penny/clientbus/common/dto/conversation/ConversationDto.java`
 - `CreateConversationRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/conversation/CreateConversationRequest.java`
+- `CreateOutboundConversationRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/conversation/CreateOutboundConversationRequest.java`
 
 ##### `kit.penny.clientbus.common.dto.employee`
 
@@ -104,6 +105,11 @@
 - `OutboundMessageKafkaCommand.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/OutboundMessageKafkaCommand.java`
 - `PlatformMessageKafkaEvent.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/PlatformMessageKafkaEvent.java`
 - `PlatformOutboundAttachment.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/PlatformOutboundAttachment.java`
+
+#### `src/main/resources`
+
+
+#### `src/test/java`
 
 ### server
 
@@ -441,6 +447,6 @@
 ## Summary
 
 - Maven modules: 3
-- Java files: 237
-- Git commit: `c32aacd`
+- Java files: 238
+- Git commit: `7dc0100`
 

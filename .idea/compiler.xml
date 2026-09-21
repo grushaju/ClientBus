@@ -8,7 +8,6 @@
         <outputRelativeToContentRoot value="true" />
         <module name="server" />
         <module name="common" />
-        <module name="ui" />
         <module name="Server" />
         <module name="Common" />
       </profile>
@@ -16,6 +15,7 @@
     <bytecodeTargetLevel>
       <module name="ClientBus" target="23" />
       <module name="UI" target="21" />
+      <module name="ui" target="17" />
     </bytecodeTargetLevel>
   </component>
   <component name="JavacSettings">

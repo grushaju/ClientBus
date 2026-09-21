@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import kit.penny.clientbus.common.dto.conversation.ConversationDto;
 import kit.penny.clientbus.common.dto.conversation.CreateConversationRequest;
+import kit.penny.clientbus.common.dto.conversation.CreateOutboundConversationRequest;
 import kit.penny.clientbus.server.service.ConversationService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -48,6 +49,31 @@ public class ConversationController {
                 .status(HttpStatus.CREATED)
                 .body(
                         conversationService.createConversation(
+                                request
+                        )
+                );
+    }
+
+    /**
+     * Создать новый outbound Conversation
+     * для выбранного внешнего получателя.
+     *
+     * Только EMPLOYEE.
+     *
+     * ClientAccount при необходимости создаётся
+     * автоматически вместе с Conversation.
+     */
+    @PostMapping("/outbound")
+    @PreAuthorize("hasRole('EMPLOYEE')")
+    public ResponseEntity<ConversationDto> createOutboundConversation(
+            @Valid
+            @RequestBody CreateOutboundConversationRequest request
+    ) {
+
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(
+                        conversationService.createOutboundConversation(
                                 request
                         )
                 );

@@ -14,10 +14,12 @@ import kit.penny.clientbus.server.persistence.repository.ClientAccountRepository
 import kit.penny.clientbus.server.persistence.repository.ClientRepository;
 import kit.penny.clientbus.server.persistence.repository.ConversationRepository;
 import kit.penny.clientbus.server.security.service.CurrentUserService;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -46,18 +48,21 @@ public class ClientAccountService {
     /**
      * Создание ClientAccount.
      *
-     * Если clientId указан — аккаунт сразу привязывается
-     * к Client текущей Organization.
+     * Это низкоуровневая административная операция.
      *
-     * Если clientId не указан — создаётся orphan account.
-     * Ручное создание orphan account разрешено только SUPER_ADMIN.
+     * Обычный EMPLOYEE не создаёт ClientAccount напрямую.
+     * Для EMPLOYEE создание новой внешней identity выполняется
+     * атомарно через createOutboundConversation().
      *
-     * Для inbound аккаунты создаются через getOrCreateForInbound().
+     * SUPER_ADMIN может создать аккаунт и при необходимости
+     * сразу привязать его к Client текущей Organization.
      */
     @Transactional
     public ClientAccountDto createClientAccount(
             CreateClientAccountRequest request
     ) {
+
+        requireSuperAdmin();
 
         ClientEntity client = null;
 
@@ -73,9 +78,6 @@ public class ClientAccountService {
                     );
 
             requireClientOrganizationAccess(client);
-
-        } else {
-            requireSuperAdmin();
         }
 
         /*
@@ -126,7 +128,6 @@ public class ClientAccountService {
             String phone,
             String displayName
     ) {
-
         if (channelType == null) {
             throw new IllegalArgumentException(
                     "channelType must not be null"
@@ -139,43 +140,52 @@ public class ClientAccountService {
             );
         }
 
-        return clientAccountRepository
-                .findByChannelTypeAndExternalId(
+        Optional<ClientAccountEntity> existing =
+                clientAccountRepository.findByChannelTypeAndExternalId(
                         channelType,
                         externalId
-                )
-                .map(entity -> {
+                );
 
-                    entity.setUsername(username);
-                    entity.setPhone(phone);
-                    entity.setDisplayName(displayName);
+        if (existing.isPresent()) {
+            ClientAccountEntity entity = existing.get();
 
-                    return entity;
-                })
-                .orElseGet(() -> {
+            if (username != null && !username.isBlank()) {
+                entity.setUsername(username);
+            }
 
-                    ClientAccountEntity entity =
-                            new ClientAccountEntity();
+            if (phone != null && !phone.isBlank()) {
+                entity.setPhone(phone);
+            }
 
-                    entity.setChannelType(channelType);
-                    entity.setExternalId(externalId);
-                    entity.setUsername(username);
-                    entity.setPhone(phone);
-                    entity.setDisplayName(displayName);
+            if (displayName != null && !displayName.isBlank()) {
+                entity.setDisplayName(displayName);
+            }
 
-                    /*
-                     * Client создаётся отдельным use case.
-                     *
-                     * Inbound только создаёт identity аккаунта.
-                     */
-                    entity.setClient(null);
+            return entity;
+        }
 
-                    entity.setState(
-                            ClientAccountState.ACTIVE
-                    );
+        ClientAccountEntity entity = new ClientAccountEntity();
 
-                    return clientAccountRepository.save(entity);
-                });
+        entity.setChannelType(channelType);
+        entity.setExternalId(externalId);
+        entity.setClient(null);
+
+        entity.setUsername(username);
+        entity.setPhone(phone);
+        entity.setDisplayName(displayName);
+
+        entity.setState(ClientAccountState.ACTIVE);
+
+        try {
+            return clientAccountRepository.saveAndFlush(entity);
+        } catch (DataIntegrityViolationException e) {
+            return clientAccountRepository
+                    .findByChannelTypeAndExternalId(
+                            channelType,
+                            externalId
+                    )
+                    .orElseThrow(() -> e);
+        }
     }
 
     /**
@@ -249,9 +259,6 @@ public class ClientAccountService {
      * Orphan ClientAccount всё равно должен иметь
      * хотя бы одну Conversation, иначе он не имеет
      * контекста принадлежности к Organization.
-     *
-     * Поэтому список определяется через Conversation,
-     * а не просто через client IS NULL.
      */
     @Transactional
     public List<ClientAccountDto> getUnassignedAccounts() {
@@ -389,8 +396,16 @@ public class ClientAccountService {
         return clientAccountMapper.toDto(entity);
     }
 
+    /**
+     * Глобальное удаление ClientAccount.
+     *
+     * ClientAccount — глобальная identity, поэтому удалять
+     * его может только SUPER_ADMIN.
+     */
     @Transactional
     public void deleteClientAccount(UUID id) {
+
+        requireSuperAdmin();
 
         ClientAccountEntity entity =
                 clientAccountRepository.findById(id)
@@ -399,8 +414,6 @@ public class ClientAccountService {
                                         "Account not found: " + id
                                 )
                         );
-
-        requireAccountAccess(entity);
 
         clientAccountRepository.delete(entity);
     }

@@ -3,6 +3,8 @@ package kit.penny.clientbus.server.service;
 import jakarta.persistence.EntityNotFoundException;
 import kit.penny.clientbus.common.dto.conversation.ConversationDto;
 import kit.penny.clientbus.common.dto.conversation.CreateConversationRequest;
+import kit.penny.clientbus.common.dto.conversation.CreateOutboundConversationRequest;
+import kit.penny.clientbus.common.enums.ClientAccountState;
 import kit.penny.clientbus.server.mapper.ConversationMapper;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
@@ -62,9 +64,6 @@ public class ConversationService {
      * Создаёт Conversation для пары:
      *
      * ClientAccount + ChannelAccount.
-     *
-     * Один ClientAccount может иметь несколько Conversation,
-     * если используются разные ChannelAccount.
      */
     public ConversationDto createConversation(
             CreateConversationRequest request
@@ -128,10 +127,6 @@ public class ConversationService {
 
         } catch (DataIntegrityViolationException e) {
 
-            /*
-             * Защита от race condition при параллельном
-             * создании Conversation для одной пары аккаунтов.
-             */
             throw new IllegalArgumentException(
                     "Conversation already exists for "
                             + "channelAccountId="
@@ -144,10 +139,186 @@ public class ConversationService {
     }
 
     /**
+     * Создание нового outbound Conversation
+     * после выбора внешнего получателя.
+     *
+     * EMPLOYEE-only.
+     *
+     * ClientAccount определяется по:
+     *
+     *     ChannelType + ExternalId
+     *
+     * а не по clientAccountId из frontend.
+     *
+     * Если ClientAccount ещё не существует —
+     * он создаётся как orphan.
+     *
+     * ClientAccount всегда создаётся одновременно
+     * с Conversation, поэтому отдельного standalone
+     * ClientAccount для Employee не возникает.
+     */
+    public ConversationDto createOutboundConversation(
+            CreateOutboundConversationRequest request
+    ) {
+
+        if (!currentUserService.isEmployee()) {
+
+            throw new AccessDeniedException(
+                    "Only EMPLOYEE can create outbound conversations"
+            );
+        }
+
+        EmployeeEntity currentEmployee =
+                currentUserService.getCurrentEmployee();
+
+        WorkspaceEntity workspace =
+                getWorkspace(request.workspaceId());
+
+        currentUserService.requireWorkspaceAccess(
+                workspace.getId()
+        );
+
+        ChannelAccountEntity channelAccount =
+                getChannelAccount(
+                        request.channelAccountId()
+                );
+
+        validateChannelAccountWorkspace(
+                channelAccount,
+                workspace
+        );
+
+        if (!channelAccount
+                .getChannel()
+                .getType()
+                .equals(request.channelType())) {
+
+            throw new IllegalArgumentException(
+                    "ChannelAccount and requested channel type must match"
+            );
+        }
+
+        ClientAccountEntity clientAccount =
+                clientAccountRepository
+                        .findByChannelTypeAndExternalId(
+                                request.channelType(),
+                                request.externalId()
+                        )
+                        .orElse(null);
+
+        if (clientAccount == null) {
+
+            clientAccount =
+                    new ClientAccountEntity(
+                            null,
+                            request.channelType(),
+                            request.externalId(),
+                            request.username(),
+                            request.phone(),
+                            request.displayName()
+                    );
+
+            clientAccount.setState(
+                    ClientAccountState.ACTIVE
+            );
+
+            try {
+
+                clientAccount =
+                        clientAccountRepository.saveAndFlush(
+                                clientAccount
+                        );
+
+            } catch (DataIntegrityViolationException e) {
+
+                clientAccount =
+                        clientAccountRepository
+                                .findByChannelTypeAndExternalId(
+                                        request.channelType(),
+                                        request.externalId()
+                                )
+                                .orElseThrow(() -> e);
+            }
+
+        } else {
+
+            if (request.username() != null) {
+                clientAccount.setUsername(
+                        request.username()
+                );
+            }
+
+            if (request.phone() != null) {
+                clientAccount.setPhone(
+                        request.phone()
+                );
+            }
+
+            if (request.displayName() != null) {
+                clientAccount.setDisplayName(
+                        request.displayName()
+                );
+            }
+        }
+
+        ConversationEntity existing =
+                conversationRepository
+                        .findByChannelAccountIdAndClientAccountId(
+                                channelAccount.getId(),
+                                clientAccount.getId()
+                        )
+                        .orElse(null);
+
+        if (existing != null) {
+
+            requireConversationAccess(existing);
+
+            return conversationMapper.toDto(existing);
+        }
+
+        ConversationEntity conversation =
+                new ConversationEntity(
+                        workspace,
+                        channelAccount,
+                        clientAccount
+                );
+
+        conversation.setAssignedEmployee(
+                currentEmployee
+        );
+
+        try {
+
+            ConversationEntity saved =
+                    conversationRepository.saveAndFlush(
+                            conversation
+                    );
+
+            return conversationMapper.toDto(saved);
+
+        } catch (DataIntegrityViolationException e) {
+
+            ConversationEntity concurrent =
+                    conversationRepository
+                            .findByChannelAccountIdAndClientAccountId(
+                                    channelAccount.getId(),
+                                    clientAccount.getId()
+                            )
+                            .orElseThrow(() -> e);
+
+            requireConversationAccess(concurrent);
+
+            return conversationMapper.toDto(
+                    concurrent
+            );
+        }
+    }
+
+    /**
      * Внутреннее создание Conversation
      * для Message Processing.
      *
-     * ACL намеренно отсутствует.
+     * ACL отсутствует намеренно.
      *
      * Workspace определяется из ChannelAccount.
      */
@@ -196,16 +367,6 @@ public class ConversationService {
 
         } catch (DataIntegrityViolationException e) {
 
-            /*
-             * Возможна гонка:
-             *
-             * webhook #1 ─┐
-             *             ├─ create Conversation
-             * webhook #2 ─┘
-             *
-             * DB unique constraint является
-             * окончательным арбитром.
-             */
             return conversationRepository
                     .findByChannelAccountIdAndClientAccountId(
                             channelAccount.getId(),
@@ -215,9 +376,6 @@ public class ConversationService {
         }
     }
 
-    /**
-     * Получить Conversation.
-     */
     @Transactional(readOnly = true)
     public ConversationDto getConversation(
             UUID conversationId
@@ -231,9 +389,6 @@ public class ConversationService {
         return conversationMapper.toDto(conversation);
     }
 
-    /**
-     * Получить все Conversation Workspace.
-     */
     @Transactional(readOnly = true)
     public List<ConversationDto> getWorkspaceConversations(
             UUID workspaceId
@@ -252,9 +407,6 @@ public class ConversationService {
                 .toList();
     }
 
-    /**
-     * Получить все Conversation Workspace и Employee
-     */
     @Transactional(readOnly = true)
     public List<ConversationDto> getWorkspaceEmployeeConversations(
             UUID workspaceId,
@@ -288,10 +440,6 @@ public class ConversationService {
                 .toList();
     }
 
-    /**
-     * Получить все Conversation ClientAccount,
-     * доступные текущему пользователю.
-     */
     @Transactional(readOnly = true)
     public List<ConversationDto> getClientAccountConversations(
             UUID clientAccountId
@@ -335,10 +483,6 @@ public class ConversationService {
                 .toList();
     }
 
-    /**
-     * Получить все Conversation ChannelAccount,
-     * доступные текущему пользователю.
-     */
     @Transactional(readOnly = true)
     public List<ConversationDto> getChannelAccountConversations(
             UUID channelAccountId
@@ -382,11 +526,6 @@ public class ConversationService {
                 .toList();
     }
 
-    /**
-     * Найти Conversation по:
-     *
-     * ClientAccount + ChannelAccount.
-     */
     @Transactional(readOnly = true)
     public ConversationDto getByAccounts(
             UUID channelAccountId,
@@ -410,14 +549,6 @@ public class ConversationService {
         return conversationMapper.toDto(conversation);
     }
 
-    /**
-     * Внутренний поиск Conversation.
-     *
-     * Используется application layer / Message Processing.
-     *
-     * ACL намеренно отсутствует:
-     * это не HTTP endpoint.
-     */
     @Transactional(readOnly = true)
     public ConversationEntity findEntityByAccounts(
             UUID channelAccountId,
@@ -432,14 +563,6 @@ public class ConversationService {
                 .orElse(null);
     }
 
-    /**
-     * Внутренний поиск Conversation по ID.
-     *
-     * Используется Message Processing.
-     *
-     * ACL намеренно отсутствует:
-     * это не пользовательский application/query use case.
-     */
     @Transactional(readOnly = true)
     public ConversationEntity findEntityForProcessing(
             UUID conversationId
@@ -455,18 +578,6 @@ public class ConversationService {
                 );
     }
 
-    /**
-     * Найти или создать Conversation для ForwardTo.
-     *
-     * EMPLOYEE:
-     *   - должен иметь доступ к Workspace ChannelAccount;
-     *   - создаваемый Conversation сразу назначается
-     *     текущему Employee.
-     *
-     * SUPER_ADMIN:
-     *   - может создать Conversation в доступном Workspace;
-     *   - Conversation остаётся неназначенным.
-     */
     public ConversationEntity findOrCreateForForward(
             ChannelAccountEntity channelAccount,
             ClientAccountEntity clientAccount
@@ -500,12 +611,6 @@ public class ConversationService {
             );
         }
 
-        /*
-         * Сначала проверяем Workspace ACL.
-         *
-         * Это обязательно и для EMPLOYEE,
-         * и для SUPER_ADMIN.
-         */
         currentUserService.requireWorkspaceAccess(
                 workspace.getId()
         );
@@ -516,10 +621,6 @@ public class ConversationService {
                         clientAccount
                 );
 
-        /*
-         * Для EMPLOYEE новый target сразу
-         * становится его Conversation.
-         */
         if (currentUserService.isEmployee()) {
 
             created.setAssignedEmployee(
@@ -530,14 +631,6 @@ public class ConversationService {
         return created;
     }
 
-    /**
-     * Получить Conversation, назначенные Employee.
-     *
-     * EMPLOYEE может запросить только свои.
-     *
-     * SUPER_ADMIN может запросить Employee
-     * своей Organization.
-     */
     @Transactional(readOnly = true)
     public List<ConversationDto> getEmployeeConversations(
             UUID employeeId
@@ -579,9 +672,6 @@ public class ConversationService {
                 .toList();
     }
 
-    /**
-     * Получить неназначенные Conversation Workspace.
-     */
     @Transactional(readOnly = true)
     public List<ConversationDto> getUnassignedConversations(
             UUID workspaceId
@@ -600,12 +690,6 @@ public class ConversationService {
                 .toList();
     }
 
-    /**
-     * Административное назначение Conversation
-     * конкретному Employee.
-     *
-     * Только SUPER_ADMIN.
-     */
     public ConversationDto assignEmployee(
             UUID conversationId,
             UUID employeeId
@@ -638,9 +722,6 @@ public class ConversationService {
                         .getOrganization()
                         .getId();
 
-        /*
-         * Нельзя назначить Employee другой Organization.
-         */
         if (!employee.getOrganization()
                 .getId()
                 .equals(organizationId)) {
@@ -650,9 +731,6 @@ public class ConversationService {
             );
         }
 
-        /*
-         * Employee должен иметь доступ к Workspace.
-         */
         if (!employeeWorkspaceRepository
                 .existsByEmployeeIdAndWorkspaceId(
                         employeeId,
@@ -669,11 +747,6 @@ public class ConversationService {
         return conversationMapper.toDto(conversation);
     }
 
-    /**
-     * Административное снятие назначения.
-     *
-     * Только SUPER_ADMIN.
-     */
     public ConversationDto unassignEmployee(
             UUID conversationId
     ) {
@@ -690,17 +763,6 @@ public class ConversationService {
         return conversationMapper.toDto(conversation);
     }
 
-    /**
-     * Назначить Conversation на себя.
-     *
-     * EMPLOYEE и SUPER_ADMIN.
-     *
-     * ВАЖНО:
-     *
-     * - свободный Conversation -> можно взять;
-     * - Conversation уже назначен себе -> ничего не меняем;
-     * - Conversation назначен другому Employee -> нельзя забрать.
-     */
     public ConversationDto assignmentToMe(
             UUID conversationId
     ) {
@@ -726,10 +788,6 @@ public class ConversationService {
             );
         }
 
-        /*
-         * Если уже назначен на текущего Employee —
-         * операция идемпотентна.
-         */
         conversation.setAssignedEmployee(
                 currentEmployee
         );
@@ -737,13 +795,6 @@ public class ConversationService {
         return conversationMapper.toDto(conversation);
     }
 
-    /**
-     * Снять Conversation с себя.
-     *
-     * EMPLOYEE и SUPER_ADMIN.
-     *
-     * Нельзя снять назначение другого Employee.
-     */
     public ConversationDto unassignmentFromMe(
             UUID conversationId
     ) {
@@ -759,9 +810,6 @@ public class ConversationService {
         EmployeeEntity assignedEmployee =
                 conversation.getAssignedEmployee();
 
-        /*
-         * Уже свободен — операция идемпотентна.
-         */
         if (assignedEmployee == null) {
 
             return conversationMapper.toDto(
@@ -769,9 +817,6 @@ public class ConversationService {
             );
         }
 
-        /*
-         * Нельзя снять другого Employee.
-         */
         if (!assignedEmployee.getId()
                 .equals(currentEmployee.getId())) {
 
@@ -786,9 +831,6 @@ public class ConversationService {
         return conversationMapper.toDto(conversation);
     }
 
-    /**
-     * Пометить Conversation прочитанным.
-     */
     public ConversationDto markAsRead(
             UUID conversationId
     ) {
@@ -796,7 +838,9 @@ public class ConversationService {
         ConversationEntity conversation =
                 getConversationEntity(conversationId);
 
-        currentUserService.requireConversationAccess(conversation);
+        currentUserService.requireConversationAccess(
+                conversation
+        );
 
         requireConversationAccess(conversation);
 
@@ -805,20 +849,6 @@ public class ConversationService {
         return conversationMapper.toDto(conversation);
     }
 
-    /**
-     * Проверяет, может ли текущий пользователь
-     * использовать Conversation как target
-     * для ForwardTo.
-     *
-     * Правила:
-     *
-     * EMPLOYEE:
-     *   только Conversation, назначенный ему самому.
-     *
-     * SUPER_ADMIN:
-     *   любой Conversation, доступный ему
-     *   по Workspace / Organization ACL.
-     */
     public void requireForwardTargetAccess(
             ConversationEntity conversation
     ) {
@@ -863,13 +893,6 @@ public class ConversationService {
             );
         }
 
-        /*
-         * Дополнительная Workspace ACL.
-         *
-         * Это защищает случай, когда Conversation
-         * назначен Employee, но сам Workspace ему
-         * больше недоступен.
-         */
         currentUserService.requireWorkspaceAccess(
                 conversation
                         .getWorkspace()
@@ -877,9 +900,6 @@ public class ConversationService {
         );
     }
 
-    /**
-     * Количество непрочитанных Conversation Workspace.
-     */
     @Transactional(readOnly = true)
     public long getWorkspaceUnreadCount(
             UUID workspaceId
@@ -896,9 +916,6 @@ public class ConversationService {
                 );
     }
 
-    /**
-     * Количество непрочитанных Conversation Employee.
-     */
     @Transactional(readOnly = true)
     public long getEmployeeUnreadCount(
             UUID employeeId
@@ -932,14 +949,6 @@ public class ConversationService {
                 );
     }
 
-    /**
-     * Увеличить unread count.
-     *
-     * Internal operation.
-     *
-     * Вызывается MessageService / MessageProcessingService
-     * для INBOUND сообщения.
-     */
     public ConversationEntity incrementUnreadCount(
             ConversationEntity conversation
     ) {
@@ -951,13 +960,6 @@ public class ConversationService {
         return conversation;
     }
 
-    /**
-     * Обновить информацию о последнем сообщении.
-     *
-     * Internal operation.
-     *
-     * Вызывается MessageService / MessageProcessingService.
-     */
     public ConversationEntity updateLastMessage(
             ConversationEntity conversation,
             Instant messageTime,

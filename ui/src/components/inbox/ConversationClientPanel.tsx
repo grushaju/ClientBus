@@ -7,13 +7,13 @@ import {
     assignClientAccount,
     createClient,
     getClient,
-    getWorkspaceClients,
+    getClients,
     unassignClientAccount,
 } from '../../api/clientApi'
 
 import {
-    getClientAccountsByClient,
-} from '../../api/clientAccountApi'
+    getVisibleClientAccounts,
+} from '../../api/clientVisibility'
 
 import type { ClientDto } from '../../api/types/client'
 
@@ -22,6 +22,8 @@ import type {
     ClientAccountSummary,
     ConversationDto,
 } from '../../api/types/conversation'
+
+import { useAuth } from '../../auth/AuthContext'
 
 import PlatformIcon from '../common/platform/PlatformIcon'
 import PlatformName from '../common/platform/PlatformName'
@@ -39,6 +41,11 @@ function ConversationClientPanel({
                                      channel,
                                      onChanged,
                                  }: Props) {
+    const {
+        employeeWorkspaces,
+        isSuperAdmin,
+    } = useAuth()
+
     const [client, setClient] =
         useState<ClientDto | null>(null)
 
@@ -81,6 +88,16 @@ function ConversationClientPanel({
     const [error, setError] =
         useState<string | null>(null)
 
+    const workspaceIds = [
+        conversation.workspaceId,
+        ...employeeWorkspaces
+            .map(workspace => workspace.workspaceId)
+            .filter(
+                workspaceId =>
+                    workspaceId !== conversation.workspaceId,
+            ),
+    ]
+
     useEffect(() => {
         let cancelled = false
 
@@ -103,9 +120,14 @@ function ConversationClientPanel({
                     )
 
                 const accounts =
-                    await getClientAccountsByClient(
+                    await getVisibleClientAccounts({
+                        clientId:
                         clientAccount.clientId,
-                    )
+                        workspaceIds,
+                        isSuperAdmin,
+                        currentAccountId:
+                        clientAccount.id,
+                    })
 
                 if (!cancelled) {
                     setClient(result)
@@ -134,7 +156,13 @@ function ConversationClientPanel({
         return () => {
             cancelled = true
         }
-    }, [clientAccount?.clientId])
+    }, [
+        clientAccount?.clientId,
+        clientAccount?.id,
+        conversation.workspaceId,
+        employeeWorkspaces,
+        isSuperAdmin,
+    ])
 
     const loadClients = async () => {
         setLoadingClients(true)
@@ -142,15 +170,14 @@ function ConversationClientPanel({
 
         try {
             const result =
-                await getWorkspaceClients(
-                )
+                await getClients()
 
             setClients(result)
         } catch (err) {
             setError(
                 err instanceof Error
                     ? err.message
-                    : 'Не удалось загрузить клиентов',
+                    : 'Не удалось загрузить клиентов'
             )
         } finally {
             setLoadingClients(false)
@@ -184,8 +211,6 @@ function ConversationClientPanel({
         try {
             const created =
                 await createClient({
-                    workspaceId:
-                    conversation.workspaceId,
                     firstName:
                     normalizedFirstName,
                     lastName:
@@ -201,7 +226,8 @@ function ConversationClientPanel({
                 clientAccount.id,
             )
 
-            const updatedAccount: ClientAccountSummary = {
+            const updatedAccount:
+                ClientAccountSummary = {
                 ...clientAccount,
                 clientId: created.id,
             }
@@ -251,9 +277,14 @@ function ConversationClientPanel({
                 )
 
             const accounts =
-                await getClientAccountsByClient(
+                await getVisibleClientAccounts({
+                    clientId:
                     selectedClientId,
-                )
+                    workspaceIds,
+                    isSuperAdmin,
+                    currentAccountId:
+                    clientAccount.id,
+                })
 
             setClient(linkedClient)
             setClientAccounts(accounts)
@@ -287,7 +318,8 @@ function ConversationClientPanel({
                 clientAccount.id,
             )
 
-            const orphanAccount: ClientAccountSummary = {
+            const orphanAccount:
+                ClientAccountSummary = {
                 ...clientAccount,
                 clientId: null,
             }

@@ -34,8 +34,13 @@ public class ClientController {
         this.clientService = clientService;
     }
 
+    /**
+     * Создать Client.
+     *
+     * EMPLOYEE или SUPER_ADMIN.
+     */
     @PostMapping
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SUPER_ADMIN')")
     public ResponseEntity<ClientDto> createClient(
             @Valid @RequestBody CreateClientRequest request
     ) {
@@ -47,8 +52,18 @@ public class ClientController {
                 );
     }
 
+    /**
+     * Получить видимые Client.
+     *
+     * SUPER_ADMIN:
+     *   все Client Organization.
+     *
+     * EMPLOYEE:
+     *   только Client, связанные с Account,
+     *   имеющими Conversation в доступных Workspace.
+     */
     @GetMapping
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SUPER_ADMIN')")
     public ResponseEntity<List<ClientDto>> getClients() {
 
         return ResponseEntity.ok(
@@ -56,8 +71,13 @@ public class ClientController {
         );
     }
 
+    /**
+     * Client без Account.
+     *
+     * Только SUPER_ADMIN.
+     */
     @GetMapping("/without-accounts")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     public ResponseEntity<List<ClientDto>>
     getClientsWithoutAccounts() {
 
@@ -66,8 +86,13 @@ public class ClientController {
         );
     }
 
+    /**
+     * Поиск Client.
+     *
+     * Результат ограничивается ACL текущего пользователя.
+     */
     @GetMapping("/search")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SUPER_ADMIN')")
     public ResponseEntity<List<ClientDto>> searchClients(
             @RequestParam(required = false) String query
     ) {
@@ -77,8 +102,11 @@ public class ClientController {
         );
     }
 
+    /**
+     * Получить Client.
+     */
     @GetMapping("/{id}")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SUPER_ADMIN')")
     public ResponseEntity<ClientDto> getClient(
             @PathVariable UUID id
     ) {
@@ -88,8 +116,13 @@ public class ClientController {
         );
     }
 
+    /**
+     * Изменить Client.
+     *
+     * EMPLOYEE может изменять только доступный Client.
+     */
     @PutMapping("/{id}")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SUPER_ADMIN')")
     public ResponseEntity<ClientDto> updateClient(
             @PathVariable UUID id,
             @Valid @RequestBody UpdateClientRequest request
@@ -103,19 +136,59 @@ public class ClientController {
         );
     }
 
+    /**
+     * Удалить Client.
+     *
+     * Только SUPER_ADMIN.
+     */
     @DeleteMapping("/{id}")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     public ResponseEntity<Void> deleteClient(
             @PathVariable UUID id
     ) {
 
         clientService.deleteClient(id);
 
-        return ResponseEntity.noContent().build();
+        return ResponseEntity
+                .noContent()
+                .build();
     }
 
+    /**
+     * Создать Client из текущего Conversation.
+     *
+     * ClientAccount определяется Backend через Conversation.
+     *
+     * Нельзя передать accountId из FE и подменить Account.
+     *
+     * EMPLOYEE:
+     *   Conversation должен быть доступен текущему Employee.
+     *
+     * SUPER_ADMIN:
+     *   Conversation должен принадлежать текущей Organization.
+     */
+    @PostMapping("/from-conversation/{conversationId}")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SUPER_ADMIN')")
+    public ResponseEntity<ClientDto> createClientFromConversation(
+            @PathVariable UUID conversationId,
+            @Valid @RequestBody CreateClientRequest request
+    ) {
+
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(
+                        clientService.createClientFromConversation(
+                                conversationId,
+                                request
+                        )
+                );
+    }
+
+    /**
+     * Создать новый ClientAccount и связать его с Client.
+     */
     @PostMapping("/{clientId}/clientaccounts")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SUPER_ADMIN')")
     public ResponseEntity<ClientAccountDto>
     addClientAccount(
             @PathVariable UUID clientId,
@@ -132,8 +205,11 @@ public class ClientController {
                 );
     }
 
+    /**
+     * Связать orphan ClientAccount с Client.
+     */
     @PostMapping("/{clientId}/clientaccounts/{accountId}")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SUPER_ADMIN')")
     public ResponseEntity<ClientAccountDto>
     assignClientAccount(
             @PathVariable UUID clientId,
@@ -148,10 +224,13 @@ public class ClientController {
         );
     }
 
+    /**
+     * Переназначить ClientAccount.
+     */
     @PostMapping(
             "/{clientId}/clientaccounts/{accountId}/reassign"
     )
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SUPER_ADMIN')")
     public ResponseEntity<ClientAccountDto>
     reassignClientAccount(
             @PathVariable UUID clientId,
@@ -166,10 +245,13 @@ public class ClientController {
         );
     }
 
+    /**
+     * Отвязать ClientAccount от Client.
+     */
     @DeleteMapping(
             "/{clientId}/clientaccounts/{accountId}"
     )
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SUPER_ADMIN')")
     public ResponseEntity<ClientAccountDto>
     unassignClientAccount(
             @PathVariable UUID clientId,
@@ -184,8 +266,16 @@ public class ClientController {
         );
     }
 
+    /**
+     * Получить ClientAccounts Client.
+     *
+     * SUPER_ADMIN получает все.
+     *
+     * EMPLOYEE получает только Account,
+     * доступные через его Conversations.
+     */
     @GetMapping("/{clientId}/clientaccounts")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SUPER_ADMIN')")
     public ResponseEntity<List<ClientAccountDto>>
     getAccounts(
             @PathVariable UUID clientId

@@ -1,6 +1,6 @@
 export interface ClientDto {
     id: string
-    workspaceId: string
+    organizationId: string
     firstName: string
     lastName: string
     phoneList: string[]
@@ -10,7 +10,6 @@ export interface ClientDto {
 }
 
 export interface CreateClientRequest {
-    workspaceId: string
     firstName: string
     lastName: string
     phoneList: string[]

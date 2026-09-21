@@ -84,6 +84,12 @@ public interface ClientRepository
             @Param("prefix") String prefix
     );
 
+    /*
+     * ---------------------------------------------------------
+     * SUPER_ADMIN / Organization scope
+     * ---------------------------------------------------------
+     */
+
     @Query("""
         SELECT c
         FROM ClientEntity c
@@ -117,10 +123,94 @@ public interface ClientRepository
             @Param("query") String query
     );
 
+    /*
+     * ---------------------------------------------------------
+     * EMPLOYEE / Workspace scope
+     * ---------------------------------------------------------
+     *
+     * Client виден Employee, если существует хотя бы один
+     * ClientAccount этого Client, связанный с Conversation
+     * в Workspace, доступном Employee.
+     */
+
+    @Query("""
+        SELECT DISTINCT c
+        FROM ClientEntity c
+        JOIN ClientAccountEntity ca
+          ON ca.client.id = c.id
+        JOIN ConversationEntity conversation
+          ON conversation.clientAccount.id = ca.id
+        JOIN EmployeeWorkspaceEntity ew
+          ON ew.workspace.id = conversation.workspace.id
+        WHERE c.organization.id = :organizationId
+          AND ew.employee.id = :employeeId
+        ORDER BY c.lastName, c.firstName
+        """)
+    List<ClientEntity> findAllVisibleToEmployee(
+            @Param("organizationId") UUID organizationId,
+            @Param("employeeId") UUID employeeId
+    );
+
+    @Query("""
+        SELECT DISTINCT c
+        FROM ClientEntity c
+        JOIN ClientAccountEntity ca
+          ON ca.client.id = c.id
+        JOIN ConversationEntity conversation
+          ON conversation.clientAccount.id = ca.id
+        JOIN EmployeeWorkspaceEntity ew
+          ON ew.workspace.id = conversation.workspace.id
+        WHERE c.organization.id = :organizationId
+          AND ew.employee.id = :employeeId
+          AND (
+               LOWER(c.firstName)
+                   LIKE LOWER(CONCAT('%', :query, '%'))
+            OR LOWER(c.lastName)
+                   LIKE LOWER(CONCAT('%', :query, '%'))
+          )
+        ORDER BY c.lastName, c.firstName
+        """)
+    List<ClientEntity> searchClientsForEmployee(
+            @Param("organizationId") UUID organizationId,
+            @Param("employeeId") UUID employeeId,
+            @Param("query") String query
+    );
+
+    @Query("""
+        SELECT CASE WHEN COUNT(c) > 0 THEN true ELSE false END
+        FROM ClientEntity c
+        JOIN ClientAccountEntity ca
+          ON ca.client.id = c.id
+        JOIN ConversationEntity conversation
+          ON conversation.clientAccount.id = ca.id
+        JOIN EmployeeWorkspaceEntity ew
+          ON ew.workspace.id = conversation.workspace.id
+        WHERE c.id = :clientId
+          AND c.organization.id = :organizationId
+          AND ew.employee.id = :employeeId
+        """)
+    boolean existsVisibleToEmployee(
+            @Param("clientId") UUID clientId,
+            @Param("organizationId") UUID organizationId,
+            @Param("employeeId") UUID employeeId
+    );
+
+    /*
+     * ---------------------------------------------------------
+     * Organization checks
+     * ---------------------------------------------------------
+     */
+
     boolean existsByIdAndOrganizationId(
             UUID clientId,
             UUID organizationId
     );
+
+    /*
+     * ---------------------------------------------------------
+     * Clients without Accounts
+     * ---------------------------------------------------------
+     */
 
     @Query("""
         SELECT c
@@ -135,6 +225,12 @@ public interface ClientRepository
     List<ClientEntity> findClientsWithoutAccounts(
             @Param("organizationId") UUID organizationId
     );
+
+    /*
+     * ---------------------------------------------------------
+     * Statistics
+     * ---------------------------------------------------------
+     */
 
     @Query("""
         SELECT COUNT(c)
@@ -159,6 +255,12 @@ public interface ClientRepository
     long countByOrganizationId(
             UUID organizationId
     );
+
+    /*
+     * ---------------------------------------------------------
+     * Bulk delete
+     * ---------------------------------------------------------
+     */
 
     @Modifying
     @Transactional
