@@ -77,6 +77,52 @@ public interface ConversationRepository
     );
 
     /*
+     * ---------------------------------------------------------
+     * Client
+     * ---------------------------------------------------------
+     *
+     * ВАЖНО:
+     * Conversation не имеет прямой связи с Client.
+     *
+     * Связь:
+     *
+     * Client
+     *   -> ClientAccount
+     *       -> Conversation
+     *
+     * Поэтому здесь используется:
+     * c.clientAccount.client.id
+     */
+
+    /**
+     * EMPLOYEE:
+     * только Conversation ClientAccount данного Client,
+     * находящиеся в Workspace, доступных Employee.
+     */
+
+    @Query("""
+    SELECT c
+    FROM ConversationEntity c
+    JOIN EmployeeWorkspaceEntity ew
+      ON ew.workspace.id = c.workspace.id
+    WHERE c.clientAccount.client.id = :clientId
+      AND c.workspace.organization.id = :organizationId
+      AND ew.employee.id = :employeeId
+    ORDER BY c.lastMessageAt DESC
+    """)
+    List<ConversationEntity>
+    findAllByClientIdAndOrganizationIdAndEmployeeIdOrderByLastMessageAtDesc(
+            @Param("clientId")
+            UUID clientId,
+
+            @Param("organizationId")
+            UUID organizationId,
+
+            @Param("employeeId")
+            UUID employeeId
+    );
+
+    /*
      * EMPLOYEE:
      * только Workspace, к которым Employee имеет доступ.
      */
@@ -170,6 +216,26 @@ public interface ConversationRepository
      * только Conversation в Workspace,
      * доступных текущему Employee.
      */
+
+    @Query("""
+        SELECT DISTINCT c
+        FROM ConversationEntity c
+        JOIN c.clientAccount ca
+        JOIN EmployeeWorkspaceEntity ew
+          ON ew.workspace.id = c.workspace.id
+        WHERE ca.client.id = :clientId
+          AND ew.employee.id = :employeeId
+        ORDER BY c.lastMessageAt DESC
+        """)
+    List<ConversationEntity>
+    findAllByClientIdAndEmployeeIdOrderByLastMessageAtDesc(
+            @Param("clientId")
+            UUID clientId,
+
+            @Param("employeeId")
+            UUID employeeId
+    );
+
     @Query("""
             SELECT c
             FROM ConversationEntity c
@@ -218,6 +284,23 @@ public interface ConversationRepository
     /*
      * SUPER_ADMIN.
      */
+    @Query("""
+        SELECT DISTINCT c
+        FROM ConversationEntity c
+        JOIN c.clientAccount ca
+        WHERE ca.client.id = :clientId
+          AND c.workspace.organization.id = :organizationId
+        ORDER BY c.lastMessageAt DESC
+        """)
+    List<ConversationEntity>
+    findAllByClientIdAndOrganizationIdOrderByLastMessageAtDesc(
+            @Param("clientId")
+            UUID clientId,
+
+            @Param("organizationId")
+            UUID organizationId
+    );
+
     @Query("""
             SELECT COUNT(c)
             FROM ConversationEntity c

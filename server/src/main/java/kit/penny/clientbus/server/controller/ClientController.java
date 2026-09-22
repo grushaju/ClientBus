@@ -8,11 +8,13 @@ import kit.penny.clientbus.common.dto.client.ClientDto;
 import kit.penny.clientbus.common.dto.client.CreateClientRequest;
 import kit.penny.clientbus.common.dto.client.UpdateClientRequest;
 import kit.penny.clientbus.common.dto.clientaccount.ClientAccountDto;
+import kit.penny.clientbus.common.dto.conversation.ConversationDto;
 import kit.penny.clientbus.server.service.ClientService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import kit.penny.clientbus.common.dto.client.ClientListItemDto;
 
 import java.util.List;
 import java.util.UUID;
@@ -68,6 +70,37 @@ public class ClientController {
 
         return ResponseEntity.ok(
                 clientService.getClients()
+        );
+    }
+
+    /**
+     * Получить Conversations Client.
+     *
+     * Связь:
+     *
+     * Client
+     *   → ClientAccount
+     *      → Conversation
+     *
+     * Никакой прямой связи Conversation → Client нет.
+     *
+     * SUPER_ADMIN:
+     *   все Conversation Client в текущей Organization.
+     *
+     * EMPLOYEE:
+     *   только Conversation Client в доступных Workspace.
+     */
+    @GetMapping("/{clientId}/conversations")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SUPER_ADMIN')")
+    public ResponseEntity<List<ConversationDto>>
+    getClientConversations(
+            @PathVariable UUID clientId
+    ) {
+
+        return ResponseEntity.ok(
+                clientService.getClientConversations(
+                        clientId
+                )
         );
     }
 

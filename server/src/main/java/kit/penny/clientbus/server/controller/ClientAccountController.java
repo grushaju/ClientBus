@@ -170,6 +170,31 @@ public class ClientAccountController {
     }
 
     /**
+     * Поиск orphan ClientAccount.
+     *
+     * SUPER_ADMIN:
+     *   orphan accounts текущей Organization.
+     *
+     * EMPLOYEE:
+     *   только orphan accounts,
+     *   доступные через его Workspace.
+     *
+     * Поиск выполняется на стороне Backend/DB.
+     */
+    @GetMapping("/unassigned/search")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SUPER_ADMIN')")
+    public ResponseEntity<List<ClientAccountDto>> searchUnassignedAccounts(
+            @RequestParam String query
+    ) {
+
+        return ResponseEntity.ok(
+                clientAccountService.searchUnassignedAccounts(
+                        query
+                )
+        );
+    }
+
+    /**
      * Поиск ClientAccount конкретного Client.
      *
      * Доступ:

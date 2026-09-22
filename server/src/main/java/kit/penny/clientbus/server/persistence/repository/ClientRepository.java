@@ -1,5 +1,6 @@
 package kit.penny.clientbus.server.persistence.repository;
 
+import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ClientEntity;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -10,6 +11,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -17,6 +19,15 @@ import java.util.UUID;
 @Repository
 public interface ClientRepository
         extends JpaRepository<ClientEntity, UUID> {
+
+    interface ClientListAggregateProjection {
+
+        UUID getClientId();
+
+        long getAccountCount();
+
+        Instant getLastContactAt();
+    }
 
     List<ClientEntity> findAllByOrganizationId(
             UUID organizationId
@@ -84,44 +95,95 @@ public interface ClientRepository
             @Param("prefix") String prefix
     );
 
+
+
     /*
      * ---------------------------------------------------------
      * SUPER_ADMIN / Organization scope
      * ---------------------------------------------------------
      */
+    @Query("""
+    SELECT
+        c.id AS clientId,
+        COUNT(DISTINCT ca.id) AS accountCount,
+        MAX(conversation.lastMessageAt) AS lastContactAt
+    FROM ClientEntity c
+    LEFT JOIN ClientAccountEntity ca
+        ON ca.client.id = c.id
+    LEFT JOIN ConversationEntity conversation
+        ON conversation.clientAccount.id = ca.id
+    WHERE c.id IN :clientIds
+      AND c.organization.id = :organizationId
+    GROUP BY c.id
+    """)
+    List<ClientListAggregateProjection> findListAggregates(
+            @Param("organizationId") UUID organizationId,
+            @Param("clientIds") List<UUID> clientIds
+    );
+
 
     @Query("""
-        SELECT c
-        FROM ClientEntity c
-        WHERE c.organization.id = :organizationId
-          AND (
-               LOWER(c.firstName)
-                   LIKE LOWER(CONCAT('%', :query, '%'))
-            OR LOWER(c.lastName)
-                   LIKE LOWER(CONCAT('%', :query, '%'))
-          )
-        """)
+    SELECT DISTINCT c
+    FROM ClientEntity c
+    LEFT JOIN c.phoneList p
+    WHERE c.organization.id = :organizationId
+      AND (
+           LOWER(c.firstName)
+               LIKE LOWER(CONCAT('%', :query, '%'))
+        OR LOWER(c.lastName)
+               LIKE LOWER(CONCAT('%', :query, '%'))
+        OR LOWER(p)
+               LIKE LOWER(CONCAT('%', :query, '%'))
+        OR EXISTS (
+            SELECT ca.id
+            FROM ClientAccountEntity ca
+            WHERE ca.client.id = c.id
+              AND (
+                   LOWER(ca.username)
+                       LIKE LOWER(CONCAT('%', :query, '%'))
+                OR LOWER(ca.phone)
+                       LIKE LOWER(CONCAT('%', :query, '%'))
+              )
+        )
+      )
+    """)
     List<ClientEntity> searchClients(
             @Param("organizationId") UUID organizationId,
             @Param("query") String query
     );
 
     @Query("""
-        SELECT c
-        FROM ClientEntity c
-        WHERE c.organization.id = :organizationId
-          AND c.isEnabled = true
-          AND (
-               LOWER(c.firstName)
-                   LIKE LOWER(CONCAT('%', :query, '%'))
-            OR LOWER(c.lastName)
-                   LIKE LOWER(CONCAT('%', :query, '%'))
-          )
-        """)
+    SELECT DISTINCT c
+    FROM ClientEntity c
+    LEFT JOIN c.phoneList p
+    WHERE c.organization.id = :organizationId
+      AND c.isEnabled = true
+      AND (
+           LOWER(c.firstName)
+               LIKE LOWER(CONCAT('%', :query, '%'))
+        OR LOWER(c.lastName)
+               LIKE LOWER(CONCAT('%', :query, '%'))
+        OR LOWER(p)
+               LIKE LOWER(CONCAT('%', :query, '%'))
+        OR EXISTS (
+            SELECT ca.id
+            FROM ClientAccountEntity ca
+            WHERE ca.client.id = c.id
+              AND (
+                   LOWER(ca.username)
+                       LIKE LOWER(CONCAT('%', :query, '%'))
+                OR LOWER(ca.phone)
+                       LIKE LOWER(CONCAT('%', :query, '%'))
+              )
+        )
+      )
+    """)
     List<ClientEntity> searchActiveClients(
             @Param("organizationId") UUID organizationId,
             @Param("query") String query
     );
+
+
 
     /*
      * ---------------------------------------------------------
@@ -132,6 +194,29 @@ public interface ClientRepository
      * ClientAccount этого Client, связанный с Conversation
      * в Workspace, доступном Employee.
      */
+
+    @Query("""
+    SELECT
+        c.id AS clientId,
+        COUNT(DISTINCT ca.id) AS accountCount,
+        MAX(conversation.lastMessageAt) AS lastContactAt
+    FROM ClientEntity c
+    JOIN ClientAccountEntity ca
+        ON ca.client.id = c.id
+    JOIN ConversationEntity conversation
+        ON conversation.clientAccount.id = ca.id
+    JOIN EmployeeWorkspaceEntity ew
+        ON ew.workspace.id = conversation.workspace.id
+    WHERE c.id IN :clientIds
+      AND c.organization.id = :organizationId
+      AND ew.employee.id = :employeeId
+    GROUP BY c.id
+    """)
+    List<ClientListAggregateProjection> findListAggregatesForEmployee(
+            @Param("organizationId") UUID organizationId,
+            @Param("employeeId") UUID employeeId,
+            @Param("clientIds") List<UUID> clientIds
+    );
 
     @Query("""
         SELECT DISTINCT c
@@ -152,24 +237,31 @@ public interface ClientRepository
     );
 
     @Query("""
-        SELECT DISTINCT c
-        FROM ClientEntity c
-        JOIN ClientAccountEntity ca
-          ON ca.client.id = c.id
-        JOIN ConversationEntity conversation
-          ON conversation.clientAccount.id = ca.id
-        JOIN EmployeeWorkspaceEntity ew
-          ON ew.workspace.id = conversation.workspace.id
-        WHERE c.organization.id = :organizationId
-          AND ew.employee.id = :employeeId
-          AND (
-               LOWER(c.firstName)
-                   LIKE LOWER(CONCAT('%', :query, '%'))
-            OR LOWER(c.lastName)
-                   LIKE LOWER(CONCAT('%', :query, '%'))
-          )
-        ORDER BY c.lastName, c.firstName
-        """)
+    SELECT DISTINCT c
+    FROM ClientEntity c
+    LEFT JOIN c.phoneList p
+    JOIN ClientAccountEntity ca
+      ON ca.client.id = c.id
+    JOIN ConversationEntity conversation
+      ON conversation.clientAccount.id = ca.id
+    JOIN EmployeeWorkspaceEntity ew
+      ON ew.workspace.id = conversation.workspace.id
+    WHERE c.organization.id = :organizationId
+      AND ew.employee.id = :employeeId
+      AND (
+           LOWER(c.firstName)
+               LIKE LOWER(CONCAT('%', :query, '%'))
+        OR LOWER(c.lastName)
+               LIKE LOWER(CONCAT('%', :query, '%'))
+        OR LOWER(p)
+               LIKE LOWER(CONCAT('%', :query, '%'))
+        OR LOWER(ca.username)
+               LIKE LOWER(CONCAT('%', :query, '%'))
+        OR LOWER(ca.phone)
+               LIKE LOWER(CONCAT('%', :query, '%'))
+      )
+    ORDER BY c.lastName, c.firstName
+    """)
     List<ClientEntity> searchClientsForEmployee(
             @Param("organizationId") UUID organizationId,
             @Param("employeeId") UUID employeeId,
@@ -262,7 +354,7 @@ public interface ClientRepository
      * ---------------------------------------------------------
      */
 
-    @Modifying
+    @Modifying(clearAutomatically = true)
     @Transactional
     @Query("""
         DELETE FROM ClientEntity c
@@ -272,7 +364,7 @@ public interface ClientRepository
             @Param("organizationId") UUID organizationId
     );
 
-    @Modifying
+    @Modifying(clearAutomatically = true)
     @Transactional
     @Query("""
         DELETE FROM ClientEntity c

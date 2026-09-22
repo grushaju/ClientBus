@@ -17,6 +17,21 @@ public interface ClientAccountRepository
             UUID clientId
     );
 
+    @Query("""
+    SELECT DISTINCT a
+    FROM ClientAccountEntity a
+    JOIN ConversationEntity c
+      ON c.clientAccount.id = a.id
+    JOIN EmployeeWorkspaceEntity ew
+      ON ew.workspace.id = c.workspace.id
+    WHERE a.client.id = :clientId
+      AND ew.employee.id = :employeeId
+    """)
+    List<ClientAccountEntity> findAllByClientIdAndEmployeeId(
+            @Param("clientId") UUID clientId,
+            @Param("employeeId") UUID employeeId
+    );
+
     List<ClientAccountEntity> findAllByClientIdAndChannelType(
             UUID clientId,
             ChannelType channelType
@@ -138,5 +153,95 @@ public interface ClientAccountRepository
     findAllUnassignedByOrganizationIdAndChannelType(
             @Param("organizationId") UUID organizationId,
             @Param("channelType") ChannelType channelType
+    );
+
+    /**
+     * Поиск orphan ClientAccount для SUPER_ADMIN.
+     *
+     * Account должен:
+     * - не иметь Client;
+     * - иметь Conversation;
+     * - иметь Conversation в текущей Organization.
+     */
+    @Query("""
+    SELECT DISTINCT a
+    FROM ClientAccountEntity a
+    JOIN ConversationEntity c
+      ON c.clientAccount.id = a.id
+    WHERE a.client IS NULL
+      AND c.workspace.organization.id = :organizationId
+      AND (
+           LOWER(a.username)
+               LIKE LOWER(CONCAT('%', :query, '%'))
+        OR LOWER(a.phone)
+               LIKE LOWER(CONCAT('%', :query, '%'))
+        OR LOWER(a.externalId)
+               LIKE LOWER(CONCAT('%', :query, '%'))
+        OR LOWER(a.displayName)
+               LIKE LOWER(CONCAT('%', :query, '%'))
+      )
+    ORDER BY a.displayName
+    """)
+    List<ClientAccountEntity> searchUnassignedByOrganizationId(
+            @Param("organizationId") UUID organizationId,
+            @Param("query") String query
+    );
+
+    /**
+     * Поиск orphan ClientAccount для EMPLOYEE.
+     *
+     * Account должен:
+     * - не иметь Client;
+     * - иметь Conversation;
+     * - Conversation должен находиться в Workspace,
+     *   доступном текущему Employee.
+     */
+    @Query("""
+    SELECT DISTINCT a
+    FROM ClientAccountEntity a
+    JOIN ConversationEntity c
+      ON c.clientAccount.id = a.id
+    JOIN EmployeeWorkspaceEntity ew
+      ON ew.workspace.id = c.workspace.id
+    WHERE a.client IS NULL
+      AND c.workspace.organization.id = :organizationId
+      AND ew.employee.id = :employeeId
+      AND (
+           LOWER(a.username)
+               LIKE LOWER(CONCAT('%', :query, '%'))
+        OR LOWER(a.phone)
+               LIKE LOWER(CONCAT('%', :query, '%'))
+        OR LOWER(a.externalId)
+               LIKE LOWER(CONCAT('%', :query, '%'))
+        OR LOWER(a.displayName)
+               LIKE LOWER(CONCAT('%', :query, '%'))
+      )
+    ORDER BY a.displayName
+    """)
+    List<ClientAccountEntity> searchUnassignedByOrganizationIdAndEmployeeId(
+            @Param("organizationId") UUID organizationId,
+            @Param("employeeId") UUID employeeId,
+            @Param("query") String query
+    );
+
+    /**
+     * Все orphan accounts текущей Organization,
+     * доступные EMPLOYEE.
+     */
+    @Query("""
+    SELECT DISTINCT a
+    FROM ClientAccountEntity a
+    JOIN ConversationEntity c
+      ON c.clientAccount.id = a.id
+    JOIN EmployeeWorkspaceEntity ew
+      ON ew.workspace.id = c.workspace.id
+    WHERE a.client IS NULL
+      AND c.workspace.organization.id = :organizationId
+      AND ew.employee.id = :employeeId
+    ORDER BY a.displayName
+    """)
+    List<ClientAccountEntity> findAllUnassignedByOrganizationIdAndEmployeeId(
+            @Param("organizationId") UUID organizationId,
+            @Param("employeeId") UUID employeeId
     );
 }

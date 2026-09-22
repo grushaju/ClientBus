@@ -1,7 +1,7 @@
 package kit.penny.clientbus.server.service;
 
 import jakarta.persistence.EntityNotFoundException;
-import jakarta.transaction.Transactional;
+
 import kit.penny.clientbus.common.dto.channel.ChannelAccountDto;
 import kit.penny.clientbus.common.dto.channel.ChannelDto;
 import kit.penny.clientbus.common.dto.channel.CreateChannelRequest;
@@ -18,6 +18,7 @@ import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
 import kit.penny.clientbus.server.persistence.repository.WorkspaceRepository;
 import kit.penny.clientbus.server.security.service.CurrentUserService;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.UUID;

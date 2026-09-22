@@ -1,7 +1,6 @@
 package kit.penny.clientbus.server.service;
 
 import jakarta.persistence.EntityNotFoundException;
-import jakarta.transaction.Transactional;
 import kit.penny.clientbus.common.dto.clientaccount.ClientAccountDto;
 import kit.penny.clientbus.common.dto.clientaccount.CreateClientAccountRequest;
 import kit.penny.clientbus.common.dto.clientaccount.UpdateClientAccountRequest;
@@ -17,6 +16,7 @@ import kit.penny.clientbus.server.security.service.CurrentUserService;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -225,11 +225,30 @@ public class ClientAccountService {
 
         requireClientOrganizationAccess(client);
 
-        return clientAccountRepository
-                .findAllByClientId(clientId)
-                .stream()
-                .map(clientAccountMapper::toDto)
-                .toList();
+        if (currentUserService.isSuperAdmin()) {
+
+            return clientAccountRepository
+                    .findAllByClientId(clientId)
+                    .stream()
+                    .map(clientAccountMapper::toDto)
+                    .toList();
+        }
+
+        if (currentUserService.isEmployee()) {
+
+            return clientAccountRepository
+                    .findAllByClientIdAndEmployeeId(
+                            clientId,
+                            currentUserService.getCurrentEmployeeId()
+                    )
+                    .stream()
+                    .map(clientAccountMapper::toDto)
+                    .toList();
+        }
+
+        throw new AccessDeniedException(
+                "Unsupported user role"
+        );
     }
 
     @Transactional
@@ -291,6 +310,85 @@ public class ClientAccountService {
                 .findAllUnassignedByOrganizationIdAndChannelType(
                         organizationId,
                         channelType
+                )
+                .stream()
+                .map(clientAccountMapper::toDto)
+                .toList();
+    }
+
+    /**
+     * Поиск orphan ClientAccount.
+     *
+     * SUPER_ADMIN:
+     *   видит orphan accounts текущей Organization.
+     *
+     * EMPLOYEE:
+     *   видит только orphan accounts,
+     *   имеющие Conversation в доступном Workspace.
+     *
+     * Сам ClientAccount при этом остаётся глобальной identity.
+     */
+    @Transactional(readOnly = true)
+    public List<ClientAccountDto> searchUnassignedAccounts(
+            String query
+    ) {
+
+        if (!currentUserService.isSuperAdmin()
+                && !currentUserService.isEmployee()) {
+
+            throw new AccessDeniedException(
+                    "Only EMPLOYEE or SUPER_ADMIN can search unassigned accounts"
+            );
+        }
+
+        UUID organizationId =
+                currentUserService.getCurrentOrganizationId();
+
+        String normalizedQuery =
+                query == null
+                        ? ""
+                        : query.trim();
+
+        if (normalizedQuery.isBlank()) {
+
+            if (currentUserService.isSuperAdmin()) {
+
+                return clientAccountRepository
+                        .findAllUnassignedByOrganizationId(
+                                organizationId
+                        )
+                        .stream()
+                        .map(clientAccountMapper::toDto)
+                        .toList();
+            }
+
+            return clientAccountRepository
+                    .findAllUnassignedByOrganizationIdAndEmployeeId(
+                            organizationId,
+                            currentUserService.getCurrentEmployeeId()
+                    )
+                    .stream()
+                    .map(clientAccountMapper::toDto)
+                    .toList();
+        }
+
+        if (currentUserService.isSuperAdmin()) {
+
+            return clientAccountRepository
+                    .searchUnassignedByOrganizationId(
+                            organizationId,
+                            normalizedQuery
+                    )
+                    .stream()
+                    .map(clientAccountMapper::toDto)
+                    .toList();
+        }
+
+        return clientAccountRepository
+                .searchUnassignedByOrganizationIdAndEmployeeId(
+                        organizationId,
+                        currentUserService.getCurrentEmployeeId(),
+                        normalizedQuery
                 )
                 .stream()
                 .map(clientAccountMapper::toDto)

@@ -1,4 +1,4 @@
-package kit.penny.clientbus.server.repository;
+package kit.penny.clientbus.server.persistence.repository;
 
 import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.integration.AbstractIntegrationTest;

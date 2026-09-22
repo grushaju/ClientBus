@@ -11,7 +11,6 @@ import kit.penny.clientbus.server.mapper.ClientMapper;
 import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ClientEntity;
 import kit.penny.clientbus.server.persistence.entity.ConversationEntity;
-import kit.penny.clientbus.server.persistence.entity.EmployeeEntity;
 import kit.penny.clientbus.server.persistence.entity.OrganizationEntity;
 import kit.penny.clientbus.server.persistence.repository.ClientAccountRepository;
 import kit.penny.clientbus.server.persistence.repository.ClientRepository;
@@ -21,7 +20,13 @@ import kit.penny.clientbus.server.security.service.CurrentUserService;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import kit.penny.clientbus.common.dto.conversation.ConversationDto;
+import kit.penny.clientbus.server.mapper.ConversationMapper;
+import kit.penny.clientbus.common.dto.client.ClientListItemDto;
+import kit.penny.clientbus.common.dto.client.ClientListItemDto;
+import kit.penny.clientbus.server.persistence.repository.ClientRepository.ClientListAggregateProjection;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -36,6 +41,7 @@ public class ClientService {
     private final ClientMapper clientMapper;
     private final ClientAccountMapper clientAccountMapper;
     private final CurrentUserService currentUserService;
+    private final ConversationMapper conversationMapper;
 
     public ClientService(
             ClientRepository clientRepository,
@@ -44,7 +50,8 @@ public class ClientService {
             ConversationRepository conversationRepository,
             ClientMapper clientMapper,
             ClientAccountMapper clientAccountMapper,
-            CurrentUserService currentUserService
+            CurrentUserService currentUserService,
+            ConversationMapper conversationMapper
     ) {
         this.clientRepository = clientRepository;
         this.organizationRepository = organizationRepository;
@@ -53,6 +60,7 @@ public class ClientService {
         this.clientMapper = clientMapper;
         this.clientAccountMapper = clientAccountMapper;
         this.currentUserService = currentUserService;
+        this.conversationMapper = conversationMapper;
     }
 
     /*
@@ -101,17 +109,17 @@ public class ClientService {
 
     /**
      * Создать Client из существующего Conversation.
-     *
+     * <p>
      * Conversation сам определяет ClientAccount.
-     *
+     * <p>
      * Поэтому клиентский FE не может подменить accountId.
-     *
+     * <p>
      * EMPLOYEE:
      *   Conversation должен быть ему доступен.
-     *
+     * <p>
      * SUPER_ADMIN:
      *   Conversation должен находиться в его Organization.
-     *
+     * <p>
      * ClientAccount должен быть orphan.
      */
     public ClientDto createClientFromConversation(
@@ -213,6 +221,201 @@ public class ClientService {
         return clients
                 .stream()
                 .map(clientMapper::toDto)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<ClientListItemDto> getClientListItems() {
+
+        UUID organizationId =
+                currentUserService.getCurrentOrganizationId();
+
+        List<ClientEntity> clients;
+
+        if (currentUserService.isSuperAdmin()) {
+
+            clients =
+                    clientRepository
+                            .findAllByOrganizationId(
+                                    organizationId
+                            );
+
+        } else if (currentUserService.isEmployee()) {
+
+            UUID employeeId =
+                    currentUserService.getCurrentEmployeeId();
+
+            clients =
+                    clientRepository
+                            .findAllVisibleToEmployee(
+                                    organizationId,
+                                    employeeId
+                            );
+
+        } else {
+
+            throw new AccessDeniedException(
+                    "Only EMPLOYEE or SUPER_ADMIN can access clients"
+            );
+        }
+
+        return buildClientListItems(
+                clients,
+                organizationId
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public List<ClientListItemDto> searchClientListItems(
+            String query
+    ) {
+
+        UUID organizationId =
+                currentUserService.getCurrentOrganizationId();
+
+        String normalizedQuery =
+                query == null
+                        ? ""
+                        : query.trim();
+
+        if (normalizedQuery.isBlank()) {
+            return getClientListItems();
+        }
+
+        List<ClientEntity> clients;
+
+        if (currentUserService.isSuperAdmin()) {
+
+            clients =
+                    clientRepository.searchClients(
+                            organizationId,
+                            normalizedQuery
+                    );
+
+        } else if (currentUserService.isEmployee()) {
+
+            clients =
+                    clientRepository.searchClientsForEmployee(
+                            organizationId,
+                            currentUserService
+                                    .getCurrentEmployeeId(),
+                            normalizedQuery
+                    );
+
+        } else {
+
+            throw new AccessDeniedException(
+                    "Only EMPLOYEE or SUPER_ADMIN can search clients"
+            );
+        }
+
+        return buildClientListItems(
+                clients,
+                organizationId
+        );
+    }
+
+    private List<ClientListItemDto> buildClientListItems(
+            List<ClientEntity> clients,
+            UUID organizationId
+    ) {
+
+        if (clients.isEmpty()) {
+            return List.of();
+        }
+
+        List<UUID> clientIds =
+                clients.stream()
+                        .map(ClientEntity::getId)
+                        .toList();
+
+        List<ClientListAggregateProjection> aggregates;
+
+        if (currentUserService.isSuperAdmin()) {
+
+            aggregates =
+                    clientRepository.findListAggregates(
+                            organizationId,
+                            clientIds
+                    );
+
+        } else if (currentUserService.isEmployee()) {
+
+            aggregates =
+                    clientRepository.findListAggregatesForEmployee(
+                            organizationId,
+                            currentUserService
+                                    .getCurrentEmployeeId(),
+                            clientIds
+                    );
+
+        } else {
+
+            throw new AccessDeniedException(
+                    "Only EMPLOYEE or SUPER_ADMIN can access clients"
+            );
+        }
+
+        var aggregateByClientId =
+                aggregates.stream()
+                        .collect(
+                                java.util.stream.Collectors.toMap(
+                                        ClientListAggregateProjection::getClientId,
+                                        aggregate -> aggregate
+                                )
+                        );
+
+        return clients.stream()
+                .map(client -> {
+
+                    ClientListAggregateProjection aggregate =
+                            aggregateByClientId.get(client.getId());
+
+                    long accountCount =
+                            aggregate == null
+                                    ? 0L
+                                    : aggregate.getAccountCount();
+
+                    Instant lastContactAt =
+                            aggregate == null
+                                    ? null
+                                    : aggregate.getLastContactAt();
+
+                    return new ClientListItemDto(
+                            client.getId(),
+                            client.getFirstName(),
+                            client.getLastName(),
+                            client.getPhoneList(),
+                            accountCount,
+                            lastContactAt,
+                            client.isEnabled()
+                    );
+                })
+                .sorted(
+                        java.util.Comparator
+                                .comparing(
+                                        ClientListItemDto::lastContactAt,
+                                        java.util.Comparator
+                                                .nullsLast(
+                                                        java.util.Comparator
+                                                                .reverseOrder()
+                                                )
+                                )
+                                .thenComparing(
+                                        ClientListItemDto::lastName,
+                                        java.util.Comparator
+                                                .nullsLast(
+                                                        String.CASE_INSENSITIVE_ORDER
+                                                )
+                                )
+                                .thenComparing(
+                                        ClientListItemDto::firstName,
+                                        java.util.Comparator
+                                                .nullsLast(
+                                                        String.CASE_INSENSITIVE_ORDER
+                                                )
+                                )
+                )
                 .toList();
     }
 
@@ -346,7 +549,7 @@ public class ClientService {
 
     /**
      * Добавить новый ClientAccount к Client.
-     *
+     * <p>
      * EMPLOYEE может выполнять операцию только
      * для доступного Client.
      */
@@ -505,10 +708,10 @@ public class ClientService {
 
     /**
      * Получить ClientAccounts Client.
-     *
+     * <p>
      * SUPER_ADMIN:
      *   все accounts.
-     *
+     * <p>
      * EMPLOYEE:
      *   только accounts, у которых есть Conversation
      *   в Workspace, доступном текущему Employee.
@@ -520,39 +723,127 @@ public class ClientService {
 
         getAccessibleClient(clientId);
 
-        List<ClientAccountEntity> accounts =
-                clientAccountRepository
-                        .findAllByClientId(clientId);
-
         if (currentUserService.isSuperAdmin()) {
 
-            return accounts
+            return clientAccountRepository
+                    .findAllByClientId(clientId)
                     .stream()
                     .map(clientAccountMapper::toDto)
                     .toList();
         }
 
-        if (!currentUserService.isEmployee()) {
+        if (currentUserService.isEmployee()) {
+
+            return clientAccountRepository
+                    .findAllByClientIdAndEmployeeId(
+                            clientId,
+                            currentUserService.getCurrentEmployeeId()
+                    )
+                    .stream()
+                    .map(clientAccountMapper::toDto)
+                    .toList();
+        }
+
+        throw new AccessDeniedException(
+                "Only EMPLOYEE or SUPER_ADMIN can access client accounts"
+        );
+    }
+
+    @Transactional
+    public List<ClientAccountDto> getClientAccountsByClient(
+            UUID clientId
+    ) {
+
+        ClientEntity client =
+                getAccessibleClient(clientId);
+
+        requireClientOrganizationAccess(client);
+
+        if (currentUserService.isSuperAdmin()) {
+
+            return clientAccountRepository
+                    .findAllByClientId(clientId)
+                    .stream()
+                    .map(clientAccountMapper::toDto)
+                    .toList();
+        }
+
+        if (currentUserService.isEmployee()) {
+
+            return clientAccountRepository
+                    .findAllByClientIdAndEmployeeId(
+                            clientId,
+                            currentUserService.getCurrentEmployeeId()
+                    )
+                    .stream()
+                    .map(clientAccountMapper::toDto)
+                    .toList();
+        }
+
+        throw new AccessDeniedException(
+                "Unsupported user role"
+        );
+    }
+
+    /**
+     * Получить Conversations Client.
+     * <p>
+     * ВАЖНО:
+     * прямой связи Conversation -> Client нет.
+     * <p>
+     * Conversations находятся через:
+     * <p>
+     * Client
+     *   -> ClientAccount
+     *       -> Conversation
+     * <p>
+     * SUPER_ADMIN:
+     *   все Conversations Client
+     *   в текущей Organization.
+     * <p>
+     * EMPLOYEE:
+     *   только Conversations в доступных Workspace.
+     */
+    @Transactional(readOnly = true)
+    public List<ConversationDto> getClientConversations(
+            UUID clientId
+    ) {
+
+        ClientEntity client =
+                getAccessibleClient(clientId);
+
+        List<ConversationEntity> conversations;
+
+        if (currentUserService.isSuperAdmin()) {
+
+            conversations =
+                    conversationRepository
+                            .findAllByClientIdAndOrganizationIdOrderByLastMessageAtDesc(
+                                    client.getId(),
+                                    currentUserService
+                                            .getCurrentOrganizationId()
+                            );
+
+        } else if (currentUserService.isEmployee()) {
+
+            conversations =
+                    conversationRepository
+                            .findAllByClientIdAndEmployeeIdOrderByLastMessageAtDesc(
+                                    client.getId(),
+                                    currentUserService
+                                            .getCurrentEmployeeId()
+                            );
+
+        } else {
 
             throw new AccessDeniedException(
-                    "Only EMPLOYEE or SUPER_ADMIN can access client accounts"
+                    "Only EMPLOYEE or SUPER_ADMIN can access client conversations"
             );
         }
 
-        UUID employeeId =
-                currentUserService.getCurrentEmployeeId();
-
-        return accounts
+        return conversations
                 .stream()
-                .filter(account ->
-                        !conversationRepository
-                                .findAllByClientAccountIdAndEmployeeIdOrderByLastMessageAtDesc(
-                                        account.getId(),
-                                        employeeId
-                                )
-                                .isEmpty()
-                )
-                .map(clientAccountMapper::toDto)
+                .map(conversationMapper::toDto)
                 .toList();
     }
 
@@ -648,10 +939,10 @@ public class ClientService {
     /**
      * Проверяет доступ текущего пользователя
      * к ClientAccount.
-     *
+     * <p>
      * SUPER_ADMIN:
      *   Account должен использоваться в текущей Organization.
-     *
+     * <p>
      * EMPLOYEE:
      *   Account должен иметь Conversation
      *   в доступном Employee Workspace.
