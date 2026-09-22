@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-09-21 16:52:10
+- Generated: 2026-09-22 23:29:58
 - Branch: `main`
-- Commit: `7dc0100`
+- Commit: `b3cbe04`
 
 ## Project Structure
 
@@ -32,6 +32,7 @@
 
 - `AddClientAccountRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/client/AddClientAccountRequest.java`
 - `ClientDto.java` — `common/src/main/java/kit/penny/clientbus/common/dto/client/ClientDto.java`
+- `ClientListItemDto.java` — `common/src/main/java/kit/penny/clientbus/common/dto/client/ClientListItemDto.java`
 - `CreateClientRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/client/CreateClientRequest.java`
 - `UpdateClientRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/client/UpdateClientRequest.java`
 
@@ -105,11 +106,6 @@
 - `OutboundMessageKafkaCommand.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/OutboundMessageKafkaCommand.java`
 - `PlatformMessageKafkaEvent.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/PlatformMessageKafkaEvent.java`
 - `PlatformOutboundAttachment.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/PlatformOutboundAttachment.java`
-
-#### `src/main/resources`
-
-
-#### `src/test/java`
 
 ### server
 
@@ -413,11 +409,12 @@
 
 - `OutboundMessageKafkaCommandMapperTest.java` — `server/src/test/java/kit/penny/clientbus/server/mapper/OutboundMessageKafkaCommandMapperTest.java`
 
-##### `kit.penny.clientbus.server.repository`
+##### `kit.penny.clientbus.server.persistence.repository`
 
-- `ChannelAccountRepositoryTest.java` — `server/src/test/java/kit/penny/clientbus/server/repository/ChannelAccountRepositoryTest.java`
-- `ChannelRepositoryTest.java` — `server/src/test/java/kit/penny/clientbus/server/repository/ChannelRepositoryTest.java`
-- `ClientAccountRepositoryTest.java` — `server/src/test/java/kit/penny/clientbus/server/repository/ClientAccountRepositoryTest.java`
+- `ChannelAccountRepositoryTest.java` — `server/src/test/java/kit/penny/clientbus/server/persistence/repository/ChannelAccountRepositoryTest.java`
+- `ChannelRepositoryTest.java` — `server/src/test/java/kit/penny/clientbus/server/persistence/repository/ChannelRepositoryTest.java`
+- `ClientAccountRepositoryTest.java` — `server/src/test/java/kit/penny/clientbus/server/persistence/repository/ClientAccountRepositoryTest.java`
+- `ClientRepositoryTest.java` — `server/src/test/java/kit/penny/clientbus/server/persistence/repository/ClientRepositoryTest.java`
 
 ##### `kit.penny.clientbus.server.security.jwt`
 
@@ -447,6 +444,6 @@
 ## Summary
 
 - Maven modules: 3
-- Java files: 238
-- Git commit: `7dc0100`
+- Java files: 240
+- Git commit: `b3cbe04`
 
