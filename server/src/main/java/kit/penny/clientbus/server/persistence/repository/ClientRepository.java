@@ -4,6 +4,7 @@ import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ClientEntity;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -29,11 +30,12 @@ public interface ClientRepository
         Instant getLastContactAt();
     }
 
+    @EntityGraph(attributePaths = "phoneList")
     List<ClientEntity> findAllByOrganizationId(
             UUID organizationId
     );
 
-    Page<ClientEntity> findAllByOrganizationId(
+    Page<ClientEntity> findPageByOrganizationId(
             UUID organizationId,
             Pageable pageable
     );
@@ -122,6 +124,7 @@ public interface ClientRepository
     );
 
 
+    @EntityGraph(attributePaths = "phoneList")
     @Query("""
     SELECT DISTINCT c
     FROM ClientEntity c
@@ -218,6 +221,7 @@ public interface ClientRepository
             @Param("clientIds") List<UUID> clientIds
     );
 
+    @EntityGraph(attributePaths = "phoneList")
     @Query("""
         SELECT DISTINCT c
         FROM ClientEntity c
@@ -236,6 +240,7 @@ public interface ClientRepository
             @Param("employeeId") UUID employeeId
     );
 
+    @EntityGraph(attributePaths = "phoneList")
     @Query("""
     SELECT DISTINCT c
     FROM ClientEntity c

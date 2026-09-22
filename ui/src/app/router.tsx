@@ -19,6 +19,9 @@ import InboxPage
 import ClientsPage
     from '../pages/ClientsPage'
 
+import ClientDetailsPage
+    from '../pages/ClientDetailsPage'
+
 import ChannelsPage
     from '../pages/ChannelsPage'
 
@@ -67,9 +70,17 @@ export const router =
                             ]
                         },
                         {
-                            path: 'clients/*',
-                            element:
-                                <ClientsPage />
+                            path: 'clients',
+                            children: [
+                                {
+                                    index: true,
+                                    element: <ClientsPage />,
+                                },
+                                {
+                                    path: ':clientId',
+                                    element: <ClientDetailsPage />,
+                                },
+                            ],
                         },
                         {
                             path: 'channels/*',

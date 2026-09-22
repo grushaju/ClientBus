@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import kit.penny.clientbus.common.dto.client.AddClientAccountRequest;
 import kit.penny.clientbus.common.dto.client.ClientDto;
+import kit.penny.clientbus.common.dto.client.ClientListItemDto;
 import kit.penny.clientbus.common.dto.client.CreateClientRequest;
 import kit.penny.clientbus.common.dto.client.UpdateClientRequest;
 import kit.penny.clientbus.common.dto.clientaccount.ClientAccountDto;
@@ -14,7 +15,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-import kit.penny.clientbus.common.dto.client.ClientListItemDto;
 
 import java.util.List;
 import java.util.UUID;
@@ -55,21 +55,24 @@ public class ClientController {
     }
 
     /**
-     * Получить видимые Client.
+     * Получить список видимых Client.
      *
      * SUPER_ADMIN:
-     *   все Client Organization.
+     *   все Client текущей Organization.
      *
      * EMPLOYEE:
      *   только Client, связанные с Account,
      *   имеющими Conversation в доступных Workspace.
+     *
+     * Для списка используется специальный DTO:
+     * ClientListItemDto.
      */
     @GetMapping
     @PreAuthorize("hasAnyRole('EMPLOYEE', 'SUPER_ADMIN')")
-    public ResponseEntity<List<ClientDto>> getClients() {
+    public ResponseEntity<List<ClientListItemDto>> getClients() {
 
         return ResponseEntity.ok(
-                clientService.getClients()
+                clientService.getClientListItems()
         );
     }
 
@@ -123,15 +126,17 @@ public class ClientController {
      * Поиск Client.
      *
      * Результат ограничивается ACL текущего пользователя.
+     *
+     * Для списка используется ClientListItemDto.
      */
     @GetMapping("/search")
     @PreAuthorize("hasAnyRole('EMPLOYEE', 'SUPER_ADMIN')")
-    public ResponseEntity<List<ClientDto>> searchClients(
+    public ResponseEntity<List<ClientListItemDto>> searchClients(
             @RequestParam(required = false) String query
     ) {
 
         return ResponseEntity.ok(
-                clientService.searchClients(query)
+                clientService.searchClientListItems(query)
         );
     }
 
@@ -191,14 +196,6 @@ public class ClientController {
      * Создать Client из текущего Conversation.
      *
      * ClientAccount определяется Backend через Conversation.
-     *
-     * Нельзя передать accountId из FE и подменить Account.
-     *
-     * EMPLOYEE:
-     *   Conversation должен быть доступен текущему Employee.
-     *
-     * SUPER_ADMIN:
-     *   Conversation должен принадлежать текущей Organization.
      */
     @PostMapping("/from-conversation/{conversationId}")
     @PreAuthorize("hasAnyRole('EMPLOYEE', 'SUPER_ADMIN')")
@@ -301,11 +298,6 @@ public class ClientController {
 
     /**
      * Получить ClientAccounts Client.
-     *
-     * SUPER_ADMIN получает все.
-     *
-     * EMPLOYEE получает только Account,
-     * доступные через его Conversations.
      */
     @GetMapping("/{clientId}/clientaccounts")
     @PreAuthorize("hasAnyRole('EMPLOYEE', 'SUPER_ADMIN')")

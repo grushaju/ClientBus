@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-09-22 23:34:34
+- Generated: 2026-09-23 00:25:54
 - Branch: `main`
-- Commit: `2e48ac8`
+- Commit: `1f3c196`
 
 ## Project Structure
 
@@ -455,6 +455,7 @@
 - `ui/src/api/employeeWorkspaceApi.ts`
 - `ui/src/api/messageApi.ts`
 - `ui/src/api/types/client.ts`
+- `ui/src/api/types/clientAccount.ts`
 - `ui/src/api/types/conversation.ts`
 - `ui/src/api/types/message.ts`
 - `ui/src/api/workspaceApi.ts`
@@ -486,6 +487,7 @@
 - `ui/src/index.css`
 - `ui/src/main.tsx`
 - `ui/src/pages/ChannelsPage.tsx`
+- `ui/src/pages/ClientDetailsPage.tsx`
 - `ui/src/pages/ClientsPage.tsx`
 - `ui/src/pages/EmployeesPage.tsx`
 - `ui/src/pages/InboxPage.tsx`
@@ -512,6 +514,6 @@
 
 - Maven modules: 3
 - Java files: 240
-- UI source files: 48
-- Git commit: `2e48ac8`
+- UI source files: 50
+- Git commit: `1f3c196`
 

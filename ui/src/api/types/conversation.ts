@@ -1,3 +1,5 @@
+import type { ClientAccountDto } from './clientAccount'
+
 export interface ConversationDto {
     id: string
     workspaceId: string
@@ -23,15 +25,15 @@ export interface ConversationListItem {
     channel: ChannelSummary | null
 }
 
-export interface ClientAccountSummary {
-    id: string
-    clientId: string | null
-    channelType: string
-    externalId: string
-    username: string | null
-    phone: string | null
-    displayName: string | null
-}
+/**
+ * Compatibility alias for Inbox components.
+ *
+ * ClientAccountDto is the canonical ClientAccount model.
+ * Keep this alias temporarily so existing Inbox code
+ * does not need to be migrated in the same change.
+ */
+export type ClientAccountSummary =
+    ClientAccountDto
 
 export interface ChannelSummary {
     id: string

@@ -7,15 +7,15 @@ import {
     assignClientAccount,
     createClient,
     getClient,
+    getClientAccountsByClient,
     getClients,
     unassignClientAccount,
 } from '../../api/clientApi'
 
-import {
-    getVisibleClientAccounts,
-} from '../../api/clientVisibility'
-
-import type { ClientDto } from '../../api/types/client'
+import type {
+    ClientDto,
+    ClientListItemDto,
+} from '../../api/types/client'
 
 import type {
     ChannelSummary,
@@ -42,7 +42,6 @@ function ConversationClientPanel({
                                      onChanged,
                                  }: Props) {
     const {
-        employeeWorkspaces,
         isSuperAdmin,
     } = useAuth()
 
@@ -56,7 +55,7 @@ function ConversationClientPanel({
         useState(false)
 
     const [clients, setClients] =
-        useState<ClientDto[]>([])
+        useState<ClientListItemDto[]>([])
 
     const [loadingClients, setLoadingClients] =
         useState(false)
@@ -88,16 +87,6 @@ function ConversationClientPanel({
     const [error, setError] =
         useState<string | null>(null)
 
-    const workspaceIds = [
-        conversation.workspaceId,
-        ...employeeWorkspaces
-            .map(workspace => workspace.workspaceId)
-            .filter(
-                workspaceId =>
-                    workspaceId !== conversation.workspaceId,
-            ),
-    ]
-
     useEffect(() => {
         let cancelled = false
 
@@ -120,14 +109,9 @@ function ConversationClientPanel({
                     )
 
                 const accounts =
-                    await getVisibleClientAccounts({
-                        clientId:
+                    await getClientAccountsByClient(
                         clientAccount.clientId,
-                        workspaceIds,
-                        isSuperAdmin,
-                        currentAccountId:
-                        clientAccount.id,
-                    })
+                    )
 
                 if (!cancelled) {
                     setClient(result)
@@ -158,188 +142,184 @@ function ConversationClientPanel({
         }
     }, [
         clientAccount?.clientId,
-        clientAccount?.id,
-        conversation.workspaceId,
-        employeeWorkspaces,
-        isSuperAdmin,
     ])
 
-    const loadClients = async () => {
-        setLoadingClients(true)
-        setError(null)
+    const loadClients =
+        async () => {
+            setLoadingClients(true)
+            setError(null)
 
-        try {
-            const result =
-                await getClients()
+            try {
+                const result =
+                    await getClients()
 
-            setClients(result)
-        } catch (err) {
-            setError(
-                err instanceof Error
-                    ? err.message
-                    : 'Не удалось загрузить клиентов'
-            )
-        } finally {
-            setLoadingClients(false)
-        }
-    }
-
-    const handleCreateClient = async () => {
-        const normalizedFirstName =
-            firstName.trim()
-
-        const normalizedLastName =
-            lastName.trim()
-
-        if (
-            !normalizedFirstName &&
-            !normalizedLastName
-        ) {
-            setError(
-                'Укажите имя или фамилию клиента',
-            )
-            return
+                setClients(result)
+            } catch (err) {
+                setError(
+                    err instanceof Error
+                        ? err.message
+                        : 'Не удалось загрузить клиентов',
+                )
+            } finally {
+                setLoadingClients(false)
+            }
         }
 
-        if (!clientAccount) {
-            return
-        }
+    const handleCreateClient =
+        async () => {
+            const normalizedFirstName =
+                firstName.trim()
 
-        setActionLoading(true)
-        setError(null)
+            const normalizedLastName =
+                lastName.trim()
 
-        try {
-            const created =
-                await createClient({
-                    firstName:
-                    normalizedFirstName,
-                    lastName:
-                    normalizedLastName,
-                    phoneList:
-                        phone.trim()
-                            ? [phone.trim()]
-                            : [],
-                })
-
-            await assignClientAccount(
-                created.id,
-                clientAccount.id,
-            )
-
-            const updatedAccount:
-                ClientAccountSummary = {
-                ...clientAccount,
-                clientId: created.id,
+            if (
+                !normalizedFirstName &&
+                !normalizedLastName
+            ) {
+                setError(
+                    'Укажите имя или фамилию клиента',
+                )
+                return
             }
 
-            setClient(created)
-            setClientAccounts([
-                updatedAccount,
-            ])
+            if (!clientAccount) {
+                return
+            }
 
-            setShowCreateForm(false)
-            setFirstName('')
-            setLastName('')
-            setPhone('')
+            setActionLoading(true)
+            setError(null)
 
-            await onChanged()
-        } catch (err) {
-            setError(
-                err instanceof Error
-                    ? err.message
-                    : 'Не удалось создать клиента',
-            )
-        } finally {
-            setActionLoading(false)
-        }
-    }
+            try {
+                const created =
+                    await createClient({
+                        firstName:
+                        normalizedFirstName,
+                        lastName:
+                        normalizedLastName,
+                        phoneList:
+                            phone.trim()
+                                ? [phone.trim()]
+                                : [],
+                    })
 
-    const handleLinkClient = async () => {
-        if (
-            !selectedClientId ||
-            !clientAccount
-        ) {
-            return
-        }
-
-        setActionLoading(true)
-        setError(null)
-
-        try {
-            await assignClientAccount(
-                selectedClientId,
-                clientAccount.id,
-            )
-
-            const linkedClient =
-                await getClient(
-                    selectedClientId,
+                await assignClientAccount(
+                    created.id,
+                    clientAccount.id,
                 )
 
-            const accounts =
-                await getVisibleClientAccounts({
-                    clientId:
-                    selectedClientId,
-                    workspaceIds,
-                    isSuperAdmin,
-                    currentAccountId:
-                    clientAccount.id,
-                })
+                const updatedAccount:
+                    ClientAccountSummary = {
+                    ...clientAccount,
+                    clientId: created.id,
+                }
 
-            setClient(linkedClient)
-            setClientAccounts(accounts)
+                setClient(created)
 
-            setShowLinkForm(false)
-            setSelectedClientId('')
+                setClientAccounts([
+                    updatedAccount,
+                ])
 
-            await onChanged()
-        } catch (err) {
-            setError(
-                err instanceof Error
-                    ? err.message
-                    : 'Не удалось привязать аккаунт',
-            )
-        } finally {
-            setActionLoading(false)
-        }
-    }
+                setShowCreateForm(false)
+                setFirstName('')
+                setLastName('')
+                setPhone('')
 
-    const handleUnlink = async () => {
-        if (!clientAccount) {
-            return
+                await onChanged()
+            } catch (err) {
+                setError(
+                    err instanceof Error
+                        ? err.message
+                        : 'Не удалось создать клиента',
+                )
+            } finally {
+                setActionLoading(false)
+            }
         }
 
-        setActionLoading(true)
-        setError(null)
-
-        try {
-            await unassignClientAccount(
-                clientAccount.clientId,
-                clientAccount.id,
-            )
-
-            const orphanAccount:
-                ClientAccountSummary = {
-                ...clientAccount,
-                clientId: null,
+    const handleLinkClient =
+        async () => {
+            if (
+                !selectedClientId ||
+                !clientAccount
+            ) {
+                return
             }
 
-            setClient(null)
-            setClientAccounts([
-                orphanAccount,
-            ])
+            setActionLoading(true)
+            setError(null)
 
-            await onChanged()
-        } catch (err) {
-            setError(
-                err instanceof Error
-                    ? err.message
-                    : 'Не удалось отвязать аккаунт',
-            )
-        } finally {
-            setActionLoading(false)
+            try {
+                await assignClientAccount(
+                    selectedClientId,
+                    clientAccount.id,
+                )
+
+                const linkedClient =
+                    await getClient(
+                        selectedClientId,
+                    )
+
+                const accounts =
+                    await getClientAccountsByClient(
+                        selectedClientId,
+                    )
+
+                setClient(linkedClient)
+                setClientAccounts(accounts)
+
+                setShowLinkForm(false)
+                setSelectedClientId('')
+
+                await onChanged()
+            } catch (err) {
+                setError(
+                    err instanceof Error
+                        ? err.message
+                        : 'Не удалось привязать аккаунт',
+                )
+            } finally {
+                setActionLoading(false)
+            }
         }
-    }
+
+    const handleUnlink =
+        async () => {
+            if (!clientAccount?.clientId) {
+                return
+            }
+
+            setActionLoading(true)
+            setError(null)
+
+            try {
+                await unassignClientAccount(
+                    clientAccount.clientId,
+                    clientAccount.id,
+                )
+
+                const orphanAccount:
+                    ClientAccountSummary = {
+                    ...clientAccount,
+                    clientId: null,
+                }
+
+                setClient(null)
+                setClientAccounts([
+                    orphanAccount,
+                ])
+
+                await onChanged()
+            } catch (err) {
+                setError(
+                    err instanceof Error
+                        ? err.message
+                        : 'Не удалось отвязать аккаунт',
+                )
+            } finally {
+                setActionLoading(false)
+            }
+        }
 
     const clientName = client
         ? [
@@ -449,7 +429,9 @@ function ConversationClientPanel({
                                         className="conversation-client-primary-button"
                                         onClick={() => {
                                             setError(null)
-                                            setShowCreateForm(true)
+                                            setShowCreateForm(
+                                                true,
+                                            )
                                         }}
                                     >
                                         Создать клиента
@@ -460,7 +442,9 @@ function ConversationClientPanel({
                                         className="conversation-client-secondary-button"
                                         onClick={() => {
                                             setError(null)
-                                            setShowLinkForm(true)
+                                            setShowLinkForm(
+                                                true,
+                                            )
                                             void loadClients()
                                         }}
                                     >
@@ -544,11 +528,12 @@ function ConversationClientPanel({
                                     <button
                                         type="button"
                                         className="conversation-client-secondary-button"
-                                        onClick={() =>
+                                        onClick={() => {
                                             setShowCreateForm(
                                                 false,
                                             )
-                                        }
+                                            setError(null)
+                                        }}
                                         disabled={
                                             actionLoading
                                         }
@@ -561,368 +546,315 @@ function ConversationClientPanel({
 
                         {showLinkForm && (
                             <div className="conversation-client-form">
-                                {loadingClients ? (
-                                    <div className="conversation-client-panel-state">
-                                        Загрузка клиентов…
-                                    </div>
-                                ) : (
-                                    <>
-                                        <label>
-                                            <span>
-                                                Клиент
-                                            </span>
+                                <label>
+                                    <span>
+                                        Клиент
+                                    </span>
 
-                                            <select
-                                                value={
-                                                    selectedClientId
-                                                }
-                                                onChange={event =>
-                                                    setSelectedClientId(
-                                                        event.target.value,
-                                                    )
-                                                }
-                                                disabled={
-                                                    actionLoading
-                                                }
-                                            >
-                                                <option value="">
-                                                    Выберите клиента
+                                    <select
+                                        value={
+                                            selectedClientId
+                                        }
+                                        onChange={event =>
+                                            setSelectedClientId(
+                                                event.target
+                                                    .value,
+                                            )
+                                        }
+                                        disabled={
+                                            actionLoading ||
+                                            loadingClients
+                                        }
+                                    >
+                                        <option value="">
+                                            {loadingClients
+                                                ? 'Загрузка…'
+                                                : 'Выберите клиента'}
+                                        </option>
+
+                                        {clients.map(
+                                            item => (
+                                                <option
+                                                    key={
+                                                        item.id
+                                                    }
+                                                    value={
+                                                        item.id
+                                                    }
+                                                >
+                                                    {[
+                                                            item.firstName,
+                                                            item.lastName,
+                                                        ]
+                                                            .filter(
+                                                                Boolean,
+                                                            )
+                                                            .join(
+                                                                ' ',
+                                                            ) ||
+                                                        'Без имени'}
                                                 </option>
+                                            ),
+                                        )}
+                                    </select>
+                                </label>
 
-                                                {clients.map(
-                                                    item => {
-                                                        const name =
-                                                            [
-                                                                item.firstName,
-                                                                item.lastName,
-                                                            ]
-                                                                .filter(
-                                                                    Boolean,
-                                                                )
-                                                                .join(
-                                                                    ' ',
-                                                                )
+                                <div className="conversation-client-form-actions">
+                                    <button
+                                        type="button"
+                                        className="conversation-client-primary-button"
+                                        onClick={() =>
+                                            void handleLinkClient()
+                                        }
+                                        disabled={
+                                            actionLoading ||
+                                            !selectedClientId
+                                        }
+                                    >
+                                        {actionLoading
+                                            ? 'Привязка…'
+                                            : 'Привязать'}
+                                    </button>
 
-                                                        return (
-                                                            <option
-                                                                key={
-                                                                    item.id
-                                                                }
-                                                                value={
-                                                                    item.id
-                                                                }
-                                                            >
-                                                                {name ||
-                                                                    'Без имени'}
-                                                            </option>
-                                                        )
-                                                    },
-                                                )}
-                                            </select>
-                                        </label>
-
-                                        <div className="conversation-client-form-actions">
-                                            <button
-                                                type="button"
-                                                className="conversation-client-primary-button"
-                                                onClick={() =>
-                                                    void handleLinkClient()
-                                                }
-                                                disabled={
-                                                    actionLoading ||
-                                                    !selectedClientId
-                                                }
-                                            >
-                                                {actionLoading
-                                                    ? 'Привязка…'
-                                                    : 'Привязать'}
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                className="conversation-client-secondary-button"
-                                                onClick={() =>
-                                                    setShowLinkForm(
-                                                        false,
-                                                    )
-                                                }
-                                                disabled={
-                                                    actionLoading
-                                                }
-                                            >
-                                                Отмена
-                                            </button>
-                                        </div>
-                                    </>
-                                )}
+                                    <button
+                                        type="button"
+                                        className="conversation-client-secondary-button"
+                                        onClick={() => {
+                                            setShowLinkForm(
+                                                false,
+                                            )
+                                            setSelectedClientId(
+                                                '',
+                                            )
+                                            setError(null)
+                                        }}
+                                        disabled={
+                                            actionLoading
+                                        }
+                                    >
+                                        Отмена
+                                    </button>
+                                </div>
                             </div>
                         )}
                     </>
                 )}
+
+                {error && (
+                    <div className="conversation-client-panel-error">
+                        {error}
+                    </div>
+                )}
             </div>
 
-            {currentAccount && (
+            {client && currentAccount && (
                 <div className="conversation-client-panel-section">
-                    <h3>Аккаунты</h3>
+                    <div className="conversation-client-section-header">
+                        <h4>
+                            Аккаунт
+                        </h4>
+                    </div>
 
-                    <div className="conversation-accounts-list">
-                        <div className="conversation-account-card conversation-account-card-current">
-                            <div className="conversation-account-platform">
-                                <PlatformIcon
-                                    type={
-                                        currentAccount.channelType
-                                    }
-                                    size={20}
-                                />
+                    <div className="conversation-client-account-card">
+                        <div className="conversation-client-account-icon">
+                            <PlatformIcon
+                                type={
+                                    currentAccount.channelType
+                                }
+                                size={18}
+                            />
+                        </div>
 
+                        <div className="conversation-client-account-info">
+                            <strong>
+                                {currentAccount.displayName ||
+                                    currentAccount.username ||
+                                    currentAccount.phone ||
+                                    currentAccount.externalId}
+                            </strong>
+
+                            <span>
                                 <PlatformName
                                     type={
                                         currentAccount.channelType
                                     }
                                 />
-
-                                <span className="conversation-account-current">
-                                    Текущий
-                                </span>
-                            </div>
-
-                            <div className="conversation-client-field">
-                                <span>Имя</span>
-                                <strong>
-                                    {currentAccount.displayName ||
-                                        currentAccount.username ||
-                                        currentAccount.phone ||
-                                        currentAccount.externalId}
-                                </strong>
-                            </div>
-
-                            <div className="conversation-client-field">
-                                <span>ID платформы</span>
-                                <strong>
-                                    {
-                                        currentAccount.externalId
-                                    }
-                                </strong>
-                            </div>
+                            </span>
 
                             {currentAccount.username && (
-                                <div className="conversation-client-field">
-                                    <span>Username</span>
-                                    <strong>
-                                        @
-                                        {
-                                            currentAccount.username
-                                        }
-                                    </strong>
-                                </div>
+                                <span>
+                                    @
+                                    {
+                                        currentAccount.username
+                                    }
+                                </span>
                             )}
 
                             {currentAccount.phone && (
-                                <div className="conversation-client-field">
-                                    <span>Телефон</span>
-                                    <strong>
-                                        {
-                                            currentAccount.phone
-                                        }
-                                    </strong>
-                                </div>
+                                <span>
+                                    {
+                                        currentAccount.phone
+                                    }
+                                </span>
                             )}
+                        </div>
+                    </div>
 
-                            {currentAccount.clientId !== null && (
+                    <div className="conversation-client-actions">
+                        {otherAccounts.length >
+                            0 && (
                                 <button
                                     type="button"
                                     className="conversation-client-secondary-button"
                                     onClick={() =>
-                                        void handleUnlink()
-                                    }
-                                    disabled={
-                                        actionLoading
+                                        setShowOtherAccounts(
+                                            value =>
+                                                !value,
+                                        )
                                     }
                                 >
-                                    {actionLoading
-                                        ? 'Выполняется…'
-                                        : 'Отвязать аккаунт'}
+                                    {showOtherAccounts
+                                        ? 'Скрыть другие аккаунты'
+                                        : `Другие аккаунты (${otherAccounts.length})`}
                                 </button>
                             )}
-                        </div>
 
-                        {otherAccounts.length > 0 && (
-                            <>
-                                <button
-                                    type="button"
-                                    className="conversation-accounts-toggle"
-                                    onClick={() =>
-                                        setShowOtherAccounts(
-                                            value => !value,
-                                        )
-                                    }
-                                >
-                                    <span>
-                                        Другие (
-                                        {
-                                            otherAccounts.length
-                                        }
-                                        )
-                                    </span>
+                        <button
+                            type="button"
+                            className="conversation-client-secondary-button"
+                            onClick={() =>
+                                void handleUnlink()
+                            }
+                            disabled={
+                                actionLoading
+                            }
+                        >
+                            {actionLoading
+                                ? 'Выполняется…'
+                                : 'Отвязать аккаунт'}
+                        </button>
+                    </div>
 
-                                    <span>
-                                        {showOtherAccounts
-                                            ? '▴'
-                                            : '▾'}
-                                    </span>
-                                </button>
-
-                                {showOtherAccounts &&
-                                    otherAccounts.map(
-                                        account => {
-                                            const name =
-                                                account.displayName ||
-                                                account.username ||
-                                                account.phone ||
-                                                account.externalId
-
-                                            return (
-                                                <div
-                                                    key={
-                                                        account.id
+                    {showOtherAccounts &&
+                        otherAccounts.length >
+                        0 && (
+                            <div className="conversation-client-other-accounts">
+                                {otherAccounts.map(
+                                    account => (
+                                        <div
+                                            key={
+                                                account.id
+                                            }
+                                            className="conversation-client-account-card"
+                                        >
+                                            <div className="conversation-client-account-icon">
+                                                <PlatformIcon
+                                                    type={
+                                                        account.channelType
                                                     }
-                                                    className="conversation-account-card"
-                                                >
-                                                    <div className="conversation-account-platform">
-                                                        <PlatformIcon
-                                                            type={
-                                                                account.channelType
-                                                            }
-                                                            size={
-                                                                20
-                                                            }
-                                                        />
+                                                    size={
+                                                        18
+                                                    }
+                                                />
+                                            </div>
 
-                                                        <PlatformName
-                                                            type={
-                                                                account.channelType
-                                                            }
-                                                        />
-                                                    </div>
+                                            <div className="conversation-client-account-info">
+                                                <strong>
+                                                    {account.displayName ||
+                                                        account.username ||
+                                                        account.phone ||
+                                                        account.externalId}
+                                                </strong>
 
-                                                    <div className="conversation-client-field">
-                                                        <span>
-                                                            Имя
-                                                        </span>
-                                                        <strong>
-                                                            {
-                                                                name
-                                                            }
-                                                        </strong>
-                                                    </div>
+                                                <span>
+                                                    <PlatformName
+                                                        type={
+                                                            account.channelType
+                                                        }
+                                                    />
+                                                </span>
 
-                                                    <div className="conversation-client-field">
-                                                        <span>
-                                                            ID платформы
-                                                        </span>
-                                                        <strong>
-                                                            {
-                                                                account.externalId
-                                                            }
-                                                        </strong>
-                                                    </div>
+                                                {account.username && (
+                                                    <span>
+                                                        @
+                                                        {
+                                                            account.username
+                                                        }
+                                                    </span>
+                                                )}
 
-                                                    {account.username && (
-                                                        <div className="conversation-client-field">
-                                                            <span>
-                                                                Username
-                                                            </span>
-                                                            <strong>
-                                                                @
-                                                                {
-                                                                    account.username
-                                                                }
-                                                            </strong>
-                                                        </div>
-                                                    )}
-
-                                                    {account.phone && (
-                                                        <div className="conversation-client-field">
-                                                            <span>
-                                                                Телефон
-                                                            </span>
-                                                            <strong>
-                                                                {
-                                                                    account.phone
-                                                                }
-                                                            </strong>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )
-                                        },
-                                    )}
-                            </>
+                                                {account.phone && (
+                                                    <span>
+                                                        {
+                                                            account.phone
+                                                        }
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ),
+                                )}
+                            </div>
                         )}
-                    </div>
                 </div>
             )}
 
-            {error && (
-                <div className="conversation-client-panel-error">
-                    {error}
-                </div>
-            )}
-
-            <div className="conversation-client-panel-section">
-                <h3>Канал</h3>
-
-                {channel ? (
-                    <div className="conversation-channel-card">
-                        <div className="conversation-channel-info">
-                            <PlatformIcon
-                                type={channel.type}
-                                size={20}
-                            />
-
-                            <div>
-                                <strong>
-                                    {channel.name}
-                                </strong>
-
-                                <span>
-                                    <PlatformName
-                                        type={
-                                            channel.type
-                                        }
-                                    />
-                                </span>
-                            </div>
+            {isSuperAdmin &&
+                client && (
+                    <div className="conversation-client-panel-section">
+                        <div className="conversation-client-section-header">
+                            <h4>
+                                Клиент
+                            </h4>
                         </div>
 
-                        <div className="conversation-client-field">
-                            <span>Статус</span>
-                            <strong>
-                                {channel.status}
-                            </strong>
-                        </div>
-
-                        {channel.account && (
-                            <div className="conversation-client-field">
-                                <span>
-                                    Аккаунт канала
-                                </span>
-
-                                <strong>
-                                    {channel.account.displayName ||
-                                        channel.account.username ||
-                                        channel.account.phone ||
-                                        channel.account.externalId}
-                                </strong>
-                            </div>
-                        )}
-                    </div>
-                ) : (
-                    <div className="conversation-client-panel-state">
-                        Канал не найден
+                        <button
+                            type="button"
+                            className="conversation-client-secondary-button"
+                            onClick={() => {
+                                setShowLinkForm(
+                                    true,
+                                )
+                                void loadClients()
+                            }}
+                        >
+                            Привязать другой аккаунт
+                        </button>
                     </div>
                 )}
-            </div>
+
+            {channel && (
+                <div className="conversation-client-panel-section">
+                    <div className="conversation-client-section-header">
+                        <h4>
+                            Канал
+                        </h4>
+                    </div>
+
+                    <div className="conversation-client-channel">
+                        <PlatformIcon
+                            type={
+                                channel.type
+                            }
+                            size={18}
+                        />
+
+                        <div>
+                            <strong>
+                                {channel.name}
+                            </strong>
+
+                            <span>
+                                <PlatformName
+                                    type={
+                                        channel.type
+                                    }
+                                />
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            )}
         </aside>
     )
 }

@@ -23,7 +23,6 @@ import org.springframework.transaction.annotation.Transactional;
 import kit.penny.clientbus.common.dto.conversation.ConversationDto;
 import kit.penny.clientbus.server.mapper.ConversationMapper;
 import kit.penny.clientbus.common.dto.client.ClientListItemDto;
-import kit.penny.clientbus.common.dto.client.ClientListItemDto;
 import kit.penny.clientbus.server.persistence.repository.ClientRepository.ClientListAggregateProjection;
 
 import java.time.Instant;
