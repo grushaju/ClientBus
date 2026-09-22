@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-09-22 23:29:58
+- Generated: 2026-09-22 23:34:34
 - Branch: `main`
-- Commit: `b3cbe04`
+- Commit: `2e48ac8`
 
 ## Project Structure
 
@@ -441,9 +441,77 @@
 - `server/src/test/resources/application-test.yml`
 - `server/src/test/resources/db/migration/V0__init_schemas.sql`
 
+### ui
+
+#### `src`
+
+- `ui/src/api/apiClient.ts`
+- `ui/src/api/channelApi.ts`
+- `ui/src/api/clientAccountApi.ts`
+- `ui/src/api/clientApi.ts`
+- `ui/src/api/clientVisibility.ts`
+- `ui/src/api/conversationApi.ts`
+- `ui/src/api/employeeApi.ts`
+- `ui/src/api/employeeWorkspaceApi.ts`
+- `ui/src/api/messageApi.ts`
+- `ui/src/api/types/client.ts`
+- `ui/src/api/types/conversation.ts`
+- `ui/src/api/types/message.ts`
+- `ui/src/api/workspaceApi.ts`
+- `ui/src/app/App.tsx`
+- `ui/src/app/router.tsx`
+- `ui/src/auth/authApi.ts`
+- `ui/src/auth/AuthContext.tsx`
+- `ui/src/auth/authStorage.ts`
+- `ui/src/auth/types.ts`
+- `ui/src/auth/userRole.ts`
+- `ui/src/components/common/platform/platform.ts`
+- `ui/src/components/common/platform/PlatformIcon.tsx`
+- `ui/src/components/common/platform/PlatformName.tsx`
+- `ui/src/components/inbox/ConversationClientPanel.tsx`
+- `ui/src/components/inbox/ConversationHeader.tsx`
+- `ui/src/components/inbox/ConversationList.tsx`
+- `ui/src/components/inbox/ConversationListItem.tsx`
+- `ui/src/components/inbox/ConversationView.tsx`
+- `ui/src/components/inbox/ImageViewer.tsx`
+- `ui/src/components/inbox/InboxLayout.tsx`
+- `ui/src/components/inbox/MessageBubble.tsx`
+- `ui/src/components/inbox/MessageComposer.tsx`
+- `ui/src/components/inbox/MessageList.tsx`
+- `ui/src/components/inbox/useConversationMessages.ts`
+- `ui/src/components/layout/AppLayout.tsx`
+- `ui/src/components/layout/ProtectedLayout.tsx`
+- `ui/src/components/layout/RoleProtectedLayout.tsx`
+- `ui/src/components/layout/Sidebar.tsx`
+- `ui/src/index.css`
+- `ui/src/main.tsx`
+- `ui/src/pages/ChannelsPage.tsx`
+- `ui/src/pages/ClientsPage.tsx`
+- `ui/src/pages/EmployeesPage.tsx`
+- `ui/src/pages/InboxPage.tsx`
+- `ui/src/pages/LoginPage.tsx`
+- `ui/src/pages/SettingsPage.tsx`
+- `ui/src/pages/WorkspacesPage.tsx`
+- `ui/src/workspace/WorkspaceContext.tsx`
+
+#### `public`
+
+- `ui/public/favicon.ico`
+
+#### UI configuration
+
+- `ui/package.json`
+- `ui/index.html`
+- `ui/tsconfig.json`
+- `ui/tsconfig.app.json`
+- `ui/tsconfig.node.json`
+- `ui/vite.config.ts`
+- `ui/vite.config.js`
+
 ## Summary
 
 - Maven modules: 3
 - Java files: 240
-- Git commit: `b3cbe04`
+- UI source files: 48
+- Git commit: `2e48ac8`
 

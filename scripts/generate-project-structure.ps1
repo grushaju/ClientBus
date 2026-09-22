@@ -4,13 +4,16 @@
 # ClientBus project structure generator
 # Windows / PowerShell
 #
-# Generates index.md containing only:
+# Generates index.md containing:
 #   - Maven modules
 #   - src/main/java
 #   - src/main/resources
 #   - src/test/java
 #   - src/test/resources
 #   - Java packages and classes
+#   - UI source tree (ui/src)
+#   - UI public/static files (ui/public)
+#   - UI configuration files
 #
 # Excludes IDE/build/git/generated garbage.
 # ------------------------------------------------------------
@@ -120,6 +123,13 @@ Get-ChildItem -Path $Root -Directory |
             }
         }
     }
+
+# ------------------------------------------------------------
+# Discover UI
+# ------------------------------------------------------------
+
+$UiPath = Join-Path $Root "ui"
+$HasUi = Test-Path (Join-Path $UiPath "package.json")
 
 # ------------------------------------------------------------
 # Generate document
@@ -232,6 +242,109 @@ foreach ($Module in $Modules) {
 }
 
 # ------------------------------------------------------------
+# UI source tree
+# ------------------------------------------------------------
+
+if ($HasUi) {
+
+    $Lines.Add("### ui")
+    $Lines.Add("")
+
+    # --------------------------------------------------------
+    # ui/src
+    # --------------------------------------------------------
+
+    $UiSourceRoot = Join-Path $UiPath "src"
+
+    if (Test-Path $UiSourceRoot) {
+
+        $Lines.Add("#### ``src``")
+        $Lines.Add("")
+
+        $UiFiles = Get-ChildItem `
+            -Path $UiSourceRoot `
+            -Recurse `
+            -File |
+            Where-Object {
+                $_.Extension -in @(
+                    ".ts",
+                    ".tsx",
+                    ".js",
+                    ".jsx",
+                    ".css",
+                    ".scss"
+                )
+            }
+
+        foreach ($UiFile in ($UiFiles | Sort-Object FullName)) {
+
+            $Relative = Get-RelativePath $UiFile.FullName
+
+            $Lines.Add("- ``$Relative``")
+        }
+
+        $Lines.Add("")
+    }
+
+    # --------------------------------------------------------
+    # ui/public
+    # --------------------------------------------------------
+
+    $UiPublicRoot = Join-Path $UiPath "public"
+
+    if (Test-Path $UiPublicRoot) {
+
+        $Lines.Add("#### ``public``")
+        $Lines.Add("")
+
+        $UiPublicFiles = Get-ChildItem `
+            -Path $UiPublicRoot `
+            -Recurse `
+            -File
+
+        foreach ($UiPublicFile in ($UiPublicFiles | Sort-Object FullName)) {
+
+            $Relative = Get-RelativePath $UiPublicFile.FullName
+
+            $Lines.Add("- ``$Relative``")
+        }
+
+        $Lines.Add("")
+    }
+
+    # --------------------------------------------------------
+    # UI configuration
+    # --------------------------------------------------------
+
+    $Lines.Add("#### UI configuration")
+    $Lines.Add("")
+
+    $UiConfigFiles = @(
+        "package.json",
+        "index.html",
+        "tsconfig.json",
+        "tsconfig.app.json",
+        "tsconfig.node.json",
+        "vite.config.ts",
+        "vite.config.js"
+    )
+
+    foreach ($ConfigFile in $UiConfigFiles) {
+
+        $FullConfigFile = Join-Path $UiPath $ConfigFile
+
+        if (Test-Path $FullConfigFile) {
+
+            $Relative = Get-RelativePath $FullConfigFile
+
+            $Lines.Add("- ``$Relative``")
+        }
+    }
+
+    $Lines.Add("")
+}
+
+# ------------------------------------------------------------
 # Summary
 # ------------------------------------------------------------
 
@@ -248,8 +361,36 @@ foreach ($Module in $Modules) {
                 -Path $JavaRoot `
                 -Recurse `
                 -File `
-                -Filter "*.java" `
-                | Measure-Object
+                -Filter "*.java" |
+                Measure-Object
+        ).Count
+    }
+}
+
+$UiFilesCount = 0
+
+if ($HasUi) {
+
+    $UiSourceRoot = Join-Path $UiPath "src"
+
+    if (Test-Path $UiSourceRoot) {
+
+        $UiFilesCount = (
+            Get-ChildItem `
+                -Path $UiSourceRoot `
+                -Recurse `
+                -File |
+                Where-Object {
+                    $_.Extension -in @(
+                        ".ts",
+                        ".tsx",
+                        ".js",
+                        ".jsx",
+                        ".css",
+                        ".scss"
+                    )
+                } |
+                Measure-Object
         ).Count
     }
 }
@@ -258,6 +399,7 @@ $Lines.Add("## Summary")
 $Lines.Add("")
 $Lines.Add("- Maven modules: $($Modules.Count)")
 $Lines.Add("- Java files: $JavaFilesCount")
+$Lines.Add("- UI source files: $UiFilesCount")
 $Lines.Add("- Git commit: ``$CommitSha``")
 $Lines.Add("")
 
