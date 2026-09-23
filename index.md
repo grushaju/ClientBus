@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-09-23 15:15:27
+- Generated: 2026-09-24 00:27:14
 - Branch: `main`
-- Commit: `52f7b5f`
+- Commit: `8e8bc83`
 
 ## Project Structure
 
@@ -454,6 +454,8 @@
 - `ui/src/api/employeeApi.ts`
 - `ui/src/api/employeeWorkspaceApi.ts`
 - `ui/src/api/messageApi.ts`
+- `ui/src/api/telegramChannelApi.ts`
+- `ui/src/api/types/channel.ts`
 - `ui/src/api/types/client.ts`
 - `ui/src/api/types/clientAccount.ts`
 - `ui/src/api/types/conversation.ts`
@@ -466,6 +468,14 @@
 - `ui/src/auth/authStorage.ts`
 - `ui/src/auth/types.ts`
 - `ui/src/auth/userRole.ts`
+- `ui/src/components/channels/ChannelConnectionDialog.tsx`
+- `ui/src/components/channels/ChannelDetailsDialog.tsx`
+- `ui/src/components/channels/channelLabels.ts`
+- `ui/src/components/channels/channelTypeConfig.ts`
+- `ui/src/components/channels/CreateChannelDialog.tsx`
+- `ui/src/components/channels/DeleteChannelDialog.tsx`
+- `ui/src/components/channels/EditChannelDialog.tsx`
+- `ui/src/components/channels/TelegramConnectionFlow.tsx`
 - `ui/src/components/clients/ClientAccountPicker.tsx`
 - `ui/src/components/clients/ClientAccountsSection.tsx`
 - `ui/src/components/clients/ClientCreateForm.tsx`
@@ -519,6 +529,6 @@
 
 - Maven modules: 3
 - Java files: 240
-- UI source files: 55
-- Git commit: `52f7b5f`
+- UI source files: 65
+- Git commit: `8e8bc83`
 
