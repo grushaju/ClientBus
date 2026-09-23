@@ -200,14 +200,10 @@ public class ClientService {
 
         } else if (currentUserService.isEmployee()) {
 
-            UUID employeeId =
-                    currentUserService.getCurrentEmployeeId();
-
             clients =
                     clientRepository
-                            .findAllVisibleToEmployee(
-                                    organizationId,
-                                    employeeId
+                            .findAllByOrganizationId(
+                                    organizationId
                             );
 
         } else {
@@ -241,14 +237,10 @@ public class ClientService {
 
         } else if (currentUserService.isEmployee()) {
 
-            UUID employeeId =
-                    currentUserService.getCurrentEmployeeId();
-
             clients =
                     clientRepository
-                            .findAllVisibleToEmployee(
-                                    organizationId,
-                                    employeeId
+                            .findAllByOrganizationId(
+                                    organizationId
                             );
 
         } else {
@@ -294,10 +286,8 @@ public class ClientService {
         } else if (currentUserService.isEmployee()) {
 
             clients =
-                    clientRepository.searchClientsForEmployee(
+                    clientRepository.searchClients(
                             organizationId,
-                            currentUserService
-                                    .getCurrentEmployeeId(),
                             normalizedQuery
                     );
 
@@ -448,10 +438,8 @@ public class ClientService {
         } else if (currentUserService.isEmployee()) {
 
             clients =
-                    clientRepository.searchClientsForEmployee(
+                    clientRepository.searchClients(
                             organizationId,
-                            currentUserService
-                                    .getCurrentEmployeeId(),
                             normalizedQuery
                     );
 
@@ -827,7 +815,7 @@ public class ClientService {
 
             conversations =
                     conversationRepository
-                            .findAllByClientIdAndEmployeeIdOrderByLastMessageAtDesc(
+                            .findAllAccessibleByClientIdAndEmployeeIdOrderByLastMessageAtDesc(
                                     client.getId(),
                                     currentUserService
                                             .getCurrentEmployeeId()
@@ -894,28 +882,13 @@ public class ClientService {
             return;
         }
 
-        if (!currentUserService.isEmployee()) {
-            throw new AccessDeniedException(
-                    "Only EMPLOYEE or SUPER_ADMIN can access clients"
-            );
+        if (currentUserService.isEmployee()) {
+            return;
         }
 
-        UUID employeeId =
-                currentUserService.getCurrentEmployeeId();
-
-        boolean accessible =
-                clientRepository.existsVisibleToEmployee(
-                        client.getId(),
-                        currentUserService
-                                .getCurrentOrganizationId(),
-                        employeeId
-                );
-
-        if (!accessible) {
-            throw new AccessDeniedException(
-                    "Client is not accessible"
-            );
-        }
+        throw new AccessDeniedException(
+                "Only EMPLOYEE or SUPER_ADMIN can access clients"
+        );
     }
 
     private void requireClientOrganizationAccess(

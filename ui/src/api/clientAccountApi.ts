@@ -7,10 +7,7 @@ import type {
 export async function getClientAccount(
     id: string,
 ): Promise<ClientAccountDto> {
-    const response = await apiFetch(
-        `/api/clientaccounts/${id}`,
-    )
-
+    const response = await apiFetch(`/api/clientaccounts/${id}`)
     return response.json()
 }
 
@@ -44,17 +41,29 @@ export async function getClientAccountsByClient(
     return response.json()
 }
 
+export async function searchUnassignedClientAccounts(
+    query: string,
+    signal?: AbortSignal,
+): Promise<ClientAccountDto[]> {
+    const params = new URLSearchParams()
+    params.set('query', query)
+
+    const response = await apiFetch(
+        `/api/clientaccounts/unassigned/search?${params.toString()}`,
+        { signal },
+    )
+
+    return response.json()
+}
+
 export async function updateClientAccount(
     id: string,
     request: UpdateClientAccountRequest,
 ): Promise<ClientAccountDto> {
-    const response = await apiFetch(
-        `/api/clientaccounts/${id}`,
-        {
-            method: 'PUT',
-            body: JSON.stringify(request),
-        },
-    )
+    const response = await apiFetch(`/api/clientaccounts/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(request),
+    })
 
     return response.json()
 }

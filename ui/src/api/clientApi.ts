@@ -10,9 +10,14 @@ import type {
 } from './types/clientAccount'
 import type { ConversationDto } from './types/conversation'
 
-export async function getClients(): Promise<ClientListItemDto[]> {
+export async function getClients(
+    signal?: AbortSignal,
+): Promise<ClientListItemDto[]> {
     const response = await apiFetch(
         '/api/clients',
+        {
+            signal,
+        },
     )
 
     return response.json()
@@ -20,13 +25,14 @@ export async function getClients(): Promise<ClientListItemDto[]> {
 
 export async function searchClients(
     query: string,
+    signal?: AbortSignal,
 ): Promise<ClientListItemDto[]> {
     const params = new URLSearchParams()
-
     params.set('query', query)
 
     const response = await apiFetch(
         `/api/clients/search?${params.toString()}`,
+        { signal },
     )
 
     return response.json()

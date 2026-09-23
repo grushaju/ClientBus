@@ -602,93 +602,6 @@ class ClientRepositoryTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void findAllVisibleToEmployee_shouldReturnOnlyClientsWithAccessibleConversation() {
-        WorkspaceEntity employeeWorkspace =
-                workspaceRepository.save(
-                        TestDataFactory.workspace(
-                                organization,
-                                "Employee Workspace"
-                        )
-                );
-
-        WorkspaceEntity otherWorkspace =
-                workspaceRepository.save(
-                        TestDataFactory.workspace(
-                                organization,
-                                "Other Workspace"
-                        )
-                );
-
-        EmployeeEntity employee =
-                createEmployee();
-
-        employeeWorkspaceRepository.save(
-                new EmployeeWorkspaceEntity(
-                        employee,
-                        employeeWorkspace
-                )
-        );
-
-        ClientEntity visibleClient =
-                clientRepository.save(
-                        TestDataFactory.client(
-                                organization,
-                                "Visible",
-                                "Client"
-                        )
-                );
-
-        ClientEntity hiddenClient =
-                clientRepository.save(
-                        TestDataFactory.client(
-                                organization,
-                                "Hidden",
-                                "Client"
-                        )
-                );
-
-        ClientAccountEntity visibleAccount =
-                clientAccountRepository.save(
-                        TestDataFactory.clientAccount(
-                                visibleClient,
-                                ChannelType.TELEGRAM,
-                                "visible-" + UUID.randomUUID()
-                        )
-                );
-
-        ClientAccountEntity hiddenAccount =
-                clientAccountRepository.save(
-                        TestDataFactory.clientAccount(
-                                hiddenClient,
-                                ChannelType.TELEGRAM,
-                                "hidden-" + UUID.randomUUID()
-                        )
-                );
-
-        createConversation(
-                employeeWorkspace,
-                visibleAccount,
-                "visible-conversation"
-        );
-
-        createConversation(
-                otherWorkspace,
-                hiddenAccount,
-                "hidden-conversation"
-        );
-
-        List<ClientEntity> result =
-                clientRepository.findAllVisibleToEmployee(
-                        organization.getId(),
-                        employee.getId()
-                );
-
-        assertThat(result)
-                .contains(visibleClient)
-                .doesNotContain(hiddenClient);
-    }
-
-    @Test
     void searchClientsForEmployee_shouldFindByClientPhone() {
         WorkspaceEntity employeeWorkspace =
                 workspaceRepository.save(
@@ -738,9 +651,8 @@ class ClientRepositoryTest extends AbstractIntegrationTest {
         );
 
         List<ClientEntity> result =
-                clientRepository.searchClientsForEmployee(
+                clientRepository.searchClients(
                         organization.getId(),
-                        employee.getId(),
                         "8887766"
                 );
 
@@ -795,9 +707,8 @@ class ClientRepositoryTest extends AbstractIntegrationTest {
         );
 
         List<ClientEntity> result =
-                clientRepository.searchClientsForEmployee(
+                clientRepository.searchClients(
                         organization.getId(),
-                        employee.getId(),
                         "specialusername"
                 );
 
@@ -852,9 +763,8 @@ class ClientRepositoryTest extends AbstractIntegrationTest {
         );
 
         List<ClientEntity> result =
-                clientRepository.searchClientsForEmployee(
+                clientRepository.searchClients(
                         organization.getId(),
-                        employee.getId(),
                         "6664433"
                 );
 
@@ -862,70 +772,6 @@ class ClientRepositoryTest extends AbstractIntegrationTest {
                 .containsExactly(employeeClient);
     }
 
-    @Test
-    void searchClientsForEmployee_shouldNotFindClientFromInaccessibleWorkspace() {
-        WorkspaceEntity employeeWorkspace =
-                workspaceRepository.save(
-                        TestDataFactory.workspace(
-                                organization,
-                                "Employee Workspace"
-                        )
-                );
-
-        WorkspaceEntity otherWorkspace =
-                workspaceRepository.save(
-                        TestDataFactory.workspace(
-                                organization,
-                                "Other Workspace"
-                        )
-                );
-
-        EmployeeEntity employee =
-                createEmployee();
-
-        employeeWorkspaceRepository.save(
-                new EmployeeWorkspaceEntity(
-                        employee,
-                        employeeWorkspace
-                )
-        );
-
-        ClientEntity hiddenClient =
-                clientRepository.save(
-                        TestDataFactory.client(
-                                organization,
-                                "Hidden",
-                                "Client"
-                        )
-                );
-
-        ClientAccountEntity account =
-                TestDataFactory.clientAccount(
-                        hiddenClient,
-                        ChannelType.TELEGRAM,
-                        "hidden-search-" + UUID.randomUUID()
-                );
-
-        account.setUsername("HiddenEmployeeUsername");
-
-        clientAccountRepository.save(account);
-
-        createConversation(
-                otherWorkspace,
-                account,
-                "hidden-conversation"
-        );
-
-        List<ClientEntity> result =
-                clientRepository.searchClientsForEmployee(
-                        organization.getId(),
-                        employee.getId(),
-                        "HiddenEmployeeUsername"
-                );
-
-        assertThat(result)
-                .isEmpty();
-    }
 
     @Test
     void findListAggregatesForEmployee_shouldAggregateOnlyAccessibleAccounts() {

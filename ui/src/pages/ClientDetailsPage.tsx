@@ -17,6 +17,8 @@ import {
     updateClient,
 } from '../api/clientApi'
 
+import ClientAccountsSection from '../components/clients/ClientAccountsSection'
+
 import type {
     ClientDto,
     UpdateClientRequest,
@@ -29,6 +31,10 @@ import type {
 import type {
     ConversationDto,
 } from '../api/types/conversation'
+
+import {
+    useWorkspace,
+} from '../workspace/WorkspaceContext'
 
 function ClientDetailsPage() {
     const navigate = useNavigate()
@@ -70,6 +76,10 @@ function ClientDetailsPage() {
 
     const [enabled, setEnabled] =
         useState(true)
+
+    const {
+        setCurrentWorkspaceId,
+    } = useWorkspace()
 
     useEffect(() => {
         if (!clientId) {
@@ -517,71 +527,11 @@ function ClientDetailsPage() {
                     )}
                 </section>
 
-                <section className="client-details-card">
-                    <div className="client-details-card-header">
-                        <h2>
-                            Каналы
-                        </h2>
-
-                        <span>
-                            {accounts.length}
-                        </span>
-                    </div>
-
-                    {accounts.length === 0 ? (
-                        <div className="client-details-empty">
-                            Нет привязанных аккаунтов
-                        </div>
-                    ) : (
-                        <div className="client-account-list">
-                            {accounts.map(
-                                account => (
-                                    <div
-                                        key={
-                                            account.id
-                                        }
-                                        className="client-account-item"
-                                    >
-                                        <div>
-                                            <strong>
-                                                {
-                                                    account.displayName ||
-                                                    account.username ||
-                                                    account.externalId
-                                                }
-                                            </strong>
-
-                                            <span>
-                                                {
-                                                    account.channelType
-                                                }
-                                            </span>
-                                        </div>
-
-                                        <div>
-                                            {account.username && (
-                                                <span>
-                                                    @
-                                                    {
-                                                        account.username
-                                                    }
-                                                </span>
-                                            )}
-
-                                            {account.phone && (
-                                                <span>
-                                                    {
-                                                        account.phone
-                                                    }
-                                                </span>
-                                            )}
-                                        </div>
-                                    </div>
-                                ),
-                            )}
-                        </div>
-                    )}
-                </section>
+                <ClientAccountsSection
+                    clientId={client.id}
+                    accounts={accounts}
+                    onAccountsChange={setAccounts}
+                />
 
                 <section className="client-details-card client-conversations-card">
                     <div className="client-details-card-header">
@@ -611,11 +561,14 @@ function ClientDetailsPage() {
                                         }
                                         type="button"
                                         className="client-conversation-item"
-                                        onClick={() =>
+                                        onClick={() => {
+                                            setCurrentWorkspaceId(
+                                                conversation.workspaceId,
+                                            )
                                             navigate(
                                                 `/inbox/${conversation.id}`,
                                             )
-                                        }
+                                        }}
                                     >
                                         <div>
                                             <strong>

@@ -9,7 +9,6 @@ import {
 } from 'react-router-dom'
 
 import {
-    createClient,
     getClients,
     searchClients,
 } from '../api/clientApi'
@@ -17,6 +16,12 @@ import {
 import type {
     ClientListItemDto,
 } from '../api/types/client'
+
+import ClientCreateForm
+    from '../components/clients/ClientCreateForm'
+
+import ClientList
+    from '../components/clients/ClientList'
 
 function ClientsPage() {
     const navigate = useNavigate()
@@ -39,63 +44,64 @@ function ClientsPage() {
     const [showCreateForm, setShowCreateForm] =
         useState(false)
 
-    const [firstName, setFirstName] =
-        useState('')
-
-    const [lastName, setLastName] =
-        useState('')
-
-    const [phone, setPhone] =
-        useState('')
-
-    const [creating, setCreating] =
-        useState(false)
-
-    const loadClients = async (
-        currentQuery: string,
-    ) => {
-        setLoading(true)
-        setError(null)
-
-        try {
-            const result =
-                currentQuery.trim()
-                    ? await searchClients(
-                        currentQuery.trim(),
-                    )
-                    : await getClients()
-
-            setClients(result)
-        } catch (err) {
-            setError(
-                err instanceof Error
-                    ? err.message
-                    : 'Не удалось загрузить клиентов',
-            )
-
-            setClients([])
-        } finally {
-            setLoading(false)
-        }
-    }
-
     useEffect(() => {
+        const controller =
+            new AbortController()
+
         const timer =
-            window.setTimeout(() => {
-                void loadClients(query)
+            window.setTimeout(async () => {
+                setLoading(true)
+                setError(null)
+
+                try {
+                    const result =
+                        query.trim()
+                            ? await searchClients(
+                                query.trim(),
+                                controller.signal,
+                            )
+                            : await getClients(
+                                controller.signal,
+                            )
+
+                    if (
+                        !controller.signal.aborted
+                    ) {
+                        setClients(result)
+                    }
+                } catch (err) {
+                    if (
+                        controller.signal.aborted
+                    ) {
+                        return
+                    }
+
+                    setError(
+                        err instanceof Error
+                            ? err.message
+                            : 'Не удалось загрузить клиентов',
+                    )
+
+                    setClients([])
+                } finally {
+                    if (
+                        !controller.signal.aborted
+                    ) {
+                        setLoading(false)
+                    }
+                }
             }, 250)
 
-        return () =>
+        return () => {
             window.clearTimeout(timer)
+            controller.abort()
+        }
     }, [query])
 
     const handleSearch = (
         value: string,
     ) => {
-        const trimmed =
-            value.trim()
-
-        if (!trimmed) {
+        if (!value.trim()) {
             setSearchParams({})
             return
         }
@@ -105,55 +111,23 @@ function ClientsPage() {
         })
     }
 
-    const handleCreate = async (
-        event: React.FormEvent,
+    const handleCreated = (
+        clientId: string,
     ) => {
-        event.preventDefault()
+        setShowCreateForm(false)
 
-        if (!firstName.trim()) {
-            return
-        }
-
-        setCreating(true)
-        setError(null)
-
-        try {
-            const client =
-                await createClient({
-                    firstName:
-                        firstName.trim(),
-                    lastName:
-                        lastName.trim(),
-                    phoneList:
-                        phone.trim()
-                            ? [phone.trim()]
-                            : [],
-                })
-
-            setShowCreateForm(false)
-            setFirstName('')
-            setLastName('')
-            setPhone('')
-
-            navigate(
-                `/clients/${client.id}`,
-            )
-        } catch (err) {
-            setError(
-                err instanceof Error
-                    ? err.message
-                    : 'Не удалось создать клиента',
-            )
-        } finally {
-            setCreating(false)
-        }
+        navigate(
+            `/clients/${clientId}`,
+        )
     }
 
     return (
         <div className="clients-page">
             <div className="clients-header">
                 <div>
-                    <h1>Клиенты</h1>
+                    <h1>
+                        Клиенты
+                    </h1>
 
                     <span>
                         {clients.length}{' '}
@@ -184,88 +158,22 @@ function ClientsPage() {
                             event.target.value,
                         )
                     }
+                    aria-label="Поиск клиентов"
                 />
             </div>
 
             {showCreateForm && (
-                <form
-                    className="client-create-form"
-                    onSubmit={handleCreate}
-                >
-                    <div className="client-form-fields">
-                        <label>
-                            <span>
-                                Имя
-                            </span>
-
-                            <input
-                                value={firstName}
-                                onChange={event =>
-                                    setFirstName(
-                                        event.target.value,
-                                    )
-                                }
-                                autoFocus
-                            />
-                        </label>
-
-                        <label>
-                            <span>
-                                Фамилия
-                            </span>
-
-                            <input
-                                value={lastName}
-                                onChange={event =>
-                                    setLastName(
-                                        event.target.value,
-                                    )
-                                }
-                            />
-                        </label>
-
-                        <label>
-                            <span>
-                                Телефон
-                            </span>
-
-                            <input
-                                value={phone}
-                                onChange={event =>
-                                    setPhone(
-                                        event.target.value,
-                                    )
-                                }
-                            />
-                        </label>
-                    </div>
-
-                    <div className="client-form-actions">
-                        <button
-                            type="button"
-                            onClick={() =>
-                                setShowCreateForm(
-                                    false,
-                                )
-                            }
-                        >
-                            Отмена
-                        </button>
-
-                        <button
-                            type="submit"
-                            className="clients-primary-button"
-                            disabled={
-                                creating ||
-                                !firstName.trim()
-                            }
-                        >
-                            {creating
-                                ? 'Создание…'
-                                : 'Создать'}
-                        </button>
-                    </div>
-                </form>
+                <ClientCreateForm
+                    onCreated={
+                        handleCreated
+                    }
+                    onCancel={() =>
+                        setShowCreateForm(
+                            false,
+                        )
+                    }
+                    onError={setError}
+                />
             )}
 
             {error && (
@@ -292,95 +200,18 @@ function ClientsPage() {
 
             {!loading &&
                 clients.length > 0 && (
-                    <div className="clients-list">
-                        {clients.map(client => (
-                            <button
-                                key={client.id}
-                                type="button"
-                                className="client-list-item"
-                                onClick={() =>
-                                    navigate(
-                                        `/clients/${client.id}`,
-                                    )
-                                }
-                            >
-                                <div className="client-list-avatar">
-                                    {getInitials(
-                                        client.firstName,
-                                        client.lastName,
-                                    )}
-                                </div>
-
-                                <div className="client-list-main">
-                                    <div className="client-list-name">
-                                        <strong>
-                                            {client.firstName}{' '}
-                                            {client.lastName}
-                                        </strong>
-
-                                        {!client.enabled && (
-                                            <span className="client-disabled-badge">
-                                                Отключён
-                                            </span>
-                                        )}
-                                    </div>
-
-                                    <div className="client-list-meta">
-                                        {client.phoneList
-                                            .length > 0
-                                            ? client.phoneList.join(
-                                                ', ',
-                                            )
-                                            : 'Телефон не указан'}
-                                    </div>
-                                </div>
-
-                                <div className="client-list-stats">
-                                    <span>
-                                        {client.accountCount}{' '}
-                                        аккаунтов
-                                    </span>
-
-                                    <span>
-                                        {formatLastContact(
-                                            client.lastContactAt,
-                                        )}
-                                    </span>
-                                </div>
-                            </button>
-                        ))}
-                    </div>
+                    <ClientList
+                        clients={clients}
+                        onClientClick={
+                            clientId =>
+                                navigate(
+                                    `/clients/${clientId}`,
+                                )
+                        }
+                    />
                 )}
         </div>
     )
-}
-
-function getInitials(
-    firstName: string,
-    lastName: string,
-): string {
-    return (
-        `${firstName?.[0] ?? ''}${lastName?.[0] ?? ''}`
-    ).toUpperCase()
-}
-
-function formatLastContact(
-    value: string | null,
-): string {
-    if (!value) {
-        return 'Нет контактов'
-    }
-
-    return new Intl.DateTimeFormat(
-        'ru-RU',
-        {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-        },
-    ).format(new Date(value))
 }
 
 export default ClientsPage

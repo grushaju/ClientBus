@@ -122,6 +122,43 @@ public interface ConversationRepository
             UUID employeeId
     );
 
+    /**
+     * EMPLOYEE:
+     * только Conversation Client,
+     * которую текущий Employee действительно может открыть.
+     *
+     * Учитываются оба уровня ACL:
+     *
+     * 1. Employee имеет доступ к Workspace.
+     * 2. Conversation:
+     *      - не назначена сотруднику
+     *        или
+     *      - назначена текущему Employee.
+     *
+     * Это соответствует CurrentUserService.requireConversationAccess().
+     */
+    @Query("""
+    SELECT DISTINCT c
+    FROM ConversationEntity c
+    JOIN EmployeeWorkspaceEntity ew
+      ON ew.workspace.id = c.workspace.id
+    WHERE c.clientAccount.client.id = :clientId
+      AND ew.employee.id = :employeeId
+      AND (
+          c.assignedEmployee IS NULL
+          OR c.assignedEmployee.id = :employeeId
+      )
+    ORDER BY c.lastMessageAt DESC
+    """)
+    List<ConversationEntity>
+    findAllAccessibleByClientIdAndEmployeeIdOrderByLastMessageAtDesc(
+            @Param("clientId")
+            UUID clientId,
+
+            @Param("employeeId")
+            UUID employeeId
+    );
+
     /*
      * EMPLOYEE:
      * только Workspace, к которым Employee имеет доступ.

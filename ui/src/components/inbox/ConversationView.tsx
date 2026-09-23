@@ -39,6 +39,10 @@ import ConversationClientPanel from './ConversationClientPanel'
 import MessageComposer from './MessageComposer'
 import MessageList from './MessageList'
 import { useConversationMessages } from './useConversationMessages'
+import {
+    useWorkspace,
+} from '../../workspace/WorkspaceContext'
+
 
 function ConversationView() {
     const {
@@ -68,6 +72,10 @@ function ConversationView() {
         useState<ChannelSummary | null>(
             null,
         )
+
+    const {
+        setCurrentWorkspaceId,
+    } = useWorkspace()
 
     const [loading, setLoading] =
         useState(false)
@@ -124,6 +132,9 @@ function ConversationView() {
                         await getConversation(
                             conversationId,
                         )
+                    setCurrentWorkspaceId(
+                        result.workspaceId,
+                    )
 
                     /*
                      * Only EMPLOYEE is an operator and therefore

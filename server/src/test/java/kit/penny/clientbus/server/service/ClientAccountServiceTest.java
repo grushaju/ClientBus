@@ -52,11 +52,11 @@ class ClientAccountServiceTest {
                 )
         ).thenReturn(Optional.empty());
 
-        ClientAccountEntity savedAccount =
-                new ClientAccountEntity();
-
-        when(clientAccountRepository.save(any(ClientAccountEntity.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(
+                clientAccountRepository.saveAndFlush(
+                        any(ClientAccountEntity.class)
+                )
+        ).thenAnswer(invocation -> invocation.getArgument(0));
 
         ClientAccountEntity result =
                 clientAccountService.getOrCreateForInbound(
@@ -96,7 +96,7 @@ class ClientAccountServiceTest {
         assertNull(result.getClient());
 
         verify(clientAccountRepository)
-                .save(any(ClientAccountEntity.class));
+                .saveAndFlush(any(ClientAccountEntity.class));
     }
 
     @Test

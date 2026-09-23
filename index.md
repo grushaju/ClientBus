@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-09-23 00:25:54
+- Generated: 2026-09-23 15:15:27
 - Branch: `main`
-- Commit: `1f3c196`
+- Commit: `52f7b5f`
 
 ## Project Structure
 
@@ -466,6 +466,11 @@
 - `ui/src/auth/authStorage.ts`
 - `ui/src/auth/types.ts`
 - `ui/src/auth/userRole.ts`
+- `ui/src/components/clients/ClientAccountPicker.tsx`
+- `ui/src/components/clients/ClientAccountsSection.tsx`
+- `ui/src/components/clients/ClientCreateForm.tsx`
+- `ui/src/components/clients/ClientList.tsx`
+- `ui/src/components/clients/ClientReassignDialog.tsx`
 - `ui/src/components/common/platform/platform.ts`
 - `ui/src/components/common/platform/PlatformIcon.tsx`
 - `ui/src/components/common/platform/PlatformName.tsx`
@@ -514,6 +519,6 @@
 
 - Maven modules: 3
 - Java files: 240
-- UI source files: 50
-- Git commit: `1f3c196`
+- UI source files: 55
+- Git commit: `52f7b5f`
 

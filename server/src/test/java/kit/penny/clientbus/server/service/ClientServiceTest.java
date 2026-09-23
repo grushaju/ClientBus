@@ -1,11 +1,9 @@
 package kit.penny.clientbus.server.service;
 
 import jakarta.persistence.EntityNotFoundException;
-import kit.penny.clientbus.common.dto.client.AddClientAccountRequest;
-import kit.penny.clientbus.common.dto.client.ClientDto;
-import kit.penny.clientbus.common.dto.client.CreateClientRequest;
-import kit.penny.clientbus.common.dto.client.UpdateClientRequest;
+import kit.penny.clientbus.common.dto.client.*;
 import kit.penny.clientbus.common.dto.clientaccount.ClientAccountDto;
+import kit.penny.clientbus.common.dto.client.ClientListItemDto;
 import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.server.mapper.ClientAccountMapper;
 import kit.penny.clientbus.server.mapper.ClientMapper;
@@ -30,8 +28,11 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -64,6 +65,7 @@ class ClientServiceTest {
     private UUID organizationId;
     private UUID clientId;
     private UUID accountId;
+    private UUID employeeId;
 
     private OrganizationEntity organization;
     private ClientEntity client;
@@ -75,6 +77,7 @@ class ClientServiceTest {
         organizationId = UUID.randomUUID();
         clientId = UUID.randomUUID();
         accountId = UUID.randomUUID();
+        employeeId = UUID.randomUUID();
 
         organization = new OrganizationEntity();
         organization.setId(organizationId);
@@ -96,6 +99,23 @@ class ClientServiceTest {
         account.setPhone("+79990000000");
         account.setDisplayName("Ivan");
 
+        /*
+         * Client access is organization-scoped.
+         *
+         * By default all tests run as EMPLOYEE.
+         * SUPER_ADMIN-only scenarios override this explicitly.
+         */
+        lenient()
+                .when(currentUserService.isEmployee())
+                .thenReturn(true);
+
+        lenient()
+                .when(currentUserService.isSuperAdmin())
+                .thenReturn(false);
+
+        lenient()
+                .when(currentUserService.getCurrentEmployeeId())
+                .thenReturn(employeeId);
     }
 
     // =========================================================
@@ -162,8 +182,10 @@ class ClientServiceTest {
 
         when(organizationRepository.findById(organizationId))
                 .thenReturn(Optional.empty());
+
         when(currentUserService.getCurrentOrganizationId())
                 .thenReturn(organizationId);
+
         EntityNotFoundException exception =
                 assertThrows(
                         EntityNotFoundException.class,
@@ -377,6 +399,9 @@ class ClientServiceTest {
 
         clientService.deleteClient(clientId);
 
+        verify(currentUserService)
+                .requireSuperAdmin();
+
         verify(clientRepository)
                 .findById(clientId);
 
@@ -404,13 +429,30 @@ class ClientServiceTest {
                 exception.getMessage()
         );
 
+        verify(currentUserService)
+                .requireSuperAdmin();
+
         verify(clientRepository)
                 .findById(clientId);
 
-        verifyNoInteractions(currentUserService);
-
         verify(clientRepository, never())
                 .delete(any());
+    }
+
+    @Test
+    void deleteClient_employeeDenied() {
+
+        doThrow(new AccessDeniedException("Super admin access required"))
+                .when(currentUserService)
+                .requireSuperAdmin();
+
+        assertThrows(
+                AccessDeniedException.class,
+                () -> clientService.deleteClient(clientId)
+        );
+
+        verify(currentUserService).requireSuperAdmin();
+        verify(clientRepository, never()).findById(any());
     }
 
     // =========================================================
@@ -536,6 +578,9 @@ class ClientServiceTest {
     @Test
     void getClientsWithoutAccounts() {
 
+        when(currentUserService.isSuperAdmin())
+                .thenReturn(true);
+
         ClientEntity client2 = new ClientEntity();
         client2.setId(UUID.randomUUID());
         client2.setFirstName("Petr");
@@ -563,6 +608,9 @@ class ClientServiceTest {
         assertEquals(2, result.size());
         assertSame(dto1, result.get(0));
         assertSame(dto2, result.get(1));
+
+        verify(currentUserService)
+                .isSuperAdmin();
 
         verify(currentUserService)
                 .getCurrentOrganizationId();
@@ -601,7 +649,11 @@ class ClientServiceTest {
         when(clientRepository.findById(clientId))
                 .thenReturn(Optional.of(client));
 
-        when(clientAccountRepository.findAllByClientId(clientId))
+        when(clientAccountRepository
+                .findAllByClientIdAndEmployeeId(
+                        clientId,
+                        employeeId
+                ))
                 .thenReturn(List.of(account, account2));
 
         when(clientAccountMapper.toDto(account))
@@ -627,8 +679,14 @@ class ClientServiceTest {
         verify(currentUserService)
                 .getCurrentOrganizationId();
 
+        verify(currentUserService)
+                .getCurrentEmployeeId();
+
         verify(clientAccountRepository)
-                .findAllByClientId(clientId);
+                .findAllByClientIdAndEmployeeId(
+                        clientId,
+                        employeeId
+                );
 
         verify(clientAccountMapper)
                 .toDto(account);
@@ -851,11 +909,13 @@ class ClientServiceTest {
                 .thenReturn(Optional.of(unassignedAccount));
 
         when(conversationRepository
-                .findAllByClientAccountIdAndOrganizationIdOrderByLastMessageAtDesc(
+                .findAllByClientAccountIdAndEmployeeIdOrderByLastMessageAtDesc(
                         accountId,
-                        organizationId
+                        employeeId
                 ))
-                .thenReturn(List.of(mock(ConversationEntity.class)));
+                .thenReturn(
+                        List.of(mock(ConversationEntity.class))
+                );
 
         when(clientAccountMapper.toDto(unassignedAccount))
                 .thenReturn(expectedDto);
@@ -879,16 +939,19 @@ class ClientServiceTest {
         verify(clientRepository)
                 .findById(clientId);
 
-        verify(currentUserService, times(2))
+        verify(currentUserService)
                 .getCurrentOrganizationId();
+
+        verify(currentUserService)
+                .getCurrentEmployeeId();
 
         verify(clientAccountRepository)
                 .findById(accountId);
 
         verify(conversationRepository)
-                .findAllByClientAccountIdAndOrganizationIdOrderByLastMessageAtDesc(
+                .findAllByClientAccountIdAndEmployeeIdOrderByLastMessageAtDesc(
                         accountId,
-                        organizationId
+                        employeeId
                 );
 
         verify(clientAccountMapper)
@@ -996,7 +1059,7 @@ class ClientServiceTest {
                 .toDto(account);
 
         verify(conversationRepository, never())
-                .findAllByClientAccountIdAndOrganizationIdOrderByLastMessageAtDesc(
+                .findAllByClientAccountIdAndEmployeeIdOrderByLastMessageAtDesc(
                         any(),
                         any()
                 );
@@ -1040,7 +1103,7 @@ class ClientServiceTest {
                 .toDto(any());
 
         verify(conversationRepository, never())
-                .findAllByClientAccountIdAndOrganizationIdOrderByLastMessageAtDesc(
+                .findAllByClientAccountIdAndEmployeeIdOrderByLastMessageAtDesc(
                         any(),
                         any()
                 );
@@ -1064,9 +1127,9 @@ class ClientServiceTest {
                 .thenReturn(Optional.of(unassignedAccount));
 
         when(conversationRepository
-                .findAllByClientAccountIdAndOrganizationIdOrderByLastMessageAtDesc(
+                .findAllByClientAccountIdAndEmployeeIdOrderByLastMessageAtDesc(
                         accountId,
-                        organizationId
+                        employeeId
                 ))
                 .thenReturn(List.of());
 
@@ -1119,11 +1182,13 @@ class ClientServiceTest {
                 .thenReturn(Optional.of(newClient));
 
         when(conversationRepository
-                .findAllByClientAccountIdAndOrganizationIdOrderByLastMessageAtDesc(
+                .findAllByClientAccountIdAndEmployeeIdOrderByLastMessageAtDesc(
                         accountId,
-                        organizationId
+                        employeeId
                 ))
-                .thenReturn(List.of(mock(ConversationEntity.class)));
+                .thenReturn(
+                        List.of(mock(ConversationEntity.class))
+                );
 
         when(clientAccountMapper.toDto(account))
                 .thenReturn(expectedDto);
@@ -1150,13 +1215,16 @@ class ClientServiceTest {
         verify(clientRepository)
                 .findById(newClientId);
 
-        verify(currentUserService, times(2))
+        verify(currentUserService)
                 .getCurrentOrganizationId();
 
+        verify(currentUserService)
+                .getCurrentEmployeeId();
+
         verify(conversationRepository)
-                .findAllByClientAccountIdAndOrganizationIdOrderByLastMessageAtDesc(
+                .findAllByClientAccountIdAndEmployeeIdOrderByLastMessageAtDesc(
                         accountId,
-                        organizationId
+                        employeeId
                 );
 
         verify(clientAccountMapper)
@@ -1197,11 +1265,21 @@ class ClientServiceTest {
     @Test
     void reassignClientAccount_clientNotFound() {
 
-        UUID newClientId =
-                UUID.randomUUID();
+        UUID newClientId = UUID.randomUUID();
+
+        ClientEntity newClient = new ClientEntity();
+        newClient.setId(newClientId);
+        newClient.setOrganization(organization);
 
         when(clientAccountRepository.findById(accountId))
                 .thenReturn(Optional.of(account));
+
+        when(conversationRepository
+                .findAllByClientAccountIdAndEmployeeIdOrderByLastMessageAtDesc(
+                        accountId,
+                        employeeId
+                ))
+                .thenReturn(List.of(mock(ConversationEntity.class)));
 
         when(clientRepository.findById(newClientId))
                 .thenReturn(Optional.empty());
@@ -1220,15 +1298,17 @@ class ClientServiceTest {
                 exception.getMessage()
         );
 
-        verify(clientAccountRepository)
-                .findById(accountId);
+        assertSame(client, account.getClient());
 
-        verify(clientRepository)
-                .findById(newClientId);
+        verify(clientAccountRepository).findById(accountId);
+        verify(conversationRepository)
+                .findAllByClientAccountIdAndEmployeeIdOrderByLastMessageAtDesc(
+                        accountId,
+                        employeeId
+                );
+        verify(clientRepository).findById(newClientId);
 
-        verifyNoInteractions(conversationRepository);
-        verify(clientAccountMapper, never())
-                .toDto(any());
+        verify(clientAccountMapper, never()).toDto(any());
     }
 
     @Test
@@ -1246,18 +1326,12 @@ class ClientServiceTest {
         when(clientAccountRepository.findById(accountId))
                 .thenReturn(Optional.of(account));
 
-        when(clientRepository.findById(newClientId))
-                .thenReturn(Optional.of(newClient));
-
         when(conversationRepository
-                .findAllByClientAccountIdAndOrganizationIdOrderByLastMessageAtDesc(
+                .findAllByClientAccountIdAndEmployeeIdOrderByLastMessageAtDesc(
                         accountId,
-                        organizationId
+                        employeeId
                 ))
                 .thenReturn(List.of());
-
-        when(currentUserService.getCurrentOrganizationId())
-                .thenReturn(organizationId);
 
         AccessDeniedException exception =
                 assertThrows(
@@ -1295,6 +1369,15 @@ class ClientServiceTest {
         when(clientAccountRepository.findById(accountId))
                 .thenReturn(Optional.of(account));
 
+        when(conversationRepository
+                .findAllByClientAccountIdAndEmployeeIdOrderByLastMessageAtDesc(
+                        accountId,
+                        employeeId
+                ))
+                .thenReturn(
+                        List.of(mock(ConversationEntity.class))
+                );
+
         when(clientAccountMapper.toDto(account))
                 .thenReturn(expectedDto);
 
@@ -1319,6 +1402,15 @@ class ClientServiceTest {
 
         verify(currentUserService)
                 .getCurrentOrganizationId();
+
+        verify(currentUserService)
+                .getCurrentEmployeeId();
+
+        verify(conversationRepository)
+                .findAllByClientAccountIdAndEmployeeIdOrderByLastMessageAtDesc(
+                        accountId,
+                        employeeId
+                );
 
         verify(clientAccountMapper)
                 .toDto(account);
@@ -1429,5 +1521,67 @@ class ClientServiceTest {
 
         verify(clientAccountMapper, never())
                 .toDto(any());
+    }
+
+    // =========================================================
+    // EMPLOYEE CLIENT VISIBILITY
+    // =========================================================
+
+    @Test
+    void employeeShouldSeeClientWithoutAccounts() {
+
+        UUID testClientId = UUID.randomUUID();
+
+        ClientEntity clientWithoutAccounts =
+                new ClientEntity();
+
+        clientWithoutAccounts.setId(testClientId);
+        clientWithoutAccounts.setOrganization(organization);
+        clientWithoutAccounts.setFirstName("No");
+        clientWithoutAccounts.setLastName("Accounts");
+        clientWithoutAccounts.setEnabled(true);
+
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
+
+        when(currentUserService.isSuperAdmin())
+                .thenReturn(false);
+
+        when(currentUserService.isEmployee())
+                .thenReturn(true);
+
+        when(clientRepository.findAllByOrganizationId(organizationId))
+                .thenReturn(List.of(clientWithoutAccounts));
+
+        when(clientRepository.findListAggregatesForEmployee(
+                organizationId,
+                employeeId,
+                List.of(testClientId)
+        )).thenReturn(List.of());
+
+        List<ClientListItemDto> result =
+                clientService.getClientListItems();
+
+        assertThat(result)
+                .hasSize(1);
+
+        assertThat(result.get(0).id())
+                .isEqualTo(testClientId);
+
+        assertThat(result.get(0).accountCount())
+                .isZero();
+
+        assertThat(result.get(0).lastContactAt())
+                .isNull();
+
+        verify(clientRepository)
+                .findAllByOrganizationId(organizationId);
+
+        verify(clientRepository)
+                .findListAggregatesForEmployee(
+                        organizationId,
+                        employeeId,
+                        List.of(testClientId)
+                );
     }
 }

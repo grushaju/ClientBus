@@ -221,57 +221,6 @@ public interface ClientRepository
             @Param("clientIds") List<UUID> clientIds
     );
 
-    @EntityGraph(attributePaths = "phoneList")
-    @Query("""
-        SELECT DISTINCT c
-        FROM ClientEntity c
-        JOIN ClientAccountEntity ca
-          ON ca.client.id = c.id
-        JOIN ConversationEntity conversation
-          ON conversation.clientAccount.id = ca.id
-        JOIN EmployeeWorkspaceEntity ew
-          ON ew.workspace.id = conversation.workspace.id
-        WHERE c.organization.id = :organizationId
-          AND ew.employee.id = :employeeId
-        ORDER BY c.lastName, c.firstName
-        """)
-    List<ClientEntity> findAllVisibleToEmployee(
-            @Param("organizationId") UUID organizationId,
-            @Param("employeeId") UUID employeeId
-    );
-
-    @EntityGraph(attributePaths = "phoneList")
-    @Query("""
-    SELECT DISTINCT c
-    FROM ClientEntity c
-    LEFT JOIN c.phoneList p
-    JOIN ClientAccountEntity ca
-      ON ca.client.id = c.id
-    JOIN ConversationEntity conversation
-      ON conversation.clientAccount.id = ca.id
-    JOIN EmployeeWorkspaceEntity ew
-      ON ew.workspace.id = conversation.workspace.id
-    WHERE c.organization.id = :organizationId
-      AND ew.employee.id = :employeeId
-      AND (
-           LOWER(c.firstName)
-               LIKE LOWER(CONCAT('%', :query, '%'))
-        OR LOWER(c.lastName)
-               LIKE LOWER(CONCAT('%', :query, '%'))
-        OR LOWER(p)
-               LIKE LOWER(CONCAT('%', :query, '%'))
-        OR LOWER(ca.username)
-               LIKE LOWER(CONCAT('%', :query, '%'))
-        OR LOWER(ca.phone)
-               LIKE LOWER(CONCAT('%', :query, '%'))
-      )
-    ORDER BY c.lastName, c.firstName
-    """)
-    List<ClientEntity> searchClientsForEmployee(
-            @Param("organizationId") UUID organizationId,
-            @Param("employeeId") UUID employeeId,
-            @Param("query") String query
-    );
 
     @Query("""
         SELECT CASE WHEN COUNT(c) > 0 THEN true ELSE false END
