@@ -5,6 +5,7 @@ import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -19,5 +20,11 @@ public interface ChannelAccountRepository
     List<ChannelAccountEntity> findAllByChannelTypeAndChannelStatus(
             ChannelType type,
             ChannelConnectionStatus status
+    );
+
+    List<ChannelAccountEntity>
+    findAllByChannelTypeAndChannelStatusIn(
+            ChannelType channelType,
+            Collection<ChannelConnectionStatus> statuses
     );
 }

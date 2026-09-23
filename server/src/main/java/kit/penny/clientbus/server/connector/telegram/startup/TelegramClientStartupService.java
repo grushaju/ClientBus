@@ -35,9 +35,12 @@ public class TelegramClientStartupService {
 
         List<ChannelAccountEntity> accounts =
                 channelAccountRepository
-                        .findAllByChannelTypeAndChannelStatus(
+                        .findAllByChannelTypeAndChannelStatusIn(
                                 ChannelType.TELEGRAM,
-                                ChannelConnectionStatus.CONNECTED
+                                List.of(
+                                        ChannelConnectionStatus.CONNECTED,
+                                        ChannelConnectionStatus.CONNECTING
+                                )
                         );
 
         log.info(
