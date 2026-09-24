@@ -1,0 +1,274 @@
+/* =========================================================
+   APP LAYOUT
+   ========================================================= */
+
+.app-layout {
+    width: 100%;
+    min-height: 100vh;
+
+    display: flex;
+
+    background: #ffffff;
+}
+
+
+/* =========================================================
+   CONTENT
+   ========================================================= */
+
+.app-content {
+    min-width: 0;
+    flex: 1;
+
+    display: flex;
+    flex-direction: column;
+}
+
+.app-header {
+    height: 56px;
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    gap: 24px;
+
+    padding: 0 24px;
+
+    border-bottom: 1px solid #e5e7eb;
+
+    background: #ffffff;
+}
+
+.app-header-left {
+    min-width: 0;
+
+    display: flex;
+    align-items: center;
+
+    gap: 12px;
+}
+
+.app-header-left > strong {
+    flex-shrink: 0;
+
+    color: #111827;
+
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+.app-organization-name {
+    max-width: 220px;
+
+    overflow: hidden;
+
+    color: #6b7280;
+
+    font-size: 12px;
+    line-height: 1.4;
+
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.app-header-left select {
+    min-width: 170px;
+    max-width: 260px;
+    height: 34px;
+
+    padding: 0 30px 0 10px;
+
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+
+    background: #ffffff;
+    color: #374151;
+
+    outline: none;
+
+    font: inherit;
+    font-size: 12px;
+}
+
+.app-header-left select:hover:not(:disabled) {
+    border-color: #9ca3af;
+}
+
+.app-header-left select:focus {
+    border-color: #9ca3af;
+
+    box-shadow:
+            0 0 0 2px rgba(156, 163, 175, 0.15);
+}
+
+.app-header-left select:disabled {
+    background: #f9fafb;
+    color: #9ca3af;
+}
+
+
+/* =========================================================
+   USER
+   ========================================================= */
+
+.app-user {
+    min-width: 0;
+
+    display: flex;
+    align-items: center;
+
+    gap: 8px;
+
+    flex-shrink: 0;
+}
+
+.app-user-name {
+    max-width: 180px;
+
+    overflow: hidden;
+
+    color: #111827;
+
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.4;
+
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.app-user-role {
+    padding: 3px 7px;
+
+    border-radius: 5px;
+
+    background: #f3f4f6;
+    color: #6b7280;
+
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 1.3;
+
+    white-space: nowrap;
+}
+
+
+/* =========================================================
+   MAIN
+   ========================================================= */
+
+.app-main {
+    min-width: 0;
+    flex: 1;
+
+    background: #f9fafb;
+}
+
+
+/* =========================================================
+   RESPONSIVE
+   ========================================================= */
+
+@media (max-width: 900px) {
+    .app-header {
+        padding: 0 20px;
+    }
+
+    .app-organization-name {
+        max-width: 160px;
+    }
+
+    .app-header-left select {
+        min-width: 150px;
+        max-width: 200px;
+    }
+
+    .app-user-name {
+        max-width: 140px;
+    }
+}
+
+@media (max-width: 760px) {
+    .app-header {
+        height: auto;
+
+        align-items: flex-start;
+
+        padding: 12px 16px;
+    }
+
+    .app-header-left {
+        flex-wrap: wrap;
+
+        gap: 7px 10px;
+    }
+
+    .app-header-left select {
+        width: 100%;
+        max-width: none;
+    }
+
+    .app-user {
+        align-self: center;
+
+        flex-direction: column;
+        align-items: flex-end;
+
+        gap: 3px;
+    }
+
+    .app-user-role {
+        font-size: 9px;
+    }
+}
+
+@media (max-width: 640px) {
+    .app-header {
+        display: block;
+    }
+
+    .app-header-left {
+        display: grid;
+
+        grid-template-columns:
+            auto minmax(0, 1fr);
+
+        align-items: center;
+
+        gap: 6px 10px;
+    }
+
+    .app-header-left > strong {
+        grid-column: 1;
+        grid-row: 1;
+    }
+
+    .app-organization-name {
+        grid-column: 2;
+        grid-row: 1;
+
+        max-width: none;
+    }
+
+    .app-header-left select {
+        grid-column: 1 / -1;
+        grid-row: 2;
+    }
+
+    .app-user {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+
+        margin-top: 10px;
+        padding-top: 10px;
+
+        border-top: 1px solid #f3f4f6;
+    }
+
+    .app-user-name {
+        max-width: none;
+    }
+}

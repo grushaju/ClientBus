@@ -1,0 +1,411 @@
+/* =========================================================
+   WORKSPACES
+   ========================================================= */
+
+.workspaces-page {
+    width: 100%;
+    max-width: 1180px;
+
+    margin: 0 auto;
+    padding: 28px 30px 40px;
+}
+
+
+/* =========================================================
+   HEADER
+   ========================================================= */
+
+.workspaces-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+
+    gap: 24px;
+
+    margin-bottom: 20px;
+}
+
+.workspaces-header h1 {
+    margin: 0;
+
+    color: #111827;
+
+    font-size: 24px;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.workspaces-subtitle {
+    margin: 6px 0 0;
+
+    color: #6b7280;
+
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+
+/* =========================================================
+   BUTTONS
+   ========================================================= */
+
+.workspace-button {
+    min-height: 38px;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    padding: 0 14px;
+
+    border-radius: 7px;
+
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1;
+
+    text-align: center;
+
+    transition:
+            background-color 0.15s ease,
+            border-color 0.15s ease,
+            color 0.15s ease;
+}
+
+.workspace-button-primary {
+    border: 1px solid #111827;
+
+    background: #111827;
+    color: #ffffff;
+}
+
+.workspace-button-primary:hover {
+    border-color: #1f2937;
+    background: #1f2937;
+}
+
+.workspace-button-secondary {
+    border: 1px solid #d1d5db;
+
+    background: #ffffff;
+    color: #374151;
+}
+
+.workspace-button-secondary:hover {
+    border-color: #9ca3af;
+    background: #f9fafb;
+}
+
+.workspace-button-danger {
+    border: 1px solid #fecaca;
+
+    background: #ffffff;
+    color: #b91c1c;
+}
+
+.workspace-button-danger:hover {
+    border-color: #fca5a5;
+    background: #fef2f2;
+}
+
+
+/* =========================================================
+   STATES
+   ========================================================= */
+
+.workspaces-error {
+    margin-bottom: 16px;
+
+    padding: 10px 12px;
+
+    border: 1px solid #fecaca;
+    border-radius: 6px;
+
+    background: #fef2f2;
+    color: #b91c1c;
+
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.workspaces-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    min-height: 240px;
+
+    color: #6b7280;
+
+    font-size: 14px;
+}
+
+.workspaces-empty {
+    display: flex;
+    align-items: center;
+    flex-direction: column;
+
+    gap: 8px;
+
+    padding: 56px 24px;
+
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+
+    background: #ffffff;
+
+    text-align: center;
+}
+
+.workspaces-empty strong {
+    color: #111827;
+
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.workspaces-empty span {
+    max-width: 420px;
+
+    margin-bottom: 8px;
+
+    color: #6b7280;
+
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+
+/* =========================================================
+   GRID
+   ========================================================= */
+
+.workspaces-grid {
+    display: grid;
+
+    grid-template-columns:
+        repeat(2, minmax(0, 1fr));
+
+    gap: 14px;
+}
+
+
+/* =========================================================
+   CARD
+   ========================================================= */
+
+.workspace-card {
+    min-width: 0;
+
+    display: flex;
+    flex-direction: column;
+
+    padding: 20px;
+
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+
+    background: #ffffff;
+}
+
+.workspace-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+
+    gap: 16px;
+}
+
+.workspace-card-header > div {
+    min-width: 0;
+}
+
+.workspace-card-header h2 {
+    margin: 0;
+
+    overflow: hidden;
+
+    color: #111827;
+
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.4;
+
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.workspace-card-header span {
+    display: block;
+
+    margin-top: 4px;
+
+    color: #6b7280;
+
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.workspace-card-status {
+    flex-shrink: 0;
+
+    margin-top: 1px !important;
+
+    color: #16a34a !important;
+
+    font-size: 12px !important;
+    line-height: 1 !important;
+}
+
+
+/* =========================================================
+   STATS
+   ========================================================= */
+
+.workspace-stats {
+    display: grid;
+
+    grid-template-columns:
+        repeat(4, minmax(0, 1fr));
+
+    gap: 8px;
+
+    margin-top: 20px;
+}
+
+.workspace-stats > div {
+    min-width: 0;
+
+    padding: 10px;
+
+    border-radius: 6px;
+
+    background: #f9fafb;
+}
+
+.workspace-stats strong {
+    display: block;
+
+    color: #111827;
+
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.workspace-stats span {
+    display: block;
+
+    margin-top: 3px;
+
+    overflow: hidden;
+
+    color: #6b7280;
+
+    font-size: 10px;
+    line-height: 1.3;
+
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+
+/* =========================================================
+   LAST ACTIVITY
+   ========================================================= */
+
+.workspace-card-last-activity {
+    margin-top: 14px;
+
+    color: #6b7280;
+
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+
+/* =========================================================
+   ACTIONS
+   ========================================================= */
+
+.workspace-card-actions {
+    display: flex;
+    align-items: center;
+
+    gap: 7px;
+
+    margin-top: 18px;
+    padding-top: 16px;
+
+    border-top: 1px solid #f3f4f6;
+}
+
+.workspace-card-actions .workspace-button {
+    white-space: nowrap;
+}
+
+.workspace-card-actions .workspace-button:first-child {
+    margin-right: auto;
+}
+
+
+/* =========================================================
+   RESPONSIVE
+   ========================================================= */
+
+@media (max-width: 900px) {
+    .workspaces-page {
+        padding: 22px 20px 32px;
+    }
+
+    .workspaces-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 640px) {
+    .workspaces-page {
+        padding: 16px;
+    }
+
+    .workspaces-header {
+        align-items: stretch;
+        flex-direction: column;
+
+        gap: 14px;
+    }
+
+    .workspaces-header h1 {
+        font-size: 21px;
+    }
+
+    .workspaces-header .workspace-button {
+        width: 100%;
+    }
+
+    .workspace-card {
+        padding: 16px;
+    }
+
+    .workspace-stats {
+        grid-template-columns:
+            repeat(2, minmax(0, 1fr));
+
+        gap: 7px;
+    }
+
+    .workspace-card-actions {
+        align-items: stretch;
+        flex-wrap: wrap;
+    }
+
+    .workspace-card-actions .workspace-button:first-child {
+        width: 100%;
+
+        margin-right: 0;
+    }
+
+    .workspace-card-actions .workspace-button:not(:first-child) {
+        flex: 1;
+    }
+}

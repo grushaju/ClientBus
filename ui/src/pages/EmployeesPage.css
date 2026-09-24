@@ -1,0 +1,365 @@
+/* =========================================================
+   EMPLOYEES
+   ========================================================= */
+
+.employees-page {
+    width: 100%;
+    max-width: 1180px;
+
+    margin: 0 auto;
+    padding: 28px 30px 40px;
+}
+
+.employees-header {
+    margin-bottom: 20px;
+}
+
+.employees-header h1 {
+    margin: 0;
+
+    color: #111827;
+
+    font-size: 24px;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.employees-header p {
+    margin: 6px 0 0;
+
+    color: #6b7280;
+
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+
+/* =========================================================
+   TOOLBAR
+   ========================================================= */
+
+.employees-toolbar {
+    display: flex;
+    align-items: center;
+
+    gap: 10px;
+
+    margin-bottom: 16px;
+}
+
+.employees-search {
+    flex: 1;
+
+    min-width: 0;
+}
+
+.employees-search input,
+.employees-filter select {
+    width: 100%;
+    height: 40px;
+
+    padding: 0 11px;
+
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+
+    background: #ffffff;
+    color: #111827;
+
+    outline: none;
+
+    font: inherit;
+    font-size: 13px;
+}
+
+.employees-search input::placeholder {
+    color: #9ca3af;
+}
+
+.employees-search input:focus,
+.employees-filter select:focus {
+    border-color: #9ca3af;
+
+    box-shadow:
+            0 0 0 2px rgba(156, 163, 175, 0.15);
+}
+
+.employees-filter {
+    width: 220px;
+
+    flex-shrink: 0;
+}
+
+
+/* =========================================================
+   STATES
+   ========================================================= */
+
+.employees-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    min-height: 240px;
+
+    color: #6b7280;
+
+    font-size: 14px;
+}
+
+.employees-error {
+    padding: 10px 12px;
+
+    border: 1px solid #fecaca;
+    border-radius: 6px;
+
+    background: #fef2f2;
+    color: #b91c1c;
+
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+
+/* =========================================================
+   EMPLOYEE LIST
+   ========================================================= */
+
+.employees-list {
+    display: flex;
+    flex-direction: column;
+
+    gap: 8px;
+}
+
+.employee-card {
+    width: 100%;
+
+    display: grid;
+
+    grid-template-columns:
+        minmax(180px, 1.3fr)
+        minmax(180px, 1fr)
+        auto
+        minmax(180px, 1fr);
+
+    align-items: center;
+
+    gap: 16px;
+
+    padding: 14px 16px;
+
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+
+    background: #ffffff;
+    color: inherit;
+
+    text-align: left;
+
+    cursor: pointer;
+}
+
+.employee-card:hover {
+    border-color: #d1d5db;
+
+    background: #f9fafb;
+}
+
+.employee-identity {
+    min-width: 0;
+}
+
+.employee-name {
+    overflow: hidden;
+
+    color: #111827;
+
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.35;
+
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.employee-username {
+    margin-top: 3px;
+
+    overflow: hidden;
+
+    color: #6b7280;
+
+    font-size: 12px;
+    line-height: 1.3;
+
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.employee-email {
+    min-width: 0;
+
+    overflow: hidden;
+
+    color: #374151;
+
+    font-size: 13px;
+
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.employee-phone {
+    margin-top: 3px;
+
+    color: #6b7280;
+
+    font-size: 12px;
+}
+
+
+/* =========================================================
+   STATUS
+   ========================================================= */
+
+.employee-status {
+    display: inline-flex;
+    align-items: center;
+
+    min-height: 24px;
+    padding: 3px 8px;
+
+    border-radius: 999px;
+
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.2;
+}
+
+.employee-status.enabled {
+    background: #ecfdf3;
+    color: #15803d;
+}
+
+.employee-status.disabled {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
+.employees-stats {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 20px;
+
+    margin-top: 4px;
+}
+
+.employees-stat {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
+
+    white-space: nowrap;
+
+    font-size: 13px;
+    line-height: 1.4;
+    color: #6b7280;
+}
+
+.employees-stat strong {
+    font-weight: 600;
+    color: #111827;
+}
+
+
+/* =========================================================
+   WORKSPACES
+   ========================================================= */
+
+.employee-workspaces {
+    display: flex;
+    flex-wrap: wrap;
+
+    gap: 5px;
+
+    min-width: 0;
+}
+
+.employee-workspace-tag {
+    max-width: 100%;
+
+    padding: 4px 7px;
+
+    border-radius: 5px;
+
+    background: #f3f4f6;
+    color: #4b5563;
+
+    font-size: 11px;
+
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.employee-workspace-empty {
+    color: #9ca3af;
+
+    font-size: 12px;
+}
+
+
+/* =========================================================
+   RESPONSIVE
+   ========================================================= */
+
+@media (max-width: 900px) {
+    .employees-page {
+        padding: 22px 20px 32px;
+    }
+
+    .employee-card {
+        grid-template-columns:
+            minmax(180px, 1fr)
+            minmax(180px, 1fr);
+    }
+
+    .employee-status {
+        justify-self: start;
+    }
+}
+
+@media (max-width: 640px) {
+    .employees-page {
+        padding: 16px;
+    }
+
+    .employees-header h1 {
+        font-size: 21px;
+    }
+
+    .employees-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .employees-filter {
+        width: 100%;
+    }
+
+    .employee-card {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+
+        gap: 10px;
+
+        padding: 13px 14px;
+    }
+
+    .employee-status {
+        align-self: flex-start;
+    }
+}

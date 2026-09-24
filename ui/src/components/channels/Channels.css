@@ -1,0 +1,510 @@
+.channel-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    padding: 24px;
+
+    background: rgba(17, 24, 39, 0.45);
+}
+
+.channel-modal {
+    width: 100%;
+    max-width: 560px;
+    max-height: calc(100vh - 48px);
+
+    display: flex;
+    flex-direction: column;
+
+    overflow: hidden;
+
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+
+    box-shadow:
+            0 20px 40px rgba(17, 24, 39, 0.16),
+            0 4px 12px rgba(17, 24, 39, 0.08);
+}
+
+.channel-modal-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+
+    padding: 20px 24px;
+
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.channel-modal-header h2 {
+    margin: 0;
+
+    font-size: 18px;
+    line-height: 1.4;
+    font-weight: 600;
+
+    color: #111827;
+}
+
+.channel-modal-subtitle {
+    margin-top: 4px;
+
+    font-size: 14px;
+    line-height: 1.4;
+
+    color: #6b7280;
+}
+
+.channel-modal-close {
+    flex: 0 0 auto;
+
+    width: 32px;
+    height: 32px;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    padding: 0;
+
+    border: 0;
+    border-radius: 6px;
+
+    background: transparent;
+
+    color: #6b7280;
+
+    font-size: 22px;
+    line-height: 1;
+
+    cursor: pointer;
+}
+
+.channel-modal-close:hover:not(:disabled) {
+    background: #f3f4f6;
+    color: #111827;
+}
+
+.channel-modal-close:disabled {
+    cursor: default;
+}
+
+.channel-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+
+    padding: 24px;
+
+    overflow-y: auto;
+}
+
+.channel-form-field {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+
+    font-size: 14px;
+    line-height: 1.4;
+    font-weight: 500;
+
+    color: #374151;
+}
+
+.channel-form-field input,
+.channel-form-field select {
+    width: 100%;
+    min-height: 40px;
+
+    padding: 9px 12px;
+
+    border: 1px solid #d1d5db;
+    border-radius: 7px;
+
+    outline: none;
+
+    background: #ffffff;
+    color: #111827;
+
+    font-size: 14px;
+
+    transition:
+            border-color 0.15s ease,
+            box-shadow 0.15s ease;
+}
+
+.channel-form-field input::placeholder {
+    color: #9ca3af;
+}
+
+.channel-form-field input:focus,
+.channel-form-field select:focus {
+    border-color: #9ca3af;
+
+    box-shadow:
+            0 0 0 3px rgba(17, 24, 39, 0.08);
+}
+
+.channel-form-field input:disabled,
+.channel-form-field select:disabled {
+    background: #f9fafb;
+    color: #6b7280;
+}
+
+.channel-form-required {
+    color: #dc2626;
+}
+
+.channel-form-hint {
+    padding: 12px 14px;
+
+    border: 1px solid #e5e7eb;
+    border-radius: 7px;
+
+    background: #f9fafb;
+
+    color: #6b7280;
+
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.channel-form-error {
+    padding: 12px 14px;
+
+    border: 1px solid #fecaca;
+    border-radius: 7px;
+
+    background: #fef2f2;
+
+    color: #b91c1c;
+
+    font-size: 14px;
+    line-height: 1.45;
+}
+
+.channel-modal-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+
+    padding: 16px 24px;
+
+    border-top: 1px solid #e5e7eb;
+}
+
+.channel-button {
+    min-height: 38px;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    padding: 8px 14px;
+
+    border: 1px solid transparent;
+    border-radius: 7px;
+
+    font-size: 14px;
+    line-height: 1.4;
+    font-weight: 500;
+
+    transition:
+            background-color 0.15s ease,
+            border-color 0.15s ease,
+            color 0.15s ease;
+}
+
+.channel-button:disabled {
+    cursor: default;
+}
+
+.channel-button-primary {
+    border-color: #111827;
+
+    background: #111827;
+    color: #ffffff;
+}
+
+.channel-button-primary:hover:not(:disabled) {
+    background: #1f2937;
+    border-color: #1f2937;
+}
+
+.channel-button-secondary {
+    border-color: #d1d5db;
+
+    background: #ffffff;
+    color: #374151;
+}
+
+.channel-button-secondary:hover:not(:disabled) {
+    background: #f9fafb;
+    border-color: #9ca3af;
+}
+
+.channel-button-danger {
+    border-color: #dc2626;
+
+    background: #dc2626;
+    color: #ffffff;
+}
+
+.channel-button-danger:hover:not(:disabled) {
+    border-color: #b91c1c;
+    background: #b91c1c;
+}
+
+/* Details dialog */
+
+.channel-details-modal {
+    max-width: 620px;
+}
+
+.channel-details-title {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.channel-details-icon {
+    width: 44px;
+    height: 44px;
+
+    flex: 0 0 auto;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    border: 1px solid #e5e7eb;
+    border-radius: 9px;
+
+    background: #f9fafb;
+}
+
+.channel-details-heading {
+    min-width: 0;
+}
+
+.channel-details-heading-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.channel-details-heading h2 {
+    margin: 0;
+
+    font-size: 18px;
+    line-height: 1.4;
+    font-weight: 600;
+
+    color: #111827;
+}
+
+.channel-details-type {
+    margin-top: 3px;
+
+    font-size: 13px;
+    line-height: 1.4;
+
+    color: #6b7280;
+}
+
+.channel-details {
+    padding: 24px;
+
+    overflow-y: auto;
+}
+
+.channel-details-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.channel-details-section-title {
+    font-size: 12px;
+    line-height: 1.4;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+
+    color: #6b7280;
+}
+
+.channel-details-value {
+    font-size: 14px;
+    line-height: 1.5;
+
+    color: #111827;
+}
+
+.channel-details-divider {
+    height: 1px;
+    margin: 20px 0;
+
+    background: #e5e7eb;
+}
+
+.channel-details-account {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.channel-details-account-name {
+    font-size: 15px;
+    line-height: 1.45;
+    font-weight: 600;
+
+    color: #111827;
+}
+
+.channel-details-account-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+
+    font-size: 14px;
+    line-height: 1.45;
+}
+
+.channel-details-account-row span {
+    color: #6b7280;
+}
+
+.channel-details-account-row strong {
+    color: #111827;
+    font-weight: 500;
+    text-align: right;
+}
+
+.channel-details-account-empty {
+    font-size: 14px;
+    line-height: 1.5;
+
+    color: #6b7280;
+}
+
+/* Delete dialog */
+
+.channel-delete-content {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+
+    padding: 24px;
+}
+
+.channel-delete-content p {
+    margin: 0;
+
+    font-size: 14px;
+    line-height: 1.5;
+
+    color: #374151;
+}
+
+.channel-delete-content strong {
+    color: #111827;
+    font-weight: 600;
+}
+
+/* Telegram connection success */
+
+.channel-connection-success {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+
+    margin: 24px;
+    padding: 16px;
+
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+
+    background: #f9fafb;
+}
+
+.channel-connection-success-title {
+    font-size: 15px;
+    line-height: 1.4;
+    font-weight: 600;
+
+    color: #111827;
+}
+
+.channel-connection-success-text {
+    font-size: 14px;
+    line-height: 1.5;
+
+    color: #6b7280;
+}
+
+/* Responsive */
+
+@media (max-width: 640px) {
+    .channel-modal-overlay {
+        align-items: flex-end;
+
+        padding: 0;
+    }
+
+    .channel-modal {
+        max-width: none;
+        max-height: 90vh;
+
+        border-radius: 12px 12px 0 0;
+    }
+
+    .channel-modal-header {
+        padding: 16px 18px;
+    }
+
+    .channel-form {
+        padding: 18px;
+    }
+
+    .channel-details {
+        padding: 18px;
+    }
+
+    .channel-delete-content {
+        padding: 18px;
+    }
+
+    .channel-modal-actions {
+        padding: 14px 18px;
+    }
+
+    .channel-modal-actions .channel-button {
+        flex: 1;
+    }
+
+    .channel-details-heading-row {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .channel-details-account-row {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .channel-details-account-row strong {
+        text-align: left;
+    }
+}

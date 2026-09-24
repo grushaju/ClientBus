@@ -1,0 +1,711 @@
+/* =========================================================
+   Client components
+   ========================================================= */
+
+.client-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    padding: 24px;
+
+    background: rgba(15, 23, 42, 0.45);
+}
+
+.client-modal {
+    width: 100%;
+    max-width: 640px;
+    max-height: calc(100vh - 48px);
+
+    display: flex;
+    flex-direction: column;
+
+    overflow: hidden;
+
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+
+    box-shadow:
+            0 20px 50px rgba(15, 23, 42, 0.18);
+}
+
+.client-confirm-modal {
+    max-width: 520px;
+}
+
+.client-modal-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+
+    padding: 20px 24px;
+
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.client-modal-header h2 {
+    margin: 0;
+
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 1.4;
+
+    color: #111827;
+}
+
+.client-modal-header > div > span {
+    display: block;
+
+    margin-top: 5px;
+
+    font-size: 13px;
+    line-height: 1.5;
+
+    color: #6b7280;
+}
+
+.client-modal-close {
+    flex: 0 0 auto;
+
+    width: 32px;
+    height: 32px;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    padding: 0;
+
+    border: 0;
+    border-radius: 6px;
+
+    background: transparent;
+
+    color: #6b7280;
+    font-size: 22px;
+    line-height: 1;
+}
+
+.client-modal-close:hover:not(:disabled) {
+    background: #f3f4f6;
+    color: #111827;
+}
+
+.client-modal-body {
+    min-height: 0;
+
+    padding: 20px 24px;
+
+    overflow-y: auto;
+}
+
+.client-modal-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+
+    padding: 16px 24px;
+
+    border-top: 1px solid #e5e7eb;
+}
+
+.client-modal-search {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+
+    margin-bottom: 16px;
+}
+
+.client-modal-search > span {
+    font-size: 13px;
+    font-weight: 500;
+
+    color: #374151;
+}
+
+.client-modal-search input {
+    width: 100%;
+    height: 40px;
+
+    padding: 0 12px;
+
+    border: 1px solid #d1d5db;
+    border-radius: 7px;
+
+    background: #ffffff;
+    color: #111827;
+
+    outline: none;
+}
+
+.client-modal-search input:focus {
+    border-color: #9ca3af;
+
+    box-shadow:
+            0 0 0 3px rgba(17, 24, 39, 0.08);
+}
+
+.client-modal-state {
+    padding: 32px 16px;
+
+    text-align: center;
+
+    font-size: 14px;
+    color: #6b7280;
+}
+
+.clients-error {
+    margin-bottom: 12px;
+    padding: 10px 12px;
+
+    border: 1px solid #fecaca;
+    border-radius: 7px;
+
+    background: #fef2f2;
+
+    color: #b91c1c;
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+/* =========================================================
+   Account picker
+   ========================================================= */
+
+.client-account-picker-list {
+    display: flex;
+    flex-direction: column;
+
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+
+    overflow: hidden;
+}
+
+.client-account-picker-item {
+    width: 100%;
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+
+    padding: 14px 16px;
+
+    border: 0;
+    border-bottom: 1px solid #e5e7eb;
+
+    background: #ffffff;
+
+    text-align: left;
+    color: #111827;
+}
+
+.client-account-picker-item:last-child {
+    border-bottom: 0;
+}
+
+.client-account-picker-item:hover:not(:disabled) {
+    background: #f9fafb;
+}
+
+.client-account-picker-item:disabled {
+    cursor: default;
+    opacity: 0.55;
+}
+
+.client-account-picker-main {
+    min-width: 0;
+
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.client-account-picker-main strong {
+    overflow: hidden;
+
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.4;
+
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.client-account-picker-main span {
+    font-size: 12px;
+    color: #6b7280;
+}
+
+.client-account-picker-meta {
+    flex: 0 0 auto;
+
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 3px;
+
+    font-size: 12px;
+    color: #6b7280;
+}
+
+/* =========================================================
+   Client account section
+   ========================================================= */
+
+.client-accounts-card {
+    margin-top: 20px;
+}
+
+.client-accounts-error {
+    margin-top: 14px;
+}
+
+.client-details-card {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+}
+
+.client-details-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+
+    padding: 16px 18px;
+
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.client-details-card-header h2 {
+    margin: 0;
+
+    font-size: 15px;
+    font-weight: 600;
+    color: #111827;
+}
+
+.client-details-card-header > span {
+    min-width: 24px;
+    height: 24px;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    padding: 0 7px;
+
+    border-radius: 999px;
+
+    background: #f3f4f6;
+
+    font-size: 12px;
+    font-weight: 600;
+    color: #4b5563;
+}
+
+.client-details-empty {
+    padding: 24px 18px;
+
+    text-align: center;
+
+    color: #6b7280;
+    font-size: 13px;
+}
+
+.client-accounts-empty {
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.client-account-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.client-account-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+
+    padding: 16px 18px;
+
+    border-bottom: 1px solid #f0f1f3;
+}
+
+.client-account-item:last-child {
+    border-bottom: 0;
+}
+
+.client-account-item-main {
+    min-width: 0;
+
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.client-account-platform-icon {
+    flex: 0 0 auto;
+
+    width: 40px;
+    height: 40px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    border: 1px solid #e5e7eb;
+    border-radius: 9px;
+
+    background: #f9fafb;
+}
+
+.client-account-item-content {
+    min-width: 0;
+
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.client-account-item-title {
+    min-width: 0;
+}
+
+.client-account-item-title strong {
+    display: block;
+
+    overflow: hidden;
+
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.4;
+
+    color: #111827;
+
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.client-account-item-platform {
+    font-size: 12px;
+    color: #6b7280;
+}
+
+.client-account-item-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+
+    font-size: 12px;
+    color: #6b7280;
+}
+
+.client-account-item-actions {
+    flex: 0 0 auto;
+
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.client-account-action-button {
+    min-height: 32px;
+
+    padding: 0 10px;
+
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+
+    background: #ffffff;
+
+    color: #374151;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.client-account-action-button:hover:not(:disabled) {
+    background: #f9fafb;
+    border-color: #9ca3af;
+}
+
+.client-account-action-button.danger {
+    border-color: #fecaca;
+    color: #b91c1c;
+}
+
+.client-account-action-button.danger:hover:not(:disabled) {
+    background: #fef2f2;
+    border-color: #fca5a5;
+}
+
+.client-account-add {
+    padding: 14px 18px;
+
+    border-top: 1px solid #e5e7eb;
+}
+
+.client-account-add-button {
+    width: 100%;
+    min-height: 38px;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+
+    padding: 0 14px;
+
+    border: 1px dashed #cbd5e1;
+    border-radius: 7px;
+
+    background: #ffffff;
+
+    color: #374151;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.client-account-add-button:hover {
+    border-color: #9ca3af;
+    background: #f9fafb;
+}
+
+.client-account-add-button span {
+    font-size: 18px;
+    line-height: 1;
+}
+
+/* =========================================================
+   Reassign confirmation
+   ========================================================= */
+
+.client-reassign-confirm {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+
+    padding: 16px 0;
+}
+
+.client-reassign-confirm-label {
+    min-width: 0;
+    max-width: 190px;
+
+    padding: 10px 12px;
+
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+
+    background: #f9fafb;
+
+    font-size: 13px;
+    font-weight: 500;
+    text-align: center;
+
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.client-reassign-confirm-arrow {
+    flex: 0 0 auto;
+
+    color: #9ca3af;
+    font-size: 18px;
+}
+
+/* =========================================================
+   Create form
+   ========================================================= */
+
+.client-create-form {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.client-form-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.client-form-fields label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.client-form-fields label > span {
+    font-size: 13px;
+    font-weight: 500;
+    color: #374151;
+}
+
+.client-form-fields input,
+.client-form-fields textarea,
+.client-form-fields select {
+    width: 100%;
+
+    min-height: 40px;
+
+    padding: 8px 11px;
+
+    border: 1px solid #d1d5db;
+    border-radius: 7px;
+
+    background: #ffffff;
+    color: #111827;
+
+    outline: none;
+}
+
+.client-form-fields textarea {
+    min-height: 90px;
+    resize: vertical;
+}
+
+.client-form-fields input:focus,
+.client-form-fields textarea:focus,
+.client-form-fields select:focus {
+    border-color: #9ca3af;
+
+    box-shadow:
+            0 0 0 3px rgba(17, 24, 39, 0.08);
+}
+
+.client-form-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.clients-primary-button,
+.client-primary-button,
+.client-secondary-button {
+    min-height: 38px;
+
+    padding: 0 14px;
+
+    border-radius: 7px;
+
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.clients-primary-button,
+.client-primary-button {
+    border: 1px solid #111827;
+
+    background: #111827;
+
+    color: #ffffff;
+}
+
+.clients-primary-button:hover:not(:disabled),
+.client-primary-button:hover:not(:disabled) {
+    background: #1f2937;
+    border-color: #1f2937;
+}
+
+.client-secondary-button {
+    border: 1px solid #d1d5db;
+
+    background: #ffffff;
+
+    color: #374151;
+}
+
+.client-secondary-button:hover:not(:disabled) {
+    background: #f9fafb;
+    border-color: #9ca3af;
+}
+
+/* =========================================================
+   Responsive
+   ========================================================= */
+
+@media (max-width: 640px) {
+    .client-modal-overlay {
+        align-items: flex-end;
+
+        padding: 0;
+    }
+
+    .client-modal {
+        max-width: none;
+        max-height: 92vh;
+
+        border-radius: 12px 12px 0 0;
+    }
+
+    .client-modal-header,
+    .client-modal-body,
+    .client-modal-footer {
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+
+    .client-account-picker-item {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .client-account-picker-meta {
+        align-items: flex-start;
+    }
+
+    .client-account-item {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .client-account-item-main {
+        width: 100%;
+    }
+
+    .client-account-item-actions {
+        width: 100%;
+    }
+
+    .client-account-action-button {
+        flex: 1;
+    }
+
+    .client-form-fields {
+        grid-template-columns: 1fr;
+    }
+
+    .client-form-actions {
+        flex-direction: column-reverse;
+        align-items: stretch;
+    }
+
+    .client-form-actions button {
+        width: 100%;
+    }
+
+    .client-reassign-confirm {
+        gap: 8px;
+    }
+
+    .client-reassign-confirm-label {
+        max-width: 140px;
+    }
+}

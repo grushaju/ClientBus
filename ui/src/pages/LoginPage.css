@@ -1,0 +1,240 @@
+/* =========================================================
+   LOGIN
+   ========================================================= */
+
+.login-page {
+    width: 100%;
+    min-height: 100vh;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    padding: 24px;
+
+    background: #f9fafb;
+}
+
+
+/* =========================================================
+   CARD
+   ========================================================= */
+
+.login-card {
+    width: 100%;
+    max-width: 400px;
+
+    padding: 32px;
+
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+
+    background: #ffffff;
+}
+
+.login-card h1 {
+    margin: 0;
+
+    color: #111827;
+
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.3;
+
+    text-align: center;
+}
+
+.login-card h2 {
+    margin: 6px 0 24px;
+
+    color: #6b7280;
+
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.4;
+
+    text-align: center;
+}
+
+
+/* =========================================================
+   LOGIN MODE
+   ========================================================= */
+
+.login-mode {
+    display: grid;
+
+    grid-template-columns:
+        repeat(2, minmax(0, 1fr));
+
+    gap: 2px;
+
+    margin-bottom: 20px;
+    padding: 3px;
+
+    border: 1px solid #e5e7eb;
+    border-radius: 7px;
+
+    background: #f3f4f6;
+}
+
+.login-mode button {
+    min-height: 34px;
+
+    padding: 6px 10px;
+
+    border: 0;
+    border-radius: 5px;
+
+    background: transparent;
+    color: #6b7280;
+
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.login-mode button:hover {
+    color: #111827;
+}
+
+.login-mode button.active {
+    background: #ffffff;
+    color: #111827;
+
+    box-shadow:
+            0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+
+/* =========================================================
+   FORM
+   ========================================================= */
+
+.login-card form {
+    display: flex;
+    flex-direction: column;
+
+    gap: 16px;
+}
+
+.login-card form label {
+    display: flex;
+    flex-direction: column;
+
+    gap: 7px;
+
+    color: #374151;
+
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.3;
+}
+
+.login-card form input {
+    width: 100%;
+    height: 42px;
+
+    padding: 0 11px;
+
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+
+    background: #ffffff;
+    color: #111827;
+
+    outline: none;
+
+    font: inherit;
+    font-size: 13px;
+}
+
+.login-card form input:hover {
+    border-color: #9ca3af;
+}
+
+.login-card form input:focus {
+    border-color: #9ca3af;
+
+    box-shadow:
+            0 0 0 2px rgba(156, 163, 175, 0.15);
+}
+
+
+/* =========================================================
+   ERROR
+   ========================================================= */
+
+.login-error {
+    padding: 10px 12px;
+
+    border: 1px solid #fecaca;
+    border-radius: 6px;
+
+    background: #fef2f2;
+    color: #b91c1c;
+
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+
+/* =========================================================
+   SUBMIT
+   ========================================================= */
+
+.login-card form > button[type='submit'] {
+    width: 100%;
+    min-height: 42px;
+
+    margin-top: 2px;
+
+    padding: 9px 14px;
+
+    border: 1px solid #111827;
+    border-radius: 6px;
+
+    background: #111827;
+    color: #ffffff;
+
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.login-card form > button[type='submit']:hover:not(:disabled) {
+    border-color: #1f2937;
+    background: #1f2937;
+}
+
+.login-card form > button[type='submit']:disabled {
+    cursor: default;
+    opacity: 0.6;
+}
+
+
+/* =========================================================
+   RESPONSIVE
+   ========================================================= */
+
+@media (max-width: 480px) {
+    .login-page {
+        align-items: flex-start;
+
+        padding: 24px 16px;
+    }
+
+    .login-card {
+        max-width: none;
+
+        padding: 24px 20px;
+    }
+}
+
+@media (max-width: 360px) {
+    .login-page {
+        padding: 16px 12px;
+    }
+
+    .login-card {
+        padding: 20px 16px;
+    }
+}
