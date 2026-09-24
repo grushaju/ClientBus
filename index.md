@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-09-24 12:47:19
+- Generated: 2026-09-25 00:35:06
 - Branch: `main`
-- Commit: `97b0ccc`
+- Commit: `54dfd40`
 
 ## Project Structure
 
@@ -191,6 +191,11 @@
 - `MessageController.java` — `server/src/main/java/kit/penny/clientbus/server/controller/MessageController.java`
 - `OrganizationController.java` — `server/src/main/java/kit/penny/clientbus/server/controller/OrganizationController.java`
 - `WorkspaceController.java` — `server/src/main/java/kit/penny/clientbus/server/controller/WorkspaceController.java`
+
+##### `kit.penny.clientbus.server.exception`
+
+- `GlobalExceptionHandler.java` — `server/src/main/java/kit/penny/clientbus/server/exception/GlobalExceptionHandler.java`
+- `InvalidCurrentPasswordException.java` — `server/src/main/java/kit/penny/clientbus/server/exception/InvalidCurrentPasswordException.java`
 
 ##### `kit.penny.clientbus.server.kafka.config`
 
@@ -455,12 +460,14 @@
 - `ui/src/api/employeeApi.ts`
 - `ui/src/api/employeeWorkspaceApi.ts`
 - `ui/src/api/messageApi.ts`
+- `ui/src/api/organizationApi.ts`
 - `ui/src/api/telegramChannelApi.ts`
 - `ui/src/api/types/channel.ts`
 - `ui/src/api/types/client.ts`
 - `ui/src/api/types/clientAccount.ts`
 - `ui/src/api/types/conversation.ts`
 - `ui/src/api/types/message.ts`
+- `ui/src/api/types/organization.ts`
 - `ui/src/api/workspaceApi.ts`
 - `ui/src/app/App.tsx`
 - `ui/src/app/router.tsx`
@@ -485,6 +492,7 @@
 - `ui/src/components/common/platform/platform.ts`
 - `ui/src/components/common/platform/PlatformIcon.tsx`
 - `ui/src/components/common/platform/PlatformName.tsx`
+- `ui/src/components/employees/EmployeeDetailsDialog.tsx`
 - `ui/src/components/inbox/ConversationClientPanel.tsx`
 - `ui/src/components/inbox/ConversationHeader.tsx`
 - `ui/src/components/inbox/ConversationList.tsx`
@@ -501,6 +509,10 @@
 - `ui/src/components/layout/ProtectedLayout.tsx`
 - `ui/src/components/layout/RoleProtectedLayout.tsx`
 - `ui/src/components/layout/Sidebar.tsx`
+- `ui/src/components/workspaces/CreateWorkspaceDialog.tsx`
+- `ui/src/components/workspaces/DeleteWorkspaceDialog.tsx`
+- `ui/src/components/workspaces/EditWorkspaceDialog.tsx`
+- `ui/src/components/workspaces/WorkspaceEmployeesDialog.tsx`
 - `ui/src/index.css`
 - `ui/src/main.tsx`
 - `ui/src/pages/ChannelsPage.tsx`
@@ -510,7 +522,10 @@
 - `ui/src/pages/InboxPage.tsx`
 - `ui/src/pages/LoginPage.tsx`
 - `ui/src/pages/SettingsPage.tsx`
+- `ui/src/pages/WorkspaceDetailsPage.tsx`
 - `ui/src/pages/WorkspacesPage.tsx`
+- `ui/src/styles/employees.css`
+- `ui/src/styles/settings.css`
 - `ui/src/workspace/WorkspaceContext.tsx`
 
 #### `public`
@@ -530,7 +545,7 @@
 ## Summary
 
 - Maven modules: 3
-- Java files: 241
-- UI source files: 66
-- Git commit: `97b0ccc`
+- Java files: 243
+- UI source files: 76
+- Git commit: `54dfd40`
 

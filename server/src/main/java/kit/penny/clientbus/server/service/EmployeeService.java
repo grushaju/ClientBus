@@ -3,6 +3,7 @@ package kit.penny.clientbus.server.service;
 import jakarta.persistence.EntityNotFoundException;
 import kit.penny.clientbus.common.dto.employee.*;
 import kit.penny.clientbus.common.enums.UserRole;
+import kit.penny.clientbus.server.exception.InvalidCurrentPasswordException;
 import kit.penny.clientbus.server.mapper.EmployeeMapper;
 import kit.penny.clientbus.server.persistence.entity.EmployeeEntity;
 import kit.penny.clientbus.server.persistence.entity.OrganizationEntity;
@@ -503,9 +504,7 @@ public class EmployeeService {
                 user.getPasswordHash()
         )) {
 
-            throw new IllegalArgumentException(
-                    "Invalid current password"
-            );
+            throw new InvalidCurrentPasswordException();
         }
 
         user.setPasswordHash(

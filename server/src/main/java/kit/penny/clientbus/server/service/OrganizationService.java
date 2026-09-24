@@ -80,9 +80,10 @@ public class OrganizationService {
     @Transactional(readOnly = true)
     public OrganizationDto getOrganization(UUID id) {
 
-        currentUserService.requireSuperAdminOrganization(
-                id
-        );
+        currentUserService
+                .requireEmployeeInCurrentOrganization(
+                        currentUserService.getCurrentEmployeeId()
+                );
 
         return organizationMapper.toDto(
                 getOrganizationEntity(id)

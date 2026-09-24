@@ -1,34 +1,31 @@
-export interface LoginRequest {
+import {
+    apiFetch,
+} from '../api/apiClient'
+
+interface LoginRequest {
     username?: string
-    password: string
     email?: string
+    password: string
 }
 
-export interface LoginResponse {
+interface LoginResponse {
     accessToken: string
     tokenType: string
 }
 
 export async function login(
-    request: LoginRequest
+    request: LoginRequest,
 ): Promise<LoginResponse> {
-    const response = await fetch(
-        '/api/auth/login',
-        {
-            method: 'POST',
-            headers: {
-                'Content-Type':
-                    'application/json'
+    const response =
+        await apiFetch(
+            '/api/auth/login',
+            {
+                method: 'POST',
+                body: JSON.stringify(
+                    request,
+                ),
             },
-            body: JSON.stringify(request)
-        }
-    )
-
-    if (!response.ok) {
-        throw new Error(
-            'Invalid username or password'
         )
-    }
 
     return response.json()
 }

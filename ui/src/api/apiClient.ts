@@ -2,16 +2,44 @@ import { getAccessToken } from '../auth/authStorage'
 
 export class ApiError extends Error {
     readonly status: number
+    readonly code?: string
 
     constructor(
         status: number,
-        message: string
+        message: string,
+        code?: string
     ) {
         super(message)
 
         this.name = 'ApiError'
         this.status = status
+        this.code = code
     }
+}
+
+interface ApiErrorResponse {
+    code?: string
+    message?: string
+}
+
+export function getApiErrorCode(
+    error: unknown,
+): string | undefined {
+    if (
+        typeof error !== 'object' ||
+        error === null
+    ) {
+        return undefined
+    }
+
+    const candidate =
+        error as {
+            code?: unknown
+        }
+
+    return typeof candidate.code === 'string'
+        ? candidate.code
+        : undefined
 }
 
 export async function apiFetch(
@@ -52,11 +80,15 @@ export async function apiFetch(
         let message =
             `Request failed with status ${response.status}`
 
+        let code: string | undefined
+
         try {
             const body =
-                await response.json()
+                await response.json() as ApiErrorResponse
 
-            if (body?.message) {
+            code = body.code
+
+            if (body.message) {
                 message = body.message
             }
         } catch {
@@ -65,7 +97,8 @@ export async function apiFetch(
 
         throw new ApiError(
             response.status,
-            message
+            message,
+            code
         )
     }
 

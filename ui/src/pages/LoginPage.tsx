@@ -11,6 +11,10 @@ import {
 
 import { useAuth } from '../auth/AuthContext'
 
+import {
+    getApiErrorCode
+} from '../api/apiClient'
+
 type LoginMode =
     | 'username'
     | 'email'
@@ -96,10 +100,19 @@ function LoginPage() {
                 from ?? '/inbox',
                 { replace: true }
             )
-        } catch {
-            setError(
-                'Неверный логин или пароль'
-            )
+        } catch (error) {
+            if (
+                getApiErrorCode(error) ===
+                'USER_DISABLED'
+            ) {
+                setError(
+                    'Ваша учётная запись отключена. Обратитесь к администратору.'
+                )
+            } else {
+                setError(
+                    'Неверный логин или пароль'
+                )
+            }
         } finally {
             setLoading(false)
         }

@@ -1,5 +1,5 @@
 import {
-    createBrowserRouter
+    createBrowserRouter,
 } from 'react-router-dom'
 
 import App from './App'
@@ -31,6 +31,9 @@ import EmployeesPage
 import WorkspacesPage
     from '../pages/WorkspacesPage'
 
+import WorkspaceDetailsPage
+    from '../pages/WorkspaceDetailsPage'
+
 import SettingsPage
     from '../pages/SettingsPage'
 
@@ -42,7 +45,7 @@ export const router =
             children: [
                 {
                     path: 'login',
-                    element: <LoginPage />
+                    element: <LoginPage />,
                 },
                 {
                     element:
@@ -51,7 +54,7 @@ export const router =
                         {
                             index: true,
                             element:
-                                <InboxPage />
+                                <InboxPage />,
                         },
                         {
                             path: 'inbox',
@@ -59,65 +62,78 @@ export const router =
                                 {
                                     index: true,
                                     element:
-                                        <InboxPage />
+                                        <InboxPage />,
                                 },
                                 {
                                     path:
                                         ':conversationId',
                                     element:
-                                        <InboxPage />
-                                }
-                            ]
+                                        <InboxPage />,
+                                },
+                            ],
                         },
                         {
                             path: 'clients',
                             children: [
                                 {
                                     index: true,
-                                    element: <ClientsPage />,
+                                    element:
+                                        <ClientsPage />,
                                 },
                                 {
-                                    path: ':clientId',
-                                    element: <ClientDetailsPage />,
+                                    path:
+                                        ':clientId',
+                                    element:
+                                        <ClientDetailsPage />,
                                 },
                             ],
                         },
                         {
                             path: 'channels/*',
                             element:
-                                <ChannelsPage />
+                                <ChannelsPage />,
                         },
                         {
                             path: 'settings/*',
                             element:
-                                <SettingsPage />
+                                <SettingsPage />,
                         },
                         {
-                            element:
-                                (
-                                    <RoleProtectedLayout
-                                        allowedRoles={[
-                                            'SUPER_ADMIN'
-                                        ]}
-                                    />
-                                ),
+                            element: (
+                                <RoleProtectedLayout
+                                    allowedRoles={[
+                                        'SUPER_ADMIN',
+                                    ]}
+                                />
+                            ),
                             children: [
                                 {
                                     path:
                                         'employees/*',
                                     element:
-                                        <EmployeesPage />
+                                        <EmployeesPage />,
                                 },
                                 {
                                     path:
-                                        'workspaces/*',
-                                    element:
-                                        <WorkspacesPage />
-                                }
-                            ]
-                        }
-                    ]
-                }
-            ]
-        }
+                                        'workspaces',
+                                    children: [
+                                        {
+                                            index: true,
+                                            element:
+                                                <WorkspacesPage />,
+                                        },
+                                        {
+                                            path:
+                                                ':workspaceId',
+                                            element:
+                                                <WorkspaceDetailsPage />,
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
     ])

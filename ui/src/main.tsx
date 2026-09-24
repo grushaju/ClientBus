@@ -6,6 +6,8 @@ import { router } from './app/router'
 import { AuthProvider } from './auth/AuthContext'
 
 import './index.css'
+import './styles/employees.css'
+import './styles/settings.css'
 import {WorkspaceProvider} from "./workspace/WorkspaceContext";
 
 ReactDOM.createRoot(

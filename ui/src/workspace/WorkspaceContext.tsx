@@ -4,22 +4,36 @@ import {
     useEffect,
     useMemo,
     useState,
-    type ReactNode
+    type ReactNode,
 } from 'react'
 
-import { useAuth } from '../auth/AuthContext'
 import {
-    getCurrentUserWorkspaces
+    useAuth,
+} from '../auth/AuthContext'
+
+import {
+    getCurrentUserWorkspaces,
 } from '../api/workspaceApi'
 
-import type { WorkspaceDto } from '../auth/types'
+import type {
+    WorkspaceDto,
+} from '../auth/types'
 
 interface WorkspaceContextValue {
     workspaces: WorkspaceDto[]
     currentWorkspace: WorkspaceDto | null
     isLoading: boolean
     setCurrentWorkspaceId: (
-        workspaceId: string
+        workspaceId: string,
+    ) => void
+    addWorkspace: (
+        workspace: WorkspaceDto,
+    ) => void
+    updateWorkspace: (
+        workspace: WorkspaceDto,
+    ) => void
+    removeWorkspace: (
+        workspaceId: string,
     ) => void
 }
 
@@ -36,28 +50,32 @@ const CURRENT_WORKSPACE_KEY =
     'clientbus.currentWorkspaceId'
 
 export function WorkspaceProvider({
-                                      children
+                                      children,
                                   }: WorkspaceProviderProps) {
     const {
         isAuthenticated,
-        currentEmployee
+        currentEmployee,
     } = useAuth()
 
-    const [workspaces, setWorkspaces] =
-        useState<WorkspaceDto[]>([])
+    const [
+        workspaces,
+        setWorkspaces,
+    ] = useState<WorkspaceDto[]>([])
 
     const [
         currentWorkspaceId,
-        setCurrentWorkspaceId
+        setCurrentWorkspaceId,
     ] = useState<string | null>(
         () =>
             localStorage.getItem(
-                CURRENT_WORKSPACE_KEY
-            )
+                CURRENT_WORKSPACE_KEY,
+            ),
     )
 
-    const [isLoading, setIsLoading] =
-        useState(false)
+    const [
+        isLoading,
+        setIsLoading,
+    ] = useState(false)
 
     useEffect(() => {
         if (
@@ -66,9 +84,11 @@ export function WorkspaceProvider({
         ) {
             setWorkspaces([])
             setCurrentWorkspaceId(null)
+
             localStorage.removeItem(
-                CURRENT_WORKSPACE_KEY
+                CURRENT_WORKSPACE_KEY,
             )
+
             return
         }
 
@@ -77,7 +97,7 @@ export function WorkspaceProvider({
         setIsLoading(true)
 
         getCurrentUserWorkspaces()
-            .then((items) => {
+            .then(items => {
                 if (cancelled) {
                     return
                 }
@@ -86,41 +106,39 @@ export function WorkspaceProvider({
 
                 const storedId =
                     localStorage.getItem(
-                        CURRENT_WORKSPACE_KEY
+                        CURRENT_WORKSPACE_KEY,
                     )
 
-                const storedWorkspace =
+                const selected =
                     items.find(
                         workspace =>
                             workspace.id ===
-                            storedId
-                    )
-
-                const selectedWorkspace =
-                    storedWorkspace ??
+                            storedId,
+                    ) ??
                     items[0] ??
                     null
 
                 setCurrentWorkspaceId(
-                    selectedWorkspace?.id ??
-                    null
+                    selected?.id ?? null,
                 )
 
-                if (selectedWorkspace) {
+                if (selected) {
                     localStorage.setItem(
                         CURRENT_WORKSPACE_KEY,
-                        selectedWorkspace.id
+                        selected.id,
                     )
                 } else {
                     localStorage.removeItem(
-                        CURRENT_WORKSPACE_KEY
+                        CURRENT_WORKSPACE_KEY,
                     )
                 }
             })
             .catch(() => {
                 if (!cancelled) {
                     setWorkspaces([])
-                    setCurrentWorkspaceId(null)
+                    setCurrentWorkspaceId(
+                        null,
+                    )
                 }
             })
             .finally(() => {
@@ -134,16 +152,17 @@ export function WorkspaceProvider({
         }
     }, [
         isAuthenticated,
-        currentEmployee?.id
+        currentEmployee?.id,
     ])
 
     function selectWorkspace(
-        workspaceId: string
-    ): void {
+        workspaceId: string,
+    ) {
         const workspace =
             workspaces.find(
                 item =>
-                    item.id === workspaceId
+                    item.id ===
+                    workspaceId,
             )
 
         if (!workspace) {
@@ -151,20 +170,86 @@ export function WorkspaceProvider({
         }
 
         setCurrentWorkspaceId(
-            workspace.id
+            workspace.id,
         )
 
         localStorage.setItem(
             CURRENT_WORKSPACE_KEY,
-            workspace.id
+            workspace.id,
         )
+    }
+
+    function addWorkspace(
+        workspace: WorkspaceDto,
+    ) {
+        setWorkspaces(current => [
+            ...current,
+            workspace,
+        ])
+    }
+
+    function updateWorkspace(
+        workspace: WorkspaceDto,
+    ) {
+        setWorkspaces(current =>
+            current.map(item =>
+                item.id === workspace.id
+                    ? workspace
+                    : item,
+            ),
+        )
+    }
+
+    function removeWorkspace(
+        workspaceId: string,
+    ) {
+        setWorkspaces(current => {
+            const remaining =
+                current.filter(
+                    item =>
+                        item.id !==
+                        workspaceId,
+                )
+
+            setCurrentWorkspaceId(
+                currentId => {
+                    if (
+                        currentId !==
+                        workspaceId
+                    ) {
+                        return currentId
+                    }
+
+                    const next =
+                        remaining[0] ??
+                        null
+
+                    if (next) {
+                        localStorage.setItem(
+                            CURRENT_WORKSPACE_KEY,
+                            next.id,
+                        )
+
+                        return next.id
+                    }
+
+                    localStorage.removeItem(
+                        CURRENT_WORKSPACE_KEY,
+                    )
+
+                    return null
+                },
+            )
+
+            return remaining
+        })
     }
 
     const currentWorkspace =
         workspaces.find(
             workspace =>
                 workspace.id ===
-                currentWorkspaceId
+                currentWorkspaceId,
         ) ?? null
 
     const value = useMemo(
@@ -173,13 +258,16 @@ export function WorkspaceProvider({
             currentWorkspace,
             isLoading,
             setCurrentWorkspaceId:
-            selectWorkspace
+            selectWorkspace,
+            addWorkspace,
+            updateWorkspace,
+            removeWorkspace,
         }),
         [
             workspaces,
             currentWorkspace,
-            isLoading
-        ]
+            isLoading,
+        ],
     )
 
     return (
@@ -194,11 +282,13 @@ export function WorkspaceProvider({
 export function useWorkspace():
     WorkspaceContextValue {
     const context =
-        useContext(WorkspaceContext)
+        useContext(
+            WorkspaceContext,
+        )
 
     if (!context) {
         throw new Error(
-            'useWorkspace must be used inside WorkspaceProvider'
+            'useWorkspace must be used inside WorkspaceProvider',
         )
     }
 

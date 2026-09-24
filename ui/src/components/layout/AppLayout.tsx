@@ -1,8 +1,13 @@
-import type { ReactNode } from 'react'
+import type {
+    ReactNode,
+} from 'react'
 
-import { useAuth } from '../../auth/AuthContext'
 import {
-    useWorkspace
+    useAuth,
+} from '../../auth/AuthContext'
+
+import {
+    useWorkspace,
 } from '../../workspace/WorkspaceContext'
 
 import Sidebar from './Sidebar'
@@ -11,22 +16,25 @@ interface AppLayoutProps {
     children: ReactNode
 }
 
-function AppLayout({ children }: AppLayoutProps) {
+function AppLayout({
+                       children,
+                   }: AppLayoutProps) {
     const {
         currentEmployee,
+        currentOrganization,
         isSuperAdmin,
-        isEmployee
+        isEmployee,
     } = useAuth()
 
     const {
         workspaces,
         currentWorkspace,
-        setCurrentWorkspaceId
+        setCurrentWorkspaceId,
     } = useWorkspace()
 
     const fullName = [
         currentEmployee?.firstName,
-        currentEmployee?.lastName
+        currentEmployee?.lastName,
     ]
         .filter(Boolean)
         .join(' ')
@@ -55,23 +63,32 @@ function AppLayout({ children }: AppLayoutProps) {
                             ClientBus
                         </strong>
 
+                        <span className="app-organization-name">
+                            {
+                                currentOrganization?.name
+                            }
+                        </span>
+
                         <select
                             value={
                                 currentWorkspace?.id ??
                                 ''
                             }
-                            onChange={(event) =>
+                            onChange={event =>
                                 setCurrentWorkspaceId(
-                                    event.target.value
+                                    event.target.value,
                                 )
                             }
                             disabled={
-                                workspaces.length === 0
+                                workspaces.length ===
+                                0
                             }
                         >
-                            {workspaces.length === 0 ? (
+                            {workspaces.length ===
+                            0 ? (
                                 <option value="">
-                                    Нет доступных Workspace
+                                    Нет доступных
+                                    Workspace
                                 </option>
                             ) : (
                                 workspaces.map(
@@ -88,7 +105,7 @@ function AppLayout({ children }: AppLayoutProps) {
                                                 workspace.name
                                             }
                                         </option>
-                                    )
+                                    ),
                                 )
                             )}
                         </select>

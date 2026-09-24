@@ -32,6 +32,8 @@ import {
     getChannelTypeLabel,
 } from '../components/channels/channelLabels'
 
+import PlatformIcon from '../components/common/platform/PlatformIcon'
+
 function getChannelStatusClass(
     status: ChannelDto['status'],
 ): string {
@@ -171,25 +173,12 @@ function ChannelsPage() {
 
         setCreateOpen(false)
 
-        /*
-         * Новый канал создаётся в состоянии CREATED.
-         *
-         * Для Telegram сразу открываем
-         * authorization flow.
-         */
         setConnectionChannel(channel)
     }
 
     function handleConnected(
         _channel: ChannelDto,
     ) {
-        /*
-         * Не используем переданный channel как
-         * source of truth, поскольку он может
-         * содержать старый status.
-         *
-         * Повторно загружаем канал из backend.
-         */
         setConnectionChannel(null)
 
         loadChannels()
@@ -197,15 +186,6 @@ function ChannelsPage() {
 
     function handleConnectionClose() {
         setConnectionChannel(null)
-
-        /*
-         * Закрытие dialog не отменяет Telegram
-         * authorization session.
-         *
-         * Если канал остался CONNECTING,
-         * при следующем открытии будет выполнен
-         * GET /status.
-         */
     }
 
     function handleUpdated(
@@ -240,13 +220,6 @@ function ChannelsPage() {
             channel.account.id,
         )
             .then(() => {
-                /*
-                 * Backend уже успешно выполнил
-                 * отключение. Сразу обновляем
-                 * локальное состояние, не делая
-                 * повторный GET, который может
-                 * успеть вернуть старый status.
-                 */
                 setChannels((current) =>
                     sortChannels(
                         current.map((item) =>
@@ -285,10 +258,6 @@ function ChannelsPage() {
             channel.account.id,
         )
             .then(() => {
-                /*
-                 * После успешного enable сразу
-                 * отражаем новое состояние в UI.
-                 */
                 setChannels((current) =>
                     sortChannels(
                         current.map((item) =>
@@ -427,15 +396,24 @@ function ChannelsPage() {
                             className="channel-card"
                         >
                             <div className="channel-card-header">
-                                <div>
-                                    <div className="channel-card-title">
-                                        {channel.name}
+                                <div className="channel-card-header-main">
+                                    <div className="channel-card-platform-icon">
+                                        <PlatformIcon
+                                            type={channel.type}
+                                            size={24}
+                                        />
                                     </div>
 
-                                    <div className="channel-card-type">
-                                        {getChannelTypeLabel(
-                                            channel.type,
-                                        )}
+                                    <div className="channel-card-header-info">
+                                        <div className="channel-card-title">
+                                            {channel.name}
+                                        </div>
+
+                                        <div className="channel-card-type">
+                                            {getChannelTypeLabel(
+                                                channel.type,
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
 
@@ -458,7 +436,7 @@ function ChannelsPage() {
                                 {channel.account ? (
                                     <div className="channel-card-account-info">
                                         {channel.account.displayName && (
-                                            <div>
+                                            <div className="channel-card-account-name">
                                                 {
                                                     channel
                                                         .account
@@ -468,7 +446,7 @@ function ChannelsPage() {
                                         )}
 
                                         {channel.account.username && (
-                                            <div>
+                                            <div className="channel-card-account-username">
                                                 @
                                                 {
                                                     channel
@@ -479,7 +457,7 @@ function ChannelsPage() {
                                         )}
 
                                         {channel.account.phone && (
-                                            <div>
+                                            <div className="channel-card-account-phone">
                                                 {
                                                     channel
                                                         .account
@@ -487,15 +465,6 @@ function ChannelsPage() {
                                                 }
                                             </div>
                                         )}
-
-                                        <div className="channel-card-account-external-id">
-                                            ID:{' '}
-                                            {
-                                                channel
-                                                    .account
-                                                    .externalId
-                                            }
-                                        </div>
                                     </div>
                                 ) : (
                                     <div className="channel-card-account-empty">
@@ -519,93 +488,93 @@ function ChannelsPage() {
 
                                 {channel.status ===
                                     'CREATED' && (
-                                    <button
-                                        type="button"
-                                        className="channel-button channel-button-primary"
-                                        onClick={() =>
-                                            setConnectionChannel(
-                                                channel,
-                                            )
-                                        }
-                                    >
-                                        Подключить
-                                    </button>
-                                )}
+                                        <button
+                                            type="button"
+                                            className="channel-button channel-button-primary"
+                                            onClick={() =>
+                                                setConnectionChannel(
+                                                    channel,
+                                                )
+                                            }
+                                        >
+                                            Подключить
+                                        </button>
+                                    )}
 
                                 {channel.status ===
                                     'DISCONNECTED' && (
-                                    <button
-                                        type="button"
-                                        className="channel-button channel-button-primary"
-                                        onClick={() =>
-                                            setConnectionChannel(
-                                                channel,
-                                            )
-                                        }
-                                    >
-                                        Подключить
-                                    </button>
-                                )}
+                                        <button
+                                            type="button"
+                                            className="channel-button channel-button-primary"
+                                            onClick={() =>
+                                                setConnectionChannel(
+                                                    channel,
+                                                )
+                                            }
+                                        >
+                                            Подключить
+                                        </button>
+                                    )}
 
                                 {channel.status ===
                                     'ERROR' && (
-                                    <button
-                                        type="button"
-                                        className="channel-button channel-button-primary"
-                                        onClick={() =>
-                                            setConnectionChannel(
-                                                channel,
-                                            )
-                                        }
-                                    >
-                                        Подключить снова
-                                    </button>
-                                )}
+                                        <button
+                                            type="button"
+                                            className="channel-button channel-button-primary"
+                                            onClick={() =>
+                                                setConnectionChannel(
+                                                    channel,
+                                                )
+                                            }
+                                        >
+                                            Подключить снова
+                                        </button>
+                                    )}
 
                                 {channel.status ===
                                     'CONNECTING' && (
-                                    <button
-                                        type="button"
-                                        className="channel-button channel-button-primary"
-                                        onClick={() =>
-                                            setConnectionChannel(
-                                                channel,
-                                            )
-                                        }
-                                    >
-                                        Продолжить подключение
-                                    </button>
-                                )}
+                                        <button
+                                            type="button"
+                                            className="channel-button channel-button-primary"
+                                            onClick={() =>
+                                                setConnectionChannel(
+                                                    channel,
+                                                )
+                                            }
+                                        >
+                                            Продолжить подключение
+                                        </button>
+                                    )}
 
                                 {channel.status ===
                                     'CONNECTED' && (
-                                    <button
-                                        type="button"
-                                        className="channel-button channel-button-secondary"
-                                        onClick={() =>
-                                            handleDisable(
-                                                channel,
-                                            )
-                                        }
-                                    >
-                                        Отключить
-                                    </button>
-                                )}
+                                        <button
+                                            type="button"
+                                            className="channel-button channel-button-secondary"
+                                            onClick={() =>
+                                                handleDisable(
+                                                    channel,
+                                                )
+                                            }
+                                        >
+                                            Отключить
+                                        </button>
+                                    )}
 
                                 {channel.status ===
                                     'DISABLED' && (
-                                    <button
-                                        type="button"
-                                        className="channel-button channel-button-primary"
-                                        onClick={() =>
-                                            handleEnable(
-                                                channel,
-                                            )
-                                        }
-                                    >
-                                        Включить
-                                    </button>
-                                )}
+                                        <button
+                                            type="button"
+                                            className="channel-button channel-button-primary"
+                                            onClick={() =>
+                                                handleEnable(
+                                                    channel,
+                                                )
+                                            }
+                                        >
+                                            Включить
+                                        </button>
+                                    )}
 
                                 {isSuperAdmin && (
                                     <>
@@ -653,6 +622,7 @@ function ChannelsPage() {
 
             <ChannelDetailsDialog
                 channel={selectedChannel}
+                workspaceName={currentWorkspace?.name ?? null}
                 onClose={() =>
                     setSelectedChannel(null)
                 }
