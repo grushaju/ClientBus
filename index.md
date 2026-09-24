@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-09-25 00:35:06
+- Generated: 2026-09-25 01:43:38
 - Branch: `main`
-- Commit: `54dfd40`
+- Commit: `a6424ee`
 
 ## Project Structure
 
@@ -479,6 +479,7 @@
 - `ui/src/components/channels/ChannelConnectionDialog.tsx`
 - `ui/src/components/channels/ChannelDetailsDialog.tsx`
 - `ui/src/components/channels/channelLabels.ts`
+- `ui/src/components/channels/Channels.css`
 - `ui/src/components/channels/channelTypeConfig.ts`
 - `ui/src/components/channels/CreateChannelDialog.tsx`
 - `ui/src/components/channels/DeleteChannelDialog.tsx`
@@ -489,10 +490,12 @@
 - `ui/src/components/clients/ClientCreateForm.tsx`
 - `ui/src/components/clients/ClientList.tsx`
 - `ui/src/components/clients/ClientReassignDialog.tsx`
+- `ui/src/components/clients/Clients.css`
 - `ui/src/components/common/platform/platform.ts`
 - `ui/src/components/common/platform/PlatformIcon.tsx`
 - `ui/src/components/common/platform/PlatformName.tsx`
 - `ui/src/components/employees/EmployeeDetailsDialog.tsx`
+- `ui/src/components/employees/Employees.css`
 - `ui/src/components/inbox/ConversationClientPanel.tsx`
 - `ui/src/components/inbox/ConversationHeader.tsx`
 - `ui/src/components/inbox/ConversationList.tsx`
@@ -505,27 +508,37 @@
 - `ui/src/components/inbox/MessageList.tsx`
 - `ui/src/components/inbox/NewConversationDialog.tsx`
 - `ui/src/components/inbox/useConversationMessages.ts`
+- `ui/src/components/layout/AppLayout.css`
 - `ui/src/components/layout/AppLayout.tsx`
 - `ui/src/components/layout/ProtectedLayout.tsx`
 - `ui/src/components/layout/RoleProtectedLayout.tsx`
+- `ui/src/components/layout/Sidebar.css`
 - `ui/src/components/layout/Sidebar.tsx`
 - `ui/src/components/workspaces/CreateWorkspaceDialog.tsx`
 - `ui/src/components/workspaces/DeleteWorkspaceDialog.tsx`
 - `ui/src/components/workspaces/EditWorkspaceDialog.tsx`
 - `ui/src/components/workspaces/WorkspaceEmployeesDialog.tsx`
+- `ui/src/components/workspaces/Workspaces.css`
 - `ui/src/index.css`
 - `ui/src/main.tsx`
+- `ui/src/pages/ChannelsPage.css`
 - `ui/src/pages/ChannelsPage.tsx`
+- `ui/src/pages/ClientDetailsPage.css`
 - `ui/src/pages/ClientDetailsPage.tsx`
+- `ui/src/pages/ClientsPage.css`
 - `ui/src/pages/ClientsPage.tsx`
+- `ui/src/pages/EmployeesPage.css`
 - `ui/src/pages/EmployeesPage.tsx`
+- `ui/src/pages/InboxPage.css`
 - `ui/src/pages/InboxPage.tsx`
+- `ui/src/pages/LoginPage.css`
 - `ui/src/pages/LoginPage.tsx`
+- `ui/src/pages/SettingsPage.css`
 - `ui/src/pages/SettingsPage.tsx`
+- `ui/src/pages/WorkspaceDetailsPage.css`
 - `ui/src/pages/WorkspaceDetailsPage.tsx`
+- `ui/src/pages/WorkspacesPage.css`
 - `ui/src/pages/WorkspacesPage.tsx`
-- `ui/src/styles/employees.css`
-- `ui/src/styles/settings.css`
 - `ui/src/workspace/WorkspaceContext.tsx`
 
 #### `public`
@@ -546,6 +559,6 @@
 
 - Maven modules: 3
 - Java files: 243
-- UI source files: 76
-- Git commit: `54dfd40`
+- UI source files: 89
+- Git commit: `a6424ee`
 
