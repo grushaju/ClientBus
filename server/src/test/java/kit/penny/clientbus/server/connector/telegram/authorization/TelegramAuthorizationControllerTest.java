@@ -1,5 +1,6 @@
 package kit.penny.clientbus.server.connector.telegram.authorization;
 
+import kit.penny.clientbus.common.dto.channel.ClientAccountDiscoveryDto;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -109,5 +110,46 @@ class TelegramAuthorizationControllerTest {
                         channelAccountId,
                         "test@example.com"
                 );
+    }
+
+    @Test
+    void find_shouldDelegateToAuthorizationService() {
+
+        ClientAccountDiscoveryDto expected =
+                new ClientAccountDiscoveryDto(
+                        "123456789",
+                        "pavel",
+                        "+491234567890",
+                        "Pavel Grushin",
+                        null
+                );
+
+        when(
+                authorizationService.find(
+                        channelAccountId,
+                        null,
+                        "pavel"
+                )
+        ).thenReturn(expected);
+
+        ClientAccountDiscoveryDto result =
+                controller.find(
+                        channelAccountId,
+                        null,
+                        "pavel"
+                );
+
+        assertEquals(
+                expected,
+                result
+        );
+
+        verify(
+                authorizationService
+        ).find(
+                channelAccountId,
+                null,
+                "pavel"
+        );
     }
 }

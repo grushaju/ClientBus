@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-09-24 00:27:14
+- Generated: 2026-09-24 12:14:13
 - Branch: `main`
-- Commit: `8e8bc83`
+- Commit: `5f18cb1`
 
 ## Project Structure
 
@@ -23,6 +23,7 @@
 
 - `ChannelAccountDto.java` — `common/src/main/java/kit/penny/clientbus/common/dto/channel/ChannelAccountDto.java`
 - `ChannelDto.java` — `common/src/main/java/kit/penny/clientbus/common/dto/channel/ChannelDto.java`
+- `ClientAccountDiscoveryDto.java` — `common/src/main/java/kit/penny/clientbus/common/dto/channel/ClientAccountDiscoveryDto.java`
 - `CreateChannelAccountRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/channel/CreateChannelAccountRequest.java`
 - `CreateChannelRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/channel/CreateChannelRequest.java`
 - `UpdateChannelAccountRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/channel/UpdateChannelAccountRequest.java`
@@ -528,7 +529,7 @@
 ## Summary
 
 - Maven modules: 3
-- Java files: 240
+- Java files: 241
 - UI source files: 65
-- Git commit: `8e8bc83`
+- Git commit: `5f18cb1`
 

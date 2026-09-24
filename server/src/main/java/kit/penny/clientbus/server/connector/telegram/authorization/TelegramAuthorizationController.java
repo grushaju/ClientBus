@@ -2,6 +2,7 @@ package kit.penny.clientbus.server.connector.telegram.authorization;
 
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import kit.penny.clientbus.common.dto.channel.ClientAccountDiscoveryDto;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
@@ -86,6 +87,19 @@ public class TelegramAuthorizationController {
             @PathVariable UUID channelAccountId
     ) {
         authorizationService.disconnect(channelAccountId);
+    }
+
+    @GetMapping("/find")
+    public ClientAccountDiscoveryDto find(
+            @PathVariable UUID channelAccountId,
+            @RequestParam(required = false) String phone,
+            @RequestParam(required = false) String username
+    ) {
+        return authorizationService.find(
+                channelAccountId,
+                phone,
+                username
+        );
     }
 
     public record AuthenticationCodeRequest(
