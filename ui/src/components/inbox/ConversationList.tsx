@@ -15,6 +15,10 @@ import { getClientAccountsByIds } from '../../api/clientAccountApi'
 import { getWorkspaceChannels } from '../../api/channelApi'
 
 import type {
+    ChannelDto,
+} from '../../api/types/channel'
+
+import type {
     ChannelSummary,
     ConversationDto,
     ConversationListItem,
@@ -24,6 +28,8 @@ import { useAuth } from '../../auth/AuthContext'
 import { useWorkspace } from '../../workspace/WorkspaceContext'
 
 import ConversationListItemComponent from './ConversationListItem'
+import NewConversationDialog from './NewConversationDialog'
+
 import type {
     ConversationListTab,
 } from './ConversationListItem'
@@ -73,6 +79,16 @@ function ConversationList() {
     const [error, setError] =
         useState<string | null>(null)
 
+    const [
+        channels,
+        setChannels,
+    ] = useState<ChannelDto[]>([])
+
+    const [
+        showNewConversation,
+        setShowNewConversation,
+    ] = useState(false)
+
     useEffect(() => {
         if (isSuperAdmin) {
             setTab('all')
@@ -113,6 +129,7 @@ function ConversationList() {
     useEffect(() => {
         if (!currentWorkspace) {
             setItems([])
+            setChannels([])
             return
         }
 
@@ -121,6 +138,7 @@ function ConversationList() {
             !currentEmployee
         ) {
             setItems([])
+            setChannels([])
             return
         }
 
@@ -158,10 +176,14 @@ function ConversationList() {
                         )
                 }
 
-                const channels =
+                const workspaceChannels =
                     await getWorkspaceChannels(
                         workspaceId,
                     )
+
+                setChannels(
+                    workspaceChannels,
+                )
 
                 const channelByAccountId =
                     new Map<
@@ -171,8 +193,8 @@ function ConversationList() {
 
                 for (
                     const channel of
-                    channels
-                ) {
+                    workspaceChannels
+                    ) {
                     if (
                         channel.account
                     ) {
@@ -282,12 +304,12 @@ function ConversationList() {
                         (
                             tab === 'mine' &&
                             updated.assignedEmployeeId ===
-                                currentEmployee?.id
+                            currentEmployee?.id
                         ) ||
                         (
                             tab === 'unassigned' &&
                             updated.assignedEmployeeId ===
-                                null
+                            null
                         )
 
                     if (!shouldRemain) {
@@ -304,10 +326,10 @@ function ConversationList() {
                                 item.conversation.id ===
                                 updated.id
                                     ? {
-                                          ...item,
-                                          conversation:
-                                              updated,
-                                      }
+                                        ...item,
+                                        conversation:
+                                        updated,
+                                    }
                                     : item,
                         )
 
@@ -386,6 +408,16 @@ function ConversationList() {
         )
     }
 
+    const handleConversationCreated = (
+        createdConversationId: string,
+    ) => {
+        setShowNewConversation(false)
+
+        navigate(
+            `/inbox/${createdConversationId}?tab=${tab}`,
+        )
+    }
+
     if (!currentWorkspace) {
         return (
             <div className="conversation-list-state">
@@ -395,106 +427,146 @@ function ConversationList() {
     }
 
     return (
-        <div className="conversation-list">
-            <div className="conversation-list-header">
-                <div>
-                    <h2>Диалоги</h2>
+        <>
+            <div className="conversation-list">
+                <div className="conversation-list-header">
+                    <div className="conversation-list-header-top">
+                        <div>
+                            <h2>
+                                Диалоги
+                            </h2>
 
-                    <span className="conversation-list-workspace">
-                        {currentWorkspace.name}
-                    </span>
-                </div>
+                            <span className="conversation-list-workspace">
+                                {currentWorkspace.name}
+                            </span>
+                        </div>
 
-                {isEmployee && (
-                    <div className="conversation-list-tabs">
-                        <button
-                            type="button"
-                            className={
-                                tab ===
-                                'mine'
-                                    ? 'active'
-                                    : ''
-                            }
-                            onClick={() =>
-                                handleTabChange(
-                                    'mine',
-                                )
-                            }
-                        >
-                            Мои диалоги
-                        </button>
-
-                        <button
-                            type="button"
-                            className={
-                                tab ===
-                                'unassigned'
-                                    ? 'active'
-                                    : ''
-                            }
-                            onClick={() =>
-                                handleTabChange(
-                                    'unassigned',
-                                )
-                            }
-                        >
-                            Свободные
-                        </button>
-                    </div>
-                )}
-            </div>
-
-            {loading && (
-                <div className="conversation-list-state">
-                    Загрузка…
-                </div>
-            )}
-
-            {!loading &&
-                error && (
-                    <div className="conversation-list-state conversation-list-error">
-                        {error}
-                    </div>
-                )}
-
-            {!loading &&
-                !error &&
-                items.length === 0 && (
-                    <div className="conversation-list-state">
-                        Диалогов нет
-                    </div>
-                )}
-
-            {!loading &&
-                !error &&
-                items.length > 0 && (
-                    <div className="conversation-list-items">
-                        {items.map(
-                            item => (
-                                <ConversationListItemComponent
-                                    key={
-                                        item
-                                            .conversation
-                                            .id
-                                    }
-                                    item={
-                                        item
-                                    }
-                                    active={
-                                        item
-                                            .conversation
-                                            .id ===
-                                        conversationId
-                                    }
-                                    tab={
-                                        tab
-                                    }
-                                />
-                            ),
+                        {isEmployee && (
+                            <button
+                                type="button"
+                                className="conversation-new-button"
+                                onClick={() =>
+                                    setShowNewConversation(
+                                        true,
+                                    )
+                                }
+                            >
+                                + Новый диалог
+                            </button>
                         )}
                     </div>
+
+                    {isEmployee && (
+                        <div className="conversation-list-tabs">
+                            <button
+                                type="button"
+                                className={
+                                    tab ===
+                                    'mine'
+                                        ? 'active'
+                                        : ''
+                                }
+                                onClick={() =>
+                                    handleTabChange(
+                                        'mine',
+                                    )
+                                }
+                            >
+                                Мои диалоги
+                            </button>
+
+                            <button
+                                type="button"
+                                className={
+                                    tab ===
+                                    'unassigned'
+                                        ? 'active'
+                                        : ''
+                                }
+                                onClick={() =>
+                                    handleTabChange(
+                                        'unassigned',
+                                    )
+                                }
+                            >
+                                Свободные
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                {loading && (
+                    <div className="conversation-list-state">
+                        Загрузка…
+                    </div>
                 )}
-        </div>
+
+                {!loading &&
+                    error && (
+                        <div className="conversation-list-state conversation-list-error">
+                            {error}
+                        </div>
+                    )}
+
+                {!loading &&
+                    !error &&
+                    items.length === 0 && (
+                        <div className="conversation-list-state">
+                            Диалогов нет
+                        </div>
+                    )}
+
+                {!loading &&
+                    !error &&
+                    items.length > 0 && (
+                        <div className="conversation-list-items">
+                            {items.map(
+                                item => (
+                                    <ConversationListItemComponent
+                                        key={
+                                            item
+                                                .conversation
+                                                .id
+                                        }
+                                        item={
+                                            item
+                                        }
+                                        active={
+                                            item
+                                                .conversation
+                                                .id ===
+                                            conversationId
+                                        }
+                                        tab={
+                                            tab
+                                        }
+                                    />
+                                ),
+                            )}
+                        </div>
+                    )}
+            </div>
+
+            {showNewConversation &&
+                (
+                    <NewConversationDialog
+                        workspaceId={
+                            currentWorkspace.id
+                        }
+                        channels={
+                            channels
+                        }
+                        onClose={() =>
+                            setShowNewConversation(
+                                false,
+                            )
+                        }
+                        onCreated={
+                            handleConversationCreated
+                        }
+                    />
+                )}
+        </>
     )
 }
 
@@ -507,18 +579,18 @@ function sortConversationItems(
                 a.conversation
                     .lastMessageAt
                     ? new Date(
-                          a.conversation
-                              .lastMessageAt,
-                      ).getTime()
+                        a.conversation
+                            .lastMessageAt,
+                    ).getTime()
                     : 0
 
             const bTime =
                 b.conversation
                     .lastMessageAt
                     ? new Date(
-                          b.conversation
-                              .lastMessageAt,
-                      ).getTime()
+                        b.conversation
+                            .lastMessageAt,
+                    ).getTime()
                     : 0
 
             return bTime - aTime

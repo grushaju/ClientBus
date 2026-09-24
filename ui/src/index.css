@@ -371,22 +371,6 @@ a {
     font-size: 11px;
 }
 
-.conversation-list-item-platform {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 4px;
-    font-size: 12px;
-}
-
-.conversation-list-item-platform strong {
-    font-weight: 600;
-}
-
-.conversation-list-item-platform span {
-    color: #888;
-}
-
 .conversation-list-item-bottom {
     display: flex;
     align-items: center;
@@ -534,29 +518,10 @@ a {
     border-bottom: 1px solid #e5e7eb;
 }
 
-.conversation-client-panel-header h3,
-.conversation-client-panel-section h3 {
-    margin: 0;
-
-    font-size: 13px;
-    font-weight: 600;
-}
-
 .conversation-client-panel-section {
     padding: 16px 18px;
 
     border-bottom: 1px solid #e5e7eb;
-}
-
-.conversation-client-panel-section > h3 {
-    margin-bottom: 14px;
-}
-
-.conversation-channel-card {
-    border: 1px solid #f0b4b4;
-    border-radius: 8px;
-    padding: 12px;
-    background: #fff8f8;
 }
 
 .conversation-client-avatar {
@@ -748,67 +713,10 @@ a {
     font-size: 12px;
 }
 
-.conversation-account-platform {
-    display: flex;
-    align-items: center;
-
-    gap: 8px;
-
-    margin-bottom: 12px;
-
-    font-size: 13px;
-    font-weight: 600;
-}
-
-.conversation-accounts-toggle {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 8px 4px;
-    border: 0;
-    background: transparent;
-    color: #6b7280;
-    font-size: 13px;
-    cursor: pointer;
-}
-
 .conversation-accounts-toggle:hover {
     color: #111827;
 }
 
-.conversation-account-card {
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
-    padding: 12px;
-}
-
-.conversation-account-card-current {
-    border-color: #93c5fd;
-    background: #f8fbff;
-}
-
-.conversation-channel-info {
-    display: flex;
-    align-items: center;
-
-    gap: 9px;
-}
-
-.conversation-channel-info > div {
-    display: flex;
-    flex-direction: column;
-
-    gap: 3px;
-
-    min-width: 0;
-}
-
-.conversation-channel-info > div > span {
-    color: #6b7280;
-
-    font-size: 11px;
-}
 
 /* =========================================================
    CONVERSATION HEADER
@@ -3033,4 +2941,485 @@ a {
 
     font-size: 13px;
     line-height: 1.5;
+}
+/* =========================================================
+   NEW CONVERSATION
+   ========================================================= */
+
+.conversation-list-header-top {
+    display: flex;
+
+    align-items: flex-start;
+    justify-content: space-between;
+
+    gap: 12px;
+}
+
+.conversation-list-workspace {
+    display: block;
+}
+
+.conversation-new-button {
+    flex-shrink: 0;
+
+    padding: 7px 10px;
+
+    border: 1px solid #111827;
+    border-radius: 6px;
+
+    background: #111827;
+    color: #ffffff;
+
+    font: inherit;
+    font-size: 12px;
+    font-weight: 500;
+
+    cursor: pointer;
+}
+
+.conversation-new-button:hover {
+    background: #1f2937;
+}
+
+.new-conversation-modal {
+    width: min(560px, 100%);
+}
+
+.new-conversation-search-tabs {
+    display: flex;
+
+    gap: 6px;
+}
+
+.new-conversation-search-tabs button {
+    flex: 1;
+
+    padding: 9px 10px;
+
+    border: 1px solid #e5e7eb;
+    border-radius: 7px;
+
+    background: #ffffff;
+    color: #6b7280;
+
+    font: inherit;
+    font-size: 13px;
+    font-weight: 500;
+
+    cursor: pointer;
+}
+
+.new-conversation-search-tabs button:hover:not(:disabled) {
+    background: #f9fafb;
+}
+
+.new-conversation-search-tabs button.active {
+    border-color: #93c5fd;
+
+    background: #f8fbff;
+    color: #1d4ed8;
+
+    font-weight: 600;
+}
+
+.new-conversation-search-tabs button:disabled {
+    opacity: 0.5;
+
+    cursor: default;
+}
+
+.new-conversation-result {
+    display: flex;
+    flex-direction: column;
+
+    gap: 8px;
+
+    padding: 14px;
+
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+
+    background: #f9fafb;
+}
+
+.new-conversation-result-title {
+    color: #6b7280;
+
+    font-size: 11px;
+    font-weight: 600;
+
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.new-conversation-result-name {
+    margin-bottom: 4px;
+
+    color: #111827;
+
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.new-conversation-result-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+
+    gap: 16px;
+}
+
+.new-conversation-result-row span {
+    color: #6b7280;
+
+    font-size: 12px;
+}
+
+.new-conversation-result-row strong {
+    max-width: 70%;
+
+    overflow-wrap: anywhere;
+
+    color: #374151;
+
+    font-size: 13px;
+    font-weight: 500;
+
+    text-align: right;
+}
+
+.new-conversation-result-existing {
+    margin-top: 6px;
+
+    padding-top: 10px;
+
+    border-top: 1px solid #e5e7eb;
+
+    color: #6b7280;
+
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.conversation-list-error {
+    color: #b91c1c;
+}
+
+@media (max-width: 640px) {
+    .conversation-list-header-top {
+        flex-direction: column;
+
+        align-items: stretch;
+    }
+
+    .conversation-new-button {
+        width: 100%;
+    }
+
+    .new-conversation-result-row {
+        align-items: flex-start;
+
+        flex-direction: column;
+
+        gap: 2px;
+    }
+
+    .new-conversation-result-row strong {
+        max-width: 100%;
+
+        text-align: left;
+    }
+}
+
+/* =========================================================
+   INBOX CLIENT PANEL — ACCOUNT
+   ========================================================= */
+
+.conversation-client-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    margin-bottom: 10px;
+}
+
+.conversation-client-section-header h4 {
+    margin: 0;
+
+    color: #111827;
+
+    font-size: 12px;
+    font-weight: 600;
+}
+
+
+/* =========================================================
+   CURRENT / OTHER CLIENT ACCOUNT
+   ========================================================= */
+
+.conversation-client-account-card {
+    display: flex;
+    align-items: flex-start;
+
+    gap: 10px;
+
+    min-width: 0;
+
+    padding: 10px 11px;
+
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+
+    background: #ffffff;
+}
+
+.conversation-client-account-icon {
+    width: 32px;
+    height: 32px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    flex-shrink: 0;
+
+    border-radius: 7px;
+
+    background: #f3f4f6;
+
+    color: #374151;
+}
+
+.conversation-client-account-info {
+    min-width: 0;
+
+    display: flex;
+    flex-direction: column;
+
+    gap: 3px;
+}
+
+.conversation-client-account-info strong {
+    min-width: 0;
+
+    overflow: hidden;
+
+    color: #111827;
+
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.35;
+
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.conversation-client-account-info span {
+    min-width: 0;
+
+    overflow: hidden;
+
+    color: #6b7280;
+
+    font-size: 11px;
+    line-height: 1.35;
+
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+
+/* =========================================================
+   CLIENT ACCOUNT ACTIONS
+   ========================================================= */
+
+.conversation-client-panel-section
+.conversation-client-actions {
+    margin-top: 10px;
+
+    display: flex;
+    flex-direction: column;
+
+    gap: 7px;
+}
+
+.conversation-client-panel-section
+.conversation-client-actions
+.conversation-client-secondary-button {
+    width: 100%;
+    min-height: 34px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    box-sizing: border-box;
+
+    padding: 7px 10px;
+
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+
+    background: #ffffff;
+    color: #374151;
+
+    font: inherit;
+    font-size: 12px;
+    font-weight: 500;
+
+    line-height: 1.3;
+
+    text-align: center;
+
+    cursor: pointer;
+}
+
+.conversation-client-panel-section
+.conversation-client-actions
+.conversation-client-secondary-button:hover:not(:disabled) {
+    background: #f9fafb;
+
+    border-color: #9ca3af;
+}
+
+.conversation-client-panel-section
+.conversation-client-actions
+.conversation-client-secondary-button:disabled {
+    opacity: 0.5;
+
+    cursor: default;
+}
+
+
+/* =========================================================
+   OTHER ACCOUNTS
+   ========================================================= */
+
+.conversation-client-other-accounts {
+    display: flex;
+    flex-direction: column;
+
+    gap: 7px;
+
+    margin-top: 10px;
+
+    padding-top: 10px;
+
+    border-top: 1px solid #f0f0f0;
+}
+
+.conversation-client-other-accounts
+.conversation-client-account-card {
+    background: #fafafa;
+
+    border-color: #eeeeee;
+}
+
+.conversation-client-other-accounts
+.conversation-client-account-icon {
+    width: 30px;
+    height: 30px;
+
+    background: #f3f4f6;
+}
+
+
+/* =========================================================
+   CLIENT PANEL RESPONSIVE
+   ========================================================= */
+
+@media (max-width: 900px) {
+    .conversation-client-panel {
+        width: 300px;
+    }
+}
+
+@media (max-width: 640px) {
+    .conversation-client-panel {
+        width: 100%;
+        flex-shrink: 1;
+
+        border-left: 0;
+        border-top: 1px solid #e5e7eb;
+    }
+
+    .conversation-client-panel-section {
+        padding: 14px 16px;
+    }
+
+    .conversation-client-panel-header {
+        padding: 14px 16px;
+    }
+}
+/* =========================================================
+   INBOX CLIENT PANEL — CHANNEL
+   ========================================================= */
+
+.conversation-client-channel {
+    display: flex;
+    align-items: center;
+
+    gap: 10px;
+
+    min-width: 0;
+
+    padding: 10px 11px;
+
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+
+    background: #ffffff;
+}
+
+.conversation-client-channel > svg {
+    width: 32px;
+    height: 32px;
+
+    flex-shrink: 0;
+
+    padding: 7px;
+
+    box-sizing: border-box;
+
+    border-radius: 7px;
+
+    background: #f3f4f6;
+}
+
+.conversation-client-channel > div {
+    min-width: 0;
+
+    display: flex;
+    flex-direction: column;
+
+    gap: 3px;
+}
+
+.conversation-client-channel strong {
+    min-width: 0;
+
+    overflow: hidden;
+
+    color: #111827;
+
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.35;
+
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.conversation-client-channel span {
+    min-width: 0;
+
+    overflow: hidden;
+
+    color: #6b7280;
+
+    font-size: 11px;
+    line-height: 1.35;
+
+    white-space: nowrap;
+    text-overflow: ellipsis;
 }

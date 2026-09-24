@@ -46,6 +46,14 @@ export interface ChannelDto {
     account: ChannelAccountDto | null
 }
 
+export interface ClientAccountDiscoveryDto {
+    externalId: string
+    username: string | null
+    phone: string | null
+    displayName: string | null
+    existingClientAccountId: string | null
+}
+
 export interface CreateChannelAccountRequest {
     externalId?: string
     username?: string | null

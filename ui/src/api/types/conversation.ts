@@ -1,4 +1,5 @@
 import type { ClientAccountDto } from './clientAccount'
+import type { ChannelType } from './channel'
 
 export interface ConversationDto {
     id: string
@@ -17,6 +18,16 @@ export interface CreateConversationRequest {
     workspaceId: string
     channelAccountId: string
     clientAccountId: string
+}
+
+export interface CreateOutboundConversationRequest {
+    workspaceId: string
+    channelAccountId: string
+    channelType: ChannelType
+    externalId: string
+    username?: string | null
+    phone?: string | null
+    displayName?: string | null
 }
 
 export interface ConversationListItem {

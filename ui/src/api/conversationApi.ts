@@ -1,6 +1,8 @@
 import { apiFetch } from './apiClient'
+
 import type {
-    ConversationDto
+    ConversationDto,
+    CreateOutboundConversationRequest,
 } from './types/conversation'
 
 export async function getConversation(
@@ -49,6 +51,20 @@ export async function getUnassignedConversations(
 ): Promise<ConversationDto[]> {
     const response = await apiFetch(
         `/api/conversations/workspace/${workspaceId}/unassigned`
+    )
+
+    return response.json()
+}
+
+export async function createOutboundConversation(
+    request: CreateOutboundConversationRequest,
+): Promise<ConversationDto> {
+    const response = await apiFetch(
+        '/api/conversations/outbound',
+        {
+            method: 'POST',
+            body: JSON.stringify(request),
+        },
     )
 
     return response.json()

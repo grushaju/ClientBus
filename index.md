@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-09-24 12:14:13
+- Generated: 2026-09-24 12:47:19
 - Branch: `main`
-- Commit: `5f18cb1`
+- Commit: `97b0ccc`
 
 ## Project Structure
 
@@ -495,6 +495,7 @@
 - `ui/src/components/inbox/MessageBubble.tsx`
 - `ui/src/components/inbox/MessageComposer.tsx`
 - `ui/src/components/inbox/MessageList.tsx`
+- `ui/src/components/inbox/NewConversationDialog.tsx`
 - `ui/src/components/inbox/useConversationMessages.ts`
 - `ui/src/components/layout/AppLayout.tsx`
 - `ui/src/components/layout/ProtectedLayout.tsx`
@@ -530,6 +531,6 @@
 
 - Maven modules: 3
 - Java files: 241
-- UI source files: 65
-- Git commit: `5f18cb1`
+- UI source files: 66
+- Git commit: `97b0ccc`
 

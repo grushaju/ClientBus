@@ -1,6 +1,7 @@
 import { apiFetch } from './apiClient'
 
 import type {
+    ClientAccountDiscoveryDto,
     TelegramAuthorizationStatus,
 } from './types/channel'
 
@@ -84,4 +85,40 @@ export async function enableTelegramChannel(
             method: 'POST',
         },
     )
+}
+
+export async function findTelegramClientAccount(
+    channelAccountId: string,
+    search: {
+        phone?: string
+        username?: string
+    },
+): Promise<ClientAccountDiscoveryDto> {
+    const params = new URLSearchParams()
+
+    const phone = search.phone?.trim()
+    const username = search.username?.trim()
+
+    if (phone) {
+        params.set('phone', phone)
+    }
+
+    if (username) {
+        params.set(
+            'username',
+            username.startsWith('@')
+                ? username.substring(1)
+                : username,
+        )
+    }
+
+    const query = params.toString()
+
+    const response = await apiFetch(
+        `/api/channels/${channelAccountId}/telegram/find${
+            query ? `?${query}` : ''
+        }`,
+    )
+
+    return response.json()
 }
