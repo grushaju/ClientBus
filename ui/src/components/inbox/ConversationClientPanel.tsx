@@ -426,12 +426,10 @@ function ConversationClientPanel({
                                 <div className="conversation-client-actions">
                                     <button
                                         type="button"
-                                        className="conversation-client-primary-button"
+                                        className="ui-button ui-button-sm ui-button-primary ui-button-block"
                                         onClick={() => {
                                             setError(null)
-                                            setShowCreateForm(
-                                                true,
-                                            )
+                                            setShowCreateForm(true)
                                         }}
                                     >
                                         Создать клиента
@@ -439,12 +437,10 @@ function ConversationClientPanel({
 
                                     <button
                                         type="button"
-                                        className="conversation-client-secondary-button"
+                                        className="ui-button ui-button-sm ui-button-secondary ui-button-block"
                                         onClick={() => {
                                             setError(null)
-                                            setShowLinkForm(
-                                                true,
-                                            )
+                                            setShowLinkForm(true)
                                             void loadClients()
                                         }}
                                     >
@@ -455,70 +451,65 @@ function ConversationClientPanel({
 
                         {showCreateForm && (
                             <div className="conversation-client-form">
-                                <label>
-                                    <span>
+                                <label className="ui-form-field">
+                                    <span className="ui-form-label">
                                         Имя
                                     </span>
 
                                     <input
+                                        className="ui-input ui-input-sm"
                                         value={firstName}
                                         onChange={event =>
                                             setFirstName(
                                                 event.target.value,
                                             )
                                         }
-                                        disabled={
-                                            actionLoading
-                                        }
+                                        disabled={actionLoading}
                                     />
                                 </label>
 
-                                <label>
-                                    <span>
+                                <label className="ui-form-field">
+                                    <span className="ui-form-label">
                                         Фамилия
                                     </span>
 
                                     <input
+                                        className="ui-input ui-input-sm"
                                         value={lastName}
                                         onChange={event =>
                                             setLastName(
                                                 event.target.value,
                                             )
                                         }
-                                        disabled={
-                                            actionLoading
-                                        }
+                                        disabled={actionLoading}
                                     />
                                 </label>
 
-                                <label>
-                                    <span>
+                                <label className="ui-form-field">
+                                    <span className="ui-form-label">
                                         Телефон
                                     </span>
 
                                     <input
+                                        className="ui-input ui-input-sm"
                                         value={phone}
                                         onChange={event =>
                                             setPhone(
                                                 event.target.value,
                                             )
                                         }
-                                        disabled={
-                                            actionLoading
-                                        }
+                                        disabled={actionLoading}
                                     />
                                 </label>
 
                                 <div className="conversation-client-form-actions">
                                     <button
                                         type="button"
-                                        className="conversation-client-primary-button"
+                                        className="ui-button ui-button-sm ui-button-primary ui-button-block"
                                         onClick={() =>
                                             void handleCreateClient()
                                         }
-                                        disabled={
-                                            actionLoading
-                                        }
+                                        disabled={actionLoading}
                                     >
                                         {actionLoading
                                             ? 'Создание…'
@@ -527,16 +518,12 @@ function ConversationClientPanel({
 
                                     <button
                                         type="button"
-                                        className="conversation-client-secondary-button"
+                                        className="ui-button ui-button-sm ui-button-secondary ui-button-block"
                                         onClick={() => {
-                                            setShowCreateForm(
-                                                false,
-                                            )
+                                            setShowCreateForm(false)
                                             setError(null)
                                         }}
-                                        disabled={
-                                            actionLoading
-                                        }
+                                        disabled={actionLoading}
                                     >
                                         Отмена
                                     </button>
@@ -546,19 +533,17 @@ function ConversationClientPanel({
 
                         {showLinkForm && (
                             <div className="conversation-client-form">
-                                <label>
-                                    <span>
+                                <label className="ui-form-field">
+                                    <span className="ui-form-label">
                                         Клиент
                                     </span>
 
                                     <select
-                                        value={
-                                            selectedClientId
-                                        }
+                                        className="ui-select ui-select-sm"
+                                        value={selectedClientId}
                                         onChange={event =>
                                             setSelectedClientId(
-                                                event.target
-                                                    .value,
+                                                event.target.value,
                                             )
                                         }
                                         disabled={
@@ -575,23 +560,15 @@ function ConversationClientPanel({
                                         {clients.map(
                                             item => (
                                                 <option
-                                                    key={
-                                                        item.id
-                                                    }
-                                                    value={
-                                                        item.id
-                                                    }
+                                                    key={item.id}
+                                                    value={item.id}
                                                 >
                                                     {[
                                                             item.firstName,
                                                             item.lastName,
                                                         ]
-                                                            .filter(
-                                                                Boolean,
-                                                            )
-                                                            .join(
-                                                                ' ',
-                                                            ) ||
+                                                            .filter(Boolean)
+                                                            .join(' ') ||
                                                         'Без имени'}
                                                 </option>
                                             ),
@@ -602,7 +579,7 @@ function ConversationClientPanel({
                                 <div className="conversation-client-form-actions">
                                     <button
                                         type="button"
-                                        className="conversation-client-primary-button"
+                                        className="ui-button ui-button-sm ui-button-primary ui-button-block"
                                         onClick={() =>
                                             void handleLinkClient()
                                         }
@@ -618,19 +595,13 @@ function ConversationClientPanel({
 
                                     <button
                                         type="button"
-                                        className="conversation-client-secondary-button"
+                                        className="ui-button ui-button-sm ui-button-secondary ui-button-block"
                                         onClick={() => {
-                                            setShowLinkForm(
-                                                false,
-                                            )
-                                            setSelectedClientId(
-                                                '',
-                                            )
+                                            setShowLinkForm(false)
+                                            setSelectedClientId('')
                                             setError(null)
                                         }}
-                                        disabled={
-                                            actionLoading
-                                        }
+                                        disabled={actionLoading}
                                     >
                                         Отмена
                                     </button>
@@ -683,51 +654,42 @@ function ConversationClientPanel({
 
                             {currentAccount.username && (
                                 <span>
-                                    @
-                                    {
-                                        currentAccount.username
-                                    }
+                                    @{currentAccount.username}
                                 </span>
                             )}
 
                             {currentAccount.phone && (
                                 <span>
-                                    {
-                                        currentAccount.phone
-                                    }
+                                    {currentAccount.phone}
                                 </span>
                             )}
                         </div>
                     </div>
 
                     <div className="conversation-client-actions">
-                        {otherAccounts.length >
-                            0 && (
-                                <button
-                                    type="button"
-                                    className="conversation-client-secondary-button"
-                                    onClick={() =>
-                                        setShowOtherAccounts(
-                                            value =>
-                                                !value,
-                                        )
-                                    }
-                                >
-                                    {showOtherAccounts
-                                        ? 'Скрыть другие аккаунты'
-                                        : `Другие аккаунты (${otherAccounts.length})`}
-                                </button>
-                            )}
+                        {otherAccounts.length > 0 && (
+                            <button
+                                type="button"
+                                className="ui-button ui-button-sm ui-button-secondary ui-button-block"
+                                onClick={() =>
+                                    setShowOtherAccounts(
+                                        value => !value,
+                                    )
+                                }
+                            >
+                                {showOtherAccounts
+                                    ? 'Скрыть другие аккаунты'
+                                    : `Другие аккаунты (${otherAccounts.length})`}
+                            </button>
+                        )}
 
                         <button
                             type="button"
-                            className="conversation-client-secondary-button"
+                            className="ui-button ui-button-sm ui-button-secondary ui-button-block"
                             onClick={() =>
                                 void handleUnlink()
                             }
-                            disabled={
-                                actionLoading
-                            }
+                            disabled={actionLoading}
                         >
                             {actionLoading
                                 ? 'Выполняется…'
@@ -736,15 +698,12 @@ function ConversationClientPanel({
                     </div>
 
                     {showOtherAccounts &&
-                        otherAccounts.length >
-                        0 && (
+                        otherAccounts.length > 0 && (
                             <div className="conversation-client-other-accounts">
                                 {otherAccounts.map(
                                     account => (
                                         <div
-                                            key={
-                                                account.id
-                                            }
+                                            key={account.id}
                                             className="conversation-client-account-card"
                                         >
                                             <div className="conversation-client-account-icon">
@@ -752,9 +711,7 @@ function ConversationClientPanel({
                                                     type={
                                                         account.channelType
                                                     }
-                                                    size={
-                                                        18
-                                                    }
+                                                    size={18}
                                                 />
                                             </div>
 
@@ -776,18 +733,13 @@ function ConversationClientPanel({
 
                                                 {account.username && (
                                                     <span>
-                                                        @
-                                                        {
-                                                            account.username
-                                                        }
+                                                        @{account.username}
                                                     </span>
                                                 )}
 
                                                 {account.phone && (
                                                     <span>
-                                                        {
-                                                            account.phone
-                                                        }
+                                                        {account.phone}
                                                     </span>
                                                 )}
                                             </div>
@@ -799,29 +751,26 @@ function ConversationClientPanel({
                 </div>
             )}
 
-            {isSuperAdmin &&
-                client && (
-                    <div className="conversation-client-panel-section">
-                        <div className="conversation-client-section-header">
-                            <h4>
-                                Клиент
-                            </h4>
-                        </div>
-
-                        <button
-                            type="button"
-                            className="conversation-client-secondary-button"
-                            onClick={() => {
-                                setShowLinkForm(
-                                    true,
-                                )
-                                void loadClients()
-                            }}
-                        >
-                            Привязать другой аккаунт
-                        </button>
+            {isSuperAdmin && client && (
+                <div className="conversation-client-panel-section">
+                    <div className="conversation-client-section-header">
+                        <h4>
+                            Клиент
+                        </h4>
                     </div>
-                )}
+
+                    <button
+                        type="button"
+                        className="ui-button ui-button-sm ui-button-secondary ui-button-block"
+                        onClick={() => {
+                            setShowLinkForm(true)
+                            void loadClients()
+                        }}
+                    >
+                        Привязать другой аккаунт
+                    </button>
+                </div>
+            )}
 
             {channel && (
                 <div className="conversation-client-panel-section">
@@ -833,9 +782,7 @@ function ConversationClientPanel({
 
                     <div className="conversation-client-channel">
                         <PlatformIcon
-                            type={
-                                channel.type
-                            }
+                            type={channel.type}
                             size={18}
                         />
 
@@ -846,9 +793,7 @@ function ConversationClientPanel({
 
                             <span>
                                 <PlatformName
-                                    type={
-                                        channel.type
-                                    }
+                                    type={channel.type}
                                 />
                             </span>
                         </div>

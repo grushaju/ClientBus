@@ -21,6 +21,10 @@ import './components/channels/Channels.css'
 import './components/clients/Clients.css'
 import './components/workspaces/Workspaces.css'
 
+import './components/inbox/Inbox.css'
+import './components/inbox/Conversations.css'
+import './components/inbox/Messages.css'
+
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { RouterProvider } from 'react-router-dom'

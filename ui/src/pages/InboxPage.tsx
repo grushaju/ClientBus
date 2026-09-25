@@ -1,5 +1,5 @@
 import {
-    useParams
+    useParams,
 } from 'react-router-dom'
 
 import InboxLayout
@@ -13,7 +13,7 @@ import ConversationView
 
 function InboxPage() {
     const {
-        conversationId
+        conversationId,
     } = useParams()
 
     return (
@@ -27,7 +27,7 @@ function InboxPage() {
                         <ConversationView />
                     )
                     : (
-                        <div className="conversation-empty">
+                        <div className="inbox-empty">
                             <h2>
                                 Inbox
                             </h2>

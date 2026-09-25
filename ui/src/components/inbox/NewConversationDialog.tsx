@@ -40,12 +40,9 @@ function NewConversationDialog({
         () =>
             channels.filter(
                 channel =>
-                    channel.type ===
-                    'TELEGRAM' &&
-                    channel.status ===
-                    'CONNECTED' &&
-                    channel.account !==
-                    null,
+                    channel.type === 'TELEGRAM' &&
+                    channel.status === 'CONNECTED' &&
+                    channel.account !== null,
             ),
         [channels],
     )
@@ -97,10 +94,7 @@ function NewConversationDialog({
         ) ?? null
 
     useEffect(() => {
-        if (
-            telegramChannels.length ===
-            0
-        ) {
+        if (telegramChannels.length === 0) {
             setSelectedChannelId('')
             return
         }
@@ -224,24 +218,21 @@ function NewConversationDialog({
 
         try {
             const conversation =
-                await createOutboundConversation(
-                    {
-                        workspaceId,
-                        channelAccountId:
-                        selectedChannel
-                            .account.id,
-                        channelType:
-                        selectedChannel.type,
-                        externalId:
-                        discovery.externalId,
-                        username:
-                        discovery.username,
-                        phone:
-                        discovery.phone,
-                        displayName:
-                        discovery.displayName,
-                    },
-                )
+                await createOutboundConversation({
+                    workspaceId,
+                    channelAccountId:
+                    selectedChannel.account.id,
+                    channelType:
+                    selectedChannel.type,
+                    externalId:
+                    discovery.externalId,
+                    username:
+                    discovery.username,
+                    phone:
+                    discovery.phone,
+                    displayName:
+                    discovery.displayName,
+                })
 
             onCreated(
                 conversation.id,
@@ -266,7 +257,7 @@ function NewConversationDialog({
 
     return (
         <div
-            className="channel-modal-overlay"
+            className="ui-dialog-overlay"
             onMouseDown={event => {
                 if (
                     event.target ===
@@ -279,7 +270,7 @@ function NewConversationDialog({
             }}
         >
             <div
-                className="channel-modal new-conversation-modal"
+                className="ui-dialog new-conversation-dialog"
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="new-conversation-title"
@@ -287,13 +278,16 @@ function NewConversationDialog({
                     event.stopPropagation()
                 }
             >
-                <div className="channel-modal-header">
+                <div className="ui-dialog-header">
                     <div>
-                        <h2 id="new-conversation-title">
+                        <h2
+                            id="new-conversation-title"
+                            className="ui-dialog-title"
+                        >
                             Новый диалог
                         </h2>
 
-                        <div className="channel-modal-subtitle">
+                        <div className="new-conversation-dialog-subtitle">
                             Найдите пользователя
                             и начните диалог
                         </div>
@@ -301,7 +295,7 @@ function NewConversationDialog({
 
                     <button
                         type="button"
-                        className="channel-modal-close"
+                        className="ui-dialog-close"
                         onClick={onClose}
                         disabled={
                             loading ||
@@ -313,31 +307,34 @@ function NewConversationDialog({
                     </button>
                 </div>
 
-                {telegramChannels.length ===
-                0 ? (
+                {telegramChannels.length === 0 ? (
                     <>
-                        <div className="channel-form">
-                            <div className="channel-form-hint">
+                        <div className="ui-dialog-body">
+                            <div className="ui-form-hint new-conversation-dialog-hint">
                                 Нет подключённых
                                 Telegram-каналов,
                                 доступных для
                                 поиска.
                             </div>
 
-                            <div className="channel-form-hint">
+                            <div
+                                className="ui-form-hint new-conversation-dialog-hint"
+                                style={{
+                                    marginTop:
+                                        'var(--ui-space-3)',
+                                }}
+                            >
                                 Сначала подключите
                                 Telegram в разделе
                                 «Каналы».
                             </div>
                         </div>
 
-                        <div className="channel-modal-actions">
+                        <div className="ui-dialog-footer">
                             <button
                                 type="button"
-                                className="channel-button channel-button-secondary"
-                                onClick={
-                                    onClose
-                                }
+                                className="ui-button ui-button-sm ui-button-secondary"
+                                onClick={onClose}
                             >
                                 Закрыть
                             </button>
@@ -345,227 +342,209 @@ function NewConversationDialog({
                     </>
                 ) : (
                     <>
-                        <div className="channel-form">
-                            <label className="channel-form-field">
-                                <span>
-                                    Канал
-                                </span>
+                        <div className="ui-dialog-body">
+                            <div className="ui-form">
+                                <label className="ui-form-field">
+                                    <span className="ui-form-label">
+                                        Канал
+                                    </span>
 
-                                <select
-                                    value={
-                                        selectedChannelId
-                                    }
-                                    onChange={event => {
-                                        setSelectedChannelId(
-                                            event
-                                                .target
-                                                .value,
-                                        )
-                                        setDiscovery(
-                                            null,
-                                        )
-                                        setError(
-                                            null,
-                                        )
-                                    }}
-                                    disabled={
-                                        loading ||
-                                        creating
-                                    }
-                                >
-                                    {telegramChannels.map(
-                                        channel => (
-                                            <option
-                                                key={
-                                                    channel.id
-                                                }
-                                                value={
-                                                    channel.id
-                                                }
-                                            >
-                                                {
-                                                    channel.name
-                                                }
-                                            </option>
-                                        ),
-                                    )}
-                                </select>
-                            </label>
-
-                            <div className="new-conversation-search-tabs">
-                                <button
-                                    type="button"
-                                    className={
-                                        searchMode ===
-                                        'phone'
-                                            ? 'active'
-                                            : ''
-                                    }
-                                    onClick={() =>
-                                        handleSearchModeChange(
-                                            'phone',
-                                        )
-                                    }
-                                    disabled={
-                                        loading ||
-                                        creating
-                                    }
-                                >
-                                    Телефон
-                                </button>
-
-                                <button
-                                    type="button"
-                                    className={
-                                        searchMode ===
-                                        'username'
-                                            ? 'active'
-                                            : ''
-                                    }
-                                    onClick={() =>
-                                        handleSearchModeChange(
-                                            'username',
-                                        )
-                                    }
-                                    disabled={
-                                        loading ||
-                                        creating
-                                    }
-                                >
-                                    Username
-                                </button>
-                            </div>
-
-                            <label className="channel-form-field">
-                                <span>
-                                    {searchMode ===
-                                    'phone'
-                                        ? 'Номер телефона'
-                                        : 'Username'}
-                                </span>
-
-                                <input
-                                    type={
-                                        searchMode ===
-                                        'phone'
-                                            ? 'tel'
-                                            : 'text'
-                                    }
-                                    value={
-                                        searchValue
-                                    }
-                                    onChange={event => {
-                                        setSearchValue(
-                                            event
-                                                .target
-                                                .value,
-                                        )
-                                        setDiscovery(
-                                            null,
-                                        )
-                                        setError(
-                                            null,
-                                        )
-                                    }}
-                                    placeholder={
-                                        searchMode ===
-                                        'phone'
-                                            ? '+49...'
-                                            : '@username'
-                                    }
-                                    disabled={
-                                        loading ||
-                                        creating
-                                    }
-                                    autoFocus
-                                    onKeyDown={event => {
-                                        if (
-                                            event.key ===
-                                            'Enter' &&
-                                            !loading &&
-                                            !creating
-                                        ) {
-                                            event.preventDefault()
-                                            void handleSearch()
+                                    <select
+                                        className="ui-select"
+                                        value={
+                                            selectedChannelId
                                         }
-                                    }}
-                                />
-                            </label>
+                                        onChange={event => {
+                                            setSelectedChannelId(
+                                                event.target.value,
+                                            )
+                                            setDiscovery(null)
+                                            setError(null)
+                                        }}
+                                        disabled={
+                                            loading ||
+                                            creating
+                                        }
+                                    >
+                                        {telegramChannels.map(
+                                            channel => (
+                                                <option
+                                                    key={channel.id}
+                                                    value={channel.id}
+                                                >
+                                                    {channel.name}
+                                                </option>
+                                            ),
+                                        )}
+                                    </select>
+                                </label>
 
-                            {error && (
-                                <div className="channel-form-error">
-                                    {error}
+                                <div className="new-conversation-search-tabs">
+                                    <button
+                                        type="button"
+                                        className="ui-button ui-button-sm ui-button-secondary"
+                                        data-active={
+                                            searchMode ===
+                                            'phone'
+                                        }
+                                        onClick={() =>
+                                            handleSearchModeChange(
+                                                'phone',
+                                            )
+                                        }
+                                        disabled={
+                                            loading ||
+                                            creating
+                                        }
+                                    >
+                                        Телефон
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        className="ui-button ui-button-sm ui-button-secondary"
+                                        data-active={
+                                            searchMode ===
+                                            'username'
+                                        }
+                                        onClick={() =>
+                                            handleSearchModeChange(
+                                                'username',
+                                            )
+                                        }
+                                        disabled={
+                                            loading ||
+                                            creating
+                                        }
+                                    >
+                                        Username
+                                    </button>
                                 </div>
-                            )}
 
-                            {discovery && (
-                                <div className="new-conversation-result">
-                                    <div className="new-conversation-result-title">
-                                        Пользователь
-                                        найден
-                                    </div>
+                                <label className="ui-form-field">
+                                    <span className="ui-form-label">
+                                        {searchMode ===
+                                        'phone'
+                                            ? 'Номер телефона'
+                                            : 'Username'}
+                                    </span>
 
-                                    <div className="new-conversation-result-name">
-                                        {displayName}
-                                    </div>
-
-                                    {discovery.username && (
-                                        <div className="new-conversation-result-row">
-                                            <span>
-                                                Username
-                                            </span>
-
-                                            <strong>
-                                                @
-                                                {
-                                                    discovery.username
-                                                }
-                                            </strong>
-                                        </div>
-                                    )}
-
-                                    {discovery.phone && (
-                                        <div className="new-conversation-result-row">
-                                            <span>
-                                                Телефон
-                                            </span>
-
-                                            <strong>
-                                                {
-                                                    discovery.phone
-                                                }
-                                            </strong>
-                                        </div>
-                                    )}
-
-                                    <div className="new-conversation-result-row">
-                                        <span>
-                                            Telegram ID
-                                        </span>
-
-                                        <strong>
-                                            {
-                                                discovery.externalId
+                                    <input
+                                        className="ui-input"
+                                        type={
+                                            searchMode ===
+                                            'phone'
+                                                ? 'tel'
+                                                : 'text'
+                                        }
+                                        value={
+                                            searchValue
+                                        }
+                                        onChange={event => {
+                                            setSearchValue(
+                                                event.target.value,
+                                            )
+                                            setDiscovery(null)
+                                            setError(null)
+                                        }}
+                                        placeholder={
+                                            searchMode ===
+                                            'phone'
+                                                ? '+49...'
+                                                : '@username'
+                                        }
+                                        disabled={
+                                            loading ||
+                                            creating
+                                        }
+                                        autoFocus
+                                        onKeyDown={event => {
+                                            if (
+                                                event.key ===
+                                                'Enter' &&
+                                                !loading &&
+                                                !creating
+                                            ) {
+                                                event.preventDefault()
+                                                void handleSearch()
                                             }
-                                        </strong>
-                                    </div>
+                                        }}
+                                    />
+                                </label>
 
-                                    <div className="new-conversation-result-existing">
-                                        {discovery.existingClientAccountId
-                                            ? 'Клиент уже есть в ClientBus. Будет использован существующий аккаунт.'
-                                            : 'Клиент ещё не связан с ClientBus. Аккаунт будет создан автоматически.'}
+                                {error && (
+                                    <div className="ui-form-error">
+                                        {error}
                                     </div>
-                                </div>
-                            )}
+                                )}
+
+                                {discovery && (
+                                    <div className="new-conversation-result">
+                                        <div className="new-conversation-result-title">
+                                            Пользователь
+                                            найден
+                                        </div>
+
+                                        <div className="new-conversation-result-name">
+                                            {displayName}
+                                        </div>
+
+                                        {discovery.username && (
+                                            <div className="new-conversation-result-row">
+                                                <span>
+                                                    Username
+                                                </span>
+
+                                                <strong>
+                                                    @
+                                                    {
+                                                        discovery.username
+                                                    }
+                                                </strong>
+                                            </div>
+                                        )}
+
+                                        {discovery.phone && (
+                                            <div className="new-conversation-result-row">
+                                                <span>
+                                                    Телефон
+                                                </span>
+
+                                                <strong>
+                                                    {
+                                                        discovery.phone
+                                                    }
+                                                </strong>
+                                            </div>
+                                        )}
+
+                                        <div className="new-conversation-result-row">
+                                            <span>
+                                                Telegram ID
+                                            </span>
+
+                                            <strong>
+                                                {
+                                                    discovery.externalId
+                                                }
+                                            </strong>
+                                        </div>
+
+                                        <div className="new-conversation-result-existing">
+                                            {discovery.existingClientAccountId
+                                                ? 'Клиент уже есть в ClientBus. Будет использован существующий аккаунт.'
+                                                : 'Клиент ещё не связан с ClientBus. Аккаунт будет создан автоматически.'}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
-                        <div className="channel-modal-actions">
+                        <div className="ui-dialog-footer">
                             <button
                                 type="button"
-                                className="channel-button channel-button-secondary"
-                                onClick={
-                                    onClose
-                                }
+                                className="ui-button ui-button-sm ui-button-secondary"
+                                onClick={onClose}
                                 disabled={
                                     loading ||
                                     creating
@@ -577,7 +556,7 @@ function NewConversationDialog({
                             {!discovery ? (
                                 <button
                                     type="button"
-                                    className="channel-button channel-button-primary"
+                                    className="ui-button ui-button-sm ui-button-primary"
                                     onClick={() =>
                                         void handleSearch()
                                     }
@@ -596,14 +575,10 @@ function NewConversationDialog({
                                 <>
                                     <button
                                         type="button"
-                                        className="channel-button channel-button-secondary"
+                                        className="ui-button ui-button-sm ui-button-secondary"
                                         onClick={() => {
-                                            setDiscovery(
-                                                null,
-                                            )
-                                            setError(
-                                                null,
-                                            )
+                                            setDiscovery(null)
+                                            setError(null)
                                         }}
                                         disabled={
                                             creating
@@ -614,7 +589,7 @@ function NewConversationDialog({
 
                                     <button
                                         type="button"
-                                        className="channel-button channel-button-primary"
+                                        className="ui-button ui-button-sm ui-button-primary"
                                         onClick={() =>
                                             void handleCreate()
                                         }

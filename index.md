@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-09-25 13:55:18
+- Generated: 2026-09-25 16:18:21
 - Branch: `main`
-- Commit: `6bfc8fb`
+- Commit: `4eb835b`
 
 ## Project Structure
 
@@ -506,12 +506,15 @@
 - `ui/src/components/inbox/ConversationHeader.tsx`
 - `ui/src/components/inbox/ConversationList.tsx`
 - `ui/src/components/inbox/ConversationListItem.tsx`
+- `ui/src/components/inbox/Conversations.css`
 - `ui/src/components/inbox/ConversationView.tsx`
 - `ui/src/components/inbox/ImageViewer.tsx`
+- `ui/src/components/inbox/Inbox.css`
 - `ui/src/components/inbox/InboxLayout.tsx`
 - `ui/src/components/inbox/MessageBubble.tsx`
 - `ui/src/components/inbox/MessageComposer.tsx`
 - `ui/src/components/inbox/MessageList.tsx`
+- `ui/src/components/inbox/Messages.css`
 - `ui/src/components/inbox/NewConversationDialog.tsx`
 - `ui/src/components/inbox/useConversationMessages.ts`
 - `ui/src/components/layout/AppLayout.css`
@@ -567,6 +570,6 @@
 
 - Maven modules: 3
 - Java files: 243
-- UI source files: 92
-- Git commit: `6bfc8fb`
+- UI source files: 95
+- Git commit: `4eb835b`
 

@@ -6,6 +6,7 @@ import type {
     ClientAccountSummary,
     ConversationDto,
 } from '../../api/types/conversation'
+
 import PlatformIcon from '../common/platform/PlatformIcon'
 
 interface ConversationHeaderProps {
@@ -37,7 +38,8 @@ function ConversationHeader({
                                 onAssign,
                                 onUnassign,
                             }: ConversationHeaderProps) {
-    const [isUpdating, setIsUpdating] = useState(false)
+    const [isUpdating, setIsUpdating] =
+        useState(false)
 
     const clientName =
         clientAccount?.displayName ||
@@ -62,18 +64,21 @@ function ConversationHeader({
 
     const isAssignedToCurrentEmployee =
         isEmployee &&
-        conversation.assignedEmployeeId === currentEmployeeId
+        conversation.assignedEmployeeId ===
+        currentEmployeeId
 
     const assignedEmployee =
         employees.find(
             employee =>
-                employee.id === conversation.assignedEmployeeId,
+                employee.id ===
+                conversation.assignedEmployeeId,
         ) ?? null
 
-    const assignedEmployeeName = assignedEmployee
-        ? `${assignedEmployee.firstName} ${assignedEmployee.lastName}`.trim() ||
-        assignedEmployee.username
-        : null
+    const assignedEmployeeName =
+        assignedEmployee
+            ? `${assignedEmployee.firstName} ${assignedEmployee.lastName}`.trim() ||
+            assignedEmployee.username
+            : null
 
     async function handleTake(): Promise<void> {
         setIsUpdating(true)
@@ -116,7 +121,9 @@ function ConversationHeader({
             <div className="conversation-header-main">
                 <div className="conversation-header-client">
                     <div className="conversation-header-avatar">
-                        {clientName.charAt(0).toUpperCase()}
+                        {clientName
+                            .charAt(0)
+                            .toUpperCase()}
                     </div>
 
                     <div className="conversation-header-info">
@@ -164,7 +171,7 @@ function ConversationHeader({
                         conversation.assignedEmployeeId === null && (
                             <button
                                 type="button"
-                                className="conversation-action-button"
+                                className="ui-button ui-button-sm ui-button-secondary conversation-action-button"
                                 onClick={handleTake}
                                 disabled={isUpdating}
                             >
@@ -178,7 +185,7 @@ function ConversationHeader({
                         isAssignedToCurrentEmployee && (
                             <button
                                 type="button"
-                                className="conversation-action-button"
+                                className="ui-button ui-button-sm ui-button-secondary conversation-action-button"
                                 onClick={handleRelease}
                                 disabled={isUpdating}
                             >
@@ -199,9 +206,10 @@ function ConversationHeader({
 
                             <select
                                 id="conversation-assignment"
-                                className="conversation-assignment-select"
+                                className="ui-select-sm conversation-assignment-select"
                                 value={
-                                    conversation.assignedEmployeeId ?? ''
+                                    conversation.assignedEmployeeId ??
+                                    ''
                                 }
                                 onChange={event =>
                                     void handleAssignmentChange(
@@ -214,19 +222,22 @@ function ConversationHeader({
                                     Не назначен
                                 </option>
 
-                                {employees.map(employee => {
-                                    const name =
-                                        `${employee.firstName} ${employee.lastName}`.trim()
+                                {employees.map(
+                                    employee => {
+                                        const name =
+                                            `${employee.firstName} ${employee.lastName}`.trim()
 
-                                    return (
-                                        <option
-                                            key={employee.id}
-                                            value={employee.id}
-                                        >
-                                            {name || employee.username}
-                                        </option>
-                                    )
-                                })}
+                                        return (
+                                            <option
+                                                key={employee.id}
+                                                value={employee.id}
+                                            >
+                                                {name ||
+                                                    employee.username}
+                                            </option>
+                                        )
+                                    },
+                                )}
                             </select>
                         </div>
                     )}

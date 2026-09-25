@@ -5,26 +5,45 @@ import {
     type FormEvent,
     type KeyboardEvent,
 } from 'react'
+
 import { sendOutboundMessage } from '../../api/messageApi'
+
 import type { MessageType } from '../../api/types/message'
 
-type AttachmentMode = 'NONE' | 'IMAGE' | 'AUDIO'
+type AttachmentMode =
+    | 'NONE'
+    | 'IMAGE'
+    | 'AUDIO'
 
 interface Props {
     conversationId: string
     onSent?: () => void | Promise<void>
 }
 
-function MessageComposer({ conversationId, onSent }: Props) {
-    const [content, setContent] = useState('')
-    const [attachments, setAttachments] = useState<File[]>([])
+function MessageComposer({
+                             conversationId,
+                             onSent,
+                         }: Props) {
+    const [content, setContent] =
+        useState('')
+
+    const [attachments, setAttachments] =
+        useState<File[]>([])
+
     const [attachmentMode, setAttachmentMode] =
         useState<AttachmentMode>('NONE')
-    const [menuOpen, setMenuOpen] = useState(false)
-    const [sending, setSending] = useState(false)
-    const [error, setError] = useState<string | null>(null)
 
-    const fileInputRef = useRef<HTMLInputElement | null>(null)
+    const [menuOpen, setMenuOpen] =
+        useState(false)
+
+    const [sending, setSending] =
+        useState(false)
+
+    const [error, setError] =
+        useState<string | null>(null)
+
+    const fileInputRef =
+        useRef<HTMLInputElement | null>(null)
 
     const clearAttachments = () => {
         setAttachments([])
@@ -35,7 +54,9 @@ function MessageComposer({ conversationId, onSent }: Props) {
         }
     }
 
-    const openFilePicker = (mode: 'IMAGE' | 'AUDIO') => {
+    const openFilePicker = (
+        mode: 'IMAGE' | 'AUDIO',
+    ) => {
         setAttachmentMode(mode)
         setAttachments([])
         setError(null)
@@ -43,9 +64,15 @@ function MessageComposer({ conversationId, onSent }: Props) {
 
         if (fileInputRef.current) {
             fileInputRef.current.value = ''
+
             fileInputRef.current.accept =
-                mode === 'IMAGE' ? 'image/*' : 'audio/*'
-            fileInputRef.current.multiple = mode === 'IMAGE'
+                mode === 'IMAGE'
+                    ? 'image/*'
+                    : 'audio/*'
+
+            fileInputRef.current.multiple =
+                mode === 'IMAGE'
+
             fileInputRef.current.click()
         }
     }
@@ -53,7 +80,10 @@ function MessageComposer({ conversationId, onSent }: Props) {
     const handleFileChange = (
         event: ChangeEvent<HTMLInputElement>,
     ) => {
-        const files = Array.from(event.target.files ?? [])
+        const files =
+            Array.from(
+                event.target.files ?? [],
+            )
 
         if (files.length === 0) {
             return
@@ -62,29 +92,40 @@ function MessageComposer({ conversationId, onSent }: Props) {
         if (attachmentMode === 'IMAGE') {
             if (files.length > 10) {
                 setAttachments([])
-                setError('Можно отправить не более 10 фотографий')
+                setError(
+                    'Можно отправить не более 10 фотографий',
+                )
                 return
             }
 
-            const invalidFile = files.find(
-                file => !file.type.startsWith('image/'),
-            )
+            const invalidFile =
+                files.find(
+                    file =>
+                        !file.type.startsWith(
+                            'image/',
+                        ),
+                )
 
             if (invalidFile) {
                 setAttachments([])
-                setError('Можно выбрать только изображения')
+                setError(
+                    'Можно выбрать только изображения',
+                )
                 return
             }
 
             setAttachments(files)
             setError(null)
+
             return
         }
 
         if (attachmentMode === 'AUDIO') {
             if (files.length > 1) {
                 setAttachments([])
-                setError('Можно отправить только один аудиофайл')
+                setError(
+                    'Можно отправить только один аудиофайл',
+                )
                 return
             }
 
@@ -92,7 +133,9 @@ function MessageComposer({ conversationId, onSent }: Props) {
 
             if (!file.type.startsWith('audio/')) {
                 setAttachments([])
-                setError('Можно выбрать только аудиофайл')
+                setError(
+                    'Можно выбрать только аудиофайл',
+                )
                 return
             }
 
@@ -101,30 +144,49 @@ function MessageComposer({ conversationId, onSent }: Props) {
         }
     }
 
-    const removeAttachment = (index: number) => {
+    const removeAttachment = (
+        index: number,
+    ) => {
         setAttachments(current =>
-            current.filter((_, fileIndex) => fileIndex !== index),
+            current.filter(
+                (_, fileIndex) =>
+                    fileIndex !== index,
+            ),
         )
+
         setError(null)
     }
 
     const handleSend = async () => {
-        const trimmedContent = content.trim()
+        const trimmedContent =
+            content.trim()
 
-        if (!trimmedContent && attachments.length === 0) {
+        if (
+            !trimmedContent &&
+            attachments.length === 0
+        ) {
             return
         }
 
         if (attachmentMode === 'IMAGE') {
-            if (attachments.length === 0 || attachments.length > 10) {
-                setError('Можно отправить от 1 до 10 фотографий')
+            if (
+                attachments.length === 0 ||
+                attachments.length > 10
+            ) {
+                setError(
+                    'Можно отправить от 1 до 10 фотографий',
+                )
+
                 return
             }
         }
 
         if (attachmentMode === 'AUDIO') {
             if (attachments.length !== 1) {
-                setError('Для аудио необходимо выбрать один файл')
+                setError(
+                    'Для аудио необходимо выбрать один файл',
+                )
+
                 return
             }
         }
@@ -137,7 +199,9 @@ function MessageComposer({ conversationId, onSent }: Props) {
 
             if (attachmentMode === 'IMAGE') {
                 type = 'IMAGE'
-            } else if (attachmentMode === 'AUDIO') {
+            } else if (
+                attachmentMode === 'AUDIO'
+            ) {
                 type = 'AUDIO'
             }
 
@@ -163,7 +227,9 @@ function MessageComposer({ conversationId, onSent }: Props) {
         }
     }
 
-    const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    const handleSubmit = (
+        event: FormEvent<HTMLFormElement>,
+    ) => {
         event.preventDefault()
         void handleSend()
     }
@@ -171,7 +237,10 @@ function MessageComposer({ conversationId, onSent }: Props) {
     const handleKeyDown = (
         event: KeyboardEvent<HTMLTextAreaElement>,
     ) => {
-        if (event.key !== 'Enter' || event.shiftKey) {
+        if (
+            event.key !== 'Enter' ||
+            event.shiftKey
+        ) {
             return
         }
 
@@ -189,27 +258,31 @@ function MessageComposer({ conversationId, onSent }: Props) {
         >
             {attachments.length > 0 && (
                 <div className="message-composer-attachments">
-                    {attachments.map((file, index) => (
-                        <div
-                            key={`${file.name}-${index}`}
-                            className="message-composer-attachment"
-                        >
-                            <span className="message-composer-attachment-name">
-                                {file.name}
-                            </span>
-
-                            <button
-                                type="button"
-                                className="message-composer-attachment-remove"
-                                onClick={() =>
-                                    removeAttachment(index)
-                                }
-                                disabled={sending}
+                    {attachments.map(
+                        (file, index) => (
+                            <div
+                                key={`${file.name}-${index}`}
+                                className="message-composer-attachment"
                             >
-                                ×
-                            </button>
-                        </div>
-                    ))}
+                                <span className="message-composer-attachment-name">
+                                    {file.name}
+                                </span>
+
+                                <button
+                                    type="button"
+                                    className="message-composer-attachment-remove"
+                                    onClick={() =>
+                                        removeAttachment(
+                                            index,
+                                        )
+                                    }
+                                    disabled={sending}
+                                >
+                                    ×
+                                </button>
+                            </div>
+                        ),
+                    )}
                 </div>
             )}
 
@@ -223,8 +296,12 @@ function MessageComposer({ conversationId, onSent }: Props) {
                 <div className="message-composer-add">
                     <button
                         type="button"
-                        className="message-composer-add-button"
-                        onClick={() => setMenuOpen(open => !open)}
+                        className="ui-button ui-button-sm ui-button-secondary message-composer-add-button"
+                        onClick={() =>
+                            setMenuOpen(
+                                open => !open,
+                            )
+                        }
                         disabled={sending}
                     >
                         Добавить
@@ -234,7 +311,11 @@ function MessageComposer({ conversationId, onSent }: Props) {
                         <div className="message-composer-add-menu">
                             <button
                                 type="button"
-                                onClick={() => openFilePicker('IMAGE')}
+                                onClick={() =>
+                                    openFilePicker(
+                                        'IMAGE',
+                                    )
+                                }
                                 disabled={sending}
                             >
                                 Фото
@@ -242,7 +323,11 @@ function MessageComposer({ conversationId, onSent }: Props) {
 
                             <button
                                 type="button"
-                                onClick={() => openFilePicker('AUDIO')}
+                                onClick={() =>
+                                    openFilePicker(
+                                        'AUDIO',
+                                    )
+                                }
                                 disabled={sending}
                             >
                                 Аудио
@@ -252,9 +337,12 @@ function MessageComposer({ conversationId, onSent }: Props) {
                 </div>
 
                 <textarea
+                    className="ui-textarea"
                     value={content}
                     onChange={event =>
-                        setContent(event.target.value)
+                        setContent(
+                            event.target.value,
+                        )
                     }
                     onKeyDown={handleKeyDown}
                     placeholder="Введите сообщение..."
@@ -264,6 +352,7 @@ function MessageComposer({ conversationId, onSent }: Props) {
 
                 <button
                     type="submit"
+                    className="ui-button ui-button-primary"
                     disabled={
                         sending ||
                         (
@@ -272,7 +361,9 @@ function MessageComposer({ conversationId, onSent }: Props) {
                         )
                     }
                 >
-                    {sending ? 'Отправка…' : 'Отправить'}
+                    {sending
+                        ? 'Отправка…'
+                        : 'Отправить'}
                 </button>
             </div>
 
@@ -285,7 +376,9 @@ function MessageComposer({ conversationId, onSent }: Props) {
                         ? 'image/*'
                         : 'audio/*'
                 }
-                multiple={attachmentMode === 'IMAGE'}
+                multiple={
+                    attachmentMode === 'IMAGE'
+                }
                 onChange={handleFileChange}
             />
         </form>
