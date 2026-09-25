@@ -144,7 +144,7 @@ function ClientsPage() {
                         )
                     }
                 >
-                    Новый клиент
+                    + Добавить
                 </button>
             </div>
 

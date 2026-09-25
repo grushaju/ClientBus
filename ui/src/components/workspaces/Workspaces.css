@@ -196,9 +196,11 @@
     align-items: center;
     justify-content: flex-end;
 
+    flex-shrink: 0;
+
     gap: 8px;
 
-    margin: 0 -22px -20px;
+    margin: 0;
 
     padding: 14px 22px;
 
@@ -253,23 +255,27 @@
     border: 1px solid #111827;
 
     background: #111827;
+
     color: #ffffff;
 }
 
 .workspace-button-primary:hover:not(:disabled) {
-    border-color: #1f2937;
-    background: #1f2937;
+    border-color: #000000;
+
+    background: #000000;
 }
 
 .workspace-button-secondary {
     border: 1px solid #d1d5db;
 
     background: #ffffff;
+
     color: #374151;
 }
 
 .workspace-button-secondary:hover:not(:disabled) {
     border-color: #9ca3af;
+
     background: #f9fafb;
 }
 
@@ -277,11 +283,13 @@
     border: 1px solid #fecaca;
 
     background: #ffffff;
+
     color: #b91c1c;
 }
 
 .workspace-button-danger:hover:not(:disabled) {
     border-color: #fca5a5;
+
     background: #fef2f2;
 }
 
@@ -329,7 +337,14 @@
     display: flex;
     flex-direction: column;
 
-    overflow: hidden;
+    /*
+     * Высота примерно на 4 сотрудника.
+     * Если сотрудников больше — появляется
+     * внутренний вертикальный scroll.
+     */
+    max-height: 224px;
+
+    overflow-y: auto;
 
     border: 1px solid #e5e7eb;
     border-radius: 8px;
@@ -339,9 +354,13 @@
     display: flex;
     align-items: center;
 
+    flex: 0 0 auto;
+
     gap: 11px;
 
-    padding: 12px 14px;
+    min-height: 56px;
+
+    padding: 10px 14px;
 
     border-bottom: 1px solid #e5e7eb;
 
@@ -439,7 +458,7 @@
     }
 
     .workspace-modal-actions {
-        margin: 0 -16px -18px;
+        margin: 0;
 
         padding: 12px 16px;
 

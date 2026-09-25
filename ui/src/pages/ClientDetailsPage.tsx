@@ -273,16 +273,24 @@ function ClientDetailsPage() {
                 </div>
 
                 <div className="client-details-title">
-                    <h1>
-                        {client.firstName}{' '}
-                        {client.lastName}
-                    </h1>
+                    <div className="client-details-title-row">
+                        <h1>
+                            {client.firstName}{' '}
+                            {client.lastName}
+                        </h1>
 
-                    {!client.enabled && (
-                        <span className="client-disabled-badge">
-                            Отключён
+                        <span
+                            className={
+                                client.enabled
+                                    ? 'client-status-badge client-status-badge-active'
+                                    : 'client-status-badge client-status-badge-disabled'
+                            }
+                        >
+                            {client.enabled
+                                ? 'Активен'
+                                : 'Отключён'}
                         </span>
-                    )}
+                    </div>
                 </div>
 
                 <div className="client-details-actions">
@@ -592,10 +600,10 @@ function ClientDetailsPage() {
                                         {conversation.unreadCount >
                                             0 && (
                                                 <span className="unread-badge">
-                                                {
-                                                    conversation.unreadCount
-                                                }
-                                            </span>
+                                                    {
+                                                        conversation.unreadCount
+                                                    }
+                                                </span>
                                             )}
                                     </button>
                                 ),
