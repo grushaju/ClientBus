@@ -206,7 +206,7 @@ function ConversationHeader({
 
                             <select
                                 id="conversation-assignment"
-                                className="ui-select-sm conversation-assignment-select"
+                                className="ui-select-header conversation-assignment-select"
                                 value={
                                     conversation.assignedEmployeeId ??
                                     ''

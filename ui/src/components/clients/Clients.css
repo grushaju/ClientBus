@@ -263,11 +263,15 @@
    ========================================================= */
 
 .client-accounts-card {
-    margin-top: 20px;
+    min-width: 0;
 }
 
 .client-accounts-error {
     margin-top: 14px;
+}
+
+.client-conversations-card {
+    grid-column: 1 / -1;
 }
 
 .client-details-card {

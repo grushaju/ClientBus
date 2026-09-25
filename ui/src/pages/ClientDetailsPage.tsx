@@ -140,6 +140,28 @@ function ClientDetailsPage() {
         void load()
     }, [clientId])
 
+    const reloadConversations =
+        async () => {
+            if (!clientId) {
+                return
+            }
+
+            try {
+                const result =
+                    await getClientConversations(
+                        clientId,
+                    )
+
+                setConversations(result)
+            } catch (err) {
+                setError(
+                    err instanceof Error
+                        ? err.message
+                        : 'Не удалось обновить диалоги',
+                )
+            }
+        }
+
     const handleSave =
         async () => {
             if (!clientId) {
@@ -539,6 +561,9 @@ function ClientDetailsPage() {
                     clientId={client.id}
                     accounts={accounts}
                     onAccountsChange={setAccounts}
+                    onConversationsReload={
+                        reloadConversations
+                    }
                 />
 
                 <section className="client-details-card client-conversations-card">

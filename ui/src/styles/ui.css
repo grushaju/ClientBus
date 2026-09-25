@@ -528,6 +528,45 @@
     color: var(--ui-color-text-muted);
 }
 
+/* =========================================================
+   SELECTORS
+   ========================================================= */
+.ui-select-header {
+    min-width: 170px;
+    max-width: 260px;
+    height: var(--ui-control-height-sm);
+
+    padding: 0 30px 0 10px;
+
+    border: 1px solid var(--ui-color-border);
+    border-radius: var(--ui-radius-sm);
+
+    background: var(--ui-color-background);
+    color: var(--ui-color-text-secondary);
+
+    outline: none;
+
+    font: inherit;
+    font-size: var(--ui-font-size-sm);
+
+    transition: var(--ui-transition-fast);
+}
+
+.ui-select-header:hover:not(:disabled) {
+    border-color: var(--ui-color-border-focus);
+}
+
+.ui-select-header:focus {
+    border-color: var(--ui-color-border-focus);
+
+    box-shadow:
+            0 0 0 2px rgba(156, 163, 175, 0.15);
+}
+
+.ui-select-header:disabled {
+    background: var(--ui-color-background-muted);
+    color: var(--ui-color-text-placeholder);
+}
 
 /* =========================================================
    RESPONSIVE

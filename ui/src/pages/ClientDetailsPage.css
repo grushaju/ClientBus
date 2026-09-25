@@ -2,16 +2,11 @@
    CLIENT DETAILS PAGE
    ========================================================= */
 
-.client-details-page {
-    width: 100%;
-    max-width: 1180px;
+.client-conversation-list {
+    display: flex;
+    flex-direction: column;
 
-    min-width: 0;
-    min-height: 100%;
-
-    margin: 0 auto;
-    padding: 28px 30px 40px;
-
+    max-height: 320px;
     overflow-y: auto;
 }
 
@@ -184,7 +179,11 @@
 
     gap: var(--ui-space-5);
 
-    align-items: start;
+    align-items: stretch;
+}
+
+.client-details-grid > .client-details-card {
+    min-width: 0;
 }
 
 .client-details-grid > .client-details-card:first-child {
@@ -488,11 +487,6 @@
     line-height: 1.4;
 
     text-align: center;
-}
-
-.client-conversation-list {
-    display: flex;
-    flex-direction: column;
 }
 
 .client-conversation-item {

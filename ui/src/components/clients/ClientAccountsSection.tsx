@@ -23,12 +23,14 @@ interface ClientAccountsSectionProps {
     onAccountsChange: (
         accounts: ClientAccountDto[],
     ) => void
+    onConversationsReload?: () => Promise<void>
 }
 
 function ClientAccountsSection({
                                    clientId,
                                    accounts,
                                    onAccountsChange,
+                                   onConversationsReload,
                                }: ClientAccountsSectionProps) {
     const [pickerOpen, setPickerOpen] =
         useState(false)
@@ -62,6 +64,8 @@ function ClientAccountsSection({
                 ...accounts,
                 updatedAccount,
             ])
+
+            await onConversationsReload?.()
 
             setPickerOpen(false)
         } catch (err) {
@@ -104,6 +108,8 @@ function ClientAccountsSection({
                         item.id !== account.id,
                 ),
             )
+
+            await onConversationsReload?.()
         } catch (err) {
             setError(
                 err instanceof Error
@@ -140,6 +146,8 @@ function ClientAccountsSection({
                         item.id !== account.id,
                 ),
             )
+
+            await onConversationsReload?.()
 
             setReassignAccount(null)
             setReassignTarget(null)

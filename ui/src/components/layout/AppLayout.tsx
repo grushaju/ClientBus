@@ -70,6 +70,7 @@ function AppLayout({
                         </span>
 
                         <select
+                            className="ui-select-header"
                             value={
                                 currentWorkspace?.id ??
                                 ''

@@ -444,7 +444,7 @@ function ConversationList() {
                         {isEmployee && (
                             <button
                                 type="button"
-                                className="conversation-new-button"
+                                className="ui-button ui-button-primary"
                                 onClick={() =>
                                     setShowNewConversation(
                                         true,

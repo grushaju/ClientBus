@@ -4,9 +4,12 @@
 
 .app-layout {
     width: 100%;
-    min-height: 100vh;
+    height: 100vh;
+    min-height: 0;
 
     display: flex;
+
+    overflow: hidden;
 
     background: var(--ui-color-background);
 }
@@ -18,6 +21,7 @@
 
 .app-content {
     min-width: 0;
+    min-height: 0;
     flex: 1;
 
     display: flex;
@@ -73,44 +77,6 @@
     text-overflow: ellipsis;
 }
 
-.app-header-left select {
-    min-width: 170px;
-    max-width: 260px;
-    height: var(--ui-control-height-sm);
-
-    padding: 0 30px 0 10px;
-
-    border: 1px solid var(--ui-color-border);
-    border-radius: var(--ui-radius-sm);
-
-    background: var(--ui-color-background);
-    color: var(--ui-color-text-secondary);
-
-    outline: none;
-
-    font: inherit;
-    font-size: var(--ui-font-size-sm);
-
-    transition: var(--ui-transition-fast);
-}
-
-.app-header-left select:hover:not(:disabled) {
-    border-color: var(--ui-color-border-focus);
-}
-
-.app-header-left select:focus {
-    border-color: var(--ui-color-border-focus);
-
-    box-shadow:
-            0 0 0 2px rgba(156, 163, 175, 0.15);
-}
-
-.app-header-left select:disabled {
-    background: var(--ui-color-background-muted);
-    color: var(--ui-color-text-placeholder);
-}
-
-
 /* =========================================================
    USER
    ========================================================= */
@@ -163,6 +129,7 @@
 
 .app-main {
     min-width: 0;
+    min-height: 0;
     flex: 1;
 
     background: var(--ui-color-background-muted);

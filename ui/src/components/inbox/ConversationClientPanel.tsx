@@ -23,10 +23,15 @@ import type {
     ConversationDto,
 } from '../../api/types/conversation'
 
+import type {
+    ClientAccountDto,
+} from '../../api/types/clientAccount'
+
 import { useAuth } from '../../auth/AuthContext'
 
 import PlatformIcon from '../common/platform/PlatformIcon'
 import PlatformName from '../common/platform/PlatformName'
+import ClientAccountPicker from '../clients/ClientAccountPicker'
 
 interface Props {
     conversation: ConversationDto
@@ -67,6 +72,9 @@ function ConversationClientPanel({
         useState(false)
 
     const [showOtherAccounts, setShowOtherAccounts] =
+        useState(false)
+
+    const [showAccountPicker, setShowAccountPicker] =
         useState(false)
 
     const [firstName, setFirstName] =
@@ -270,6 +278,43 @@ function ConversationClientPanel({
 
                 setShowLinkForm(false)
                 setSelectedClientId('')
+
+                await onChanged()
+            } catch (err) {
+                setError(
+                    err instanceof Error
+                        ? err.message
+                        : 'Не удалось привязать аккаунт',
+                )
+            } finally {
+                setActionLoading(false)
+            }
+        }
+
+    const handleAssignAnotherAccount =
+        async (
+            account: ClientAccountDto,
+        ) => {
+            if (!client) {
+                return
+            }
+
+            setActionLoading(true)
+            setError(null)
+
+            try {
+                await assignClientAccount(
+                    client.id,
+                    account.id,
+                )
+
+                const accounts =
+                    await getClientAccountsByClient(
+                        client.id,
+                    )
+
+                setClientAccounts(accounts)
+                setShowAccountPicker(false)
 
                 await onChanged()
             } catch (err) {
@@ -667,6 +712,33 @@ function ConversationClientPanel({
                     </div>
 
                     <div className="conversation-client-actions">
+                        <button
+                            type="button"
+                            className="ui-button ui-button-sm ui-button-danger ui-button-block"
+                            onClick={() =>
+                                void handleUnlink()
+                            }
+                            disabled={actionLoading}
+                        >
+                            {actionLoading
+                                ? 'Выполняется…'
+                                : 'Отвязать аккаунт'}
+                        </button>
+
+                        {(
+                            <button
+                                type="button"
+                                className="ui-button ui-button-sm ui-button-secondary ui-button-block"
+                                onClick={() => {
+                                    setError(null)
+                                    setShowAccountPicker(true)
+                                }}
+                                disabled={actionLoading}
+                            >
+                                Привязать еще аккаунт
+                            </button>
+                        )}
+
                         {otherAccounts.length > 0 && (
                             <button
                                 type="button"
@@ -683,18 +755,6 @@ function ConversationClientPanel({
                             </button>
                         )}
 
-                        <button
-                            type="button"
-                            className="ui-button ui-button-sm ui-button-secondary ui-button-block"
-                            onClick={() =>
-                                void handleUnlink()
-                            }
-                            disabled={actionLoading}
-                        >
-                            {actionLoading
-                                ? 'Выполняется…'
-                                : 'Отвязать аккаунт'}
-                        </button>
                     </div>
 
                     {showOtherAccounts &&
@@ -706,7 +766,7 @@ function ConversationClientPanel({
                                             key={account.id}
                                             className="conversation-client-account-card"
                                         >
-                                            <div className="conversation-client-account-icon">
+                                        <div className="conversation-client-account-icon">
                                                 <PlatformIcon
                                                     type={
                                                         account.channelType
@@ -751,27 +811,6 @@ function ConversationClientPanel({
                 </div>
             )}
 
-            {isSuperAdmin && client && (
-                <div className="conversation-client-panel-section">
-                    <div className="conversation-client-section-header">
-                        <h4>
-                            Клиент
-                        </h4>
-                    </div>
-
-                    <button
-                        type="button"
-                        className="ui-button ui-button-sm ui-button-secondary ui-button-block"
-                        onClick={() => {
-                            setShowLinkForm(true)
-                            void loadClients()
-                        }}
-                    >
-                        Привязать другой аккаунт
-                    </button>
-                </div>
-            )}
-
             {channel && (
                 <div className="conversation-client-panel-section">
                     <div className="conversation-client-section-header">
@@ -800,6 +839,21 @@ function ConversationClientPanel({
                     </div>
                 </div>
             )}
+
+            <ClientAccountPicker
+                open={showAccountPicker}
+                onClose={() => {
+                    if (!actionLoading) {
+                        setShowAccountPicker(false)
+                    }
+                }}
+                onSelect={account =>
+                    void handleAssignAnotherAccount(
+                        account,
+                    )
+                }
+                busy={actionLoading}
+            />
         </aside>
     )
 }
