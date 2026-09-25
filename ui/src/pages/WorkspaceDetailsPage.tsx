@@ -107,7 +107,6 @@ function WorkspaceDetailsPage() {
     } = useAuth()
 
     const {
-        workspaces,
         removeWorkspace,
         setCurrentWorkspaceId,
     } = useWorkspace()
@@ -121,14 +120,20 @@ function WorkspaceDetailsPage() {
     const [channels, setChannels] =
         useState<ChannelDto[]>([])
 
-    const [conversationCount, setConversationCount] =
-        useState(0)
+    const [
+        conversationCount,
+        setConversationCount,
+    ] = useState(0)
 
-    const [unreadCount, setUnreadCount] =
-        useState(0)
+    const [
+        unreadCount,
+        setUnreadCount,
+    ] = useState(0)
 
-    const [lastActivity, setLastActivity] =
-        useState<string | null>(null)
+    const [
+        lastActivity,
+        setLastActivity,
+    ] = useState<string | null>(null)
 
     const [loading, setLoading] =
         useState(true)
@@ -166,9 +171,11 @@ function WorkspaceDetailsPage() {
 
             if (!current) {
                 setWorkspace(null)
+
                 setError(
-                    'Workspace не найден.',
+                    'Рабочее пространство не найдено.',
                 )
+
                 return
             }
 
@@ -208,7 +215,10 @@ function WorkspaceDetailsPage() {
 
             setUnreadCount(
                 conversations.reduce(
-                    (total, conversation) =>
+                    (
+                        total,
+                        conversation,
+                    ) =>
                         total +
                         conversation.unreadCount,
                     0,
@@ -219,7 +229,10 @@ function WorkspaceDetailsPage() {
                 conversations.reduce<
                     string | null
                 >(
-                    (latest, conversation) => {
+                    (
+                        latest,
+                        conversation,
+                    ) => {
                         if (
                             !conversation.lastMessageAt
                         ) {
@@ -250,7 +263,7 @@ function WorkspaceDetailsPage() {
             setError(
                 err instanceof Error
                     ? err.message
-                    : 'Не удалось загрузить Workspace',
+                    : 'Не удалось загрузить рабочее пространство',
             )
         } finally {
             setLoading(false)
@@ -282,7 +295,9 @@ function WorkspaceDetailsPage() {
 
         navigate(
             '/workspaces',
-            { replace: true },
+            {
+                replace: true,
+            },
         )
     }
 
@@ -331,7 +346,8 @@ function WorkspaceDetailsPage() {
         return (
             <div className="workspace-details-page">
                 <div className="workspace-loading">
-                    Загрузка Workspace…
+                    Загрузка рабочего
+                    пространства…
                 </div>
             </div>
         )
@@ -349,7 +365,7 @@ function WorkspaceDetailsPage() {
 
                 <div className="workspace-form-error">
                     {error ||
-                        'Workspace не найден.'}
+                        'Рабочее пространство не найдено.'}
                 </div>
             </div>
         )
@@ -406,28 +422,40 @@ function WorkspaceDetailsPage() {
 
             <div className="workspace-detail-stats">
                 <div className="workspace-detail-stat">
-                    <span>Сотрудники</span>
+                    <span>
+                        Сотрудники
+                    </span>
+
                     <strong>
                         {employees.length}
                     </strong>
                 </div>
 
                 <div className="workspace-detail-stat">
-                    <span>Каналы</span>
+                    <span>
+                        Каналы
+                    </span>
+
                     <strong>
                         {channels.length}
                     </strong>
                 </div>
 
                 <div className="workspace-detail-stat">
-                    <span>Диалоги</span>
+                    <span>
+                        Диалоги
+                    </span>
+
                     <strong>
                         {conversationCount}
                     </strong>
                 </div>
 
                 <div className="workspace-detail-stat">
-                    <span>Непрочитано</span>
+                    <span>
+                        Непрочитано
+                    </span>
+
                     <strong>
                         {unreadCount}
                     </strong>
@@ -437,6 +465,7 @@ function WorkspaceDetailsPage() {
                     <span>
                         Последняя активность
                     </span>
+
                     <strong>
                         {formatDate(
                             lastActivity,
@@ -454,7 +483,8 @@ function WorkspaceDetailsPage() {
 
                         <p>
                             Сотрудники, которым
-                            доступен этот Workspace.
+                            доступно это рабочее
+                            пространство.
                         </p>
                     </div>
 
@@ -473,8 +503,8 @@ function WorkspaceDetailsPage() {
 
                 {employees.length === 0 ? (
                     <div className="workspace-section-empty">
-                        В Workspace пока нет
-                        сотрудников.
+                        В рабочем пространстве пока
+                        нет сотрудников.
                     </div>
                 ) : (
                     <div className="workspace-employee-list">
@@ -527,7 +557,8 @@ function WorkspaceDetailsPage() {
 
                         <p>
                             Каналы, подключённые к
-                            этому Workspace.
+                            этому рабочему
+                            пространству.
                         </p>
                     </div>
 
@@ -570,7 +601,14 @@ function WorkspaceDetailsPage() {
                                         </span>
                                     </div>
 
-                                    <span className="workspace-channel-status">
+                                    <span
+                                        className={
+                                            channel.status ===
+                                            'CONNECTED'
+                                                ? 'workspace-channel-status workspace-channel-status-connected'
+                                                : 'workspace-channel-status workspace-channel-status-disabled'
+                                        }
+                                    >
                                         {
                                             getChannelStatusLabel(
                                                 channel.status,
@@ -601,7 +639,9 @@ function WorkspaceDetailsPage() {
                 onClose={() =>
                     setDeleteOpen(false)
                 }
-                onConfirm={handleDelete}
+                onConfirm={
+                    handleDelete
+                }
             />
 
             <WorkspaceEmployeesDialog

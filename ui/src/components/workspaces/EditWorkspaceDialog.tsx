@@ -55,7 +55,7 @@ export function EditWorkspaceDialog({
 
         if (!trimmedName) {
             setError(
-                'Введите название Workspace.',
+                'Введите название пространства.',
             )
             return
         }
@@ -78,7 +78,7 @@ export function EditWorkspaceDialog({
             setError(
                 err instanceof Error
                     ? err.message
-                    : 'Не удалось изменить Workspace',
+                    : 'Не удалось изменить пространство',
             )
         } finally {
             setSaving(false)
@@ -93,15 +93,23 @@ export function EditWorkspaceDialog({
         <div className="workspace-modal-overlay">
             <div className="workspace-modal">
                 <div className="workspace-modal-header">
-                    <h2>
-                        Изменить Workspace
-                    </h2>
+                    <div>
+                        <h2>
+                            Изменить пространство
+                        </h2>
+
+                        <p className="workspace-modal-subtitle">
+                            Изменение названия рабочего
+                            пространства.
+                        </p>
+                    </div>
 
                     <button
                         type="button"
                         className="workspace-modal-close"
                         onClick={onClose}
                         disabled={saving}
+                        aria-label="Закрыть"
                     >
                         ×
                     </button>
@@ -113,12 +121,6 @@ export function EditWorkspaceDialog({
                         handleSubmit
                     }
                 >
-                    {error && (
-                        <div className="workspace-form-error">
-                            {error}
-                        </div>
-                    )}
-
                     <label>
                         <span>
                             Название
@@ -137,6 +139,12 @@ export function EditWorkspaceDialog({
                             disabled={saving}
                         />
                     </label>
+
+                    {error && (
+                        <div className="workspace-form-error">
+                            {error}
+                        </div>
+                    )}
 
                     <div className="workspace-modal-actions">
                         <button

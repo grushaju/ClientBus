@@ -21,7 +21,11 @@ import type {
     EmployeeDto,
 } from '../auth/types'
 
-import EmployeeDetailsDialog from '../components/employees/EmployeeDetailsDialog'
+import EmployeeCreateDialog
+    from '../components/employees/EmployeeCreateDialog'
+
+import EmployeeDetailsDialog
+    from '../components/employees/EmployeeDetailsDialog'
 
 interface EmployeeRow {
     employee: EmployeeDto
@@ -46,6 +50,7 @@ function getEmployeeName(
 function EmployeesPage() {
     const {
         currentEmployee,
+        isSuperAdmin,
     } = useAuth()
 
     const {
@@ -81,6 +86,11 @@ function EmployeesPage() {
         selectedEmployee,
         setSelectedEmployee,
     ] = useState<EmployeeRow | null>(null)
+
+    const [
+        createOpen,
+        setCreateOpen,
+    ] = useState(false)
 
     async function loadEmployees() {
         if (!currentEmployee) {
@@ -217,6 +227,20 @@ function EmployeesPage() {
         setSelectedEmployee(null)
     }
 
+    function handleEmployeeCreated(
+        employee: EmployeeDto,
+    ) {
+        setEmployees(current => [
+            ...current,
+            {
+                employee,
+                workspaceIds: [],
+            },
+        ])
+
+        setCreateOpen(false)
+    }
+
     const activeCount =
         employees.filter(
             row => row.employee.enabled,
@@ -231,10 +255,21 @@ function EmployeesPage() {
                     </h1>
 
                     <p>
-                        Управление доступом сотрудников
-                        к рабочим пространствам.
+                        Управление сотрудниками
                     </p>
                 </div>
+
+                {isSuperAdmin && (
+                    <button
+                        type="button"
+                        className="employee-button employee-button-primary"
+                        onClick={() =>
+                            setCreateOpen(true)
+                        }
+                    >
+                        + Добавить
+                    </button>
+                )}
             </div>
 
             <div className="employees-toolbar">
@@ -315,16 +350,16 @@ function EmployeesPage() {
             )}
 
             {loading ? (
-                <div className="employees-loading">
+                <div className="employees-state">
                     Загрузка сотрудников…
                 </div>
             ) : employees.length === 0 ? (
-                <div className="employees-empty">
+                <div className="employees-state">
                     Сотрудников пока нет.
                 </div>
             ) : filteredEmployees.length ===
             0 ? (
-                <div className="employees-empty">
+                <div className="employees-state">
                     По заданным условиям сотрудники
                     не найдены.
                 </div>
@@ -344,38 +379,36 @@ function EmployeesPage() {
                                     )
                                 }
                             >
-                                <div className="employee-card-header">
-                                    <div className="employee-card-identity">
-                                        <h2>
-                                            {getEmployeeName(
-                                                row.employee,
-                                            )}
-                                        </h2>
+                                <div className="employee-card-identity">
+                                    <h2>
+                                        {getEmployeeName(
+                                            row.employee,
+                                        )}
+                                    </h2>
 
-                                        <p>
-                                            {
-                                                row
-                                                    .employee
-                                                    .email
-                                            }
-                                        </p>
-                                    </div>
-
-                                    <span
-                                        className={
+                                    <p>
+                                        {
                                             row
                                                 .employee
-                                                .enabled
-                                                ? 'employee-status employee-status-enabled'
-                                                : 'employee-status employee-status-disabled'
+                                                .email
                                         }
-                                    >
-                                        {row.employee
-                                            .enabled
-                                            ? 'Доступен'
-                                            : 'Недоступен'}
-                                    </span>
+                                    </p>
                                 </div>
+
+                                <span
+                                    className={
+                                        row
+                                            .employee
+                                            .enabled
+                                            ? 'employee-status employee-status-enabled'
+                                            : 'employee-status employee-status-disabled'
+                                    }
+                                >
+                                    {row.employee
+                                        .enabled
+                                        ? 'Доступен'
+                                        : 'Недоступен'}
+                                </span>
 
                                 <div className="employee-card-workspaces">
                                     <div className="employee-workspaces-title">
@@ -386,7 +419,7 @@ function EmployeesPage() {
                                         .length ===
                                     0 ? (
                                         <div className="employee-no-workspaces">
-                                            Workspace не
+                                            Пространства не
                                             назначены
                                         </div>
                                     ) : (
@@ -445,6 +478,20 @@ function EmployeesPage() {
                     }
                     onUpdated={
                         handleEmployeeUpdated
+                    }
+                />
+            )}
+
+            {createOpen && currentEmployee && (
+                <EmployeeCreateDialog
+                    organizationId={
+                        currentEmployee.organizationId
+                    }
+                    onClose={() =>
+                        setCreateOpen(false)
+                    }
+                    onCreated={
+                        handleEmployeeCreated
                     }
                 />
             )}

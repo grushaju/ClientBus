@@ -74,10 +74,6 @@ function formatDate(
 
 function WorkspacesPage() {
     const {
-        currentEmployee,
-    } = useAuth()
-
-    const {
         addWorkspace,
         updateWorkspace,
         removeWorkspace,
@@ -219,7 +215,7 @@ function WorkspacesPage() {
             setError(
                 err instanceof Error
                     ? err.message
-                    : 'Не удалось загрузить Workspace',
+                    : 'Не удалось загрузить рабочие пространства',
             )
         } finally {
             setLoading(false)
@@ -263,23 +259,31 @@ function WorkspacesPage() {
         const workspace =
             deleteTarget
 
-        await deleteWorkspace(
-            workspace.id,
-        )
+        try {
+            await deleteWorkspace(
+                workspace.id,
+            )
 
-        setWorkspaces(current =>
-            current.filter(
-                item =>
-                    item.id !==
-                    workspace.id,
-            ),
-        )
+            setWorkspaces(current =>
+                current.filter(
+                    item =>
+                        item.id !==
+                        workspace.id,
+                ),
+            )
 
-        removeWorkspace(
-            workspace.id,
-        )
+            removeWorkspace(
+                workspace.id,
+            )
 
-        setDeleteTarget(null)
+            setDeleteTarget(null)
+        } catch (err) {
+            setError(
+                err instanceof Error
+                    ? err.message
+                    : 'Не удалось удалить рабочее пространство',
+            )
+        }
     }
 
     return (
@@ -291,8 +295,8 @@ function WorkspacesPage() {
                     </h1>
 
                     <p className="workspaces-subtitle">
-                        Workspace организации и их
-                        текущая активность.
+                        Рабочие пространства организации
+                        и их текущая активность.
                     </p>
                 </div>
 
@@ -324,8 +328,9 @@ function WorkspacesPage() {
                     </strong>
 
                     <span>
-                        Создайте первое Workspace,
-                        чтобы начать работу.
+                        Создайте первое рабочее
+                        пространство, чтобы начать
+                        работу.
                     </span>
 
                     <button
@@ -335,7 +340,7 @@ function WorkspacesPage() {
                             setCreateOpen(true)
                         }
                     >
-                        Создать Workspace
+                        + Добавить
                     </button>
                 </div>
             ) : (
@@ -380,6 +385,7 @@ function WorkspacesPage() {
                                                         ?.employees ??
                                                     '—'}
                                             </strong>
+
                                             <span>
                                                 Сотрудников
                                             </span>
@@ -391,6 +397,7 @@ function WorkspacesPage() {
                                                         ?.channels ??
                                                     '—'}
                                             </strong>
+
                                             <span>
                                                 Каналов
                                             </span>
@@ -402,6 +409,7 @@ function WorkspacesPage() {
                                                         ?.conversations ??
                                                     '—'}
                                             </strong>
+
                                             <span>
                                                 Диалогов
                                             </span>
@@ -413,6 +421,7 @@ function WorkspacesPage() {
                                                         ?.unread ??
                                                     '—'}
                                             </strong>
+
                                             <span>
                                                 Непрочитано
                                             </span>

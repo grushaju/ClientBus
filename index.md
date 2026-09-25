@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-09-25 01:43:38
+- Generated: 2026-09-25 11:02:40
 - Branch: `main`
-- Commit: `a6424ee`
+- Commit: `85fc883`
 
 ## Project Structure
 
@@ -107,6 +107,11 @@
 - `OutboundMessageKafkaCommand.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/OutboundMessageKafkaCommand.java`
 - `PlatformMessageKafkaEvent.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/PlatformMessageKafkaEvent.java`
 - `PlatformOutboundAttachment.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/PlatformOutboundAttachment.java`
+
+#### `src/main/resources`
+
+
+#### `src/test/java`
 
 ### server
 
@@ -494,6 +499,7 @@
 - `ui/src/components/common/platform/platform.ts`
 - `ui/src/components/common/platform/PlatformIcon.tsx`
 - `ui/src/components/common/platform/PlatformName.tsx`
+- `ui/src/components/employees/EmployeeCreateDialog.tsx`
 - `ui/src/components/employees/EmployeeDetailsDialog.tsx`
 - `ui/src/components/employees/Employees.css`
 - `ui/src/components/inbox/ConversationClientPanel.tsx`
@@ -559,6 +565,6 @@
 
 - Maven modules: 3
 - Java files: 243
-- UI source files: 89
-- Git commit: `a6424ee`
+- UI source files: 90
+- Git commit: `85fc883`
 
