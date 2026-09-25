@@ -23,7 +23,7 @@
 .clients-header h1 {
     margin: 0;
 
-    color: #111827;
+    color: var(--ui-color-text);
 
     font-size: 24px;
     font-weight: 600;
@@ -35,85 +35,11 @@
 
     margin-top: 5px;
 
-    color: #6b7280;
+    color: var(--ui-color-text-muted);
 
     font-size: 13px;
     line-height: 1.4;
 }
-
-
-/* =========================================================
-   BUTTONS
-   ========================================================= */
-
-.clients-primary-button,
-.client-primary-button {
-    min-height: 38px;
-
-    padding: 8px 13px;
-
-    border: 1px solid #111827;
-    border-radius: 6px;
-
-    background: #111827;
-    color: #ffffff;
-
-    font: inherit;
-    font-size: 13px;
-    font-weight: 500;
-
-    line-height: 1.3;
-
-    white-space: nowrap;
-
-    cursor: pointer;
-}
-
-.clients-primary-button:hover:not(:disabled),
-.client-primary-button:hover:not(:disabled) {
-    background: #1f2937;
-}
-
-.clients-primary-button:disabled,
-.client-primary-button:disabled {
-    opacity: 0.5;
-
-    cursor: default;
-}
-
-.client-secondary-button {
-    min-height: 38px;
-
-    padding: 8px 13px;
-
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-
-    background: #ffffff;
-    color: #374151;
-
-    font: inherit;
-    font-size: 13px;
-    font-weight: 500;
-
-    line-height: 1.3;
-
-    white-space: nowrap;
-
-    cursor: pointer;
-}
-
-.client-secondary-button:hover:not(:disabled) {
-    background: #f9fafb;
-    border-color: #9ca3af;
-}
-
-.client-secondary-button:disabled {
-    opacity: 0.5;
-
-    cursor: default;
-}
-
 
 /* =========================================================
    SEARCH
@@ -122,36 +48,6 @@
 .clients-toolbar {
     margin-bottom: 16px;
 }
-
-.clients-toolbar input {
-    width: 100%;
-    height: 40px;
-
-    padding: 0 11px;
-
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-
-    background: #ffffff;
-    color: #111827;
-
-    outline: none;
-
-    font: inherit;
-    font-size: 13px;
-}
-
-.clients-toolbar input::placeholder {
-    color: #9ca3af;
-}
-
-.clients-toolbar input:focus {
-    border-color: #9ca3af;
-
-    box-shadow:
-            0 0 0 2px rgba(156, 163, 175, 0.15);
-}
-
 
 /* =========================================================
    STATES / ERRORS
@@ -166,7 +62,7 @@
 
     padding: 24px;
 
-    color: #6b7280;
+    color: var(--ui-color-text-muted);
 
     font-size: 14px;
 
@@ -178,16 +74,15 @@
 
     padding: 10px 12px;
 
-    border: 1px solid #fecaca;
-    border-radius: 6px;
+    border: 1px solid var(--ui-color-danger-border);
+    border-radius: var(--ui-radius-sm);
 
-    background: #fef2f2;
-    color: #b91c1c;
+    background: var(--ui-color-danger-background);
+    color: var(--ui-color-danger-hover);
 
     font-size: 13px;
     line-height: 1.4;
 }
-
 
 /* =========================================================
    CLIENT LIST
@@ -216,10 +111,10 @@
 
     padding: 13px 15px;
 
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
+    border: 1px solid var(--ui-color-border-light);
+    border-radius: var(--ui-radius-lg);
 
-    background: #ffffff;
+    background: var(--ui-color-background);
     color: inherit;
 
     text-align: left;
@@ -232,9 +127,9 @@
 }
 
 .client-list-item:hover {
-    border-color: #d1d5db;
+    border-color: var(--ui-color-border);
 
-    background: #f9fafb;
+    background: var(--ui-color-background-muted);
 }
 
 .client-list-avatar {
@@ -249,8 +144,8 @@
 
     border-radius: 50%;
 
-    background: #e5e7eb;
-    color: #374151;
+    background: var(--ui-color-background-subtle);
+    color: var(--ui-color-text-secondary);
 
     font-size: 14px;
     font-weight: 600;
@@ -274,7 +169,7 @@
 
     overflow: hidden;
 
-    color: #111827;
+    color: var(--ui-color-text);
 
     font-size: 14px;
     font-weight: 600;
@@ -291,8 +186,8 @@
 
     border-radius: 999px;
 
-    background: #f3f4f6;
-    color: #6b7280;
+    background: var(--ui-color-background-subtle);
+    color: var(--ui-color-text-muted);
 
     font-size: 10px;
     font-weight: 600;
@@ -307,7 +202,7 @@
 
     overflow: hidden;
 
-    color: #6b7280;
+    color: var(--ui-color-text-muted);
 
     font-size: 12px;
     line-height: 1.35;
@@ -324,7 +219,7 @@
 
     gap: 3px;
 
-    color: #6b7280;
+    color: var(--ui-color-text-muted);
 
     font-size: 11px;
 
@@ -332,11 +227,10 @@
 }
 
 .client-list-stats span:first-child {
-    color: #374151;
+    color: var(--ui-color-text-secondary);
 
     font-weight: 500;
 }
-
 
 /* =========================================================
    CREATE CLIENT FORM
@@ -347,10 +241,10 @@
 
     padding: 16px;
 
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
+    border: 1px solid var(--ui-color-border-light);
+    border-radius: var(--ui-radius-lg);
 
-    background: #ffffff;
+    background: var(--ui-color-background);
 }
 
 .client-form-fields {
@@ -373,7 +267,7 @@
 }
 
 .client-form-fields label > span {
-    color: #6b7280;
+    color: var(--ui-color-text-muted);
 
     font-size: 12px;
     line-height: 1.4;
@@ -384,11 +278,11 @@
 
     padding: 9px 10px;
 
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
+    border: 1px solid var(--ui-color-border);
+    border-radius: var(--ui-radius-sm);
 
-    background: #ffffff;
-    color: #111827;
+    background: var(--ui-color-background);
+    color: var(--ui-color-text);
 
     outline: none;
 
@@ -397,11 +291,11 @@
 }
 
 .client-form-fields input::placeholder {
-    color: #9ca3af;
+    color: var(--ui-color-text-placeholder);
 }
 
 .client-form-fields input:focus {
-    border-color: #9ca3af;
+    border-color: var(--ui-color-border-focus);
 
     box-shadow:
             0 0 0 2px rgba(156, 163, 175, 0.15);
@@ -417,38 +311,14 @@
 
     padding-top: 14px;
 
-    border-top: 1px solid #f0f0f0;
+    border-top: 1px solid var(--ui-color-border-light);
 }
 
-.client-form-actions button:not(.clients-primary-button) {
-    min-height: 38px;
-
-    padding: 8px 13px;
-
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-
-    background: #ffffff;
-    color: #374151;
-
-    font: inherit;
-    font-size: 13px;
-    font-weight: 500;
-
-    cursor: pointer;
-}
-
-.client-form-actions button:not(.clients-primary-button):hover:not(:disabled) {
-    background: #f9fafb;
-    border-color: #9ca3af;
-}
-
-.client-form-actions button:disabled {
-    opacity: 0.5;
-
-    cursor: default;
-}
-
+/*
+ * Legacy button selectors intentionally remain in
+ * components/clients/Clients.css until the remaining
+ * client components are migrated.
+ */
 
 /* =========================================================
    CLIENT MODALS
@@ -477,13 +347,12 @@
 
     overflow: hidden;
 
-    border: 1px solid #e5e7eb;
-    border-radius: 10px;
+    border: 1px solid var(--ui-color-border-light);
+    border-radius: var(--ui-radius-xl);
 
-    background: #ffffff;
+    background: var(--ui-color-background);
 
-    box-shadow:
-            0 20px 40px rgba(0, 0, 0, 0.15);
+    box-shadow: var(--ui-shadow-dialog);
 }
 
 .client-confirm-modal {
@@ -501,13 +370,13 @@
 
     padding: 18px;
 
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid var(--ui-color-border-light);
 }
 
 .client-modal-header h2 {
     margin: 0;
 
-    color: #111827;
+    color: var(--ui-color-text);
 
     font-size: 18px;
     font-weight: 600;
@@ -519,7 +388,7 @@
 
     margin-top: 3px;
 
-    color: #6b7280;
+    color: var(--ui-color-text-muted);
 
     font-size: 12px;
     line-height: 1.4;
@@ -538,10 +407,10 @@
     padding: 0;
 
     border: 0;
-    border-radius: 6px;
+    border-radius: var(--ui-radius-sm);
 
     background: transparent;
-    color: #6b7280;
+    color: var(--ui-color-text-muted);
 
     font-size: 22px;
     line-height: 1;
@@ -550,9 +419,9 @@
 }
 
 .client-modal-close:hover:not(:disabled) {
-    background: #f3f4f6;
+    background: var(--ui-color-background-subtle);
 
-    color: #374151;
+    color: var(--ui-color-text-secondary);
 }
 
 .client-modal-close:disabled {
@@ -579,9 +448,8 @@
 
     padding: 14px 18px;
 
-    border-top: 1px solid #e5e7eb;
+    border-top: 1px solid var(--ui-color-border-light);
 }
-
 
 /* =========================================================
    MODAL SEARCH
@@ -597,7 +465,7 @@
 }
 
 .client-modal-search > span {
-    color: #6b7280;
+    color: var(--ui-color-text-muted);
 
     font-size: 12px;
     line-height: 1.4;
@@ -608,11 +476,11 @@
 
     padding: 9px 10px;
 
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
+    border: 1px solid var(--ui-color-border);
+    border-radius: var(--ui-radius-sm);
 
-    background: #ffffff;
-    color: #111827;
+    background: var(--ui-color-background);
+    color: var(--ui-color-text);
 
     outline: none;
 
@@ -621,19 +489,19 @@
 }
 
 .client-modal-search input::placeholder {
-    color: #9ca3af;
+    color: var(--ui-color-text-placeholder);
 }
 
 .client-modal-search input:focus {
-    border-color: #9ca3af;
+    border-color: var(--ui-color-border-focus);
 
     box-shadow:
             0 0 0 2px rgba(156, 163, 175, 0.15);
 }
 
 .client-modal-search input:disabled {
-    background: #f9fafb;
-    color: #9ca3af;
+    background: var(--ui-color-background-muted);
+    color: var(--ui-color-text-placeholder);
 
     cursor: default;
 }
@@ -647,13 +515,12 @@
 
     padding: 20px;
 
-    color: #6b7280;
+    color: var(--ui-color-text-muted);
 
     font-size: 13px;
 
     text-align: center;
 }
-
 
 /* =========================================================
    ACCOUNT / CLIENT PICKER
@@ -677,10 +544,10 @@
 
     padding: 11px 12px;
 
-    border: 1px solid #e5e7eb;
-    border-radius: 7px;
+    border: 1px solid var(--ui-color-border-light);
+    border-radius: var(--ui-radius-md);
 
-    background: #ffffff;
+    background: var(--ui-color-background);
     color: inherit;
 
     text-align: left;
@@ -689,9 +556,9 @@
 }
 
 .client-account-picker-item:hover:not(:disabled) {
-    border-color: #d1d5db;
+    border-color: var(--ui-color-border);
 
-    background: #f9fafb;
+    background: var(--ui-color-background-muted);
 }
 
 .client-account-picker-item:disabled {
@@ -714,7 +581,7 @@
 
     overflow: hidden;
 
-    color: #111827;
+    color: var(--ui-color-text);
 
     font-size: 13px;
     font-weight: 600;
@@ -725,7 +592,7 @@
 }
 
 .client-account-picker-main span {
-    color: #6b7280;
+    color: var(--ui-color-text-muted);
 
     font-size: 11px;
     line-height: 1.35;
@@ -743,7 +610,7 @@
 
     max-width: 45%;
 
-    color: #6b7280;
+    color: var(--ui-color-text-muted);
 
     font-size: 11px;
     line-height: 1.35;
@@ -759,7 +626,6 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-
 
 /* =========================================================
    REASSIGN CONFIRMATION
@@ -780,21 +646,21 @@
 
     padding: 11px 12px;
 
-    border: 1px solid #e5e7eb;
-    border-radius: 7px;
+    border: 1px solid var(--ui-color-border-light);
+    border-radius: var(--ui-radius-md);
 
-    background: #f9fafb;
+    background: var(--ui-color-background-muted);
 }
 
 .client-reassign-confirm-label {
-    color: #6b7280;
+    color: var(--ui-color-text-muted);
 
     font-size: 11px;
     line-height: 1.3;
 }
 
 .client-reassign-confirm strong {
-    color: #111827;
+    color: var(--ui-color-text);
 
     font-size: 14px;
     font-weight: 600;
@@ -802,7 +668,7 @@
 }
 
 .client-reassign-confirm > div:not(.client-reassign-confirm-arrow) > span:last-child:not(.client-reassign-confirm-label) {
-    color: #6b7280;
+    color: var(--ui-color-text-muted);
 
     font-size: 12px;
     line-height: 1.35;
@@ -813,12 +679,11 @@
     align-items: center;
     justify-content: center;
 
-    color: #9ca3af;
+    color: var(--ui-color-text-placeholder);
 
     font-size: 18px;
     line-height: 1;
 }
-
 
 /* =========================================================
    RESPONSIVE
@@ -861,7 +726,7 @@
         font-size: 21px;
     }
 
-    .clients-primary-button {
+    .clients-header .ui-button {
         width: 100%;
     }
 

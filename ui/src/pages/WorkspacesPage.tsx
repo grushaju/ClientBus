@@ -302,7 +302,7 @@ function WorkspacesPage() {
 
                 <button
                     type="button"
-                    className="workspace-button workspace-button-primary"
+                    className="ui-button ui-button-primary"
                     onClick={() =>
                         setCreateOpen(true)
                     }
@@ -335,7 +335,7 @@ function WorkspacesPage() {
 
                     <button
                         type="button"
-                        className="workspace-button workspace-button-primary"
+                        className="ui-button ui-button-primary"
                         onClick={() =>
                             setCreateOpen(true)
                         }
@@ -441,14 +441,14 @@ function WorkspacesPage() {
                                     <div className="workspace-card-actions">
                                         <Link
                                             to={`/workspaces/${workspace.id}`}
-                                            className="workspace-button workspace-button-secondary"
+                                            className="ui-button ui-button-secondary"
                                         >
                                             Подробнее
                                         </Link>
 
                                         <button
                                             type="button"
-                                            className="workspace-button workspace-button-secondary"
+                                            className="ui-button ui-button-secondary"
                                             onClick={() =>
                                                 setEditWorkspace(
                                                     workspace,
@@ -460,7 +460,7 @@ function WorkspacesPage() {
 
                                         <button
                                             type="button"
-                                            className="workspace-button workspace-button-danger"
+                                            className="ui-button ui-button-danger"
                                             onClick={() =>
                                                 setDeleteTarget(
                                                     workspace,

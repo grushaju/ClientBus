@@ -87,7 +87,8 @@ export function CreateChannelDialog({
     const [displayName, setDisplayName] = useState('')
 
     const [saving, setSaving] = useState(false)
-    const [error, setError] = useState<string | null>(null)
+    const [error, setError] =
+        useState<string | null>(null)
 
     const config = useMemo(
         () => getChannelTypeConfig(type),
@@ -414,7 +415,7 @@ export function CreateChannelDialog({
                     <div className="channel-modal-actions">
                         <button
                             type="button"
-                            className="channel-button channel-button-secondary"
+                            className="ui-button ui-button-secondary"
                             onClick={onClose}
                             disabled={saving}
                         >
@@ -423,7 +424,7 @@ export function CreateChannelDialog({
 
                         <button
                             type="submit"
-                            className="channel-button channel-button-primary"
+                            className="ui-button ui-button-primary"
                             disabled={saving}
                         >
                             {saving

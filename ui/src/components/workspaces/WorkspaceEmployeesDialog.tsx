@@ -285,6 +285,7 @@ export function WorkspaceEmployeesDialog({
 
                     <input
                         type="search"
+                        className="ui-input"
                         placeholder="Поиск сотрудника"
                         value={search}
                         onChange={event =>
@@ -366,7 +367,7 @@ export function WorkspaceEmployeesDialog({
                 <div className="workspace-modal-actions">
                     <button
                         type="button"
-                        className="workspace-button workspace-button-secondary"
+                        className="ui-button ui-button-secondary"
                         onClick={onClose}
                         disabled={saving}
                     >
@@ -375,7 +376,7 @@ export function WorkspaceEmployeesDialog({
 
                     <button
                         type="button"
-                        className="workspace-button workspace-button-primary"
+                        className="ui-button ui-button-primary"
                         onClick={handleSubmit}
                         disabled={
                             saving ||

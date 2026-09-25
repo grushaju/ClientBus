@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-09-25 11:31:45
+- Generated: 2026-09-25 13:55:18
 - Branch: `main`
-- Commit: `245c0e6`
+- Commit: `6bfc8fb`
 
 ## Project Structure
 
@@ -545,6 +545,8 @@
 - `ui/src/pages/WorkspaceDetailsPage.tsx`
 - `ui/src/pages/WorkspacesPage.css`
 - `ui/src/pages/WorkspacesPage.tsx`
+- `ui/src/styles/tokens.css`
+- `ui/src/styles/ui.css`
 - `ui/src/workspace/WorkspaceContext.tsx`
 
 #### `public`
@@ -565,6 +567,6 @@
 
 - Maven modules: 3
 - Java files: 243
-- UI source files: 90
-- Git commit: `245c0e6`
+- UI source files: 92
+- Git commit: `6bfc8fb`
 

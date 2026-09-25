@@ -1,11 +1,22 @@
-import { useEffect, useState } from 'react'
-import { searchUnassignedClientAccounts } from '../../api/clientAccountApi'
-import type { ClientAccountDto } from '../../api/types/clientAccount'
+import {
+    useEffect,
+    useState,
+} from 'react'
+
+import {
+    searchUnassignedClientAccounts,
+} from '../../api/clientAccountApi'
+
+import type {
+    ClientAccountDto,
+} from '../../api/types/clientAccount'
 
 interface ClientAccountPickerProps {
     open: boolean
     onClose: () => void
-    onSelect: (account: ClientAccountDto) => void
+    onSelect: (
+        account: ClientAccountDto,
+    ) => void
     busy?: boolean
 }
 
@@ -15,10 +26,17 @@ function ClientAccountPicker({
                                  onSelect,
                                  busy = false,
                              }: ClientAccountPickerProps) {
-    const [query, setQuery] = useState('')
-    const [accounts, setAccounts] = useState<ClientAccountDto[]>([])
-    const [loading, setLoading] = useState(false)
-    const [error, setError] = useState<string | null>(null)
+    const [query, setQuery] =
+        useState('')
+
+    const [accounts, setAccounts] =
+        useState<ClientAccountDto[]>([])
+
+    const [loading, setLoading] =
+        useState(false)
+
+    const [error, setError] =
+        useState<string | null>(null)
 
     useEffect(() => {
         if (!open) {
@@ -35,38 +53,46 @@ function ClientAccountPicker({
             return
         }
 
-        const controller = new AbortController()
+        const controller =
+            new AbortController()
 
-        const timeoutId = window.setTimeout(async () => {
-            setLoading(true)
-            setError(null)
+        const timeoutId =
+            window.setTimeout(
+                async () => {
+                    setLoading(true)
+                    setError(null)
 
-            try {
-                const result = await searchUnassignedClientAccounts(
-                    query.trim(),
-                    controller.signal,
-                )
+                    try {
+                        const result =
+                            await searchUnassignedClientAccounts(
+                                query.trim(),
+                                controller.signal,
+                            )
 
-                setAccounts(result)
-            } catch (err) {
-                if (
-                    err instanceof DOMException &&
-                    err.name === 'AbortError'
-                ) {
-                    return
-                }
+                        setAccounts(result)
+                    } catch (err) {
+                        if (
+                            err instanceof DOMException &&
+                            err.name === 'AbortError'
+                        ) {
+                            return
+                        }
 
-                setError(
-                    err instanceof Error
-                        ? err.message
-                        : 'Не удалось загрузить аккаунты',
-                )
-            } finally {
-                if (!controller.signal.aborted) {
-                    setLoading(false)
-                }
-            }
-        }, 250)
+                        setError(
+                            err instanceof Error
+                                ? err.message
+                                : 'Не удалось загрузить аккаунты',
+                        )
+                    } finally {
+                        if (
+                            !controller.signal.aborted
+                        ) {
+                            setLoading(false)
+                        }
+                    }
+                },
+                250,
+            )
 
         return () => {
             window.clearTimeout(timeoutId)
@@ -82,7 +108,10 @@ function ClientAccountPicker({
         <div
             className="client-modal-overlay"
             onMouseDown={event => {
-                if (event.target === event.currentTarget) {
+                if (
+                    event.target ===
+                    event.currentTarget
+                ) {
                     onClose()
                 }
             }}
@@ -117,12 +146,19 @@ function ClientAccountPicker({
 
                 <div className="client-modal-body">
                     <label className="client-modal-search">
-                        <span>Найти аккаунт</span>
+                        <span>
+                            Найти аккаунт
+                        </span>
 
                         <input
+                            className="ui-input"
                             autoFocus
                             value={query}
-                            onChange={event => setQuery(event.target.value)}
+                            onChange={event =>
+                                setQuery(
+                                    event.target.value,
+                                )
+                            }
                             placeholder="Имя, username, телефон или ID"
                             disabled={busy}
                         />
@@ -146,46 +182,68 @@ function ClientAccountPicker({
                         </div>
                     ) : (
                         <div className="client-account-picker-list">
-                            {accounts.map(account => (
-                                <button
-                                    key={account.id}
-                                    type="button"
-                                    className="client-account-picker-item"
-                                    disabled={
-                                        busy ||
-                                        account.clientId !== null
-                                    }
-                                    onClick={() => onSelect(account)}
-                                >
-                                    <div className="client-account-picker-main">
-                                        <strong>
-                                            {getAccountTitle(account)}
-                                        </strong>
+                            {accounts.map(
+                                account => (
+                                    <button
+                                        key={
+                                            account.id
+                                        }
+                                        type="button"
+                                        className="client-account-picker-item"
+                                        disabled={
+                                            busy ||
+                                            account.clientId !==
+                                            null
+                                        }
+                                        onClick={() =>
+                                            onSelect(
+                                                account,
+                                            )
+                                        }
+                                    >
+                                        <div className="client-account-picker-main">
+                                            <strong>
+                                                {
+                                                    getAccountTitle(
+                                                        account,
+                                                    )
+                                                }
+                                            </strong>
 
-                                        <span>
-                                            {account.channelType}
-                                        </span>
-                                    </div>
-
-                                    <div className="client-account-picker-meta">
-                                        {account.username && (
                                             <span>
-                                                @{account.username}
+                                                {
+                                                    account.channelType
+                                                }
                                             </span>
-                                        )}
+                                        </div>
 
-                                        {account.phone && (
+                                        <div className="client-account-picker-meta">
+                                            {account.username && (
+                                                <span>
+                                                    @
+                                                    {
+                                                        account.username
+                                                    }
+                                                </span>
+                                            )}
+
+                                            {account.phone && (
+                                                <span>
+                                                    {
+                                                        account.phone
+                                                    }
+                                                </span>
+                                            )}
+
                                             <span>
-                                                {account.phone}
+                                                {
+                                                    account.externalId
+                                                }
                                             </span>
-                                        )}
-
-                                        <span>
-                                            {account.externalId}
-                                        </span>
-                                    </div>
-                                </button>
-                            ))}
+                                        </div>
+                                    </button>
+                                ),
+                            )}
                         </div>
                     )}
                 </div>
@@ -193,7 +251,7 @@ function ClientAccountPicker({
                 <div className="client-modal-footer">
                     <button
                         type="button"
-                        className="client-secondary-button"
+                        className="ui-button ui-button-secondary"
                         onClick={onClose}
                         disabled={busy}
                     >
@@ -205,7 +263,9 @@ function ClientAccountPicker({
     )
 }
 
-function getAccountTitle(account: ClientAccountDto): string {
+function getAccountTitle(
+    account: ClientAccountDto,
+): string {
     return (
         account.displayName ||
         account.username ||

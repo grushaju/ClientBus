@@ -45,32 +45,12 @@ function delay(ms: number): Promise<void> {
     })
 }
 
-/**
- * Состояния, на которых initial polling после /start
- * должен остановиться.
- */
 function isTerminalAuthorizationState(
     status: TelegramAuthorizationStatus,
 ): boolean {
     return TERMINAL_AUTHORIZATION_STATES.includes(status)
 }
 
-/**
- * Первичное ожидание состояния после POST /start.
- *
- * WAIT_PHONE_NUMBER является промежуточным состоянием,
- * поэтому продолжаем polling.
- *
- * Например:
- *
- * POST /start
- *      ↓
- * WAIT_PHONE_NUMBER
- *      ↓
- * WAIT_CODE
- *
- * В этом случае функция вернёт WAIT_CODE.
- */
 async function waitForAuthorizationState(
     channelAccountId: string,
     onStatus: (
@@ -114,30 +94,6 @@ async function waitForAuthorizationState(
     )
 }
 
-/**
- * Ожидает именно перехода в новое состояние.
- *
- * Это принципиально отличается от обычного polling.
- *
- * Например:
- *
- * Было:
- *     WAIT_CODE
- *
- * POST /code
- *
- * Telegram ещё не успел обработать команду:
- *     WAIT_CODE
- *     WAIT_CODE
- *     WAIT_CODE
- *
- * Мы эти значения игнорируем.
- *
- * Затем:
- *     WAIT_PASSWORD
- *
- * И только тогда возвращаем новое состояние.
- */
 async function waitForAuthorizationStateChange(
     channelAccountId: string,
     previousStatus: TelegramAuthorizationStatus,
@@ -146,13 +102,6 @@ async function waitForAuthorizationStateChange(
     ) => void,
     isCancelled: () => boolean,
 ): Promise<TelegramAuthorizationStatus> {
-    /*
-     * Небольшая пауза перед первым GET.
-     *
-     * Она не является механизмом синхронизации сама по себе.
-     * Основная защита от race condition — сравнение
-     * нового состояния с previousStatus.
-     */
     await delay(POLL_INTERVAL_MS)
 
     for (
@@ -171,12 +120,6 @@ async function waitForAuthorizationStateChange(
             )
         }
 
-        /*
-         * Главное условие:
-         *
-         * пока Telegram возвращает старое состояние,
-         * мы НЕ обновляем UI.
-         */
         if (status !== previousStatus) {
             onStatus(status)
             return status
@@ -274,16 +217,8 @@ export function TelegramConnectionFlow({
     const [submitting, setSubmitting] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
-    /*
-     * Защищает от повторного onConnected(),
-     * если READY будет получен более одного раза.
-     */
     const connectedHandledRef = useRef(false)
 
-    /*
-     * Используется для безопасного завершения polling,
-     * когда modal закрыт или компонент размонтирован.
-     */
     const cancelledRef = useRef(false)
 
     const handleStatus = useCallback(
@@ -301,18 +236,6 @@ export function TelegramConnectionFlow({
         [channel, onConnected],
     )
 
-    /*
-     * Начальная инициализация flow.
-     *
-     * CREATED / DISCONNECTED / ERROR:
-     *     runtime client необходимо создать,
-     *     поэтому вызываем POST /start.
-     *
-     * CONNECTING / CONNECTED:
-     *     runtime client уже должен существовать,
-     *     поэтому POST /start НЕ вызываем.
-     *     Просто читаем текущий authorization status.
-     */
     useEffect(() => {
         cancelledRef.current = false
 
@@ -337,10 +260,6 @@ export function TelegramConnectionFlow({
                     channel.status === 'DISCONNECTED' ||
                     channel.status === 'ERROR'
                 ) {
-                    /*
-                     * В этих состояниях создаём новый
-                     * Telegram runtime client.
-                     */
                     await startTelegramConnection(
                         accountId,
                     )
@@ -349,22 +268,12 @@ export function TelegramConnectionFlow({
                         return
                     }
 
-                    /*
-                     * После /start ждём первое осмысленное
-                     * состояние Telegram authorization.
-                     */
                     await waitForAuthorizationState(
                         accountId,
                         handleStatus,
                         isCancelled,
                     )
                 } else {
-                    /*
-                     * CONNECTING / CONNECTED:
-                     *
-                     * runtime client уже существует.
-                     * Повторный /start здесь запрещён.
-                     */
                     const currentStatus =
                         await getTelegramConnectionStatus(
                             accountId,
@@ -404,31 +313,6 @@ export function TelegramConnectionFlow({
         handleStatus,
     ])
 
-    /**
-     * Обработка кода Telegram.
-     *
-     * ВАЖНО:
-     *
-     * До отправки:
-     *     status = WAIT_CODE
-     *
-     * После POST /code backend может некоторое время
-     * продолжать возвращать WAIT_CODE.
-     *
-     * Поэтому мы НЕ используем обычный polling.
-     *
-     * Мы ждём:
-     *
-     *     WAIT_CODE → другое состояние
-     *
-     * Например:
-     *
-     *     WAIT_CODE → WAIT_PASSWORD
-     *
-     * или:
-     *
-     *     WAIT_CODE → READY
-     */
     async function handleSubmitCode(
         event: FormEvent,
     ) {
@@ -472,19 +356,6 @@ export function TelegramConnectionFlow({
         }
     }
 
-    /**
-     * Обработка двухэтапного пароля Telegram.
-     *
-     * Аналогично коду:
-     *
-     *     WAIT_PASSWORD
-     *           ↓
-     *     POST /password
-     *           ↓
-     *     WAIT_PASSWORD  ← игнорируем
-     *           ↓
-     *     READY          ← принимаем
-     */
     async function handleSubmitPassword(
         event: FormEvent,
     ) {
@@ -528,9 +399,6 @@ export function TelegramConnectionFlow({
         }
     }
 
-    /**
-     * Обработка email.
-     */
     async function handleSubmitEmail(
         event: FormEvent,
     ) {
@@ -575,17 +443,6 @@ export function TelegramConnectionFlow({
     }
 
     function renderContent() {
-        /*
-         * Это только initial loading:
-         *
-         * POST /start
-         * или
-         * GET /status
-         *
-         * После submit форма не исчезает —
-         * она остаётся видимой и блокируется на время
-         * ожидания перехода состояния.
-         */
         if (loading) {
             return (
                 <div className="channel-form">
@@ -608,7 +465,7 @@ export function TelegramConnectionFlow({
                     <div className="channel-modal-actions">
                         <button
                             type="button"
-                            className="channel-button channel-button-secondary"
+                            className="ui-button ui-button-secondary"
                             onClick={onClose}
                         >
                             Закрыть
@@ -649,7 +506,7 @@ export function TelegramConnectionFlow({
                         <div className="channel-modal-actions">
                             <button
                                 type="button"
-                                className="channel-button channel-button-secondary"
+                                className="ui-button ui-button-secondary"
                                 onClick={onClose}
                                 disabled={submitting}
                             >
@@ -658,7 +515,7 @@ export function TelegramConnectionFlow({
 
                             <button
                                 type="submit"
-                                className="channel-button channel-button-primary"
+                                className="ui-button ui-button-primary"
                                 disabled={
                                     submitting ||
                                     !code.trim()
@@ -704,7 +561,7 @@ export function TelegramConnectionFlow({
                         <div className="channel-modal-actions">
                             <button
                                 type="button"
-                                className="channel-button channel-button-secondary"
+                                className="ui-button ui-button-secondary"
                                 onClick={onClose}
                                 disabled={submitting}
                             >
@@ -713,7 +570,7 @@ export function TelegramConnectionFlow({
 
                             <button
                                 type="submit"
-                                className="channel-button channel-button-primary"
+                                className="ui-button ui-button-primary"
                                 disabled={
                                     submitting ||
                                     !password
@@ -756,7 +613,7 @@ export function TelegramConnectionFlow({
                         <div className="channel-modal-actions">
                             <button
                                 type="button"
-                                className="channel-button channel-button-secondary"
+                                className="ui-button ui-button-secondary"
                                 onClick={onClose}
                                 disabled={submitting}
                             >
@@ -765,7 +622,7 @@ export function TelegramConnectionFlow({
 
                             <button
                                 type="submit"
-                                className="channel-button channel-button-primary"
+                                className="ui-button ui-button-primary"
                                 disabled={
                                     submitting ||
                                     !email.trim()
@@ -796,7 +653,7 @@ export function TelegramConnectionFlow({
                         <div className="channel-modal-actions">
                             <button
                                 type="button"
-                                className="channel-button channel-button-primary"
+                                className="ui-button ui-button-primary"
                                 onClick={onClose}
                             >
                                 Готово
@@ -817,7 +674,7 @@ export function TelegramConnectionFlow({
                         <div className="channel-modal-actions">
                             <button
                                 type="button"
-                                className="channel-button channel-button-secondary"
+                                className="ui-button ui-button-secondary"
                                 onClick={onClose}
                             >
                                 Закрыть
@@ -838,7 +695,7 @@ export function TelegramConnectionFlow({
                         <div className="channel-modal-actions">
                             <button
                                 type="button"
-                                className="channel-button channel-button-secondary"
+                                className="ui-button ui-button-secondary"
                                 onClick={onClose}
                             >
                                 Закрыть

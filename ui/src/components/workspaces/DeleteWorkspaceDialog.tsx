@@ -89,7 +89,7 @@ export function DeleteWorkspaceDialog({
                 <div className="workspace-modal-actions">
                     <button
                         type="button"
-                        className="workspace-button workspace-button-secondary"
+                        className="ui-button ui-button-secondary"
                         onClick={onClose}
                         disabled={saving}
                     >
@@ -98,7 +98,7 @@ export function DeleteWorkspaceDialog({
 
                     <button
                         type="button"
-                        className="workspace-button workspace-button-danger"
+                        className="ui-button ui-button-danger"
                         onClick={
                             handleConfirm
                         }

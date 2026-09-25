@@ -137,7 +137,7 @@ function ClientsPage() {
 
                 <button
                     type="button"
-                    className="clients-primary-button"
+                    className="ui-button ui-button-primary"
                     onClick={() =>
                         setShowCreateForm(
                             value => !value,
@@ -150,6 +150,7 @@ function ClientsPage() {
 
             <div className="clients-toolbar">
                 <input
+                    className="ui-input"
                     type="search"
                     value={query}
                     placeholder="Поиск по имени или телефону"

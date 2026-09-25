@@ -317,7 +317,7 @@ export default function EmployeeDetailsDialog({
 
                     <button
                         type="button"
-                        className="employee-modal-close"
+                        className="ui-button ui-button-ghost ui-button-sm employee-modal-close"
                         onClick={onClose}
                         aria-label="Закрыть"
                     >
@@ -338,6 +338,7 @@ export default function EmployeeDetailsDialog({
                                 </span>
 
                                 <input
+                                    className="ui-input"
                                     type="text"
                                     value={firstName}
                                     onChange={event =>
@@ -355,6 +356,7 @@ export default function EmployeeDetailsDialog({
                                 </span>
 
                                 <input
+                                    className="ui-input"
                                     type="text"
                                     value={lastName}
                                     onChange={event =>
@@ -372,6 +374,7 @@ export default function EmployeeDetailsDialog({
                                 </span>
 
                                 <input
+                                    className="ui-input"
                                     type="text"
                                     value={username}
                                     onChange={event =>
@@ -390,6 +393,7 @@ export default function EmployeeDetailsDialog({
                                 </span>
 
                                 <input
+                                    className="ui-input"
                                     type="email"
                                     value={email}
                                     onChange={event =>
@@ -408,6 +412,7 @@ export default function EmployeeDetailsDialog({
                                 </span>
 
                                 <input
+                                    className="ui-input"
                                     type="tel"
                                     value={phone}
                                     onChange={event =>
@@ -525,7 +530,7 @@ export default function EmployeeDetailsDialog({
                 <div className="employee-modal-actions">
                     <button
                         type="button"
-                        className="employee-button employee-button-secondary"
+                        className="ui-button ui-button-secondary"
                         onClick={onClose}
                         disabled={saving}
                     >
@@ -534,7 +539,7 @@ export default function EmployeeDetailsDialog({
 
                     <button
                         type="button"
-                        className="employee-button employee-button-primary"
+                        className="ui-button ui-button-primary"
                         onClick={
                             handleSave
                         }

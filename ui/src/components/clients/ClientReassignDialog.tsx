@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
+
 import { searchClients } from '../../api/clientApi'
+
 import type { ClientListItemDto } from '../../api/types/client'
+
 import type { ClientAccountDto } from '../../api/types/clientAccount'
 
 interface ClientReassignDialogProps {
@@ -139,6 +142,7 @@ function ClientReassignDialog({
 
                         <input
                             autoFocus
+                            className="ui-input"
                             value={query}
                             onChange={event => setQuery(event.target.value)}
                             placeholder="Имя, фамилия или телефон"
@@ -200,7 +204,7 @@ function ClientReassignDialog({
                 <div className="client-modal-footer">
                     <button
                         type="button"
-                        className="client-secondary-button"
+                        className="ui-button ui-button-secondary"
                         onClick={onClose}
                         disabled={busy}
                     >

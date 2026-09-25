@@ -4,6 +4,7 @@ import type {
 
 interface ClientListProps {
     clients: ClientListItemDto[]
+
     onClientClick: (
         clientId: string,
     ) => void
@@ -119,7 +120,11 @@ function formatLastContact(
     const date =
         new Date(value)
 
-    if (Number.isNaN(date.getTime())) {
+    if (
+        Number.isNaN(
+            date.getTime(),
+        )
+    ) {
         return 'Нет контактов'
     }
 

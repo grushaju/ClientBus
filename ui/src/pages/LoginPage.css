@@ -12,7 +12,7 @@
 
     padding: 24px;
 
-    background: #f9fafb;
+    background: var(--ui-color-background-muted);
 }
 
 
@@ -26,16 +26,18 @@
 
     padding: 32px;
 
-    border: 1px solid #e5e7eb;
-    border-radius: 10px;
+    border: 1px solid var(--ui-color-border-light);
+    border-radius: var(--ui-radius-xl);
 
-    background: #ffffff;
+    background: var(--ui-color-background);
+
+    box-shadow: var(--ui-shadow-card);
 }
 
 .login-card h1 {
     margin: 0;
 
-    color: #111827;
+    color: var(--ui-color-text);
 
     font-size: 22px;
     font-weight: 700;
@@ -47,10 +49,10 @@
 .login-card h2 {
     margin: 6px 0 24px;
 
-    color: #6b7280;
+    color: var(--ui-color-text-muted);
 
-    font-size: 14px;
-    font-weight: 500;
+    font-size: var(--ui-font-size-lg);
+    font-weight: var(--ui-font-weight-medium);
     line-height: 1.4;
 
     text-align: center;
@@ -72,34 +74,39 @@
     margin-bottom: 20px;
     padding: 3px;
 
-    border: 1px solid #e5e7eb;
-    border-radius: 7px;
+    border: 1px solid var(--ui-color-border-light);
+    border-radius: var(--ui-radius-md);
 
-    background: #f3f4f6;
+    background: var(--ui-color-background-subtle);
 }
 
 .login-mode button {
-    min-height: 34px;
+    min-height: var(--ui-control-height-sm);
 
     padding: 6px 10px;
 
     border: 0;
-    border-radius: 5px;
+    border-radius: var(--ui-radius-sm);
 
     background: transparent;
-    color: #6b7280;
+    color: var(--ui-color-text-muted);
 
-    font-size: 12px;
-    font-weight: 500;
+    font: inherit;
+    font-size: var(--ui-font-size-sm);
+    font-weight: var(--ui-font-weight-medium);
+
+    cursor: pointer;
+
+    transition: var(--ui-transition-fast);
 }
 
 .login-mode button:hover {
-    color: #111827;
+    color: var(--ui-color-text);
 }
 
 .login-mode button.active {
-    background: #ffffff;
-    color: #111827;
+    background: var(--ui-color-background);
+    color: var(--ui-color-text);
 
     box-shadow:
             0 1px 2px rgba(0, 0, 0, 0.06);
@@ -123,37 +130,39 @@
 
     gap: 7px;
 
-    color: #374151;
+    color: var(--ui-color-text-secondary);
 
-    font-size: 13px;
-    font-weight: 500;
+    font-size: var(--ui-font-size-md);
+    font-weight: var(--ui-font-weight-medium);
     line-height: 1.3;
 }
 
 .login-card form input {
     width: 100%;
-    height: 42px;
+    height: var(--ui-control-height-lg);
 
     padding: 0 11px;
 
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
+    border: 1px solid var(--ui-color-border);
+    border-radius: var(--ui-radius-sm);
 
-    background: #ffffff;
-    color: #111827;
+    background: var(--ui-color-background);
+    color: var(--ui-color-text);
 
     outline: none;
 
     font: inherit;
-    font-size: 13px;
+    font-size: var(--ui-font-size-md);
+
+    transition: var(--ui-transition-fast);
 }
 
 .login-card form input:hover {
-    border-color: #9ca3af;
+    border-color: var(--ui-color-border-focus);
 }
 
 .login-card form input:focus {
-    border-color: #9ca3af;
+    border-color: var(--ui-color-border-focus);
 
     box-shadow:
             0 0 0 2px rgba(156, 163, 175, 0.15);
@@ -167,13 +176,13 @@
 .login-error {
     padding: 10px 12px;
 
-    border: 1px solid #fecaca;
-    border-radius: 6px;
+    border: 1px solid var(--ui-color-danger-border);
+    border-radius: var(--ui-radius-md);
 
-    background: #fef2f2;
-    color: #b91c1c;
+    background: var(--ui-color-danger-background);
+    color: var(--ui-color-danger);
 
-    font-size: 12px;
+    font-size: var(--ui-font-size-sm);
     line-height: 1.45;
 }
 
@@ -184,25 +193,30 @@
 
 .login-card form > button[type='submit'] {
     width: 100%;
-    min-height: 42px;
+    min-height: var(--ui-control-height-lg);
 
     margin-top: 2px;
 
-    padding: 9px 14px;
+    padding: 9px var(--ui-control-padding-x);
 
-    border: 1px solid #111827;
-    border-radius: 6px;
+    border: 1px solid var(--ui-color-primary);
+    border-radius: var(--ui-radius-sm);
 
-    background: #111827;
+    background: var(--ui-color-primary);
     color: #ffffff;
 
-    font-size: 13px;
-    font-weight: 500;
+    font: inherit;
+    font-size: var(--ui-font-size-md);
+    font-weight: var(--ui-font-weight-medium);
+
+    cursor: pointer;
+
+    transition: var(--ui-transition-fast);
 }
 
 .login-card form > button[type='submit']:hover:not(:disabled) {
-    border-color: #1f2937;
-    background: #1f2937;
+    border-color: var(--ui-color-primary-hover);
+    background: var(--ui-color-primary-hover);
 }
 
 .login-card form > button[type='submit']:disabled {

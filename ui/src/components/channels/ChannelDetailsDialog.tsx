@@ -185,7 +185,7 @@ export function ChannelDetailsDialog({
                 <div className="channel-modal-actions">
                     <button
                         type="button"
-                        className="channel-button channel-button-secondary"
+                        className="ui-button ui-button-secondary"
                         onClick={onClose}
                     >
                         Закрыть

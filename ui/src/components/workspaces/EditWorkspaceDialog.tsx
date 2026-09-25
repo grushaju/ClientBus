@@ -128,6 +128,7 @@ export function EditWorkspaceDialog({
 
                         <input
                             type="text"
+                            className="ui-input"
                             value={name}
                             onChange={event =>
                                 setName(
@@ -149,7 +150,7 @@ export function EditWorkspaceDialog({
                     <div className="workspace-modal-actions">
                         <button
                             type="button"
-                            className="workspace-button workspace-button-secondary"
+                            className="ui-button ui-button-secondary"
                             onClick={onClose}
                             disabled={saving}
                         >
@@ -158,7 +159,7 @@ export function EditWorkspaceDialog({
 
                         <button
                             type="submit"
-                            className="workspace-button workspace-button-primary"
+                            className="ui-button ui-button-primary"
                             disabled={saving}
                         >
                             {saving

@@ -350,82 +350,11 @@
     border-top: 1px solid #f0f0f0;
 }
 
-.channel-card-actions .channel-button {
+.channel-card-actions .ui-button {
     width: 100%;
     min-width: 0;
 
     white-space: nowrap;
-}
-
-
-/* =========================================================
-   BUTTONS
-   ========================================================= */
-
-.channel-button {
-    min-height: 38px;
-
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-
-    padding: 8px 14px;
-
-    border: 1px solid transparent;
-    border-radius: 7px;
-
-    font: inherit;
-    font-size: 14px;
-    font-weight: 500;
-
-    line-height: 1.4;
-    text-align: center;
-
-    cursor: pointer;
-    box-sizing: border-box;
-}
-
-.channel-button:disabled {
-    opacity: 0.5;
-
-    cursor: default;
-}
-
-.channel-button-primary {
-    border-color: #111827;
-
-    background: #111827;
-    color: #ffffff;
-}
-
-.channel-button-primary:hover:not(:disabled) {
-    background: #1f2937;
-    border-color: #1f2937;
-}
-
-.channel-button-secondary {
-    border-color: #d1d5db;
-
-    background: #ffffff;
-    color: #374151;
-}
-
-.channel-button-secondary:hover:not(:disabled) {
-    background: #f9fafb;
-    border-color: #9ca3af;
-}
-
-.channel-button-danger {
-    border-color: #dc2626;
-
-    background: #dc2626;
-    color: #ffffff;
-}
-
-.channel-button-danger:hover:not(:disabled) {
-    border-color: #b91c1c;
-
-    background: #b91c1c;
 }
 
 
@@ -459,7 +388,7 @@
         font-size: 21px;
     }
 
-    .channels-header .channel-button-primary {
+    .channels-header > .ui-button-primary {
         width: 100%;
     }
 

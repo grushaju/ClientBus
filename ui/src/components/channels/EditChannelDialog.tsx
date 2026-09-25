@@ -143,7 +143,7 @@ export function EditChannelDialog({
                     <div className="channel-modal-actions">
                         <button
                             type="button"
-                            className="channel-button channel-button-secondary"
+                            className="ui-button ui-button-secondary"
                             onClick={onClose}
                             disabled={saving}
                         >
@@ -152,7 +152,7 @@ export function EditChannelDialog({
 
                         <button
                             type="submit"
-                            className="channel-button channel-button-primary"
+                            className="ui-button ui-button-primary"
                             disabled={saving}
                         >
                             {saving

@@ -146,7 +146,7 @@ function EmployeeCreateDialog({
 
                     <button
                         type="button"
-                        className="employee-modal-close"
+                        className="ui-button ui-button-ghost ui-button-sm employee-modal-close"
                         onClick={onClose}
                         disabled={saving}
                         aria-label="Закрыть"
@@ -168,6 +168,7 @@ function EmployeeCreateDialog({
                             </span>
 
                             <input
+                                className="ui-input"
                                 type="text"
                                 value={firstName}
                                 onChange={event =>
@@ -187,6 +188,7 @@ function EmployeeCreateDialog({
                             </span>
 
                             <input
+                                className="ui-input"
                                 type="text"
                                 value={lastName}
                                 onChange={event =>
@@ -205,6 +207,7 @@ function EmployeeCreateDialog({
                             </span>
 
                             <input
+                                className="ui-input"
                                 type="text"
                                 value={username}
                                 onChange={event =>
@@ -224,6 +227,7 @@ function EmployeeCreateDialog({
                             </span>
 
                             <input
+                                className="ui-input"
                                 type="email"
                                 value={email}
                                 onChange={event =>
@@ -243,6 +247,7 @@ function EmployeeCreateDialog({
                             </span>
 
                             <input
+                                className="ui-input"
                                 type="tel"
                                 value={phone}
                                 onChange={event =>
@@ -262,6 +267,7 @@ function EmployeeCreateDialog({
                             </span>
 
                             <input
+                                className="ui-input"
                                 type="password"
                                 value={password}
                                 onChange={event =>
@@ -285,7 +291,7 @@ function EmployeeCreateDialog({
                     <div className="employee-modal-actions">
                         <button
                             type="button"
-                            className="employee-button employee-button-secondary"
+                            className="ui-button ui-button-secondary"
                             onClick={onClose}
                             disabled={saving}
                         >
@@ -294,7 +300,7 @@ function EmployeeCreateDialog({
 
                         <button
                             type="submit"
-                            className="employee-button employee-button-primary"
+                            className="ui-button ui-button-primary"
                             disabled={saving}
                         >
                             {saving

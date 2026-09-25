@@ -105,7 +105,7 @@ export function CreateWorkspaceDialog({
 
                     <button
                         type="button"
-                        className="workspace-modal-close"
+                        className="ui-button ui-button-ghost ui-button-sm workspace-modal-close"
                         onClick={onClose}
                         disabled={saving}
                     >
@@ -131,6 +131,7 @@ export function CreateWorkspaceDialog({
                         </span>
 
                         <input
+                            className="ui-input"
                             type="text"
                             value={name}
                             onChange={event =>
@@ -148,7 +149,7 @@ export function CreateWorkspaceDialog({
                     <div className="workspace-modal-actions">
                         <button
                             type="button"
-                            className="workspace-button workspace-button-secondary"
+                            className="ui-button ui-button-secondary"
                             onClick={onClose}
                             disabled={saving}
                         >
@@ -157,7 +158,7 @@ export function CreateWorkspaceDialog({
 
                         <button
                             type="submit"
-                            className="workspace-button workspace-button-primary"
+                            className="ui-button ui-button-primary"
                             disabled={saving}
                         >
                             {saving

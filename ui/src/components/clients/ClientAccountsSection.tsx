@@ -20,7 +20,9 @@ import {
 interface ClientAccountsSectionProps {
     clientId: string
     accounts: ClientAccountDto[]
-    onAccountsChange: (accounts: ClientAccountDto[]) => void
+    onAccountsChange: (
+        accounts: ClientAccountDto[],
+    ) => void
 }
 
 function ClientAccountsSection({
@@ -255,7 +257,7 @@ function ClientAccountsSection({
                                         <div className="client-account-item-actions">
                                             <button
                                                 type="button"
-                                                className="client-account-action-button"
+                                                className="ui-button ui-button-secondary ui-button-sm"
                                                 disabled={
                                                     busy
                                                 }
@@ -270,7 +272,7 @@ function ClientAccountsSection({
 
                                             <button
                                                 type="button"
-                                                className="client-account-action-button danger"
+                                                className="ui-button ui-button-danger ui-button-sm"
                                                 disabled={
                                                     busy
                                                 }
@@ -293,7 +295,7 @@ function ClientAccountsSection({
                 <div className="client-account-add">
                     <button
                         type="button"
-                        className="client-account-add-button"
+                        className="ui-button ui-button-secondary ui-button-block"
                         onClick={() => {
                             setError(null)
                             setPickerOpen(true)
@@ -449,7 +451,7 @@ function ClientAccountsSection({
                             <div className="client-modal-footer">
                                 <button
                                     type="button"
-                                    className="client-secondary-button"
+                                    className="ui-button ui-button-secondary"
                                     onClick={() =>
                                         setReassignTarget(
                                             null,
@@ -465,7 +467,7 @@ function ClientAccountsSection({
 
                                 <button
                                     type="button"
-                                    className="client-primary-button"
+                                    className="ui-button ui-button-primary"
                                     onClick={() =>
                                         handleTransfer(
                                             reassignTarget,

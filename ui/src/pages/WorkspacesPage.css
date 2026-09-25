@@ -46,70 +46,6 @@
 
 
 /* =========================================================
-   BUTTONS
-   ========================================================= */
-
-.workspace-button {
-    min-height: 38px;
-
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-
-    padding: 0 14px;
-
-    border-radius: 7px;
-
-    font-size: 13px;
-    font-weight: 500;
-    line-height: 1;
-
-    text-align: center;
-
-    transition:
-            background-color 0.15s ease,
-            border-color 0.15s ease,
-            color 0.15s ease;
-}
-
-.workspace-button-primary {
-    border: 1px solid #111827;
-
-    background: #111827;
-    color: #ffffff;
-}
-
-.workspace-button-primary:hover {
-    border-color: #1f2937;
-    background: #1f2937;
-}
-
-.workspace-button-secondary {
-    border: 1px solid #d1d5db;
-
-    background: #ffffff;
-    color: #374151;
-}
-
-.workspace-button-secondary:hover {
-    border-color: #9ca3af;
-    background: #f9fafb;
-}
-
-.workspace-button-danger {
-    border: 1px solid #fecaca;
-
-    background: #ffffff;
-    color: #b91c1c;
-}
-
-.workspace-button-danger:hover {
-    border-color: #fca5a5;
-    background: #fef2f2;
-}
-
-
-/* =========================================================
    STATES
    ========================================================= */
 
@@ -340,11 +276,11 @@
     border-top: 1px solid #f3f4f6;
 }
 
-.workspace-card-actions .workspace-button {
+.workspace-card-actions .ui-button {
     white-space: nowrap;
 }
 
-.workspace-card-actions .workspace-button:first-child {
+.workspace-card-actions .ui-button:first-child {
     margin-right: auto;
 }
 
@@ -379,7 +315,7 @@
         font-size: 21px;
     }
 
-    .workspaces-header .workspace-button {
+    .workspaces-header .ui-button {
         width: 100%;
     }
 
@@ -399,13 +335,13 @@
         flex-wrap: wrap;
     }
 
-    .workspace-card-actions .workspace-button:first-child {
+    .workspace-card-actions .ui-button:first-child {
         width: 100%;
 
         margin-right: 0;
     }
 
-    .workspace-card-actions .workspace-button:not(:first-child) {
+    .workspace-card-actions .ui-button:not(:first-child) {
         flex: 1;
     }
 }

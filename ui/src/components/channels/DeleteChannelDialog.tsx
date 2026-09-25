@@ -95,7 +95,7 @@ export function DeleteChannelDialog({
                 <div className="channel-modal-actions">
                     <button
                         type="button"
-                        className="channel-button channel-button-secondary"
+                        className="ui-button ui-button-secondary"
                         onClick={onClose}
                         disabled={deleting}
                     >
@@ -104,7 +104,7 @@ export function DeleteChannelDialog({
 
                     <button
                         type="button"
-                        className="channel-button channel-button-danger"
+                        className="ui-button ui-button-danger"
                         onClick={() =>
                             void handleConfirm()
                         }

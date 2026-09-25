@@ -1,0 +1,80 @@
+:root {
+    --ui-color-primary: #111827;
+    --ui-color-primary-hover: #1f2937;
+
+    --ui-color-text: #111827;
+    --ui-color-text-secondary: #374151;
+    --ui-color-text-muted: #6b7280;
+    --ui-color-text-placeholder: #9ca3af;
+
+    --ui-color-border: #d1d5db;
+    --ui-color-border-light: #e5e7eb;
+    --ui-color-border-focus: #9ca3af;
+
+    --ui-color-background: #ffffff;
+    --ui-color-background-muted: #f9fafb;
+    --ui-color-background-subtle: #f3f4f6;
+
+    --ui-color-danger: #dc2626;
+    --ui-color-danger-hover: #b91c1c;
+    --ui-color-danger-background: #fef2f2;
+    --ui-color-danger-border: #fecaca;
+
+    --ui-color-success: #15803d;
+    --ui-color-success-background: #f0fdf4;
+    --ui-color-success-border: #bbf7d0;
+
+    --ui-color-warning: #b45309;
+    --ui-color-warning-background: #fffbeb;
+    --ui-color-warning-border: #fde68a;
+
+    --ui-color-info: #2563eb;
+    --ui-color-info-background: #eff6ff;
+    --ui-color-info-border: #bfdbfe;
+
+    --ui-control-height: 38px;
+    --ui-control-height-sm: 34px;
+    --ui-control-height-lg: 42px;
+
+    --ui-control-padding-x: 14px;
+    --ui-control-padding-x-sm: 10px;
+    --ui-control-padding-x-lg: 16px;
+
+    --ui-radius-sm: 6px;
+    --ui-radius-md: 7px;
+    --ui-radius-lg: 8px;
+    --ui-radius-xl: 10px;
+
+    --ui-space-1: 4px;
+    --ui-space-2: 8px;
+    --ui-space-3: 12px;
+    --ui-space-4: 16px;
+    --ui-space-5: 20px;
+    --ui-space-6: 24px;
+    --ui-space-7: 28px;
+    --ui-space-8: 32px;
+
+    --ui-font-size-xs: 11px;
+    --ui-font-size-sm: 12px;
+    --ui-font-size-md: 13px;
+    --ui-font-size-lg: 14px;
+    --ui-font-size-xl: 16px;
+    --ui-font-size-2xl: 20px;
+
+    --ui-font-weight-normal: 400;
+    --ui-font-weight-medium: 500;
+    --ui-font-weight-semibold: 600;
+
+    --ui-shadow-dialog:
+            0 20px 50px rgba(17, 24, 39, 0.18);
+
+    --ui-shadow-card:
+            0 1px 2px rgba(17, 24, 39, 0.04);
+
+    --ui-transition-fast:
+            background-color 0.15s ease,
+            border-color 0.15s ease,
+            color 0.15s ease,
+            box-shadow 0.15s ease,
+            opacity 0.15s ease;
+}

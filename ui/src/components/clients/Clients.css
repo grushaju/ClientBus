@@ -420,36 +420,6 @@
     gap: 6px;
 }
 
-.client-account-action-button {
-    min-height: 32px;
-
-    padding: 0 10px;
-
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-
-    background: #ffffff;
-
-    color: #374151;
-    font-size: 12px;
-    font-weight: 500;
-}
-
-.client-account-action-button:hover:not(:disabled) {
-    background: #f9fafb;
-    border-color: #9ca3af;
-}
-
-.client-account-action-button.danger {
-    border-color: #fecaca;
-    color: #b91c1c;
-}
-
-.client-account-action-button.danger:hover:not(:disabled) {
-    background: #fef2f2;
-    border-color: #fca5a5;
-}
-
 .client-account-add {
     padding: 14px 18px;
 
@@ -458,14 +428,6 @@
 
 .client-account-add-button {
     width: 100%;
-    min-height: 38px;
-
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 7px;
-
-    padding: 0 14px;
 
     border: 1px dashed #cbd5e1;
     border-radius: 7px;
@@ -477,7 +439,7 @@
     font-weight: 500;
 }
 
-.client-account-add-button:hover {
+.client-account-add-button:hover:not(:disabled) {
     border-color: #9ca3af;
     background: #f9fafb;
 }
@@ -594,47 +556,6 @@
     gap: 8px;
 }
 
-.clients-primary-button,
-.client-primary-button,
-.client-secondary-button {
-    min-height: 38px;
-
-    padding: 0 14px;
-
-    border-radius: 7px;
-
-    font-size: 13px;
-    font-weight: 500;
-}
-
-.clients-primary-button,
-.client-primary-button {
-    border: 1px solid #111827;
-
-    background: #111827;
-
-    color: #ffffff;
-}
-
-.clients-primary-button:hover:not(:disabled),
-.client-primary-button:hover:not(:disabled) {
-    background: #1f2937;
-    border-color: #1f2937;
-}
-
-.client-secondary-button {
-    border: 1px solid #d1d5db;
-
-    background: #ffffff;
-
-    color: #374151;
-}
-
-.client-secondary-button:hover:not(:disabled) {
-    background: #f9fafb;
-    border-color: #9ca3af;
-}
-
 /* =========================================================
    Responsive
    ========================================================= */
@@ -684,10 +605,6 @@
         width: 100%;
     }
 
-    .client-account-action-button {
-        flex: 1;
-    }
-
     .client-form-fields {
         grid-template-columns: 1fr;
     }
@@ -697,7 +614,7 @@
         align-items: stretch;
     }
 
-    .client-form-actions button {
+    .client-form-actions .ui-button {
         width: 100%;
     }
 

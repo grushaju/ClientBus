@@ -92,6 +92,7 @@ function ClientCreateForm({
                     </span>
 
                     <input
+                        className="ui-input"
                         value={firstName}
                         onChange={event =>
                             setFirstName(
@@ -108,6 +109,7 @@ function ClientCreateForm({
                     </span>
 
                     <input
+                        className="ui-input"
                         value={lastName}
                         onChange={event =>
                             setLastName(
@@ -123,6 +125,7 @@ function ClientCreateForm({
                     </span>
 
                     <input
+                        className="ui-input"
                         value={phone}
                         onChange={event =>
                             setPhone(
@@ -136,6 +139,7 @@ function ClientCreateForm({
             <div className="client-form-actions">
                 <button
                     type="button"
+                    className="ui-button ui-button-secondary"
                     onClick={onCancel}
                     disabled={creating}
                 >
@@ -144,7 +148,7 @@ function ClientCreateForm({
 
                 <button
                     type="submit"
-                    className="clients-primary-button"
+                    className="ui-button ui-button-primary"
                     disabled={
                         creating ||
                         !firstName.trim()

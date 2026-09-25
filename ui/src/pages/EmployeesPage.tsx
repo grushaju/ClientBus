@@ -262,7 +262,7 @@ function EmployeesPage() {
                 {isSuperAdmin && (
                     <button
                         type="button"
-                        className="employee-button employee-button-primary"
+                        className="ui-button ui-button-primary"
                         onClick={() =>
                             setCreateOpen(true)
                         }
@@ -275,6 +275,7 @@ function EmployeesPage() {
             <div className="employees-toolbar">
                 <div className="employees-search">
                     <input
+                        className="ui-input"
                         type="text"
                         value={search}
                         onChange={event =>
@@ -289,6 +290,7 @@ function EmployeesPage() {
 
                 <div className="employees-filter">
                     <select
+                        className="ui-select"
                         value={workspaceFilter}
                         onChange={event =>
                             setWorkspaceFilter(
@@ -298,7 +300,7 @@ function EmployeesPage() {
                         aria-label="Фильтр по рабочему пространству"
                     >
                         <option value="ALL">
-                            Все Пространства
+                            Все пространства
                         </option>
 
                         {workspaces.map(

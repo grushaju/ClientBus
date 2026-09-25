@@ -52,8 +52,7 @@ import {
 } from '../components/channels/channelLabels'
 
 import PlatformIcon
-    from "../components/common/platform/PlatformIcon";
-
+    from '../components/common/platform/PlatformIcon'
 
 function getChannelStatusClass(
     status: ChannelDto['status'],
@@ -373,7 +372,7 @@ function ChannelsPage() {
                 {isSuperAdmin && (
                     <button
                         type="button"
-                        className="channel-button channel-button-primary"
+                        className="ui-button ui-button-primary"
                         onClick={() =>
                             setCreateOpen(true)
                         }
@@ -402,7 +401,7 @@ function ChannelsPage() {
                     {isSuperAdmin && (
                         <button
                             type="button"
-                            className="channel-button channel-button-primary"
+                            className="ui-button ui-button-primary"
                             onClick={() =>
                                 setCreateOpen(true)
                             }
@@ -512,7 +511,7 @@ function ChannelsPage() {
                                 <div className="channel-card-actions">
                                     <button
                                         type="button"
-                                        className="channel-button channel-button-secondary"
+                                        className="ui-button ui-button-secondary"
                                         onClick={() =>
                                             setSelectedChannel(
                                                 channel,
@@ -526,7 +525,7 @@ function ChannelsPage() {
                                         'CREATED' && (
                                             <button
                                                 type="button"
-                                                className="channel-button channel-button-primary"
+                                                className="ui-button ui-button-primary"
                                                 onClick={() =>
                                                     setConnectionChannel(
                                                         channel,
@@ -541,7 +540,7 @@ function ChannelsPage() {
                                         'DISCONNECTED' && (
                                             <button
                                                 type="button"
-                                                className="channel-button channel-button-primary"
+                                                className="ui-button ui-button-primary"
                                                 onClick={() =>
                                                     setConnectionChannel(
                                                         channel,
@@ -556,7 +555,7 @@ function ChannelsPage() {
                                         'ERROR' && (
                                             <button
                                                 type="button"
-                                                className="channel-button channel-button-primary"
+                                                className="ui-button ui-button-primary"
                                                 onClick={() =>
                                                     setConnectionChannel(
                                                         channel,
@@ -571,7 +570,7 @@ function ChannelsPage() {
                                         'CONNECTING' && (
                                             <button
                                                 type="button"
-                                                className="channel-button channel-button-primary"
+                                                className="ui-button ui-button-primary"
                                                 onClick={() =>
                                                     setConnectionChannel(
                                                         channel,
@@ -586,7 +585,7 @@ function ChannelsPage() {
                                         'CONNECTED' && (
                                             <button
                                                 type="button"
-                                                className="channel-button channel-button-secondary"
+                                                className="ui-button ui-button-secondary"
                                                 onClick={() =>
                                                     handleDisable(
                                                         channel,
@@ -601,7 +600,7 @@ function ChannelsPage() {
                                         'DISABLED' && (
                                             <button
                                                 type="button"
-                                                className="channel-button channel-button-primary"
+                                                className="ui-button ui-button-primary"
                                                 onClick={() =>
                                                     handleEnable(
                                                         channel,
@@ -616,7 +615,7 @@ function ChannelsPage() {
                                         <>
                                             <button
                                                 type="button"
-                                                className="channel-button channel-button-secondary"
+                                                className="ui-button ui-button-secondary"
                                                 onClick={() =>
                                                     setEditChannel(
                                                         channel,
@@ -628,7 +627,7 @@ function ChannelsPage() {
 
                                             <button
                                                 type="button"
-                                                className="channel-button channel-button-danger"
+                                                className="ui-button ui-button-danger"
                                                 onClick={() =>
                                                     setDeleteChannelTarget(
                                                         channel,

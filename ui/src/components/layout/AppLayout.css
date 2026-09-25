@@ -8,7 +8,7 @@
 
     display: flex;
 
-    background: #ffffff;
+    background: var(--ui-color-background);
 }
 
 
@@ -35,9 +35,9 @@
 
     padding: 0 24px;
 
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid var(--ui-color-border-light);
 
-    background: #ffffff;
+    background: var(--ui-color-background);
 }
 
 .app-header-left {
@@ -52,9 +52,9 @@
 .app-header-left > strong {
     flex-shrink: 0;
 
-    color: #111827;
+    color: var(--ui-color-text);
 
-    font-size: 14px;
+    font-size: var(--ui-font-size-lg);
     font-weight: 700;
     line-height: 1.3;
 }
@@ -64,9 +64,9 @@
 
     overflow: hidden;
 
-    color: #6b7280;
+    color: var(--ui-color-text-muted);
 
-    font-size: 12px;
+    font-size: var(--ui-font-size-sm);
     line-height: 1.4;
 
     white-space: nowrap;
@@ -76,36 +76,38 @@
 .app-header-left select {
     min-width: 170px;
     max-width: 260px;
-    height: 34px;
+    height: var(--ui-control-height-sm);
 
     padding: 0 30px 0 10px;
 
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
+    border: 1px solid var(--ui-color-border);
+    border-radius: var(--ui-radius-sm);
 
-    background: #ffffff;
-    color: #374151;
+    background: var(--ui-color-background);
+    color: var(--ui-color-text-secondary);
 
     outline: none;
 
     font: inherit;
-    font-size: 12px;
+    font-size: var(--ui-font-size-sm);
+
+    transition: var(--ui-transition-fast);
 }
 
 .app-header-left select:hover:not(:disabled) {
-    border-color: #9ca3af;
+    border-color: var(--ui-color-border-focus);
 }
 
 .app-header-left select:focus {
-    border-color: #9ca3af;
+    border-color: var(--ui-color-border-focus);
 
     box-shadow:
             0 0 0 2px rgba(156, 163, 175, 0.15);
 }
 
 .app-header-left select:disabled {
-    background: #f9fafb;
-    color: #9ca3af;
+    background: var(--ui-color-background-muted);
+    color: var(--ui-color-text-placeholder);
 }
 
 
@@ -119,7 +121,7 @@
     display: flex;
     align-items: center;
 
-    gap: 8px;
+    gap: var(--ui-space-2);
 
     flex-shrink: 0;
 }
@@ -129,10 +131,10 @@
 
     overflow: hidden;
 
-    color: #111827;
+    color: var(--ui-color-text);
 
-    font-size: 12px;
-    font-weight: 500;
+    font-size: var(--ui-font-size-sm);
+    font-weight: var(--ui-font-weight-medium);
     line-height: 1.4;
 
     white-space: nowrap;
@@ -144,11 +146,11 @@
 
     border-radius: 5px;
 
-    background: #f3f4f6;
-    color: #6b7280;
+    background: var(--ui-color-background-subtle);
+    color: var(--ui-color-text-muted);
 
     font-size: 10px;
-    font-weight: 500;
+    font-weight: var(--ui-font-weight-medium);
     line-height: 1.3;
 
     white-space: nowrap;
@@ -163,7 +165,7 @@
     min-width: 0;
     flex: 1;
 
-    background: #f9fafb;
+    background: var(--ui-color-background-muted);
 }
 
 
@@ -265,7 +267,7 @@
         margin-top: 10px;
         padding-top: 10px;
 
-        border-top: 1px solid #f3f4f6;
+        border-top: 1px solid var(--ui-color-background-subtle);
     }
 
     .app-user-name {

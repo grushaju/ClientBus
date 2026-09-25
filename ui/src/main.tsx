@@ -1,5 +1,8 @@
 import './index.css'
 
+import './styles/tokens.css'
+import './styles/ui.css'
+
 import './pages/InboxPage.css'
 import './pages/ChannelsPage.css'
 import './pages/ClientsPage.css'
@@ -24,11 +27,10 @@ import { RouterProvider } from 'react-router-dom'
 
 import { router } from './app/router'
 import { AuthProvider } from './auth/AuthContext'
-
-import {WorkspaceProvider} from "./workspace/WorkspaceContext";
+import { WorkspaceProvider } from './workspace/WorkspaceContext'
 
 ReactDOM.createRoot(
-    document.getElementById('root')!
+    document.getElementById('root')!,
 ).render(
     <React.StrictMode>
         <AuthProvider>
@@ -36,5 +38,5 @@ ReactDOM.createRoot(
                 <RouterProvider router={router} />
             </WorkspaceProvider>
         </AuthProvider>
-    </React.StrictMode>
+    </React.StrictMode>,
 )
