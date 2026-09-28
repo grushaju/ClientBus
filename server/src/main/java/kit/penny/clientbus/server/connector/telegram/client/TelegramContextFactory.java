@@ -2,6 +2,7 @@ package kit.penny.clientbus.server.connector.telegram.client;
 
 import kit.penny.clientbus.server.connector.telegram.config.TelegramClientConfiguration;
 import kit.penny.clientbus.server.kafka.producer.IInboundEventPublisher;
+import kit.penny.clientbus.server.kafka.producer.IPlatformMessagePublisher;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
 import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
@@ -53,7 +54,7 @@ public class TelegramContextFactory {
     private final ConversationRepository conversationRepository;
     private final MessageRepository messageRepository;
     private final MessageService messageService;
-    private final IInboundEventPublisher inboundEventPublisher;
+    private final IPlatformMessagePublisher platformMessagePublisher;
     private final IAttachmentStorage attachmentStorage;
 
     public TelegramContextFactory(
@@ -63,7 +64,7 @@ public class TelegramContextFactory {
             ConversationRepository conversationRepository,
             MessageService messageService,
             MessageRepository messageRepository,
-            IInboundEventPublisher inboundEventPublisher,
+            IPlatformMessagePublisher platformMessagePublisher,
             IAttachmentStorage attachmentStorage
     ) {
         this.globalProperties = globalProperties;
@@ -72,7 +73,7 @@ public class TelegramContextFactory {
         this.conversationRepository = conversationRepository;
         this.messageService = messageService;
         this.messageRepository = messageRepository;
-        this.inboundEventPublisher = inboundEventPublisher;
+        this.platformMessagePublisher = platformMessagePublisher;
         this.attachmentStorage = attachmentStorage;
     }
 
@@ -238,7 +239,7 @@ public class TelegramContextFactory {
                 channelAccountId,
                 telegramClientProvider,
                 telegramUserService,
-                inboundEventPublisher,
+                platformMessagePublisher,
                 attachmentStorage
         );
     }

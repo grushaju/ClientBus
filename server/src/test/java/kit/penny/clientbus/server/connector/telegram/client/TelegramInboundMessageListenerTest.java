@@ -1,11 +1,11 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
 import kit.penny.clientbus.common.dto.message.InboundMessageRequest;
-import kit.penny.clientbus.common.dto.message.PlatformInboundAttachment;
-import kit.penny.clientbus.common.dto.message.PlatformInboundMessageEvent;
+import kit.penny.clientbus.common.dto.message.PlatformMessageAttachment;
+import kit.penny.clientbus.common.dto.message.PlatformMessageRequest;
 import kit.penny.clientbus.common.enums.MessageAttachmentType;
 import kit.penny.clientbus.common.enums.MessageType;
-import kit.penny.clientbus.server.kafka.producer.IInboundEventPublisher;
+import kit.penny.clientbus.server.kafka.producer.IPlatformMessagePublisher;
 import kit.penny.clientbus.server.storage.IAttachmentStorage;
 import kit.penny.clientbus.server.storage.StoredAttachmentMetadata;
 import kit.penny.tdlib.client.TelegramClient;
@@ -51,7 +51,7 @@ class TelegramInboundMessageListenerTest {
     private ObjectProvider<TelegramClient> telegramClientProvider;
 
     @Mock
-    private IInboundEventPublisher inboundEventPublisher;
+    private IPlatformMessagePublisher platformMessagePublisher;
 
     @Mock
     private IAttachmentStorage attachmentStorage;
@@ -67,7 +67,7 @@ class TelegramInboundMessageListenerTest {
                 CHANNEL_ACCOUNT_ID,
                 telegramClientProvider,
                 telegramUserService,
-                inboundEventPublisher,
+                platformMessagePublisher,
                 attachmentStorage
         );
     }
@@ -106,28 +106,26 @@ class TelegramInboundMessageListenerTest {
                 new TdApi.UpdateNewMessage(message)
         );
 
-        ArgumentCaptor<PlatformInboundMessageEvent> eventCaptor =
-                ArgumentCaptor.forClass(PlatformInboundMessageEvent.class);
+        ArgumentCaptor<PlatformMessageRequest> eventCaptor =
+                ArgumentCaptor.forClass(PlatformMessageRequest.class);
 
-        verify(inboundEventPublisher)
+        verify(platformMessagePublisher)
                 .publish(eventCaptor.capture());
 
-        PlatformInboundMessageEvent event =
+        PlatformMessageRequest event =
                 eventCaptor.getValue();
 
-        InboundMessageRequest request =
-                event.message();
 
-        assertEquals(CHANNEL_ACCOUNT_ID, request.channelAccountId());
-        assertEquals(Long.toString(USER_ID), request.clientExternalId());
-        assertEquals(Long.toString(MESSAGE_ID), request.externalId());
-        assertEquals(MessageType.TEXT, request.type());
-        assertEquals("Hello", request.content());
-        assertEquals("+79991234567", request.clientPhone());
-        assertEquals("Ivan Ivanov", request.clientDisplayName());
+        assertEquals(CHANNEL_ACCOUNT_ID, event.channelAccountId());
+        assertEquals(Long.toString(USER_ID), event.clientExternalId());
+        assertEquals(Long.toString(MESSAGE_ID), event.externalId());
+        assertEquals(MessageType.TEXT, event.type());
+        assertEquals("Hello", event.content());
+        assertEquals("+79991234567", event.clientPhone());
+        assertEquals("Ivan Ivanov", event.clientDisplayName());
         assertEquals(
                 Instant.ofEpochSecond(1_700_000_000),
-                request.sentAt()
+                event.sentAt()
         );
 
         verify(telegramUserService)
@@ -147,7 +145,7 @@ class TelegramInboundMessageListenerTest {
                 new TdApi.UpdateNewMessage(message)
         );
 
-        verify(inboundEventPublisher, never())
+        verify(platformMessagePublisher, never())
                 .publish(any());
 
         verify(telegramClient, never())
@@ -167,7 +165,7 @@ class TelegramInboundMessageListenerTest {
                 new TdApi.UpdateNewMessage(message)
         );
 
-        verify(inboundEventPublisher, never())
+        verify(platformMessagePublisher, never())
                 .publish(any());
 
         verify(telegramClient, never())
@@ -209,7 +207,7 @@ class TelegramInboundMessageListenerTest {
                 new TdApi.UpdateNewMessage(message)
         );
 
-        verify(inboundEventPublisher, never())
+        verify(platformMessagePublisher, never())
                 .publish(any());
     }
 
@@ -235,7 +233,7 @@ class TelegramInboundMessageListenerTest {
                 new TdApi.UpdateNewMessage(message)
         );
 
-        verify(inboundEventPublisher, never())
+        verify(platformMessagePublisher, never())
                 .publish(any());
     }
 
@@ -260,7 +258,7 @@ class TelegramInboundMessageListenerTest {
                 new TdApi.UpdateNewMessage(message)
         );
 
-        verify(inboundEventPublisher, never())
+        verify(platformMessagePublisher, never())
                 .publish(any());
     }
 
@@ -282,7 +280,7 @@ class TelegramInboundMessageListenerTest {
                 new TdApi.UpdateNewMessage(message)
         );
 
-        verify(inboundEventPublisher, never())
+        verify(platformMessagePublisher, never())
                 .publish(any());
     }
 
@@ -395,7 +393,7 @@ class TelegramInboundMessageListenerTest {
                         accountA,
                         providerA,
                         userService,
-                        inboundEventPublisher,
+                        platformMessagePublisher,
                         attachmentStorage
                 );
 
@@ -404,7 +402,7 @@ class TelegramInboundMessageListenerTest {
                         accountB,
                         providerB,
                         userService,
-                        inboundEventPublisher,
+                        platformMessagePublisher,
                         attachmentStorage
                 );
 
@@ -416,31 +414,29 @@ class TelegramInboundMessageListenerTest {
                 new TdApi.UpdateNewMessage(messageB)
         );
 
-        ArgumentCaptor<PlatformInboundMessageEvent> eventCaptor =
+        ArgumentCaptor<PlatformMessageRequest> eventCaptor =
                 ArgumentCaptor.forClass(
-                        PlatformInboundMessageEvent.class
+                        PlatformMessageRequest.class
                 );
 
-        verify(inboundEventPublisher, Mockito.times(2))
+        verify(platformMessagePublisher, Mockito.times(2))
                 .publish(eventCaptor.capture());
 
-        List<PlatformInboundMessageEvent> events =
+        List<PlatformMessageRequest> events =
                 eventCaptor.getAllValues();
 
         assertEquals(2, events.size());
 
-        InboundMessageRequest requestA =
+        PlatformMessageRequest requestA =
                 events.stream()
-                        .map(PlatformInboundMessageEvent::message)
                         .filter(request ->
                                 request.channelAccountId()
                                         .equals(accountA))
                         .findFirst()
                         .orElseThrow();
 
-        InboundMessageRequest requestB =
+        PlatformMessageRequest requestB =
                 events.stream()
-                        .map(PlatformInboundMessageEvent::message)
                         .filter(request ->
                                 request.channelAccountId()
                                         .equals(accountB))
@@ -629,15 +625,15 @@ class TelegramInboundMessageListenerTest {
                     new TdApi.UpdateNewMessage(message)
             );
 
-            ArgumentCaptor<PlatformInboundMessageEvent> captor =
+            ArgumentCaptor<PlatformMessageRequest> captor =
                     ArgumentCaptor.forClass(
-                            PlatformInboundMessageEvent.class
+                            PlatformMessageRequest.class
                     );
 
-            verify(inboundEventPublisher)
+            verify(platformMessagePublisher)
                     .publish(captor.capture());
 
-            PlatformInboundMessageEvent event =
+            PlatformMessageRequest event =
                     captor.getValue();
 
             assertThat(event)
@@ -646,7 +642,7 @@ class TelegramInboundMessageListenerTest {
             assertThat(event.attachments().size())
                     .isEqualTo(1);
 
-            PlatformInboundAttachment attachment =
+            PlatformMessageAttachment attachment =
                     event.attachments().get(0);
 
             assertThat(attachment.type())
@@ -802,21 +798,21 @@ class TelegramInboundMessageListenerTest {
                 new TdApi.UpdateNewMessage(message)
         );
 
-        ArgumentCaptor<PlatformInboundMessageEvent> captor =
+        ArgumentCaptor<PlatformMessageRequest> captor =
                 ArgumentCaptor.forClass(
-                        PlatformInboundMessageEvent.class
+                        PlatformMessageRequest.class
                 );
 
-        verify(inboundEventPublisher)
+        verify(platformMessagePublisher)
                 .publish(captor.capture());
 
-        PlatformInboundMessageEvent event =
+        PlatformMessageRequest event =
                 captor.getValue();
 
         assertThat(event.attachments().size())
                 .isEqualTo(1);
 
-        PlatformInboundAttachment attachment =
+        PlatformMessageAttachment attachment =
                 event.attachments().get(0);
 
         assertThat(attachment.type())
@@ -834,10 +830,10 @@ class TelegramInboundMessageListenerTest {
         assertThat(attachment.size())
                 .isEqualTo(6);
 
-        assertThat(event.message().content())
+        assertThat(event.content())
                 .isEqualTo("Audio caption");
 
-        assertThat(event.message().type())
+        assertThat(event.type())
                 .isEqualTo(MessageType.AUDIO);
 
         ArgumentCaptor<TdApi.Function<?>> functionCaptor =
@@ -945,7 +941,7 @@ class TelegramInboundMessageListenerTest {
                 new TdApi.UpdateNewMessage(message)
         );
 
-        verify(inboundEventPublisher, never())
+        verify(platformMessagePublisher, never())
                 .publish(any());
 
         verify(attachmentStorage, never())
@@ -1031,7 +1027,7 @@ class TelegramInboundMessageListenerTest {
                 new TdApi.UpdateNewMessage(message)
         );
 
-        verify(inboundEventPublisher, never())
+        verify(platformMessagePublisher, never())
                 .publish(any());
 
         verify(attachmentStorage, never())
@@ -1125,7 +1121,7 @@ class TelegramInboundMessageListenerTest {
                 new TdApi.UpdateNewMessage(message)
         );
 
-        verify(inboundEventPublisher, never())
+        verify(platformMessagePublisher, never())
                 .publish(any());
 
         verify(attachmentStorage, never())
@@ -1214,7 +1210,7 @@ class TelegramInboundMessageListenerTest {
                 new TdApi.UpdateNewMessage(message)
         );
 
-        verify(inboundEventPublisher, never())
+        verify(platformMessagePublisher, never())
                 .publish(any());
 
         verify(attachmentStorage, never())
@@ -1270,7 +1266,7 @@ class TelegramInboundMessageListenerTest {
                 new TdApi.UpdateNewMessage(message)
         );
 
-        verify(inboundEventPublisher, never())
+        verify(platformMessagePublisher, never())
                 .publish(any());
 
         verify(attachmentStorage, never())
@@ -1328,7 +1324,7 @@ class TelegramInboundMessageListenerTest {
                 new TdApi.UpdateNewMessage(message)
         );
 
-        verify(inboundEventPublisher, never())
+        verify(platformMessagePublisher, never())
                 .publish(any());
 
         verify(attachmentStorage, never())
@@ -1444,7 +1440,7 @@ class TelegramInboundMessageListenerTest {
                     new TdApi.UpdateNewMessage(message)
             );
 
-            verify(inboundEventPublisher, never())
+            verify(platformMessagePublisher, never())
                     .publish(any());
 
             verify(attachmentStorage)
@@ -1571,14 +1567,14 @@ class TelegramInboundMessageListenerTest {
 
             doThrow(
                     new RuntimeException("Publisher failed")
-            ).when(inboundEventPublisher)
+            ).when(platformMessagePublisher)
                     .publish(any());
 
             listener.handleNotification(
                     new TdApi.UpdateNewMessage(message)
             );
 
-            verify(inboundEventPublisher)
+            verify(platformMessagePublisher)
                     .publish(any());
 
             verify(attachmentStorage)

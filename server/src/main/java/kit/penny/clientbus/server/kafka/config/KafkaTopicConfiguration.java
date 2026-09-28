@@ -22,7 +22,8 @@ public class KafkaTopicConfiguration {
             @Value("${clientbus.kafka.outbound.enabled-channels:}")
             List<ChannelType> enabledOutboundChannels
     ) {
-        this.enabledOutboundChannels = enabledOutboundChannels;
+        this.enabledOutboundChannels =
+                enabledOutboundChannels;
     }
 
     @Bean
@@ -39,6 +40,26 @@ public class KafkaTopicConfiguration {
         return new NewTopic(
                 KafkaTopicNames.dlq(
                         KafkaTopicNames.inbound()
+                ),
+                1,
+                REPLICATION_FACTOR
+        );
+    }
+
+    @Bean
+    public NewTopic platformMessagesTopic() {
+        return new NewTopic(
+                KafkaTopicNames.platformMessages(),
+                PARTITIONS,
+                REPLICATION_FACTOR
+        );
+    }
+
+    @Bean
+    public NewTopic platformMessagesDlqTopic() {
+        return new NewTopic(
+                KafkaTopicNames.dlq(
+                        KafkaTopicNames.platformMessages()
                 ),
                 1,
                 REPLICATION_FACTOR
@@ -67,12 +88,17 @@ public class KafkaTopicConfiguration {
 
     @Bean
     public List<NewTopic> outboundTopics() {
-        List<NewTopic> topics = new ArrayList<>();
+        List<NewTopic> topics =
+                new ArrayList<>();
 
-        for (ChannelType channelType : enabledOutboundChannels) {
+        for (ChannelType channelType :
+                enabledOutboundChannels) {
+
             topics.add(
                     new NewTopic(
-                            KafkaTopicNames.outbound(channelType),
+                            KafkaTopicNames.outbound(
+                                    channelType
+                            ),
                             PARTITIONS,
                             REPLICATION_FACTOR
                     )
@@ -84,15 +110,22 @@ public class KafkaTopicConfiguration {
 
     @Bean
     public List<NewTopic> outboundDlqTopics() {
-        List<NewTopic> topics = new ArrayList<>();
+        List<NewTopic> topics =
+                new ArrayList<>();
 
-        for (ChannelType channelType : enabledOutboundChannels) {
+        for (ChannelType channelType :
+                enabledOutboundChannels) {
+
             String outboundTopic =
-                    KafkaTopicNames.outbound(channelType);
+                    KafkaTopicNames.outbound(
+                            channelType
+                    );
 
             topics.add(
                     new NewTopic(
-                            KafkaTopicNames.dlq(outboundTopic),
+                            KafkaTopicNames.dlq(
+                                    outboundTopic
+                            ),
                             1,
                             REPLICATION_FACTOR
                     )

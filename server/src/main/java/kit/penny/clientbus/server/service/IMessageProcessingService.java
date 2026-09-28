@@ -24,6 +24,10 @@ public interface IMessageProcessingService {
             PlatformInboundMessageEvent event
     );
 
+    MessageDto processPlatformMessage(
+            PlatformMessageRequest request
+    );
+
     /**
      * Обрабатывает исходящее сообщение
      * вместе с его вложениями.

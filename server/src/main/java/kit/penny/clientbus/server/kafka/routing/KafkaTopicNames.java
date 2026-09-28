@@ -16,6 +16,10 @@ public final class KafkaTopicNames {
         return PREFIX + ".inbound";
     }
 
+    public static String platformMessages() {
+        return PREFIX + ".platform-messages";
+    }
+
     public static String platformEvents() {
         return PREFIX + ".platform-events";
     }

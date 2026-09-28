@@ -1,0 +1,23 @@
+9.0  Audit Telegram/TDLib                    ✅
+
+9.1  Unified Platform Message Contract       ← сейчас
+     ├─ realtime
+     ├─ history
+     ├─ INBOUND
+     └─ OUTBOUND
+
+9.2  ClientBus READ → Telegram
+9.3  Telegram external-device messages
+9.4  Idempotency + ordering
+9.5  Recent chats synchronization
+9.6  Conversation history synchronization
+9.7  End-of-history semantics
+9.8  Realtime + history convergence
+9.9  Initial/recovery synchronization
+9.10 UI lazy history loading
+9.11 Concurrent synchronization
+9.12 Account/profile synchronization
+9.13 Avatars
+9.14 Retry/error handling
+9.15 Observability
+9.16 Integration tests

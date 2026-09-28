@@ -6,8 +6,8 @@ public enum KafkaEventType {
 
     OUTBOUND_MESSAGE,
 
+    PLATFORM_MESSAGE,
+
     PLATFORM_MESSAGE_EVENT
 
 }
-
-

@@ -4,6 +4,7 @@ import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
 import kit.penny.clientbus.common.dto.message.CreateInboundMessageRequest;
 import kit.penny.clientbus.common.dto.message.CreateOutboundMessageRequest;
+import kit.penny.clientbus.common.dto.message.CreatePlatformMessageRequest;
 import kit.penny.clientbus.common.dto.message.MessageDto;
 import kit.penny.clientbus.common.enums.MessageDeliveryStatus;
 import kit.penny.clientbus.common.enums.MessageDirection;
@@ -190,6 +191,113 @@ public class MessageService {
         conversationService.incrementUnreadCount(
                 conversation
         );
+
+        return new MessageCreationResult(
+                messageMapper.toDto(message),
+                false
+        );
+    }
+
+    @Transactional
+    public MessageCreationResult createPlatformMessage(
+            CreatePlatformMessageRequest request
+    ) {
+        ConversationEntity conversation =
+                getConversation(
+                        request.conversationId()
+                );
+
+        MessageEntity existing =
+                messageRepository
+                        .findByConversationIdAndExternalId(
+                                conversation.getId(),
+                                request.externalId()
+                        )
+                        .orElse(null);
+
+        if (existing != null) {
+            return new MessageCreationResult(
+                    messageMapper.toDto(existing),
+                    true
+            );
+        }
+
+        MessageDirection direction =
+                request.outbound()
+                        ? MessageDirection.OUTBOUND
+                        : MessageDirection.INBOUND;
+
+        MessageSenderType senderType =
+                request.outbound()
+                        ? MessageSenderType.EMPLOYEE
+                        : MessageSenderType.CLIENT;
+
+        MessageEntity message =
+                new MessageEntity(
+                        conversation,
+                        request.type(),
+                        direction,
+                        senderType
+                );
+
+        if (request.outbound()) {
+            message.setEmployee(null);
+            message.setClientAccount(null);
+
+            message.setDeliveryStatus(
+                    MessageDeliveryStatus.SENT
+            );
+        } else {
+            message.setClientAccount(
+                    conversation.getClientAccount()
+            );
+
+            message.setEmployee(null);
+
+            message.setDeliveryStatus(null);
+        }
+
+        message.setExternalId(
+                request.externalId()
+        );
+
+        message.setContent(
+                request.content()
+        );
+
+        message.setMetadata(
+                request.metadata()
+        );
+
+        message.setSentAt(
+                request.sentAt() != null
+                        ? request.sentAt()
+                        : Instant.now()
+        );
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.RECEIVED
+        );
+
+        message =
+                messageRepository.save(message);
+
+        Instant messageTime =
+                message.getSentAt() != null
+                        ? message.getSentAt()
+                        : message.getCreatedAt();
+
+        conversationService.updateLastMessage(
+                conversation,
+                messageTime,
+                createPreview(message)
+        );
+
+        if (!request.outbound()) {
+            conversationService.incrementUnreadCount(
+                    conversation
+            );
+        }
 
         return new MessageCreationResult(
                 messageMapper.toDto(message),

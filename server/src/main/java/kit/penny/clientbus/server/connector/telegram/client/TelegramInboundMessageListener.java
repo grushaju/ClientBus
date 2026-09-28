@@ -1,11 +1,11 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
-import kit.penny.clientbus.common.dto.message.InboundMessageRequest;
-import kit.penny.clientbus.common.dto.message.PlatformInboundAttachment;
-import kit.penny.clientbus.common.dto.message.PlatformInboundMessageEvent;
+import kit.penny.clientbus.common.dto.message.PlatformMessageAttachment;
+import kit.penny.clientbus.common.dto.message.PlatformMessageRequest;
 import kit.penny.clientbus.common.enums.MessageAttachmentType;
 import kit.penny.clientbus.common.enums.MessageType;
 import kit.penny.clientbus.server.kafka.producer.IInboundEventPublisher;
+import kit.penny.clientbus.server.kafka.producer.IPlatformMessagePublisher;
 import kit.penny.clientbus.server.storage.IAttachmentStorage;
 import kit.penny.clientbus.server.storage.StoredAttachmentMetadata;
 import kit.penny.tdlib.client.TelegramClient;
@@ -43,8 +43,8 @@ public class TelegramInboundMessageListener
 
     private final TelegramUserService telegramUserService;
 
-    private final IInboundEventPublisher
-            inboundEventPublisher;
+    private final IPlatformMessagePublisher
+            platformMessagePublisher;
 
     private final IAttachmentStorage attachmentStorage;
 
@@ -52,13 +52,13 @@ public class TelegramInboundMessageListener
             UUID channelAccountId,
             ObjectProvider<TelegramClient> telegramClientProvider,
             TelegramUserService telegramUserService,
-            IInboundEventPublisher inboundEventPublisher,
+            IPlatformMessagePublisher platformMessagePublisher,
             IAttachmentStorage attachmentStorage
     ) {
         this.channelAccountId = channelAccountId;
         this.telegramClientProvider = telegramClientProvider;
         this.telegramUserService = telegramUserService;
-        this.inboundEventPublisher = inboundEventPublisher;
+        this.platformMessagePublisher = platformMessagePublisher;
         this.attachmentStorage = attachmentStorage;
     }
 
@@ -301,38 +301,47 @@ public class TelegramInboundMessageListener
             return;
         }
 
-        InboundMessageRequest request =
-                new InboundMessageRequest(
+        PlatformMessageRequest request =
+                new PlatformMessageRequest(
                         channelAccountId,
+
                         Long.toString(user.id),
+
                         extractUsername(user),
+
                         user.phoneNumber,
+
                         buildDisplayName(
                                 user.firstName,
                                 user.lastName
                         ),
+
+                        Long.toString(user.id),
+
                         Long.toString(message.id),
+
                         content.messageType(),
+
                         content.text(),
+
                         null,
+
                         Instant.ofEpochSecond(
                                 message.date
-                        )
+                        ),
+
+                        content.attachments()
                 );
 
         try {
-            PlatformInboundMessageEvent event =
-                    new PlatformInboundMessageEvent(
-                            request,
-                            content.attachments()
-                    );
-
-            inboundEventPublisher.publish(event);
+            platformMessagePublisher.publish(
+                    request
+            );
 
             log.debug(
-                    "Telegram inbound message processed: " +
+                    "Telegram platform message published: " +
                             "channelAccountId={}, chatId={}, messageId={}, " +
-                            "clientExternalId={}, attachmentCount={}",
+                            "senderExternalId={}, attachmentCount={}",
                     channelAccountId,
                     message.chatId,
                     message.id,
@@ -346,7 +355,7 @@ public class TelegramInboundMessageListener
             );
 
             log.error(
-                    "Failed to process Telegram inbound message: " +
+                    "Failed to publish Telegram platform message: " +
                             "channelAccountId={}, chatId={}, messageId={}",
                     channelAccountId,
                     message.chatId,
@@ -356,7 +365,7 @@ public class TelegramInboundMessageListener
         }
     }
 
-    private CompletableFuture<PlatformInboundAttachment>
+    private CompletableFuture<PlatformMessageAttachment>
     downloadPhoto(
             long messageId,
             TdApi.MessagePhoto messagePhoto
@@ -378,7 +387,7 @@ public class TelegramInboundMessageListener
         );
     }
 
-    private CompletableFuture<PlatformInboundAttachment>
+    private CompletableFuture<PlatformMessageAttachment>
     downloadAudio(
             long messageId,
             TdApi.MessageAudio messageAudio
@@ -491,7 +500,7 @@ public class TelegramInboundMessageListener
                 });
     }
 
-    private PlatformInboundAttachment
+    private PlatformMessageAttachment
     storeDownloadedFile(
             TdApi.File file,
             MessageAttachmentType type,
@@ -519,7 +528,7 @@ public class TelegramInboundMessageListener
                         );
             }
 
-            return new PlatformInboundAttachment(
+            return new PlatformMessageAttachment(
                     type,
                     stored.storageKey(),
                     stored.fileName(),
@@ -537,13 +546,13 @@ public class TelegramInboundMessageListener
     }
 
     private void cleanupAttachments(
-            List<PlatformInboundAttachment> attachments
+            List<PlatformMessageAttachment> attachments
     ) {
         if (attachments == null) {
             return;
         }
 
-        for (PlatformInboundAttachment attachment :
+        for (PlatformMessageAttachment attachment :
                 attachments) {
 
             if (attachment == null) {
@@ -623,7 +632,7 @@ public class TelegramInboundMessageListener
     private record InboundContent(
             MessageType messageType,
             String text,
-            List<PlatformInboundAttachment> attachments
+            List<PlatformMessageAttachment> attachments
     ) {
     }
 }

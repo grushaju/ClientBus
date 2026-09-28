@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import kit.penny.clientbus.common.dto.message.PlatformInboundMessageEvent;
+import kit.penny.clientbus.common.dto.message.PlatformMessageRequest;
 import kit.penny.clientbus.common.kafka.KafkaEvent;
 import kit.penny.clientbus.common.kafka.KafkaEventType;
 import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
@@ -105,6 +106,13 @@ public class KafkaEventJsonDeserializer
                             payload,
                             PlatformInboundMessageEvent.class
                     );
+
+            case PLATFORM_MESSAGE ->
+                    objectMapper.convertValue(
+                            payload,
+                            PlatformMessageRequest.class
+                    );
+
 
             case OUTBOUND_MESSAGE ->
                     objectMapper.convertValue(

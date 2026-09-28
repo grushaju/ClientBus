@@ -162,6 +162,111 @@ public class MessageProcessingService
     }
 
     @Override
+    @Transactional
+    public MessageDto processPlatformMessage(
+            PlatformMessageRequest request
+    ) {
+        if (request == null) {
+            throw new IllegalArgumentException(
+                    "PlatformMessageRequest must not be null"
+            );
+        }
+
+        ChannelAccountEntity channelAccount =
+                channelAccountRepository
+                        .findById(request.channelAccountId())
+                        .orElseThrow(() ->
+                                new EntityNotFoundException(
+                                        "ChannelAccount not found: "
+                                                + request.channelAccountId()
+                                )
+                        );
+
+        boolean outbound =
+                channelAccount.getExternalId() != null
+                        && channelAccount.getExternalId()
+                        .equals(request.senderExternalId());
+
+        ChannelType channelType =
+                channelAccount
+                        .getChannel()
+                        .getType();
+
+        ClientAccountEntity clientAccount =
+                clientAccountService.getOrCreateForInbound(
+                        channelType,
+                        request.clientExternalId(),
+                        request.clientUsername(),
+                        request.clientPhone(),
+                        request.clientDisplayName()
+                );
+
+        ConversationEntity conversation =
+                conversationService.findEntityByAccounts(
+                        channelAccount.getId(),
+                        clientAccount.getId()
+                );
+
+        if (conversation == null) {
+            conversation =
+                    conversationService.createConversationInternal(
+                            channelAccount,
+                            clientAccount
+                    );
+        }
+
+        MessageCreationResult result =
+                messageService.createPlatformMessage(
+                        new CreatePlatformMessageRequest(
+                                conversation.getId(),
+                                request.type(),
+                                request.externalId(),
+                                request.content(),
+                                request.metadata(),
+                                request.sentAt(),
+                                outbound
+                        )
+                );
+
+        if (!result.existed()) {
+
+            MessageEntity messageEntity =
+                    messageService.getMessageEntityForProcessing(
+                            result.message().id()
+                    );
+
+            List<PlatformMessageAttachment> attachments =
+                    request.attachments() == null
+                            ? List.of()
+                            : List.copyOf(
+                            request.attachments()
+                    );
+
+            for (PlatformMessageAttachment attachment :
+                    attachments) {
+
+                if (attachment == null) {
+                    throw new IllegalArgumentException(
+                            "Platform message attachment must not be null"
+                    );
+                }
+
+                messageAttachmentService
+                        .createAttachmentFromStorage(
+                                messageEntity,
+                                attachment.type(),
+                                attachment.storageKey(),
+                                attachment.fileName(),
+                                attachment.contentType(),
+                                attachment.size()
+                        );
+            }
+        }
+
+        return result.message();
+    }
+
+    @Override
     public MessageDto processOutbound(
             OutboundMessageRequest request,
             List<AttachmentContent> attachments
