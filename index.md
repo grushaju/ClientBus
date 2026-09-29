@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-09-28 16:40:01
+- Generated: 2026-09-29 13:16:38
 - Branch: `main`
-- Commit: `b5beba9`
+- Commit: `bc7fe96`
 
 ## Project Structure
 
@@ -304,6 +304,7 @@
 - `AttachmentContent.java` — `server/src/main/java/kit/penny/clientbus/server/service/AttachmentContent.java`
 - `AuthService.java` — `server/src/main/java/kit/penny/clientbus/server/service/AuthService.java`
 - `ChannelAttachment.java` — `server/src/main/java/kit/penny/clientbus/server/service/ChannelAttachment.java`
+- `ChannelReadRequest.java` — `server/src/main/java/kit/penny/clientbus/server/service/ChannelReadRequest.java`
 - `ChannelSendRequest.java` — `server/src/main/java/kit/penny/clientbus/server/service/ChannelSendRequest.java`
 - `ChannelService.java` — `server/src/main/java/kit/penny/clientbus/server/service/ChannelService.java`
 - `ClientAccountService.java` — `server/src/main/java/kit/penny/clientbus/server/service/ClientAccountService.java`
@@ -575,7 +576,7 @@
 ## Summary
 
 - Maven modules: 3
-- Java files: 249
+- Java files: 250
 - UI source files: 95
-- Git commit: `b5beba9`
+- Git commit: `bc7fe96`
 

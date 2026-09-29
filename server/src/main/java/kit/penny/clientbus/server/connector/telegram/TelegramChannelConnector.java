@@ -8,6 +8,7 @@ import kit.penny.clientbus.server.connector.IChannelConnector;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientContext;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientManager;
 import kit.penny.clientbus.server.service.ChannelAttachment;
+import kit.penny.clientbus.server.service.ChannelReadRequest;
 import kit.penny.clientbus.server.service.ChannelSendRequest;
 import kit.penny.tdlib.client.TelegramClient;
 import org.drinkless.tdlib.TdApi;
@@ -76,6 +77,72 @@ public class TelegramChannelConnector implements IChannelConnector {
                             + request.type()
             );
         };
+    }
+
+    @Override
+    public void markRead(
+            ChannelReadRequest request
+    ) {
+        validateReadRequest(request);
+
+        long chatId =
+                parseChatId(
+                        request.recipientExternalId()
+                );
+
+        long messageId =
+                parseMessageId(
+                        request.lastReadExternalId()
+                );
+
+        TelegramClientContext context =
+                telegramClientManager.require(
+                        request.channelAccountId()
+                );
+
+        TelegramClient telegramClient =
+                context.telegramClient();
+
+        telegramClient
+                .send(
+                        new TdApi.ViewMessages(
+                                chatId,
+                                new long[]{messageId},
+                                null,
+                                false
+                        )
+                )
+                .getObjectOrThrow();
+    }
+
+    private void validateReadRequest(
+            ChannelReadRequest request
+    ) {
+        if (request == null) {
+            throw new IllegalArgumentException(
+                    "ChannelReadRequest must not be null"
+            );
+        }
+
+        if (request.channelAccountId() == null) {
+            throw new IllegalArgumentException(
+                    "channelAccountId must not be null"
+            );
+        }
+
+        if (request.recipientExternalId() == null
+                || request.recipientExternalId().isBlank()) {
+            throw new IllegalArgumentException(
+                    "recipientExternalId must not be blank"
+            );
+        }
+
+        if (request.lastReadExternalId() == null
+                || request.lastReadExternalId().isBlank()) {
+            throw new IllegalArgumentException(
+                    "lastReadExternalId must not be blank"
+            );
+        }
     }
 
     private ConnectorSendResult sendText(
@@ -319,6 +386,25 @@ public class TelegramChannelConnector implements IChannelConnector {
             );
         }
     }
+
+    private long parseMessageId(
+            String externalId
+    ) {
+        try {
+            return Long.parseLong(
+                    externalId
+            );
+
+        } catch (NumberFormatException e) {
+
+            throw new IllegalArgumentException(
+                    "Telegram message externalId must be numeric: "
+                            + externalId,
+                    e
+            );
+        }
+    }
+
 
     private String getFileSuffix(String fileName) {
         if (fileName == null || fileName.isBlank()) {

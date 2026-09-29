@@ -28,6 +28,12 @@ public interface MessageRepository
             String externalId
     );
 
+    Optional<MessageEntity>
+    findFirstByConversationIdAndDirectionOrderBySentAtDescCreatedAtDesc(
+            UUID conversationId,
+            MessageDirection direction
+    );
+
     List<MessageEntity>
     findAllByConversationIdAndDirectionAndDeliveryStatus(
             UUID conversationId,
