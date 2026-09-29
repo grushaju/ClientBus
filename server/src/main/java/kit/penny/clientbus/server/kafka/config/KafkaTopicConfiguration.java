@@ -134,4 +134,55 @@ public class KafkaTopicConfiguration {
 
         return topics;
     }
+
+    @Bean
+    public List<NewTopic> channelReadTopics() {
+
+        List<NewTopic> topics =
+                new ArrayList<>();
+
+        for (ChannelType channelType :
+                enabledOutboundChannels) {
+
+            topics.add(
+                    new NewTopic(
+                            KafkaTopicNames.channelRead(
+                                    channelType
+                            ),
+                            PARTITIONS,
+                            REPLICATION_FACTOR
+                    )
+            );
+        }
+
+        return topics;
+    }
+
+    @Bean
+    public List<NewTopic> channelReadDlqTopics() {
+
+        List<NewTopic> topics =
+                new ArrayList<>();
+
+        for (ChannelType channelType :
+                enabledOutboundChannels) {
+
+            String channelReadTopic =
+                    KafkaTopicNames.channelRead(
+                            channelType
+                    );
+
+            topics.add(
+                    new NewTopic(
+                            KafkaTopicNames.dlq(
+                                    channelReadTopic
+                            ),
+                            1,
+                            REPLICATION_FACTOR
+                    )
+            );
+        }
+
+        return topics;
+    }
 }

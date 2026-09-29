@@ -835,6 +835,12 @@ function ConversationClientPanel({
                                     type={channel.type}
                                 />
                             </span>
+                            <strong>
+                                👤 @{channel.account?.username}
+                            </strong>
+                            <strong>
+                                ☎ {channel.account?.phone}
+                            </strong>
                         </div>
                     </div>
                 </div>

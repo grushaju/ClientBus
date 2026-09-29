@@ -6,10 +6,7 @@ import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import kit.penny.clientbus.common.dto.message.PlatformInboundMessageEvent;
 import kit.penny.clientbus.common.dto.message.PlatformMessageRequest;
-import kit.penny.clientbus.common.kafka.KafkaEvent;
-import kit.penny.clientbus.common.kafka.KafkaEventType;
-import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
-import kit.penny.clientbus.common.kafka.PlatformMessageKafkaEvent;
+import kit.penny.clientbus.common.kafka.*;
 import org.apache.kafka.common.errors.SerializationException;
 import org.apache.kafka.common.serialization.Deserializer;
 
@@ -124,6 +121,12 @@ public class KafkaEventJsonDeserializer
                     objectMapper.convertValue(
                             payload,
                             PlatformMessageKafkaEvent.class
+                    );
+
+            case CHANNEL_READ ->
+                    objectMapper.convertValue(
+                            payload,
+                            ChannelReadKafkaCommand.class
                     );
         };
     }

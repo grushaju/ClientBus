@@ -114,6 +114,9 @@ spring:
       inbound-group-id: clientbus.inbound.processor
       outbound-group-id: clientbus.outbound.processor
       platform-events-group-id: clientbus.platform-events.processor
+      platform-message-group-id: clientbus.platform-messages.processor
+      channel-read-group-id: clientbus.channel-read.processor
+
 #  security:
 #    user:
 #      name: clientbus

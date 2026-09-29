@@ -109,7 +109,7 @@ public class TelegramChannelConnector implements IChannelConnector {
                                 chatId,
                                 new long[]{messageId},
                                 null,
-                                false
+                                true
                         )
                 )
                 .getObjectOrThrow();

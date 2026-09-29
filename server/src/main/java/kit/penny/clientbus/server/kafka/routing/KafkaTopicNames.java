@@ -9,6 +9,9 @@ public final class KafkaTopicNames {
     private static final String OUTBOUND_PREFIX =
             PREFIX + ".outbound.";
 
+    private static final String CHANNEL_READ_PREFIX =
+            PREFIX + ".channel-read.";
+
     private KafkaTopicNames() {
     }
 
@@ -22,6 +25,65 @@ public final class KafkaTopicNames {
 
     public static String platformEvents() {
         return PREFIX + ".platform-events";
+    }
+
+    public static String channelRead(
+            ChannelType channelType
+    ) {
+        if (channelType == null) {
+            throw new IllegalArgumentException(
+                    "ChannelType must not be null"
+            );
+        }
+
+        return CHANNEL_READ_PREFIX
+                + channelType.name().toLowerCase();
+    }
+
+    public static ChannelType channelReadChannelType(
+            String topic
+    ) {
+        if (topic == null || topic.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Topic must not be blank"
+            );
+        }
+
+        if (!topic.startsWith(CHANNEL_READ_PREFIX)) {
+            throw new IllegalArgumentException(
+                    "Not a channel-read topic: " + topic
+            );
+        }
+
+        String channelTypeName =
+                topic.substring(
+                        CHANNEL_READ_PREFIX.length()
+                );
+
+        if (channelTypeName.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Channel-read topic does not contain channel type: "
+                            + topic
+            );
+        }
+
+        try {
+            return ChannelType.valueOf(
+                    channelTypeName.toUpperCase()
+            );
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(
+                    "Unknown channel type in channel-read topic: "
+                            + topic,
+                    e
+            );
+        }
+    }
+
+    public static String channelReadPattern() {
+        return "^"
+                + CHANNEL_READ_PREFIX.replace(".", "\\.")
+                + "[^.]+$";
     }
 
     public static String outbound(

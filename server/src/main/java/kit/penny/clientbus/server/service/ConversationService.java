@@ -4,19 +4,14 @@ import jakarta.persistence.EntityNotFoundException;
 import kit.penny.clientbus.common.dto.conversation.ConversationDto;
 import kit.penny.clientbus.common.dto.conversation.CreateConversationRequest;
 import kit.penny.clientbus.common.dto.conversation.CreateOutboundConversationRequest;
+import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.common.enums.ClientAccountState;
+import kit.penny.clientbus.common.enums.MessageDirection;
+import kit.penny.clientbus.common.kafka.ChannelReadKafkaCommand;
+import kit.penny.clientbus.server.kafka.producer.IChannelReadPublisher;
 import kit.penny.clientbus.server.mapper.ConversationMapper;
-import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
-import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
-import kit.penny.clientbus.server.persistence.entity.ConversationEntity;
-import kit.penny.clientbus.server.persistence.entity.EmployeeEntity;
-import kit.penny.clientbus.server.persistence.entity.WorkspaceEntity;
-import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
-import kit.penny.clientbus.server.persistence.repository.ClientAccountRepository;
-import kit.penny.clientbus.server.persistence.repository.ConversationRepository;
-import kit.penny.clientbus.server.persistence.repository.EmployeeRepository;
-import kit.penny.clientbus.server.persistence.repository.EmployeeWorkspaceRepository;
-import kit.penny.clientbus.server.persistence.repository.WorkspaceRepository;
+import kit.penny.clientbus.server.persistence.entity.*;
+import kit.penny.clientbus.server.persistence.repository.*;
 import kit.penny.clientbus.server.security.service.CurrentUserService;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
@@ -39,6 +34,8 @@ public class ConversationService {
     private final EmployeeWorkspaceRepository employeeWorkspaceRepository;
     private final ConversationMapper conversationMapper;
     private final CurrentUserService currentUserService;
+    private final MessageRepository messageRepository;
+    private final IChannelReadPublisher channelReadPublisher;
 
     public ConversationService(
             ConversationRepository conversationRepository,
@@ -48,7 +45,8 @@ public class ConversationService {
             EmployeeRepository employeeRepository,
             EmployeeWorkspaceRepository employeeWorkspaceRepository,
             ConversationMapper conversationMapper,
-            CurrentUserService currentUserService
+            CurrentUserService currentUserService,
+            MessageRepository messageRepository, IChannelReadPublisher channelReadPublisher
     ) {
         this.conversationRepository = conversationRepository;
         this.workspaceRepository = workspaceRepository;
@@ -58,11 +56,13 @@ public class ConversationService {
         this.employeeWorkspaceRepository = employeeWorkspaceRepository;
         this.conversationMapper = conversationMapper;
         this.currentUserService = currentUserService;
+        this.messageRepository = messageRepository;
+        this.channelReadPublisher = channelReadPublisher;
     }
 
     /**
      * Создаёт Conversation для пары:
-     *
+     * <p/>
      * ClientAccount + ChannelAccount.
      */
     public ConversationDto createConversation(
@@ -141,18 +141,18 @@ public class ConversationService {
     /**
      * Создание нового outbound Conversation
      * после выбора внешнего получателя.
-     *
+     * <p>
      * EMPLOYEE-only.
-     *
+     * <p>
      * ClientAccount определяется по:
-     *
+     * <p>
      *     ChannelType + ExternalId
-     *
+     * <p>
      * а не по clientAccountId из frontend.
-     *
+     * <p>
      * Если ClientAccount ещё не существует —
      * он создаётся как orphan.
-     *
+     * <p>
      * ClientAccount всегда создаётся одновременно
      * с Conversation, поэтому отдельного standalone
      * ClientAccount для Employee не возникает.
@@ -317,9 +317,9 @@ public class ConversationService {
     /**
      * Внутреннее создание Conversation
      * для Message Processing.
-     *
+     * <p>
      * ACL отсутствует намеренно.
-     *
+     * <p>
      * Workspace определяется из ChannelAccount.
      */
     @Transactional
@@ -836,17 +836,57 @@ public class ConversationService {
     ) {
 
         ConversationEntity conversation =
-                getConversationEntity(conversationId);
+                getConversationEntity(
+                        conversationId
+                );
 
         currentUserService.requireConversationAccess(
                 conversation
         );
 
-        requireConversationAccess(conversation);
+        requireConversationAccess(
+                conversation
+        );
+
+        MessageEntity lastInboundMessage =
+                messageRepository
+                        .findFirstByConversationIdAndDirectionOrderBySentAtDescCreatedAtDesc(
+                                conversation.getId(),
+                                MessageDirection.INBOUND
+                        )
+                        .orElse(null);
+
+        if (conversation.getAssignedEmployee() != null
+                && lastInboundMessage != null
+                && lastInboundMessage.getExternalId() != null
+                && !lastInboundMessage.getExternalId().isBlank()) {
+
+            ChannelAccountEntity channelAccount =
+                    conversation.getChannelAccount();
+
+            ChannelType channelType =
+                    channelAccount
+                            .getChannel()
+                            .getType();
+
+            channelReadPublisher.publish(
+                    channelType,
+                    new ChannelReadKafkaCommand(
+                            channelAccount.getId(),
+                            conversation
+                                    .getClientAccount()
+                                    .getExternalId(),
+                            lastInboundMessage
+                                    .getExternalId()
+                    )
+            );
+        }
 
         conversation.setUnreadCount(0);
 
-        return conversationMapper.toDto(conversation);
+        return conversationMapper.toDto(
+                conversation
+        );
     }
 
     public void requireForwardTargetAccess(

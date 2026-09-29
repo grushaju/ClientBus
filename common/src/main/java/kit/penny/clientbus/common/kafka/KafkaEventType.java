@@ -8,6 +8,8 @@ public enum KafkaEventType {
 
     PLATFORM_MESSAGE,
 
-    PLATFORM_MESSAGE_EVENT
+    PLATFORM_MESSAGE_EVENT,
+
+    CHANNEL_READ
 
 }
