@@ -74,13 +74,30 @@ public class TelegramInboundMessageListener
         TdApi.Message message =
                 notification.message;
 
-        if (message.isOutgoing) {
+        /*
+         * Outgoing message with a sending state belongs to the
+         * current ClientBus -> Telegram send flow.
+         *
+         * It will be correlated by TelegramMessageSendListener
+         * using UpdateMessageSendSucceeded / UpdateMessageSendFailed.
+         *
+         * Outgoing message without a sending state was created
+         * outside the current ClientBus send flow, for example
+         * from another Telegram device.
+         */
+        if (message.isOutgoing
+                && message.sendingState != null) {
+
             log.debug(
-                    "Ignoring outgoing Telegram message: " +
-                            "channelAccountId={}, messageId={}",
+                    "Ignoring ClientBus-originated outgoing Telegram message: " +
+                            "channelAccountId={}, messageId={}, sendingState={}",
                     channelAccountId,
-                    message.id
+                    message.id,
+                    message.sendingState
+                            .getClass()
+                            .getSimpleName()
             );
+
             return;
         }
 
@@ -98,6 +115,7 @@ public class TelegramInboundMessageListener
                             .getClass()
                             .getSimpleName()
             );
+
             return;
         }
 
@@ -147,7 +165,7 @@ public class TelegramInboundMessageListener
         }
 
         if (!(chat.type
-                instanceof TdApi.ChatTypePrivate)) {
+                instanceof TdApi.ChatTypePrivate privateChat)) {
 
             log.debug(
                     "Ignoring Telegram message from non-private chat: " +
@@ -165,11 +183,12 @@ public class TelegramInboundMessageListener
         }
 
         telegramUserService
-                .getUser(sender.userId)
+                .getUser(privateChat.userId)
                 .thenAccept(userResponse ->
                         handleUserResponse(
                                 message,
                                 sender,
+                                privateChat.userId,
                                 userResponse
                         )
                 );
@@ -178,6 +197,7 @@ public class TelegramInboundMessageListener
     private void handleUserResponse(
             TdApi.Message message,
             TdApi.MessageSenderUser sender,
+            long clientUserId,
             TdlibResponse<TdApi.User> response
     ) {
         if (response.getError().isPresent()) {
@@ -185,7 +205,7 @@ public class TelegramInboundMessageListener
                     "Failed to load Telegram user: " +
                             "channelAccountId={}, userId={}, messageId={}, error={}",
                     channelAccountId,
-                    sender.userId,
+                    clientUserId,
                     message.id,
                     response.getError().get().message
             );
@@ -200,7 +220,7 @@ public class TelegramInboundMessageListener
                     "Telegram user response is empty: " +
                             "channelAccountId={}, userId={}, messageId={}",
                     channelAccountId,
-                    sender.userId,
+                    clientUserId,
                     message.id
             );
             return;
@@ -212,6 +232,7 @@ public class TelegramInboundMessageListener
         contentFuture.thenAccept(content ->
                 publishMessage(
                         message,
+                        sender,
                         user,
                         content
                 )
@@ -294,6 +315,7 @@ public class TelegramInboundMessageListener
 
     private void publishMessage(
             TdApi.Message message,
+            TdApi.MessageSenderUser sender,
             TdApi.User user,
             InboundContent content
     ) {
@@ -305,6 +327,10 @@ public class TelegramInboundMessageListener
                 new PlatformMessageRequest(
                         channelAccountId,
 
+                        /*
+                         * In a private chat the client is the user
+                         * represented by the chat itself.
+                         */
                         Long.toString(user.id),
 
                         extractUsername(user),
@@ -316,7 +342,18 @@ public class TelegramInboundMessageListener
                                 user.lastName
                         ),
 
-                        Long.toString(user.id),
+                        /*
+                         * For inbound:
+                         *     sender = client
+                         *
+                         * For external-device outbound:
+                         *     sender = our Telegram account
+                         *
+                         * MessageProcessingService compares this value
+                         * with ChannelAccount.externalId to determine
+                         * the message direction.
+                         */
+                        Long.toString(sender.userId),
 
                         Long.toString(message.id),
 
@@ -341,11 +378,14 @@ public class TelegramInboundMessageListener
             log.debug(
                     "Telegram platform message published: " +
                             "channelAccountId={}, chatId={}, messageId={}, " +
-                            "senderExternalId={}, attachmentCount={}",
+                            "senderExternalId={}, clientExternalId={}, " +
+                            "outgoing={}, attachmentCount={}",
                     channelAccountId,
                     message.chatId,
                     message.id,
+                    sender.userId,
                     user.id,
+                    message.isOutgoing,
                     content.attachments().size()
             );
 

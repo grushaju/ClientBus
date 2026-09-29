@@ -1006,6 +1006,16 @@ public class ConversationService {
             String preview
     ) {
 
+        Instant currentLastMessageAt =
+                conversation.getLastMessageAt();
+
+        if (currentLastMessageAt != null
+                && messageTime != null
+                && messageTime.isBefore(currentLastMessageAt)) {
+
+            return conversation;
+        }
+
         conversation.setLastMessageAt(messageTime);
         conversation.setLastMessagePreview(preview);
 
