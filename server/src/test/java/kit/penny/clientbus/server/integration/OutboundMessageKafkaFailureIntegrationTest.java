@@ -7,6 +7,7 @@ import kit.penny.clientbus.common.enums.MessageProcessingStatus;
 import kit.penny.clientbus.common.enums.MessageType;
 import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
 import kit.penny.clientbus.server.connector.IChannelConnector;
+import kit.penny.clientbus.server.connector.command.SendMessageCommand;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
@@ -125,7 +126,7 @@ class OutboundMessageKafkaFailureIntegrationTest
                         "Telegram connector failure"
                 )
         ).when(channelConnector)
-                .send(any());
+                .handle((SendMessageCommand)any());
     }
 
     @AfterEach
@@ -218,7 +219,7 @@ class OutboundMessageKafkaFailureIntegrationTest
                 channelConnector,
                 timeout(20_000)
                         .times(4)
-        ).send(any());
+        ).handle((SendMessageCommand)any());
 
         MessageEntity failedMessage =
                 awaitDeliveryStatus(

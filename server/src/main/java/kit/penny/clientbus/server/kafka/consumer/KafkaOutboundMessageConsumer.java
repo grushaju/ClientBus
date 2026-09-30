@@ -9,11 +9,10 @@ import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
 import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
 import kit.penny.clientbus.server.connector.ConnectorSendResult;
 import kit.penny.clientbus.server.connector.IChannelConnector;
-import kit.penny.clientbus.server.connector.telegram.startup.TelegramClientStartupService;
+import kit.penny.clientbus.server.connector.command.SendMessageCommand;
 import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
 import kit.penny.clientbus.server.mapper.OutboundMessageKafkaCommandMapper;
 import kit.penny.clientbus.server.persistence.entity.MessageEntity;
-import kit.penny.clientbus.server.service.ChannelSendRequest;
 import kit.penny.clientbus.server.service.MessageService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,11 +21,15 @@ import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
 
+import java.util.UUID;
+
 @Component
 public class KafkaOutboundMessageConsumer {
 
     private static final Logger log =
-            LoggerFactory.getLogger(KafkaOutboundMessageConsumer.class);
+            LoggerFactory.getLogger(
+                    KafkaOutboundMessageConsumer.class
+            );
 
     private final ChannelConnectorRegistry channelConnectorRegistry;
     private final OutboundMessageKafkaCommandMapper commandMapper;
@@ -45,7 +48,8 @@ public class KafkaOutboundMessageConsumer {
     @KafkaListener(
             id = "kafkaOutboundMessageConsumer",
             groupId = "${spring.kafka.consumer.outbound-group-id}",
-            topicPattern = "#{T(kit.penny.clientbus.server.kafka.routing.KafkaTopicNames).outboundPattern()}"
+            topicPattern =
+                    "#{T(kit.penny.clientbus.server.kafka.routing.KafkaTopicNames).outboundPattern()}"
     )
     public void consume(
             KafkaEvent<OutboundMessageKafkaCommand> event,
@@ -56,28 +60,31 @@ public class KafkaOutboundMessageConsumer {
         ChannelType channelType =
                 KafkaTopicNames.outboundChannelType(topic);
 
-        OutboundMessageKafkaCommand command =
+        OutboundMessageKafkaCommand kafkaCommand =
                 event.payload();
 
         log.info(
-                "Processing outbound message: messageId={},  " +
+                "Processing outbound message: messageId={}, " +
                         "channelType={}, topic={}, type={}, contentPresent={}, " +
                         "attachmentCount={}",
-                command.messageId(),
+                kafkaCommand.messageId(),
                 channelType,
                 topic,
-                command.type(),
-                command.content() != null && !command.content().isBlank(),
-                command.attachments() != null
-                        ? command.attachments().size()
+                kafkaCommand.type(),
+                kafkaCommand.content() != null
+                        && !kafkaCommand.content().isBlank(),
+                kafkaCommand.attachments() != null
+                        ? kafkaCommand.attachments().size()
                         : 0
         );
 
-        if (isAlreadyAcceptedForDelivery(command.messageId())) {
+        if (isAlreadyAcceptedForDelivery(
+                kafkaCommand.messageId()
+        )) {
             log.info(
                     "Skipping outbound message: already accepted for delivery, " +
                             "messageId={}",
-                    command.messageId()
+                    kafkaCommand.messageId()
             );
             return;
         }
@@ -86,12 +93,14 @@ public class KafkaOutboundMessageConsumer {
 
         try {
             connector =
-                    channelConnectorRegistry.getConnector(channelType);
+                    channelConnectorRegistry.getConnector(
+                            channelType
+                    );
         } catch (Exception e) {
             log.error(
                     "Failed to resolve channel connector: messageId={}, " +
                             "channelType={}, topic={}",
-                    command.messageId(),
+                    kafkaCommand.messageId(),
                     channelType,
                     topic,
                     e
@@ -102,21 +111,23 @@ public class KafkaOutboundMessageConsumer {
         log.debug(
                 "Resolved outbound connector: messageId={}, channelType={}, " +
                         "connector={}",
-                command.messageId(),
+                kafkaCommand.messageId(),
                 channelType,
                 connector.getClass().getSimpleName()
         );
 
-        ChannelSendRequest request;
+        SendMessageCommand command;
 
         try {
-            request =
-                    commandMapper.toRequest(command);
+            command =
+                    commandMapper.toCommand(
+                            kafkaCommand
+                    );
         } catch (Exception e) {
             log.error(
-                    "Failed to map outbound command to connector request: " +
+                    "Failed to map outbound Kafka command to connector command: " +
                             "messageId={}, channelType={}",
-                    command.messageId(),
+                    kafkaCommand.messageId(),
                     channelType,
                     e
             );
@@ -124,9 +135,9 @@ public class KafkaOutboundMessageConsumer {
         }
 
         log.debug(
-                "Outbound connector request prepared: messageId={}, " +
+                "Outbound connector command prepared: messageId={}, " +
                         "channelType={}, connector={}",
-                command.messageId(),
+                kafkaCommand.messageId(),
                 channelType,
                 connector.getClass().getSimpleName()
         );
@@ -135,13 +146,12 @@ public class KafkaOutboundMessageConsumer {
 
         try {
             result =
-                    connector.send(request);
+                    connector.handle(command);
         } catch (Exception e) {
             log.error(
                     "Connector threw exception while sending outbound message: " +
-                            "messageId={}, channelType={}, " +
-                            "connector={}",
-                    command.messageId(),
+                            "messageId={}, channelType={}, connector={}",
+                    kafkaCommand.messageId(),
                     channelType,
                     connector.getClass().getSimpleName(),
                     e
@@ -149,37 +159,54 @@ public class KafkaOutboundMessageConsumer {
             throw e;
         }
 
+        if (result == null) {
+            throw new IllegalStateException(
+                    "Connector returned null send result: messageId="
+                            + kafkaCommand.messageId()
+            );
+        }
+
+        if (result.externalId() == null
+                || result.externalId().isBlank()) {
+            throw new IllegalStateException(
+                    "Connector returned blank externalId: messageId="
+                            + kafkaCommand.messageId()
+            );
+        }
+
         try {
             messageService.registerPendingExternalId(
-                    command.messageId(),
+                    kafkaCommand.messageId(),
                     result.externalId()
             );
         } catch (Exception e) {
             log.error(
-                    "Message service threw exception while registering pending externalId: " +
-                            "messageId={}," +
-                            "externalId={}",
-                    command.messageId(),
+                    "Message service threw exception while registering " +
+                            "pending externalId: messageId={}, externalId={}",
+                    kafkaCommand.messageId(),
                     result.externalId(),
                     e
             );
             throw e;
         }
+
         log.info(
                 "Outbound connector send completed: messageId={}, " +
-                        "channelType={}, connector={}, " +
-                        "result={}",
-                command.messageId(),
+                        "channelType={}, connector={}, result={}",
+                kafkaCommand.messageId(),
                 channelType,
                 connector.getClass().getSimpleName(),
                 result
         );
     }
+
     private boolean isAlreadyAcceptedForDelivery(
-            java.util.UUID messageId
+            UUID messageId
     ) {
         MessageEntity message =
-                messageService.getMessageEntityForProcessing(messageId);
+                messageService.getMessageEntityForProcessing(
+                        messageId
+                );
 
         return message.getProcessingStatus()
                 == MessageProcessingStatus.QUEUED

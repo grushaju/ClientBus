@@ -5,11 +5,14 @@ import kit.penny.clientbus.common.enums.MessageAttachmentType;
 import kit.penny.clientbus.common.enums.MessageType;
 import kit.penny.clientbus.server.connector.ConnectorSendResult;
 import kit.penny.clientbus.server.connector.IChannelConnector;
+import kit.penny.clientbus.server.connector.command.MarkMessagesReadCommand;
+import kit.penny.clientbus.server.connector.command.SendMessageCommand;
+import kit.penny.clientbus.server.connector.command.SyncAccountCommand;
+import kit.penny.clientbus.server.connector.command.SyncConversationHistoryCommand;
+import kit.penny.clientbus.server.connector.command.SyncRecentChatsCommand;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientContext;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientManager;
 import kit.penny.clientbus.server.service.ChannelAttachment;
-import kit.penny.clientbus.server.service.ChannelReadRequest;
-import kit.penny.clientbus.server.service.ChannelSendRequest;
 import kit.penny.tdlib.client.TelegramClient;
 import org.drinkless.tdlib.TdApi;
 import org.springframework.stereotype.Component;
@@ -39,65 +42,69 @@ public class TelegramChannelConnector implements IChannelConnector {
     }
 
     @Override
-    public ConnectorSendResult send(ChannelSendRequest request) {
-        validateRequest(request);
+    public ConnectorSendResult handle(
+            SendMessageCommand command
+    ) {
+        validateCommand(command);
 
         long chatId =
-                parseChatId(request.recipientExternalId());
+                parseChatId(
+                        command.recipientExternalId()
+                );
 
         TelegramClientContext context =
                 telegramClientManager.require(
-                        request.channelAccountId()
+                        command.channelAccountId()
                 );
 
         TelegramClient telegramClient =
                 context.telegramClient();
 
-        return switch (request.type()) {
+        return switch (command.type()) {
             case TEXT -> sendText(
                     telegramClient,
                     chatId,
-                    request
+                    command
             );
 
             case IMAGE -> sendImage(
                     telegramClient,
                     chatId,
-                    request
+                    command
             );
 
             case AUDIO -> sendAudio(
                     telegramClient,
                     chatId,
-                    request
+                    command
             );
 
             default -> throw new IllegalArgumentException(
                     "Unsupported Telegram outbound message type: "
-                            + request.type()
+                            + command.type()
             );
         };
     }
 
     @Override
-    public void markRead(
-            ChannelReadRequest request
+    public void handle(
+            MarkMessagesReadCommand command
     ) {
-        validateReadRequest(request);
+        validateReadCommand(command);
 
         long chatId =
                 parseChatId(
-                        request.recipientExternalId()
+                        command.recipientExternalId()
                 );
 
         long messageId =
                 parseMessageId(
-                        request.lastReadExternalId()
+                        command.lastReadExternalId()
                 );
 
         TelegramClientContext context =
                 telegramClientManager.require(
-                        request.channelAccountId()
+                        command.channelAccountId()
                 );
 
         TelegramClient telegramClient =
@@ -115,30 +122,57 @@ public class TelegramChannelConnector implements IChannelConnector {
                 .getObjectOrThrow();
     }
 
-    private void validateReadRequest(
-            ChannelReadRequest request
+    @Override
+    public void handle(
+            SyncRecentChatsCommand command
     ) {
-        if (request == null) {
+        throw new UnsupportedOperationException(
+                "Recent chats synchronization is not implemented yet"
+        );
+    }
+
+    @Override
+    public void handle(
+            SyncConversationHistoryCommand command
+    ) {
+        throw new UnsupportedOperationException(
+                "Conversation history synchronization is not implemented yet"
+        );
+    }
+
+    @Override
+    public void handle(
+            SyncAccountCommand command
+    ) {
+        throw new UnsupportedOperationException(
+                "Account synchronization is not implemented yet"
+        );
+    }
+
+    private void validateReadCommand(
+            MarkMessagesReadCommand command
+    ) {
+        if (command == null) {
             throw new IllegalArgumentException(
-                    "ChannelReadRequest must not be null"
+                    "MarkMessagesReadCommand must not be null"
             );
         }
 
-        if (request.channelAccountId() == null) {
+        if (command.channelAccountId() == null) {
             throw new IllegalArgumentException(
                     "channelAccountId must not be null"
             );
         }
 
-        if (request.recipientExternalId() == null
-                || request.recipientExternalId().isBlank()) {
+        if (command.recipientExternalId() == null
+                || command.recipientExternalId().isBlank()) {
             throw new IllegalArgumentException(
                     "recipientExternalId must not be blank"
             );
         }
 
-        if (request.lastReadExternalId() == null
-                || request.lastReadExternalId().isBlank()) {
+        if (command.lastReadExternalId() == null
+                || command.lastReadExternalId().isBlank()) {
             throw new IllegalArgumentException(
                     "lastReadExternalId must not be blank"
             );
@@ -148,12 +182,12 @@ public class TelegramChannelConnector implements IChannelConnector {
     private ConnectorSendResult sendText(
             TelegramClient telegramClient,
             long chatId,
-            ChannelSendRequest request
+            SendMessageCommand command
     ) {
         TdApi.InputMessageText content =
                 new TdApi.InputMessageText(
                         new TdApi.FormattedText(
-                                request.content(),
+                                command.content(),
                                 new TdApi.TextEntity[0]
                         ),
                         null,
@@ -162,14 +196,16 @@ public class TelegramChannelConnector implements IChannelConnector {
 
         TdApi.Message message =
                 telegramClient
-                        .send(new TdApi.SendMessage(
-                                chatId,
-                                null,
-                                null,
-                                null,
-                                null,
-                                content
-                        ))
+                        .send(
+                                new TdApi.SendMessage(
+                                        chatId,
+                                        null,
+                                        null,
+                                        null,
+                                        null,
+                                        content
+                                )
+                        )
                         .getObjectOrThrow();
 
         return new ConnectorSendResult(
@@ -180,18 +216,18 @@ public class TelegramChannelConnector implements IChannelConnector {
     private ConnectorSendResult sendImage(
             TelegramClient telegramClient,
             long chatId,
-            ChannelSendRequest request
+            SendMessageCommand command
     ) {
         ChannelAttachment attachment =
                 getSingleAttachment(
-                        request,
+                        command,
                         MessageAttachmentType.IMAGE
                 );
 
         return sendWithTemporaryFile(
                 telegramClient,
                 chatId,
-                request,
+                command,
                 attachment,
                 this::createImageContent
         );
@@ -200,18 +236,18 @@ public class TelegramChannelConnector implements IChannelConnector {
     private ConnectorSendResult sendAudio(
             TelegramClient telegramClient,
             long chatId,
-            ChannelSendRequest request
+            SendMessageCommand command
     ) {
         ChannelAttachment attachment =
                 getSingleAttachment(
-                        request,
+                        command,
                         MessageAttachmentType.AUDIO
                 );
 
         return sendWithTemporaryFile(
                 telegramClient,
                 chatId,
-                request,
+                command,
                 attachment,
                 this::createAudioContent
         );
@@ -220,7 +256,7 @@ public class TelegramChannelConnector implements IChannelConnector {
     private ConnectorSendResult sendWithTemporaryFile(
             TelegramClient telegramClient,
             long chatId,
-            ChannelSendRequest request,
+            SendMessageCommand command,
             ChannelAttachment attachment,
             TelegramContentFactory contentFactory
     ) {
@@ -236,8 +272,8 @@ public class TelegramChannelConnector implements IChannelConnector {
 
             temporaryFile =
                     createTemporaryFile(
-                            request.channelAccountId(),
-                            request.messageId(),
+                            command.channelAccountId(),
+                            command.messageId(),
                             attachment.fileName()
                     );
 
@@ -255,33 +291,23 @@ public class TelegramChannelConnector implements IChannelConnector {
             TdApi.InputMessageContent content =
                     contentFactory.create(
                             inputFile,
-                            request
+                            command
                     );
 
             TdApi.Message message =
                     telegramClient
-                            .send(new TdApi.SendMessage(
-                                    chatId,
-                                    null,
-                                    null,
-                                    null,
-                                    null,
-                                    content
-                            ))
+                            .send(
+                                    new TdApi.SendMessage(
+                                            chatId,
+                                            null,
+                                            null,
+                                            null,
+                                            null,
+                                            content
+                                    )
+                            )
                             .getObjectOrThrow();
 
-            /*
-             * IMPORTANT:
-             *
-             * message.id is TDLib's temporary outgoing message ID.
-             *
-             * The temporary file MUST NOT be deleted here.
-             * TDLib can still need it after SendMessage returns.
-             *
-             * The file is deleted by TelegramMessageSendListener
-             * after UpdateMessageSendSucceeded or
-             * UpdateMessageSendFailed.
-             */
             return new ConnectorSendResult(
                     String.valueOf(message.id)
             );
@@ -321,7 +347,7 @@ public class TelegramChannelConnector implements IChannelConnector {
 
     private TdApi.InputMessageContent createImageContent(
             TdApi.InputFileLocal inputFile,
-            ChannelSendRequest request
+            SendMessageCommand command
     ) {
         TdApi.InputPhoto inputPhoto =
                 new TdApi.InputPhoto(
@@ -335,7 +361,7 @@ public class TelegramChannelConnector implements IChannelConnector {
 
         return new TdApi.InputMessagePhoto(
                 inputPhoto,
-                toFormattedText(request.content()),
+                toFormattedText(command.content()),
                 false,
                 null,
                 false
@@ -344,7 +370,7 @@ public class TelegramChannelConnector implements IChannelConnector {
 
     private TdApi.InputMessageContent createAudioContent(
             TdApi.InputFileLocal inputFile,
-            ChannelSendRequest request
+            SendMessageCommand command
     ) {
         TdApi.InputAudio inputAudio =
                 new TdApi.InputAudio(
@@ -357,11 +383,13 @@ public class TelegramChannelConnector implements IChannelConnector {
 
         return new TdApi.InputMessageAudio(
                 inputAudio,
-                toFormattedText(request.content())
+                toFormattedText(command.content())
         );
     }
 
-    private TdApi.FormattedText toFormattedText(String text) {
+    private TdApi.FormattedText toFormattedText(
+            String text
+    ) {
         return new TdApi.FormattedText(
                 text == null ? "" : text,
                 new TdApi.TextEntity[0]
@@ -369,15 +397,19 @@ public class TelegramChannelConnector implements IChannelConnector {
     }
 
     private ChannelAttachment getSingleAttachment(
-            ChannelSendRequest request,
+            SendMessageCommand command,
             MessageAttachmentType expectedType
     ) {
-        return request.attachments().getFirst();
+        return command.attachments().getFirst();
     }
 
-    private long parseChatId(String recipientExternalId) {
+    private long parseChatId(
+            String recipientExternalId
+    ) {
         try {
-            return Long.parseLong(recipientExternalId);
+            return Long.parseLong(
+                    recipientExternalId
+            );
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException(
                     "Telegram recipientExternalId must be a numeric chat ID: "
@@ -394,9 +426,7 @@ public class TelegramChannelConnector implements IChannelConnector {
             return Long.parseLong(
                     externalId
             );
-
         } catch (NumberFormatException e) {
-
             throw new IllegalArgumentException(
                     "Telegram message externalId must be numeric: "
                             + externalId,
@@ -405,8 +435,9 @@ public class TelegramChannelConnector implements IChannelConnector {
         }
     }
 
-
-    private String getFileSuffix(String fileName) {
+    private String getFileSuffix(
+            String fileName
+    ) {
         if (fileName == null || fileName.isBlank()) {
             return ".tmp";
         }
@@ -446,50 +477,50 @@ public class TelegramChannelConnector implements IChannelConnector {
         }
     }
 
-    private void validateRequest(
-            ChannelSendRequest request
+    private void validateCommand(
+            SendMessageCommand command
     ) {
-        if (request == null) {
+        if (command == null) {
             throw new IllegalArgumentException(
-                    "ChannelSendRequest must not be null"
+                    "SendMessageCommand must not be null"
             );
         }
 
-        if (request.channelAccountId() == null) {
+        if (command.channelAccountId() == null) {
             throw new IllegalArgumentException(
                     "channelAccountId must not be null"
             );
         }
 
-        if (request.messageId() == null) {
+        if (command.messageId() == null) {
             throw new IllegalArgumentException(
                     "messageId must not be null"
             );
         }
 
-        if (request.recipientExternalId() == null
-                || request.recipientExternalId().isBlank()) {
+        if (command.recipientExternalId() == null
+                || command.recipientExternalId().isBlank()) {
             throw new IllegalArgumentException(
                     "recipientExternalId must not be blank"
             );
         }
 
-        if (request.type() == null) {
+        if (command.type() == null) {
             throw new IllegalArgumentException(
                     "message type must not be null"
             );
         }
 
-        if (request.type() == MessageType.TEXT) {
+        if (command.type() == MessageType.TEXT) {
 
-            if (!request.attachments().isEmpty()) {
+            if (!command.attachments().isEmpty()) {
                 throw new IllegalArgumentException(
                         "Telegram TEXT message must not contain attachments"
                 );
             }
 
-            if (request.content() == null
-                    || request.content().isBlank()) {
+            if (command.content() == null
+                    || command.content().isBlank()) {
                 throw new IllegalArgumentException(
                         "Telegram text message content must not be blank"
                 );
@@ -498,17 +529,17 @@ public class TelegramChannelConnector implements IChannelConnector {
             return;
         }
 
-        if (request.type() == MessageType.IMAGE) {
+        if (command.type() == MessageType.IMAGE) {
             validateSingleAttachment(
-                    request,
+                    command,
                     MessageAttachmentType.IMAGE
             );
             return;
         }
 
-        if (request.type() == MessageType.AUDIO) {
+        if (command.type() == MessageType.AUDIO) {
             validateSingleAttachment(
-                    request,
+                    command,
                     MessageAttachmentType.AUDIO
             );
             return;
@@ -516,20 +547,20 @@ public class TelegramChannelConnector implements IChannelConnector {
 
         throw new IllegalArgumentException(
                 "Unsupported Telegram outbound message type: "
-                        + request.type()
+                        + command.type()
         );
     }
 
     private void validateSingleAttachment(
-            ChannelSendRequest request,
+            SendMessageCommand command,
             MessageAttachmentType expectedType
     ) {
         List<ChannelAttachment> attachments =
-                request.attachments();
+                command.attachments();
 
         if (attachments.size() != 1) {
             throw new IllegalArgumentException(
-                    "Telegram " + request.type()
+                    "Telegram " + command.type()
                             + " message must contain exactly one attachment"
             );
         }
@@ -564,7 +595,7 @@ public class TelegramChannelConnector implements IChannelConnector {
 
         TdApi.InputMessageContent create(
                 TdApi.InputFileLocal inputFile,
-                ChannelSendRequest request
+                SendMessageCommand command
         );
     }
 }

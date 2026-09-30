@@ -11,6 +11,7 @@ import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
 import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
 import kit.penny.clientbus.server.connector.ConnectorSendResult;
 import kit.penny.clientbus.server.connector.IChannelConnector;
+import kit.penny.clientbus.server.connector.command.SendMessageCommand;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.integration.AbstractIntegrationTest;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
@@ -97,8 +98,8 @@ class KafkaOutboundMessagePublisherIntegrationTest
         ).thenReturn(channelConnector);
 
         when(
-                channelConnector.send(
-                        any()
+                channelConnector.handle(
+                        (SendMessageCommand)any()
                 )
         ).thenReturn(
                 new ConnectorSendResult(
@@ -141,8 +142,8 @@ class KafkaOutboundMessagePublisherIntegrationTest
                 channelConnector,
                 timeout(ASYNC_TIMEOUT_MILLIS)
                         .times(1)
-        ).send(
-                any()
+        ).handle(
+                (SendMessageCommand)any()
         );
 
         MessageEntity pendingMessage =

@@ -10,9 +10,9 @@ import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
 import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
 import kit.penny.clientbus.server.connector.ConnectorSendResult;
 import kit.penny.clientbus.server.connector.IChannelConnector;
+import kit.penny.clientbus.server.connector.command.SendMessageCommand;
 import kit.penny.clientbus.server.mapper.OutboundMessageKafkaCommandMapper;
 import kit.penny.clientbus.server.persistence.entity.MessageEntity;
-import kit.penny.clientbus.server.service.ChannelSendRequest;
 import kit.penny.clientbus.server.service.MessageService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -71,8 +71,8 @@ class KafkaOutboundMessageConsumerTest {
                         List.of()
                 );
 
-        ChannelSendRequest request =
-                new ChannelSendRequest(
+        SendMessageCommand request =
+                new SendMessageCommand(
                         messageId,
                         channelAccountId,
                         "recipient-123",
@@ -96,14 +96,14 @@ class KafkaOutboundMessageConsumerTest {
         when(messageService.getMessageEntityForProcessing(messageId))
                 .thenReturn(message);
 
-        when(commandMapper.toRequest(command))
+        when(commandMapper.toCommand(command))
                 .thenReturn(request);
 
         when(channelConnectorRegistry.getConnector(
                 ChannelType.TELEGRAM
         )).thenReturn(connector);
 
-        when(connector.send(request))
+        when(connector.handle(request))
                 .thenReturn(
                         new ConnectorSendResult(
                                 "external-123"
@@ -122,10 +122,10 @@ class KafkaOutboundMessageConsumerTest {
                 .getConnector(ChannelType.TELEGRAM);
 
         verify(commandMapper)
-                .toRequest(command);
+                .toCommand(command);
 
         verify(connector)
-                .send(request);
+                .handle(request);
 
         verify(messageService)
                 .registerPendingExternalId(
@@ -157,8 +157,8 @@ class KafkaOutboundMessageConsumerTest {
                         List.of()
                 );
 
-        ChannelSendRequest request =
-                new ChannelSendRequest(
+        SendMessageCommand request =
+                new SendMessageCommand(
                         messageId,
                         channelAccountId,
                         "recipient-456",
@@ -182,14 +182,14 @@ class KafkaOutboundMessageConsumerTest {
         when(messageService.getMessageEntityForProcessing(messageId))
                 .thenReturn(message);
 
-        when(commandMapper.toRequest(command))
+        when(commandMapper.toCommand(command))
                 .thenReturn(request);
 
         when(channelConnectorRegistry.getConnector(
                 ChannelType.VK
         )).thenReturn(connector);
 
-        when(connector.send(request))
+        when(connector.handle(request))
                 .thenReturn(
                         new ConnectorSendResult(
                                 "vk-message-123"
@@ -205,10 +205,10 @@ class KafkaOutboundMessageConsumerTest {
                 .getMessageEntityForProcessing(messageId);
 
         verify(commandMapper)
-                .toRequest(command);
+                .toCommand(command);
 
         verify(connector)
-                .send(request);
+                .handle(request);
 
         verify(messageService)
                 .registerPendingExternalId(
@@ -300,8 +300,8 @@ class KafkaOutboundMessageConsumerTest {
         OutboundMessageKafkaCommand command =
                 validCommand();
 
-        ChannelSendRequest request =
-                new ChannelSendRequest(
+        SendMessageCommand request =
+                new SendMessageCommand(
                         command.messageId(),
                         command.channelAccountId(),
                         command.recipientExternalId(),
@@ -327,14 +327,14 @@ class KafkaOutboundMessageConsumerTest {
         ))
                 .thenReturn(message);
 
-        when(commandMapper.toRequest(command))
+        when(commandMapper.toCommand(command))
                 .thenReturn(request);
 
         when(channelConnectorRegistry.getConnector(
                 ChannelType.TELEGRAM
         )).thenReturn(connector);
 
-        when(connector.send(request))
+        when(connector.handle(request))
                 .thenThrow(
                         new RuntimeException(
                                 "Platform unavailable"
@@ -351,7 +351,7 @@ class KafkaOutboundMessageConsumerTest {
                 .hasMessage("Platform unavailable");
 
         verify(connector)
-                .send(request);
+                .handle(request);
 
         verify(messageService, never())
                 .registerPendingExternalId(
@@ -366,8 +366,8 @@ class KafkaOutboundMessageConsumerTest {
         OutboundMessageKafkaCommand command =
                 validCommand();
 
-        ChannelSendRequest request =
-                new ChannelSendRequest(
+        SendMessageCommand request =
+                new SendMessageCommand(
                         command.messageId(),
                         command.channelAccountId(),
                         command.recipientExternalId(),
@@ -393,14 +393,14 @@ class KafkaOutboundMessageConsumerTest {
         ))
                 .thenReturn(message);
 
-        when(commandMapper.toRequest(command))
+        when(commandMapper.toCommand(command))
                 .thenReturn(request);
 
         when(channelConnectorRegistry.getConnector(
                 ChannelType.TELEGRAM
         )).thenReturn(connector);
 
-        when(connector.send(request))
+        when(connector.handle(request))
                 .thenReturn(null);
 
         assertThatThrownBy(() ->
@@ -415,7 +415,7 @@ class KafkaOutboundMessageConsumerTest {
                 );
 
         verify(connector)
-                .send(request);
+                .handle(request);
 
         verify(messageService, never())
                 .registerPendingExternalId(
@@ -430,8 +430,8 @@ class KafkaOutboundMessageConsumerTest {
         OutboundMessageKafkaCommand command =
                 validCommand();
 
-        ChannelSendRequest request =
-                new ChannelSendRequest(
+        SendMessageCommand request =
+                new SendMessageCommand(
                         command.messageId(),
                         command.channelAccountId(),
                         command.recipientExternalId(),
@@ -457,14 +457,14 @@ class KafkaOutboundMessageConsumerTest {
         ))
                 .thenReturn(message);
 
-        when(commandMapper.toRequest(command))
+        when(commandMapper.toCommand(command))
                 .thenReturn(request);
 
         when(channelConnectorRegistry.getConnector(
                 ChannelType.TELEGRAM
         )).thenReturn(connector);
 
-        when(connector.send(request))
+        when(connector.handle(request))
                 .thenReturn(
                         new ConnectorSendResult("")
                 );
@@ -481,7 +481,7 @@ class KafkaOutboundMessageConsumerTest {
                 );
 
         verify(connector)
-                .send(request);
+                .handle(request);
 
         verify(messageService, never())
                 .registerPendingExternalId(
@@ -496,8 +496,8 @@ class KafkaOutboundMessageConsumerTest {
         OutboundMessageKafkaCommand command =
                 validCommand();
 
-        ChannelSendRequest request =
-                new ChannelSendRequest(
+        SendMessageCommand request =
+                new SendMessageCommand(
                         command.messageId(),
                         command.channelAccountId(),
                         command.recipientExternalId(),
@@ -523,14 +523,14 @@ class KafkaOutboundMessageConsumerTest {
         ))
                 .thenReturn(message);
 
-        when(commandMapper.toRequest(command))
+        when(commandMapper.toCommand(command))
                 .thenReturn(request);
 
         when(channelConnectorRegistry.getConnector(
                 ChannelType.TELEGRAM
         )).thenReturn(connector);
 
-        when(connector.send(request))
+        when(connector.handle(request))
                 .thenReturn(
                         new ConnectorSendResult("   ")
                 );
@@ -547,7 +547,7 @@ class KafkaOutboundMessageConsumerTest {
                 );
 
         verify(connector)
-                .send(request);
+                .handle(request);
 
         verify(messageService, never())
                 .registerPendingExternalId(
@@ -785,8 +785,8 @@ class KafkaOutboundMessageConsumerTest {
 
         UUID messageId = command.messageId();
 
-        ChannelSendRequest request =
-                new ChannelSendRequest(
+        SendMessageCommand request =
+                new SendMessageCommand(
                         command.messageId(),
                         command.channelAccountId(),
                         command.recipientExternalId(),
@@ -810,14 +810,14 @@ class KafkaOutboundMessageConsumerTest {
         when(messageService.getMessageEntityForProcessing(messageId))
                 .thenReturn(message);
 
-        when(commandMapper.toRequest(command))
+        when(commandMapper.toCommand(command))
                 .thenReturn(request);
 
         when(channelConnectorRegistry.getConnector(
                 ChannelType.TELEGRAM
         )).thenReturn(connector);
 
-        when(connector.send(request))
+        when(connector.handle(request))
                 .thenReturn(
                         new ConnectorSendResult("external-123")
                 );
@@ -828,7 +828,7 @@ class KafkaOutboundMessageConsumerTest {
         );
 
         verify(connector)
-                .send(request);
+                .handle(request);
 
         verify(messageService)
                 .registerPendingExternalId(
@@ -845,8 +845,8 @@ class KafkaOutboundMessageConsumerTest {
 
         UUID messageId = command.messageId();
 
-        ChannelSendRequest request =
-                new ChannelSendRequest(
+        SendMessageCommand request =
+                new SendMessageCommand(
                         command.messageId(),
                         command.channelAccountId(),
                         command.recipientExternalId(),
@@ -870,14 +870,14 @@ class KafkaOutboundMessageConsumerTest {
         when(messageService.getMessageEntityForProcessing(messageId))
                 .thenReturn(message);
 
-        when(commandMapper.toRequest(command))
+        when(commandMapper.toCommand(command))
                 .thenReturn(request);
 
         when(channelConnectorRegistry.getConnector(
                 ChannelType.TELEGRAM
         )).thenReturn(connector);
 
-        when(connector.send(request))
+        when(connector.handle(request))
                 .thenReturn(
                         new ConnectorSendResult("external-456")
                 );
@@ -888,7 +888,7 @@ class KafkaOutboundMessageConsumerTest {
         );
 
         verify(connector)
-                .send(request);
+                .handle(request);
 
         verify(messageService)
                 .registerPendingExternalId(

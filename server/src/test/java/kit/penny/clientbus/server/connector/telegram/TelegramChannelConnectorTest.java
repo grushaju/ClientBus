@@ -4,11 +4,10 @@ import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.common.enums.MessageAttachmentType;
 import kit.penny.clientbus.common.enums.MessageType;
 import kit.penny.clientbus.server.connector.ConnectorSendResult;
+import kit.penny.clientbus.server.connector.command.SendMessageCommand;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientContext;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientManager;
 import kit.penny.clientbus.server.service.ChannelAttachment;
-import kit.penny.clientbus.server.service.ChannelSendRequest;
-import kit.penny.clientbus.server.service.MessageService;
 import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.query.TdlibResponse;
 import org.drinkless.tdlib.TdApi;
@@ -77,7 +76,7 @@ class TelegramChannelConnectorTest {
                         null
                 ));
 
-        ChannelSendRequest request = new ChannelSendRequest(
+        SendMessageCommand request = new SendMessageCommand(
                 UUID.randomUUID(),
                 CHANNEL_ACCOUNT_ID,
                 String.valueOf(CHAT_ID),
@@ -87,7 +86,7 @@ class TelegramChannelConnectorTest {
         );
 
         ConnectorSendResult result =
-                connector.send(request);
+                connector.handle(request);
 
         assertEquals(
                 "987654321",
@@ -195,7 +194,7 @@ class TelegramChannelConnectorTest {
                         null
                 ));
 
-        ChannelSendRequest request = new ChannelSendRequest(
+        SendMessageCommand request = new SendMessageCommand(
                 UUID.randomUUID(),
                 CHANNEL_ACCOUNT_ID,
                 String.valueOf(CHAT_ID),
@@ -204,7 +203,7 @@ class TelegramChannelConnectorTest {
                 List.of()
         );
 
-        connector.send(request);
+        connector.handle(request);
 
         verify(telegramClientManager)
                 .require(CHANNEL_ACCOUNT_ID);
@@ -230,12 +229,12 @@ class TelegramChannelConnectorTest {
                         null
                 ));
 
-        ChannelSendRequest request = textRequest(
+        SendMessageCommand request = textRequest(
                 "Hello"
         );
 
         ConnectorSendResult result =
-                connector.send(request);
+                connector.handle(request);
 
         assertEquals(
                 "555777999",
@@ -274,8 +273,8 @@ class TelegramChannelConnectorTest {
                         "image-content"
                 );
 
-        ChannelSendRequest request =
-                new ChannelSendRequest(
+        SendMessageCommand request =
+                new SendMessageCommand(
                         UUID.randomUUID(),
                         CHANNEL_ACCOUNT_ID,
                         String.valueOf(CHAT_ID),
@@ -286,7 +285,7 @@ class TelegramChannelConnectorTest {
 
         assertThrows(
                 IllegalStateException.class,
-                () -> connector.send(request)
+                () -> connector.handle(request)
         );
 
         assertNotNull(temporaryFile[0]);
@@ -302,11 +301,11 @@ class TelegramChannelConnectorTest {
         IllegalArgumentException exception =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () -> connector.send(null)
+                        () -> connector.handle((SendMessageCommand)null)
                 );
 
         assertEquals(
-                "ChannelSendRequest must not be null",
+                "SendMessageCommand must not be null",
                 exception.getMessage()
         );
 
@@ -315,8 +314,8 @@ class TelegramChannelConnectorTest {
 
     @Test
     void shouldRejectMissingChannelAccountId() {
-        ChannelSendRequest request =
-                new ChannelSendRequest(
+        SendMessageCommand request =
+                new SendMessageCommand(
                         UUID.randomUUID(),
                         null,
                         String.valueOf(CHAT_ID),
@@ -327,7 +326,7 @@ class TelegramChannelConnectorTest {
 
         assertThrows(
                 IllegalArgumentException.class,
-                () -> connector.send(request)
+                () -> connector.handle(request)
         );
 
         verifyNoInteractions(telegramClientManager);
@@ -335,8 +334,8 @@ class TelegramChannelConnectorTest {
 
     @Test
     void shouldRejectBlankRecipientExternalId() {
-        ChannelSendRequest request =
-                new ChannelSendRequest(
+        SendMessageCommand request =
+                new SendMessageCommand(
                         UUID.randomUUID(),
                         CHANNEL_ACCOUNT_ID,
                         " ",
@@ -347,7 +346,7 @@ class TelegramChannelConnectorTest {
 
         assertThrows(
                 IllegalArgumentException.class,
-                () -> connector.send(request)
+                () -> connector.handle(request)
         );
 
         verifyNoInteractions(telegramClientManager);
@@ -355,8 +354,8 @@ class TelegramChannelConnectorTest {
 
     @Test
     void shouldRejectNonNumericTelegramChatId() {
-        ChannelSendRequest request =
-                new ChannelSendRequest(
+        SendMessageCommand request =
+                new SendMessageCommand(
                         UUID.randomUUID(),
                         CHANNEL_ACCOUNT_ID,
                         "not-a-chat-id",
@@ -368,7 +367,7 @@ class TelegramChannelConnectorTest {
         IllegalArgumentException exception =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () -> connector.send(request)
+                        () -> connector.handle(request)
                 );
 
         assertTrue(
@@ -383,8 +382,8 @@ class TelegramChannelConnectorTest {
 
     @Test
     void shouldRejectNullMessageType() {
-        ChannelSendRequest request =
-                new ChannelSendRequest(
+        SendMessageCommand request =
+                new SendMessageCommand(
                         UUID.randomUUID(),
                         CHANNEL_ACCOUNT_ID,
                         String.valueOf(CHAT_ID),
@@ -395,7 +394,7 @@ class TelegramChannelConnectorTest {
 
         assertThrows(
                 IllegalArgumentException.class,
-                () -> connector.send(request)
+                () -> connector.handle(request)
         );
 
         verifyNoInteractions(telegramClientManager);
@@ -403,8 +402,8 @@ class TelegramChannelConnectorTest {
 
     @Test
     void shouldRejectBlankTextContent() {
-        ChannelSendRequest request =
-                new ChannelSendRequest(
+        SendMessageCommand request =
+                new SendMessageCommand(
                         UUID.randomUUID(),
                         CHANNEL_ACCOUNT_ID,
                         String.valueOf(CHAT_ID),
@@ -415,7 +414,7 @@ class TelegramChannelConnectorTest {
 
         assertThrows(
                 IllegalArgumentException.class,
-                () -> connector.send(request)
+                () -> connector.handle(request)
         );
 
         verifyNoInteractions(telegramClient);
@@ -431,8 +430,8 @@ class TelegramChannelConnectorTest {
                         "image"
                 );
 
-        ChannelSendRequest request =
-                new ChannelSendRequest(
+        SendMessageCommand request =
+                new SendMessageCommand(
                         UUID.randomUUID(),
                         CHANNEL_ACCOUNT_ID,
                         String.valueOf(CHAT_ID),
@@ -443,7 +442,7 @@ class TelegramChannelConnectorTest {
 
         assertThrows(
                 IllegalArgumentException.class,
-                () -> connector.send(request)
+                () -> connector.handle(request)
         );
 
         verifyNoInteractions(telegramClientManager);
@@ -451,8 +450,8 @@ class TelegramChannelConnectorTest {
 
     @Test
     void shouldRejectImageWithoutAttachment() {
-        ChannelSendRequest request =
-                new ChannelSendRequest(
+        SendMessageCommand request =
+                new SendMessageCommand(
                         UUID.randomUUID(),
                         CHANNEL_ACCOUNT_ID,
                         String.valueOf(CHAT_ID),
@@ -463,7 +462,7 @@ class TelegramChannelConnectorTest {
 
         assertThrows(
                 IllegalArgumentException.class,
-                () -> connector.send(request)
+                () -> connector.handle(request)
         );
 
         verifyNoInteractions(telegramClient);
@@ -487,8 +486,8 @@ class TelegramChannelConnectorTest {
                         "second"
                 );
 
-        ChannelSendRequest request =
-                new ChannelSendRequest(
+        SendMessageCommand request =
+                new SendMessageCommand(
                         UUID.randomUUID(),
                         CHANNEL_ACCOUNT_ID,
                         String.valueOf(CHAT_ID),
@@ -499,7 +498,7 @@ class TelegramChannelConnectorTest {
 
         assertThrows(
                 IllegalArgumentException.class,
-                () -> connector.send(request)
+                () -> connector.handle(request)
         );
 
         verifyNoInteractions(telegramClient);
@@ -515,8 +514,8 @@ class TelegramChannelConnectorTest {
                         "audio"
                 );
 
-        ChannelSendRequest request =
-                new ChannelSendRequest(
+        SendMessageCommand request =
+                new SendMessageCommand(
                         UUID.randomUUID(),
                         CHANNEL_ACCOUNT_ID,
                         String.valueOf(CHAT_ID),
@@ -528,7 +527,7 @@ class TelegramChannelConnectorTest {
         IllegalArgumentException exception =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () -> connector.send(request)
+                        () -> connector.handle(request)
                 );
 
         assertTrue(
@@ -549,8 +548,8 @@ class TelegramChannelConnectorTest {
                         10,
                         null
                 );
-        ChannelSendRequest request =
-                new ChannelSendRequest(
+        SendMessageCommand request =
+                new SendMessageCommand(
                         UUID.randomUUID(),
                         CHANNEL_ACCOUNT_ID,
                         String.valueOf(CHAT_ID),
@@ -562,7 +561,7 @@ class TelegramChannelConnectorTest {
         IllegalArgumentException exception =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () -> connector.send(request)
+                        () -> connector.handle(request)
                 );
 
         assertEquals(
@@ -579,8 +578,8 @@ class TelegramChannelConnectorTest {
 
     @Test
     void shouldRejectUnsupportedMessageType() {
-        ChannelSendRequest request =
-                new ChannelSendRequest(
+        SendMessageCommand request =
+                new SendMessageCommand(
                         UUID.randomUUID(),
                         CHANNEL_ACCOUNT_ID,
                         String.valueOf(CHAT_ID),
@@ -592,7 +591,7 @@ class TelegramChannelConnectorTest {
         IllegalArgumentException exception =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () -> connector.send(request)
+                        () -> connector.handle(request)
                 );
 
         assertTrue(
@@ -614,13 +613,13 @@ class TelegramChannelConnectorTest {
                         )
                 );
 
-        ChannelSendRequest request =
+        SendMessageCommand request =
                 textRequest("Hello");
 
         IllegalStateException exception =
                 assertThrows(
                         IllegalStateException.class,
-                        () -> connector.send(request)
+                        () -> connector.handle(request)
                 );
 
         assertEquals(
@@ -647,12 +646,12 @@ class TelegramChannelConnectorTest {
                         )
                 );
 
-        ChannelSendRequest request =
+        SendMessageCommand request =
                 textRequest("Hello");
 
         assertThrows(
                 RuntimeException.class,
-                () -> connector.send(request)
+                () -> connector.handle(request)
         );
 
         verify(telegramClient).send(any());
@@ -680,8 +679,8 @@ class TelegramChannelConnectorTest {
                         failingStream
                 );
 
-        ChannelSendRequest request =
-                new ChannelSendRequest(
+        SendMessageCommand request =
+                new SendMessageCommand(
                         UUID.randomUUID(),
                         CHANNEL_ACCOUNT_ID,
                         String.valueOf(CHAT_ID),
@@ -693,7 +692,7 @@ class TelegramChannelConnectorTest {
         IllegalStateException exception =
                 assertThrows(
                         IllegalStateException.class,
-                        () -> connector.send(request)
+                        () -> connector.handle(request)
                 );
 
         assertEquals(
@@ -709,10 +708,10 @@ class TelegramChannelConnectorTest {
         verifyNoInteractions(telegramClient);
     }
 
-    private ChannelSendRequest textRequest(
+    private SendMessageCommand textRequest(
             String text
     ) {
-        return new ChannelSendRequest(
+        return new SendMessageCommand(
                 UUID.randomUUID(),
                 CHANNEL_ACCOUNT_ID,
                 String.valueOf(CHAT_ID),
@@ -805,8 +804,8 @@ class TelegramChannelConnectorTest {
                         content
                 );
 
-        ChannelSendRequest request =
-                new ChannelSendRequest(
+        SendMessageCommand request =
+                new SendMessageCommand(
                         UUID.randomUUID(),
                         CHANNEL_ACCOUNT_ID,
                         String.valueOf(CHAT_ID),
@@ -816,7 +815,7 @@ class TelegramChannelConnectorTest {
                 );
 
         ConnectorSendResult result =
-                connector.send(request);
+                connector.handle(request);
 
         assertEquals(
                 String.valueOf(telegramMessage.id),

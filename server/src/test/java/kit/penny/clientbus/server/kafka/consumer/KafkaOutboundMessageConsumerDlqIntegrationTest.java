@@ -7,6 +7,7 @@ import kit.penny.clientbus.common.kafka.KafkaEventType;
 import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
 import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
 import kit.penny.clientbus.server.connector.IChannelConnector;
+import kit.penny.clientbus.server.connector.command.SendMessageCommand;
 import kit.penny.clientbus.server.integration.AbstractIntegrationTest;
 import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
 import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
@@ -145,8 +146,8 @@ class KafkaOutboundMessageConsumerDlqIntegrationTest
         verify(
                 channelConnector,
                 never()
-        ).send(
-                any()
+        ).handle(
+                (SendMessageCommand)any()
         );
 
         assertFalse(

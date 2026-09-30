@@ -6,8 +6,8 @@ import kit.penny.clientbus.common.kafka.KafkaEvent;
 import kit.penny.clientbus.common.kafka.KafkaEventType;
 import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
 import kit.penny.clientbus.server.connector.IChannelConnector;
+import kit.penny.clientbus.server.connector.command.MarkMessagesReadCommand;
 import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
-import kit.penny.clientbus.server.service.ChannelReadRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -43,7 +43,6 @@ public class KafkaChannelReadConsumer {
             KafkaEvent<ChannelReadKafkaCommand> event,
             @Header(KafkaHeaders.RECEIVED_TOPIC) String topic
     ) {
-
         validateEvent(event);
 
         ChannelType channelType =
@@ -51,7 +50,7 @@ public class KafkaChannelReadConsumer {
                         topic
                 );
 
-        ChannelReadKafkaCommand command =
+        ChannelReadKafkaCommand kafkaCommand =
                 event.payload();
 
         log.info(
@@ -60,10 +59,10 @@ public class KafkaChannelReadConsumer {
                         "channelType={}, " +
                         "recipientExternalId={}, " +
                         "lastReadExternalId={}",
-                command.channelAccountId(),
+                kafkaCommand.channelAccountId(),
                 channelType,
-                command.recipientExternalId(),
-                command.lastReadExternalId()
+                kafkaCommand.recipientExternalId(),
+                kafkaCommand.lastReadExternalId()
         );
 
         IChannelConnector connector =
@@ -71,11 +70,11 @@ public class KafkaChannelReadConsumer {
                         channelType
                 );
 
-        connector.markRead(
-                new ChannelReadRequest(
-                        command.channelAccountId(),
-                        command.recipientExternalId(),
-                        command.lastReadExternalId()
+        connector.handle(
+                new MarkMessagesReadCommand(
+                        kafkaCommand.channelAccountId(),
+                        kafkaCommand.recipientExternalId(),
+                        kafkaCommand.lastReadExternalId()
                 )
         );
     }
@@ -83,7 +82,6 @@ public class KafkaChannelReadConsumer {
     private void validateEvent(
             KafkaEvent<ChannelReadKafkaCommand> event
     ) {
-
         if (event == null) {
             throw new IllegalArgumentException(
                     "Kafka channel read event must not be null"
@@ -92,7 +90,6 @@ public class KafkaChannelReadConsumer {
 
         if (event.eventType()
                 != KafkaEventType.CHANNEL_READ) {
-
             throw new IllegalArgumentException(
                     "Unsupported Kafka event type: "
                             + event.eventType()

@@ -5,8 +5,8 @@ import kit.penny.clientbus.common.enums.MessageType;
 import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
 import kit.penny.clientbus.common.kafka.PlatformOutboundAttachment;
 import kit.penny.clientbus.server.service.ChannelAttachment;
-import kit.penny.clientbus.server.service.ChannelSendRequest;
 import kit.penny.clientbus.server.storage.IAttachmentStorage;
+import kit.penny.clientbus.server.connector.command.SendMessageCommand;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -48,8 +48,8 @@ class OutboundMessageKafkaCommandMapperTest {
                         List.of()
                 );
 
-        ChannelSendRequest result =
-                mapper.toRequest(command);
+        SendMessageCommand result =
+                mapper.toCommand(command);
 
         assertEquals(messageId, result.messageId());
         assertEquals(
@@ -86,8 +86,8 @@ class OutboundMessageKafkaCommandMapperTest {
                         null
                 );
 
-        ChannelSendRequest result =
-                mapper.toRequest(command);
+        SendMessageCommand result =
+                mapper.toCommand(command);
 
         assertNotNull(result.attachments());
         assertTrue(result.attachments().isEmpty());
@@ -127,8 +127,8 @@ class OutboundMessageKafkaCommandMapperTest {
                         List.of(attachment)
                 );
 
-        ChannelSendRequest result =
-                mapper.toRequest(command);
+        SendMessageCommand result =
+                mapper.toCommand(command);
 
         assertEquals(1, result.attachments().size());
 
@@ -206,8 +206,8 @@ class OutboundMessageKafkaCommandMapperTest {
                         List.of(first, second)
                 );
 
-        ChannelSendRequest result =
-                mapper.toRequest(command);
+        SendMessageCommand result =
+                mapper.toCommand(command);
 
         assertEquals(2, result.attachments().size());
 

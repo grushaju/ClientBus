@@ -1,8 +1,11 @@
 package kit.penny.clientbus.server.connector;
 
 import kit.penny.clientbus.common.enums.ChannelType;
-import kit.penny.clientbus.server.service.ChannelReadRequest;
-import kit.penny.clientbus.server.service.ChannelSendRequest;
+import kit.penny.clientbus.server.connector.command.MarkMessagesReadCommand;
+import kit.penny.clientbus.server.connector.command.SendMessageCommand;
+import kit.penny.clientbus.server.connector.command.SyncAccountCommand;
+import kit.penny.clientbus.server.connector.command.SyncConversationHistoryCommand;
+import kit.penny.clientbus.server.connector.command.SyncRecentChatsCommand;
 
 public interface IChannelConnector {
 
@@ -10,11 +13,23 @@ public interface IChannelConnector {
             ChannelType channelType
     );
 
-    ConnectorSendResult send(
-            ChannelSendRequest request
+    ConnectorSendResult handle(
+            SendMessageCommand command
     );
 
-    void markRead(
-            ChannelReadRequest request
+    void handle(
+            MarkMessagesReadCommand command
+    );
+
+    void handle(
+            SyncRecentChatsCommand command
+    );
+
+    void handle(
+            SyncConversationHistoryCommand command
+    );
+
+    void handle(
+            SyncAccountCommand command
     );
 }

@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-09-30 14:36:16
+- Generated: 2026-09-30 16:11:51
 - Branch: `main`
-- Commit: `ff80a6b`
+- Commit: `9825b8b`
 
 ## Project Structure
 
@@ -145,6 +145,15 @@
 - `IChannelConnector.java` — `server/src/main/java/kit/penny/clientbus/server/connector/IChannelConnector.java`
 - `IChannelConnectorRegistry.java` — `server/src/main/java/kit/penny/clientbus/server/connector/IChannelConnectorRegistry.java`
 - `IChannelEventHandler.java` — `server/src/main/java/kit/penny/clientbus/server/connector/IChannelEventHandler.java`
+
+##### `kit.penny.clientbus.server.connector.command`
+
+- `ChannelConnectorCommand.java` — `server/src/main/java/kit/penny/clientbus/server/connector/command/ChannelConnectorCommand.java`
+- `MarkMessagesReadCommand.java` — `server/src/main/java/kit/penny/clientbus/server/connector/command/MarkMessagesReadCommand.java`
+- `SendMessageCommand.java` — `server/src/main/java/kit/penny/clientbus/server/connector/command/SendMessageCommand.java`
+- `SyncAccountCommand.java` — `server/src/main/java/kit/penny/clientbus/server/connector/command/SyncAccountCommand.java`
+- `SyncConversationHistoryCommand.java` — `server/src/main/java/kit/penny/clientbus/server/connector/command/SyncConversationHistoryCommand.java`
+- `SyncRecentChatsCommand.java` — `server/src/main/java/kit/penny/clientbus/server/connector/command/SyncRecentChatsCommand.java`
 
 ##### `kit.penny.clientbus.server.connector.telegram`
 
@@ -300,8 +309,6 @@
 - `AttachmentContent.java` — `server/src/main/java/kit/penny/clientbus/server/service/AttachmentContent.java`
 - `AuthService.java` — `server/src/main/java/kit/penny/clientbus/server/service/AuthService.java`
 - `ChannelAttachment.java` — `server/src/main/java/kit/penny/clientbus/server/service/ChannelAttachment.java`
-- `ChannelReadRequest.java` — `server/src/main/java/kit/penny/clientbus/server/service/ChannelReadRequest.java`
-- `ChannelSendRequest.java` — `server/src/main/java/kit/penny/clientbus/server/service/ChannelSendRequest.java`
 - `ChannelService.java` — `server/src/main/java/kit/penny/clientbus/server/service/ChannelService.java`
 - `ClientAccountService.java` — `server/src/main/java/kit/penny/clientbus/server/service/ClientAccountService.java`
 - `ClientService.java` — `server/src/main/java/kit/penny/clientbus/server/service/ClientService.java`
@@ -568,7 +575,7 @@
 ## Summary
 
 - Maven modules: 3
-- Java files: 242
+- Java files: 246
 - UI source files: 95
-- Git commit: `ff80a6b`
+- Git commit: `9825b8b`
 

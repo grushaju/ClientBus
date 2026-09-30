@@ -44,18 +44,24 @@ class TelegramClientStartupServiceTest {
         when(second.getId()).thenReturn(secondId);
 
         when(channelAccountRepository
-                .findAllByChannelTypeAndChannelStatus(
+                .findAllByChannelTypeAndChannelStatusIn(
                         ChannelType.TELEGRAM,
-                        ChannelConnectionStatus.CONNECTED
+                        List.of(
+                                ChannelConnectionStatus.CONNECTED,
+                                ChannelConnectionStatus.CONNECTING
+                        )
                 ))
                 .thenReturn(List.of(first, second));
 
         service.restoreTelegramClients();
 
         verify(channelAccountRepository)
-                .findAllByChannelTypeAndChannelStatus(
+                .findAllByChannelTypeAndChannelStatusIn(
                         ChannelType.TELEGRAM,
-                        ChannelConnectionStatus.CONNECTED
+                        List.of(
+                                ChannelConnectionStatus.CONNECTED,
+                                ChannelConnectionStatus.CONNECTING
+                        )
                 );
 
         verify(channelAccountService).create(firstId);
@@ -67,18 +73,24 @@ class TelegramClientStartupServiceTest {
     @Test
     void restoreTelegramClientsShouldDoNothingWhenNoAccountsFound() {
         when(channelAccountRepository
-                .findAllByChannelTypeAndChannelStatus(
+                .findAllByChannelTypeAndChannelStatusIn(
                         ChannelType.TELEGRAM,
-                        ChannelConnectionStatus.CONNECTED
+                        List.of(
+                                ChannelConnectionStatus.CONNECTED,
+                                ChannelConnectionStatus.CONNECTING
+                        )
                 ))
                 .thenReturn(List.of());
 
         service.restoreTelegramClients();
 
         verify(channelAccountRepository)
-                .findAllByChannelTypeAndChannelStatus(
+                .findAllByChannelTypeAndChannelStatusIn(
                         ChannelType.TELEGRAM,
-                        ChannelConnectionStatus.CONNECTED
+                        List.of(
+                                ChannelConnectionStatus.CONNECTED,
+                                ChannelConnectionStatus.CONNECTING
+                        )
                 );
 
         verifyNoMoreInteractions(channelAccountService);
@@ -100,9 +112,12 @@ class TelegramClientStartupServiceTest {
                 .create(channelAccountId);
 
         when(channelAccountRepository
-                .findAllByChannelTypeAndChannelStatus(
+                .findAllByChannelTypeAndChannelStatusIn(
                         ChannelType.TELEGRAM,
-                        ChannelConnectionStatus.CONNECTED
+                        List.of(
+                                ChannelConnectionStatus.CONNECTED,
+                                ChannelConnectionStatus.CONNECTING
+                        )
                 ))
                 .thenReturn(List.of(account));
 
@@ -137,9 +152,12 @@ class TelegramClientStartupServiceTest {
                 .create(failedId);
 
         when(channelAccountRepository
-                .findAllByChannelTypeAndChannelStatus(
+                .findAllByChannelTypeAndChannelStatusIn(
                         ChannelType.TELEGRAM,
-                        ChannelConnectionStatus.CONNECTED
+                        List.of(
+                                ChannelConnectionStatus.CONNECTED,
+                                ChannelConnectionStatus.CONNECTING
+                        )
                 ))
                 .thenReturn(List.of(failed, successful));
 
@@ -173,9 +191,12 @@ class TelegramClientStartupServiceTest {
         when(second.getId()).thenReturn(secondId);
 
         when(channelAccountRepository
-                .findAllByChannelTypeAndChannelStatus(
+                .findAllByChannelTypeAndChannelStatusIn(
                         ChannelType.TELEGRAM,
-                        ChannelConnectionStatus.CONNECTED
+                        List.of(
+                                ChannelConnectionStatus.CONNECTED,
+                                ChannelConnectionStatus.CONNECTING
+                        )
                 ))
                 .thenReturn(List.of(first, second));
 
@@ -192,18 +213,24 @@ class TelegramClientStartupServiceTest {
     @Test
     void restoreTelegramClients_loadsOnlyConnectedTelegramAccounts() {
         when(channelAccountRepository
-                .findAllByChannelTypeAndChannelStatus(
+                .findAllByChannelTypeAndChannelStatusIn(
                         ChannelType.TELEGRAM,
-                        ChannelConnectionStatus.CONNECTED
+                        List.of(
+                                ChannelConnectionStatus.CONNECTED,
+                                ChannelConnectionStatus.CONNECTING
+                        )
                 ))
                 .thenReturn(List.of());
 
         service.restoreTelegramClients();
 
         verify(channelAccountRepository)
-                .findAllByChannelTypeAndChannelStatus(
+                .findAllByChannelTypeAndChannelStatusIn(
                         ChannelType.TELEGRAM,
-                        ChannelConnectionStatus.CONNECTED
+                        List.of(
+                                ChannelConnectionStatus.CONNECTED,
+                                ChannelConnectionStatus.CONNECTING
+                        )
                 );
 
         verifyNoInteractions(channelAccountService);

@@ -11,9 +11,9 @@ import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
 import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
 import kit.penny.clientbus.server.connector.ConnectorSendResult;
 import kit.penny.clientbus.server.connector.IChannelConnector;
+import kit.penny.clientbus.server.connector.command.SendMessageCommand;
 import kit.penny.clientbus.server.mapper.OutboundMessageKafkaCommandMapper;
 import kit.penny.clientbus.server.persistence.entity.MessageEntity;
-import kit.penny.clientbus.server.service.ChannelSendRequest;
 import kit.penny.clientbus.server.service.MessageService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -80,11 +80,11 @@ class KafkaOutboundMessageConsumerAtLeastOnceTest {
         ).thenReturn(channelConnector);
 
         when(
-                commandMapper.toRequest(
+                commandMapper.toCommand(
                         any(OutboundMessageKafkaCommand.class)
                 )
         ).thenReturn(
-                new ChannelSendRequest(
+                new SendMessageCommand(
                         MESSAGE_ID,
                         CHANNEL_ACCOUNT_ID,
                         RECIPIENT_EXTERNAL_ID,
@@ -95,8 +95,8 @@ class KafkaOutboundMessageConsumerAtLeastOnceTest {
         );
 
         when(
-                channelConnector.send(
-                        any(ChannelSendRequest.class)
+                channelConnector.handle(
+                        any(SendMessageCommand.class)
                 )
         ).thenReturn(
                 new ConnectorSendResult(
@@ -140,8 +140,8 @@ class KafkaOutboundMessageConsumerAtLeastOnceTest {
         verify(
                 channelConnector,
                 times(1)
-        ).send(
-                any(ChannelSendRequest.class)
+        ).handle(
+                any(SendMessageCommand.class)
         );
 
         verify(
@@ -198,8 +198,8 @@ class KafkaOutboundMessageConsumerAtLeastOnceTest {
         verify(
                 channelConnector,
                 times(2)
-        ).send(
-                any(ChannelSendRequest.class)
+        ).handle(
+                any(SendMessageCommand.class)
         );
 
         verify(
@@ -218,8 +218,8 @@ class KafkaOutboundMessageConsumerAtLeastOnceTest {
 
         inOrder.verify(
                 channelConnector
-        ).send(
-                any(ChannelSendRequest.class)
+        ).handle(
+                any(SendMessageCommand.class)
         );
 
         inOrder.verify(
@@ -231,8 +231,8 @@ class KafkaOutboundMessageConsumerAtLeastOnceTest {
 
         inOrder.verify(
                 channelConnector
-        ).send(
-                any(ChannelSendRequest.class)
+        ).handle(
+                any(SendMessageCommand.class)
         );
 
         inOrder.verify(

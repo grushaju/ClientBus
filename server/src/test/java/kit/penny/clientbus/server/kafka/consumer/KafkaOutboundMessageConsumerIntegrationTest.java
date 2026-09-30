@@ -15,6 +15,7 @@ import kit.penny.clientbus.common.kafka.PlatformOutboundAttachment;
 import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
 import kit.penny.clientbus.server.connector.ConnectorSendResult;
 import kit.penny.clientbus.server.connector.IChannelConnector;
+import kit.penny.clientbus.server.connector.command.SendMessageCommand;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.integration.AbstractIntegrationTest;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
@@ -32,7 +33,6 @@ import kit.penny.clientbus.server.persistence.repository.MessageRepository;
 import kit.penny.clientbus.server.persistence.repository.OrganizationRepository;
 import kit.penny.clientbus.server.persistence.repository.WorkspaceRepository;
 import kit.penny.clientbus.server.service.ChannelAttachment;
-import kit.penny.clientbus.server.service.ChannelSendRequest;
 import kit.penny.clientbus.server.service.MessageService;
 import kit.penny.clientbus.server.storage.IAttachmentStorage;
 import org.apache.kafka.clients.admin.AdminClient;
@@ -138,8 +138,8 @@ class KafkaOutboundMessageConsumerIntegrationTest
         ).thenReturn(channelConnector);
 
         when(
-                channelConnector.send(
-                        any(ChannelSendRequest.class)
+                channelConnector.handle(
+                        any(SendMessageCommand.class)
                 )
         ).thenReturn(
                 new ConnectorSendResult(
@@ -219,8 +219,8 @@ class KafkaOutboundMessageConsumerIntegrationTest
                 channelConnector,
                 timeout(15_000)
                         .times(1)
-        ).send(
-                any(ChannelSendRequest.class)
+        ).handle(
+                any(SendMessageCommand.class)
         );
 
         String externalMessageId =
@@ -336,18 +336,18 @@ class KafkaOutboundMessageConsumerIntegrationTest
                 "storage/photo.jpg"
         );
 
-        ArgumentCaptor<ChannelSendRequest> requestCaptor =
-                ArgumentCaptor.forClass(ChannelSendRequest.class);
+        ArgumentCaptor<SendMessageCommand> requestCaptor =
+                ArgumentCaptor.forClass(SendMessageCommand.class);
 
         verify(
                 channelConnector,
                 timeout(15_000)
                         .times(1)
-        ).send(
+        ).handle(
                 requestCaptor.capture()
         );
 
-        ChannelSendRequest request =
+        SendMessageCommand request =
                 requestCaptor.getValue();
 
         assertEquals(

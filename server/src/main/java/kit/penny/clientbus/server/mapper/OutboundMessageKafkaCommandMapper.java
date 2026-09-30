@@ -1,8 +1,8 @@
 package kit.penny.clientbus.server.mapper;
 
 import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
+import kit.penny.clientbus.server.connector.command.SendMessageCommand;
 import kit.penny.clientbus.server.service.ChannelAttachment;
-import kit.penny.clientbus.server.service.ChannelSendRequest;
 import kit.penny.clientbus.server.storage.IAttachmentStorage;
 import org.springframework.stereotype.Component;
 
@@ -19,10 +19,10 @@ public class OutboundMessageKafkaCommandMapper {
         this.attachmentStorage = attachmentStorage;
     }
 
-    public ChannelSendRequest toRequest(
+    public SendMessageCommand toCommand(
             OutboundMessageKafkaCommand command
     ) {
-        return new ChannelSendRequest(
+        return new SendMessageCommand(
                 command.messageId(),
                 command.channelAccountId(),
                 command.recipientExternalId(),

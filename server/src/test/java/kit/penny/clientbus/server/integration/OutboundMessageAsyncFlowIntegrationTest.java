@@ -8,6 +8,7 @@ import kit.penny.clientbus.common.enums.MessageType;
 import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
 import kit.penny.clientbus.server.connector.ConnectorSendResult;
 import kit.penny.clientbus.server.connector.IChannelConnector;
+import kit.penny.clientbus.server.connector.command.SendMessageCommand;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
@@ -124,7 +125,7 @@ class OutboundMessageAsyncFlowIntegrationTest
         ).thenReturn(channelConnector);
 
         when(
-                channelConnector.send(any())
+                channelConnector.handle((SendMessageCommand)any())
         ).thenReturn(
                 new ConnectorSendResult(
                         EXTERNAL_MESSAGE_ID
@@ -222,7 +223,7 @@ class OutboundMessageAsyncFlowIntegrationTest
                 channelConnector,
                 timeout(15_000)
                         .times(1)
-        ).send(any());
+        ).handle((SendMessageCommand)any());
 
         MessageEntity pendingMessage =
                 awaitPendingMessageWithExternalId(

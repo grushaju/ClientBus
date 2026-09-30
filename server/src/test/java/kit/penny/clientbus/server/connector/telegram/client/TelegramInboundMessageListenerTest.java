@@ -140,6 +140,9 @@ class TelegramInboundMessageListenerTest {
                 "Hello"
         );
 
+        message.sendingState =
+                new TdApi.MessageSendingStatePending();
+
         listener.handleNotification(
                 new TdApi.UpdateNewMessage(message)
         );
@@ -329,7 +332,10 @@ class TelegramInboundMessageListenerTest {
                 .thenReturn(clientB);
 
         TdApi.Chat chatA = createPrivateChat(chatIdA);
+        chatA.type = new TdApi.ChatTypePrivate(userIdA);
+
         TdApi.Chat chatB = createPrivateChat(chatIdB);
+        chatB.type = new TdApi.ChatTypePrivate(userIdB);
 
         TdApi.User userA = new TdApi.User();
         userA.id = userIdA;
@@ -418,7 +424,7 @@ class TelegramInboundMessageListenerTest {
                         PlatformMessageRequest.class
                 );
 
-        verify(platformMessagePublisher, Mockito.times(2))
+        verify(platformMessagePublisher, timeout(1000).times(2))
                 .publish(eventCaptor.capture());
 
         List<PlatformMessageRequest> events =

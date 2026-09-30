@@ -13,6 +13,7 @@ import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
 import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
 import kit.penny.clientbus.server.connector.ConnectorSendResult;
 import kit.penny.clientbus.server.connector.IChannelConnector;
+import kit.penny.clientbus.server.connector.command.SendMessageCommand;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.integration.AbstractIntegrationTest;
 import kit.penny.clientbus.server.kafka.config.KafkaEventJsonDeserializer;
@@ -173,7 +174,7 @@ class KafkaOutboundMessageFailureIntegrationTest
                 getEndOffsets(DLQ_TOPIC);
 
         when(
-                channelConnector.send(any())
+                channelConnector.handle((SendMessageCommand)any())
         )
                 .thenThrow(
                         new IllegalStateException(
@@ -213,7 +214,7 @@ class KafkaOutboundMessageFailureIntegrationTest
                 channelConnector,
                 timeout(15_000)
                         .times(3)
-        ).send(any());
+        ).handle((SendMessageCommand)any());
 
         MessageEntity pendingMessage =
                 awaitMessageStatus(
@@ -294,7 +295,7 @@ class KafkaOutboundMessageFailureIntegrationTest
                         "Permanent Telegram failure"
                 )
         ).when(channelConnector)
-                .send(any());
+                .handle((SendMessageCommand)any());
 
         KafkaEvent<OutboundMessageKafkaCommand> event =
                 createOutboundEvent(
@@ -318,7 +319,7 @@ class KafkaOutboundMessageFailureIntegrationTest
                 channelConnector,
                 timeout(15_000)
                         .times(4)
-        ).send(any());
+        ).handle((SendMessageCommand)any());
 
         MessageEntity failedMessage =
                 awaitMessageStatus(
