@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -106,5 +107,50 @@ public interface MessageRepository
             MessageDeliveryStatus currentDeliveryStatus,
             MessageProcessingStatus processingStatus,
             MessageDeliveryStatus deliveryStatus
+    );
+
+    @Modifying(
+            clearAutomatically = true,
+            flushAutomatically = true
+    )
+    @Query("""
+    update MessageEntity m
+       set m.processingStatus = :processingStatus,
+           m.deliveryAttemptAt = :deliveryAttemptAt
+     where m.id = :messageId
+       and m.direction = :direction
+       and m.processingStatus = :currentProcessingStatus
+       and m.deliveryStatus = :currentDeliveryStatus
+       and m.externalId is null
+    """)
+    int claimOutboundDelivery(
+            UUID messageId,
+            MessageDirection direction,
+            MessageProcessingStatus currentProcessingStatus,
+            MessageDeliveryStatus currentDeliveryStatus,
+            MessageProcessingStatus processingStatus,
+            Instant deliveryAttemptAt
+    );
+
+    @Modifying(
+            clearAutomatically = true,
+            flushAutomatically = true
+    )
+    @Query("""
+    update MessageEntity m
+       set m.processingStatus = :processingStatus,
+           m.deliveryAttemptAt = null
+     where m.id = :messageId
+       and m.direction = :direction
+       and m.processingStatus = :currentProcessingStatus
+       and m.deliveryStatus = :currentDeliveryStatus
+       and m.externalId is null
+    """)
+    int releaseOutboundDeliveryClaim(
+            UUID messageId,
+            MessageDirection direction,
+            MessageProcessingStatus currentProcessingStatus,
+            MessageDeliveryStatus currentDeliveryStatus,
+            MessageProcessingStatus processingStatus
     );
 }

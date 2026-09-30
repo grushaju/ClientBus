@@ -255,6 +255,20 @@ public class MessageEntity {
     @Column(name = "readat")
     private Instant readAt;
 
+    /**
+     * Время, когда OUTBOUND сообщение было
+     * атомарно захвачено для отправки Connector'ом.
+     *
+     * Заполняется только для состояния:
+     *
+     * processingStatus = PROCESSING
+     * deliveryStatus   = PENDING
+     *
+     * после QUEUED -> PROCESSING delivery claim.
+     */
+    @Column(name = "deliveryattemptat")
+    private Instant deliveryAttemptAt;
+
     public MessageEntity() {
     }
 
@@ -446,5 +460,13 @@ public class MessageEntity {
 
     public void setReadAt(Instant readAt) {
         this.readAt = readAt;
+    }
+
+    public Instant getDeliveryAttemptAt() {
+        return deliveryAttemptAt;
+    }
+
+    public void setDeliveryAttemptAt(Instant deliveryAttemptAt) {
+        this.deliveryAttemptAt = deliveryAttemptAt;
     }
 }

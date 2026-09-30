@@ -1,8 +1,6 @@
 package kit.penny.clientbus.server.kafka.consumer;
 
 import kit.penny.clientbus.common.enums.ChannelType;
-import kit.penny.clientbus.common.enums.MessageDeliveryStatus;
-import kit.penny.clientbus.common.enums.MessageProcessingStatus;
 import kit.penny.clientbus.common.kafka.KafkaEvent;
 import kit.penny.clientbus.common.kafka.KafkaEventType;
 import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
@@ -12,7 +10,6 @@ import kit.penny.clientbus.server.connector.IChannelConnector;
 import kit.penny.clientbus.server.connector.command.SendMessageCommand;
 import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
 import kit.penny.clientbus.server.mapper.OutboundMessageKafkaCommandMapper;
-import kit.penny.clientbus.server.persistence.entity.MessageEntity;
 import kit.penny.clientbus.server.service.MessageService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,6 +52,7 @@ public class KafkaOutboundMessageConsumer {
             KafkaEvent<OutboundMessageKafkaCommand> event,
             @Header(KafkaHeaders.RECEIVED_TOPIC) String topic
     ) {
+
         validateEvent(event);
 
         ChannelType channelType =
@@ -63,11 +61,14 @@ public class KafkaOutboundMessageConsumer {
         OutboundMessageKafkaCommand kafkaCommand =
                 event.payload();
 
+        UUID messageId =
+                kafkaCommand.messageId();
+
         log.info(
                 "Processing outbound message: messageId={}, " +
                         "channelType={}, topic={}, type={}, contentPresent={}, " +
                         "attachmentCount={}",
-                kafkaCommand.messageId(),
+                messageId,
                 channelType,
                 topic,
                 kafkaCommand.type(),
@@ -78,40 +79,72 @@ public class KafkaOutboundMessageConsumer {
                         : 0
         );
 
-        if (isAlreadyAcceptedForDelivery(
-                kafkaCommand.messageId()
-        )) {
+        /*
+         * Atomic delivery claim.
+         *
+         * Only one concurrent Kafka delivery attempt can
+         * successfully move:
+         *
+         * QUEUED + PENDING
+         *        ->
+         * PROCESSING + PENDING
+         *
+         * If another Kafka delivery already claimed the message,
+         * this attempt must not call the external connector.
+         */
+        boolean claimed =
+                messageService.claimOutboundDelivery(
+                        messageId
+                );
+
+        if (!claimed) {
+
             log.info(
-                    "Skipping outbound message: already accepted for delivery, " +
-                            "messageId={}",
-                    kafkaCommand.messageId()
+                    "Skipping outbound message: delivery claim " +
+                            "was not acquired, messageId={}",
+                    messageId
             );
+
             return;
         }
 
         IChannelConnector connector;
 
         try {
+
             connector =
                     channelConnectorRegistry.getConnector(
                             channelType
                     );
+
         } catch (Exception e) {
+
+            /*
+             * Connector was not resolved and therefore the
+             * external platform was not called.
+             *
+             * Release the claim so Kafka can retry.
+             */
+            messageService.releaseOutboundDeliveryClaim(
+                    messageId
+            );
+
             log.error(
                     "Failed to resolve channel connector: messageId={}, " +
                             "channelType={}, topic={}",
-                    kafkaCommand.messageId(),
+                    messageId,
                     channelType,
                     topic,
                     e
             );
+
             throw e;
         }
 
         log.debug(
-                "Resolved outbound connector: messageId={}, channelType={}, " +
-                        "connector={}",
-                kafkaCommand.messageId(),
+                "Resolved outbound connector: messageId={}, " +
+                        "channelType={}, connector={}",
+                messageId,
                 channelType,
                 connector.getClass().getSimpleName()
         );
@@ -119,25 +152,38 @@ public class KafkaOutboundMessageConsumer {
         SendMessageCommand command;
 
         try {
+
             command =
                     commandMapper.toCommand(
                             kafkaCommand
                     );
+
         } catch (Exception e) {
+
+            /*
+             * Connector has not been called yet.
+             *
+             * Release the claim so Kafka can retry.
+             */
+            messageService.releaseOutboundDeliveryClaim(
+                    messageId
+            );
+
             log.error(
                     "Failed to map outbound Kafka command to connector command: " +
                             "messageId={}, channelType={}",
-                    kafkaCommand.messageId(),
+                    messageId,
                     channelType,
                     e
             );
+
             throw e;
         }
 
         log.debug(
                 "Outbound connector command prepared: messageId={}, " +
                         "channelType={}, connector={}",
-                kafkaCommand.messageId(),
+                messageId,
                 channelType,
                 connector.getClass().getSimpleName()
         );
@@ -145,81 +191,100 @@ public class KafkaOutboundMessageConsumer {
         ConnectorSendResult result;
 
         try {
+
+            /*
+             * IMPORTANT:
+             *
+             * From this point the external platform may accept
+             * the message.
+             *
+             * Therefore if connector.handle() throws, we release
+             * the claim according to the connector contract.
+             */
             result =
                     connector.handle(command);
+
         } catch (Exception e) {
+
+            messageService.releaseOutboundDeliveryClaim(
+                    messageId
+            );
+
             log.error(
                     "Connector threw exception while sending outbound message: " +
                             "messageId={}, channelType={}, connector={}",
-                    kafkaCommand.messageId(),
+                    messageId,
                     channelType,
                     connector.getClass().getSimpleName(),
                     e
             );
+
             throw e;
         }
 
         if (result == null) {
+
             throw new IllegalStateException(
                     "Connector returned null send result: messageId="
-                            + kafkaCommand.messageId()
+                            + messageId
             );
         }
 
         if (result.externalId() == null
                 || result.externalId().isBlank()) {
+
             throw new IllegalStateException(
                     "Connector returned blank externalId: messageId="
-                            + kafkaCommand.messageId()
+                            + messageId
             );
         }
 
+        /*
+         * At this point the external platform has accepted
+         * the message.
+         *
+         * DO NOT release the delivery claim if persistence
+         * of externalId fails.
+         *
+         * Otherwise Kafka retry could send the same message
+         * to the external platform a second time.
+         */
         try {
-            messageService.registerPendingExternalId(
-                    kafkaCommand.messageId(),
+
+            messageService.registerExternalId(
+                    messageId,
                     result.externalId()
             );
+
         } catch (Exception e) {
+
             log.error(
                     "Message service threw exception while registering " +
-                            "pending externalId: messageId={}, externalId={}",
-                    kafkaCommand.messageId(),
+                            "externalId: messageId={}, externalId={}",
+                    messageId,
                     result.externalId(),
                     e
             );
+
             throw e;
         }
 
         log.info(
                 "Outbound connector send completed: messageId={}, " +
-                        "channelType={}, connector={}, result={}",
-                kafkaCommand.messageId(),
+                        "channelType={}, connector={}, externalId={}",
+                messageId,
                 channelType,
                 connector.getClass().getSimpleName(),
-                result
+                result.externalId()
         );
-    }
-
-    private boolean isAlreadyAcceptedForDelivery(
-            UUID messageId
-    ) {
-        MessageEntity message =
-                messageService.getMessageEntityForProcessing(
-                        messageId
-                );
-
-        return message.getProcessingStatus()
-                == MessageProcessingStatus.QUEUED
-                && message.getDeliveryStatus()
-                == MessageDeliveryStatus.PENDING
-                && message.getExternalId() != null
-                && !message.getExternalId().isBlank();
     }
 
     private void validateEvent(
             KafkaEvent<OutboundMessageKafkaCommand> event
     ) {
+
         if (event == null) {
+
             throw new IllegalArgumentException(
                     "Kafka outbound event must not be null"
             );
@@ -227,6 +292,7 @@ public class KafkaOutboundMessageConsumer {
 
         if (event.eventType()
                 != KafkaEventType.OUTBOUND_MESSAGE) {
+
             throw new IllegalArgumentException(
                     "Unsupported Kafka event type: "
                             + event.eventType()
@@ -234,6 +300,7 @@ public class KafkaOutboundMessageConsumer {
         }
 
         if (event.correlationId() == null) {
+
             throw new IllegalArgumentException(
                     "Kafka outbound event correlationId "
                             + "must not be null"
@@ -244,6 +311,7 @@ public class KafkaOutboundMessageConsumer {
                 event.payload();
 
         if (command == null) {
+
             throw new IllegalArgumentException(
                     "Kafka outbound event payload "
                             + "must not be null"
@@ -251,12 +319,14 @@ public class KafkaOutboundMessageConsumer {
         }
 
         if (command.messageId() == null) {
+
             throw new IllegalArgumentException(
                     "Outbound messageId must not be null"
             );
         }
 
         if (command.channelAccountId() == null) {
+
             throw new IllegalArgumentException(
                     "Outbound channelAccountId must not be null"
             );
@@ -264,6 +334,7 @@ public class KafkaOutboundMessageConsumer {
 
         if (command.recipientExternalId() == null
                 || command.recipientExternalId().isBlank()) {
+
             throw new IllegalArgumentException(
                     "Outbound recipientExternalId "
                             + "must not be blank"
