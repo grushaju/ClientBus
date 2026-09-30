@@ -2,7 +2,6 @@ package kit.penny.clientbus.server.service;
 
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
-import kit.penny.clientbus.common.dto.message.CreateInboundMessageRequest;
 import kit.penny.clientbus.common.dto.message.CreateOutboundMessageRequest;
 import kit.penny.clientbus.common.dto.message.CreatePlatformMessageRequest;
 import kit.penny.clientbus.common.dto.message.MessageDto;
@@ -104,98 +103,6 @@ public class MessageService {
                         pageable
                 )
                 .map(messageMapper::toDto);
-    }
-
-
-    /**
-     * Creates an inbound message received from a ChannelConnector.
-     */
-    @Transactional
-    public MessageCreationResult createInboundMessage(
-            CreateInboundMessageRequest request
-    ) {
-
-        ConversationEntity conversation =
-                getConversation(
-                        request.conversationId()
-                );
-
-        validateInboundRequest(request);
-
-        MessageEntity existing =
-                messageRepository
-                        .findByConversationIdAndExternalId(
-                                conversation.getId(),
-                                request.externalId()
-                        )
-                        .orElse(null);
-
-        if (existing != null) {
-            return new MessageCreationResult(
-                    messageMapper.toDto(existing),
-                    true
-            );
-        }
-
-        MessageEntity message =
-                new MessageEntity(
-                        conversation,
-                        request.type(),
-                        MessageDirection.INBOUND,
-                        MessageSenderType.CLIENT
-                );
-
-        message.setClientAccount(
-                conversation.getClientAccount()
-        );
-
-        message.setEmployee(null);
-
-        message.setExternalId(
-                request.externalId()
-        );
-
-        message.setContent(
-                request.content()
-        );
-
-        message.setMetadata(
-                request.metadata()
-        );
-
-        message.setSentAt(
-                request.sentAt() != null
-                        ? request.sentAt()
-                        : Instant.now()
-        );
-
-        message.setProcessingStatus(
-                MessageProcessingStatus.RECEIVED
-        );
-
-        message.setDeliveryStatus(null);
-
-        message = messageRepository.save(message);
-
-        Instant messageTime =
-                message.getSentAt() != null
-                        ? message.getSentAt()
-                        : message.getCreatedAt();
-
-        conversationService.updateLastMessage(
-                conversation,
-                messageTime,
-                createPreview(message)
-        );
-
-        conversationService.incrementUnreadCount(
-                conversation
-        );
-
-        return new MessageCreationResult(
-                messageMapper.toDto(message),
-                false
-        );
     }
 
     @Transactional
@@ -1305,36 +1212,6 @@ public class MessageService {
         }
     }
 
-    private void validateInboundRequest(
-            CreateInboundMessageRequest request
-    ) {
-
-        if (request == null) {
-            throw new IllegalArgumentException(
-                    "Inbound message request must not be null"
-            );
-        }
-
-        if (request.conversationId() == null) {
-            throw new IllegalArgumentException(
-                    "conversationId must not be null"
-            );
-        }
-
-        if (request.externalId() == null
-                || request.externalId().isBlank()) {
-
-            throw new IllegalArgumentException(
-                    "externalId must not be blank"
-            );
-        }
-
-        if (request.type() == null) {
-            throw new IllegalArgumentException(
-                    "message type must not be null"
-            );
-        }
-    }
 
     private String createPreview(
             MessageEntity message

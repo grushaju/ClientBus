@@ -4,7 +4,6 @@ import kit.penny.clientbus.common.dto.message.PlatformMessageAttachment;
 import kit.penny.clientbus.common.dto.message.PlatformMessageRequest;
 import kit.penny.clientbus.common.enums.MessageAttachmentType;
 import kit.penny.clientbus.common.enums.MessageType;
-import kit.penny.clientbus.server.kafka.producer.IInboundEventPublisher;
 import kit.penny.clientbus.server.kafka.producer.IPlatformMessagePublisher;
 import kit.penny.clientbus.server.storage.IAttachmentStorage;
 import kit.penny.clientbus.server.storage.StoredAttachmentMetadata;

@@ -11,18 +11,6 @@ public interface IMessageProcessingService {
      * Обрабатывает входящее сообщение от ChannelConnector
      * вместе с его вложениями.
      */
-    MessageDto processInbound(
-            InboundMessageRequest request,
-            List<AttachmentContent> attachments
-    );
-
-    /**
-     * Обрабатывает входящее сообщение от ChannelConnector,
-     * в котором attachments уже сохранены в Storage Connector-ом.
-     */
-    MessageDto processInbound(
-            PlatformInboundMessageEvent event
-    );
 
     MessageDto processPlatformMessage(
             PlatformMessageRequest request

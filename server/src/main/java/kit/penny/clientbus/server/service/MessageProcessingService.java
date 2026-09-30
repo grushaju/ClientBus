@@ -4,9 +4,6 @@ import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
 import kit.penny.clientbus.common.dto.message.*;
 import kit.penny.clientbus.common.enums.ChannelType;
-import kit.penny.clientbus.common.enums.MessageDirection;
-import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
-import kit.penny.clientbus.common.kafka.PlatformOutboundAttachment;
 import kit.penny.clientbus.server.kafka.producer.IOutboundMessagePublisher;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
@@ -58,107 +55,6 @@ public class MessageProcessingService
         this.messageRepository = messageRepository;
         this.outboundMessageTransactionService =
                 outboundMessageTransactionService;
-    }
-
-    @Override
-    @Transactional
-    public MessageDto processInbound(
-            InboundMessageRequest request,
-            List<AttachmentContent> attachments
-    ) {
-        attachments = normalizeAttachments(attachments);
-
-        MessageCreationResult result =
-                getMessageCreationResult(request);
-
-        MessageDto message = result.message();
-
-        if (!result.existed()) {
-
-            MessageEntity messageEntity =
-                    messageService.getMessageEntityForProcessing(
-                            message.id()
-                    );
-
-            for (AttachmentContent attachment : attachments) {
-                messageAttachmentService.createAttachment(
-                        messageEntity,
-                        attachment
-                );
-            }
-        }
-
-        return message;
-    }
-
-    /**
-     * Обрабатывает inbound event, в котором attachments
-     * уже сохранены в Storage Connector-ом.
-     */
-    @Override
-    @Transactional
-    public MessageDto processInbound(
-            PlatformInboundMessageEvent event
-    ) {
-        if (event == null) {
-            throw new IllegalArgumentException(
-                    "PlatformInboundMessageEvent must not be null"
-            );
-        }
-
-        if (event.message() == null) {
-            throw new IllegalArgumentException(
-                    "Inbound message must not be null"
-            );
-        }
-
-        InboundMessageRequest request =
-                event.message();
-
-        MessageCreationResult result =
-                getMessageCreationResult(request);
-
-        MessageDto message = result.message();
-
-        /*
-         * Idempotency:
-         *
-         * если Message уже существовал,
-         * attachments повторно не создаём.
-         */
-        if (result.existed()) {
-            return message;
-        }
-
-        MessageEntity messageEntity =
-                messageService.getMessageEntityForProcessing(
-                        message.id()
-                );
-
-        List<PlatformInboundAttachment> attachments =
-                event.attachments() == null
-                        ? List.of()
-                        : List.copyOf(event.attachments());
-
-        for (PlatformInboundAttachment attachment : attachments) {
-
-            if (attachment == null) {
-                throw new IllegalArgumentException(
-                        "Inbound attachment must not be null"
-                );
-            }
-
-            messageAttachmentService.createAttachmentFromStorage(
-                    messageEntity,
-                    attachment.type(),
-                    attachment.storageKey(),
-                    attachment.fileName(),
-                    attachment.contentType(),
-                    attachment.size()
-            );
-        }
-
-        return message;
     }
 
     @Override
@@ -461,66 +357,5 @@ public class MessageProcessingService
                             message.getId()
                     );
         };
-    }
-
-    private List<AttachmentContent> normalizeAttachments(
-            List<AttachmentContent> attachments
-    ) {
-        if (attachments == null) {
-            return List.of();
-        }
-
-        return List.copyOf(attachments);
-    }
-
-    private MessageCreationResult getMessageCreationResult(
-            InboundMessageRequest request
-    ) {
-        ChannelAccountEntity channelAccount =
-                channelAccountRepository
-                        .findById(request.channelAccountId())
-                        .orElseThrow(() ->
-                                new EntityNotFoundException(
-                                        "ChannelAccount not found: "
-                                                + request.channelAccountId()
-                                )
-                        );
-
-        ChannelType channelType =
-                channelAccount.getChannel().getType();
-
-        ClientAccountEntity clientAccount =
-                clientAccountService.getOrCreateForInbound(
-                        channelType,
-                        request.clientExternalId(),
-                        request.clientUsername(),
-                        request.clientPhone(),
-                        request.clientDisplayName()
-                );
-
-        ConversationEntity conversation =
-                conversationService.findEntityByAccounts(
-                        channelAccount.getId(),
-                        clientAccount.getId()
-                );
-
-        if (conversation == null) {
-            conversation =
-                    conversationService.createConversationInternal(
-                            channelAccount,
-                            clientAccount
-                    );
-        }
-
-        return messageService.createInboundMessage(
-                new CreateInboundMessageRequest(
-                        conversation.getId(),
-                        request.type(),
-                        request.externalId(),
-                        request.content(),
-                        request.metadata(),
-                        request.sentAt()
-                )
-        );
     }
 }

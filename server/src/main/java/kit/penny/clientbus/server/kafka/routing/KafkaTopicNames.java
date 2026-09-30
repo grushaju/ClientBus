@@ -15,10 +15,6 @@ public final class KafkaTopicNames {
     private KafkaTopicNames() {
     }
 
-    public static String inbound() {
-        return PREFIX + ".inbound";
-    }
-
     public static String platformMessages() {
         return PREFIX + ".platform-messages";
     }

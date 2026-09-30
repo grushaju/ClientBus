@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-09-29 16:05:40
+- Generated: 2026-09-30 14:36:16
 - Branch: `main`
-- Commit: `b9f12db`
+- Commit: `ff80a6b`
 
 ## Project Structure
 
@@ -63,16 +63,12 @@
 
 ##### `kit.penny.clientbus.common.dto.message`
 
-- `CreateInboundMessageRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/message/CreateInboundMessageRequest.java`
 - `CreateOutboundMessageRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/message/CreateOutboundMessageRequest.java`
 - `CreatePlatformMessageRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/message/CreatePlatformMessageRequest.java`
 - `ForwardMessageRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/message/ForwardMessageRequest.java`
-- `InboundMessageRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/message/InboundMessageRequest.java`
 - `MessageAttachmentDto.java` — `common/src/main/java/kit/penny/clientbus/common/dto/message/MessageAttachmentDto.java`
 - `MessageDto.java` — `common/src/main/java/kit/penny/clientbus/common/dto/message/MessageDto.java`
 - `OutboundMessageRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/message/OutboundMessageRequest.java`
-- `PlatformInboundAttachment.java` — `common/src/main/java/kit/penny/clientbus/common/dto/message/PlatformInboundAttachment.java`
-- `PlatformInboundMessageEvent.java` — `common/src/main/java/kit/penny/clientbus/common/dto/message/PlatformInboundMessageEvent.java`
 - `PlatformMessageAttachment.java` — `common/src/main/java/kit/penny/clientbus/common/dto/message/PlatformMessageAttachment.java`
 - `PlatformMessageEvent.java` — `common/src/main/java/kit/penny/clientbus/common/dto/message/PlatformMessageEvent.java`
 - `PlatformMessageRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/message/PlatformMessageRequest.java`
@@ -217,11 +213,9 @@
 
 ##### `kit.penny.clientbus.server.kafka.consumer`
 
-- `IInboundEventConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/IInboundEventConsumer.java`
 - `IOutboundMessageConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/IOutboundMessageConsumer.java`
 - `IPlatformEventConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/IPlatformEventConsumer.java`
 - `KafkaChannelReadConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaChannelReadConsumer.java`
-- `KafkaInboundEventConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaInboundEventConsumer.java`
 - `KafkaOutboundMessageConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaOutboundMessageConsumer.java`
 - `KafkaPlatformEventConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaPlatformEventConsumer.java`
 - `KafkaPlatformMessageConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaPlatformMessageConsumer.java`
@@ -229,12 +223,10 @@
 ##### `kit.penny.clientbus.server.kafka.producer`
 
 - `IChannelReadPublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/IChannelReadPublisher.java`
-- `IInboundEventPublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/IInboundEventPublisher.java`
 - `IOutboundMessagePublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/IOutboundMessagePublisher.java`
 - `IPlatformEventPublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/IPlatformEventPublisher.java`
 - `IPlatformMessagePublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/IPlatformMessagePublisher.java`
 - `KafkaChannelReadPublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/KafkaChannelReadPublisher.java`
-- `KafkaInboundEventPublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/KafkaInboundEventPublisher.java`
 - `KafkaOutboundMessagePublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/KafkaOutboundMessagePublisher.java`
 - `KafkaPlatformEventPublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/KafkaPlatformEventPublisher.java`
 - `KafkaPlatformMessagePublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/KafkaPlatformMessagePublisher.java`
@@ -409,8 +401,6 @@
 
 ##### `kit.penny.clientbus.server.kafka.consumer`
 
-- `KafkaInboundEventConsumerIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaInboundEventConsumerIntegrationTest.java`
-- `KafkaInboundEventConsumerTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaInboundEventConsumerTest.java`
 - `KafkaOutboundMessageConsumerAtLeastOnceTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaOutboundMessageConsumerAtLeastOnceTest.java`
 - `KafkaOutboundMessageConsumerDlqIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaOutboundMessageConsumerDlqIntegrationTest.java`
 - `KafkaOutboundMessageConsumerIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaOutboundMessageConsumerIntegrationTest.java`
@@ -420,8 +410,6 @@
 
 ##### `kit.penny.clientbus.server.kafka.producer`
 
-- `KafkaInboundEventPublisherIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/producer/KafkaInboundEventPublisherIntegrationTest.java`
-- `KafkaInboundEventPublisherTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/producer/KafkaInboundEventPublisherTest.java`
 - `KafkaOutboundMessagePublisherIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/producer/KafkaOutboundMessagePublisherIntegrationTest.java`
 - `KafkaOutboundMessagePublisherTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/producer/KafkaOutboundMessagePublisherTest.java`
 - `KafkaPlatformEventPublisherIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/producer/KafkaPlatformEventPublisherIntegrationTest.java`
@@ -580,7 +568,7 @@
 ## Summary
 
 - Maven modules: 3
-- Java files: 254
+- Java files: 242
 - UI source files: 95
-- Git commit: `b9f12db`
+- Git commit: `ff80a6b`
 

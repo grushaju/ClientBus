@@ -1,6 +1,5 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
-import kit.penny.clientbus.common.dto.message.InboundMessageRequest;
 import kit.penny.clientbus.common.dto.message.PlatformMessageAttachment;
 import kit.penny.clientbus.common.dto.message.PlatformMessageRequest;
 import kit.penny.clientbus.common.enums.MessageAttachmentType;

@@ -3,7 +3,7 @@ package kit.penny.clientbus.server.service;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
-import kit.penny.clientbus.common.dto.message.InboundMessageRequest;
+import kit.penny.clientbus.common.dto.message.PlatformMessageRequest;
 import kit.penny.clientbus.common.dto.message.MessageDto;
 import kit.penny.clientbus.common.enums.*;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
@@ -74,7 +74,7 @@ class MessageProcessingServiceIntegrationTest
     private EmployeeWorkspaceRepository employeeWorkspaceRepository;
 
     @Test
-    void processInbound_createsClientAccountConversationAndMessage() {
+    void processPlatformMessage_createsClientAccountConversationAndMessage() {
 
         OrganizationEntity organization =
                 organizationRepository.saveAndFlush(
@@ -116,27 +116,29 @@ class MessageProcessingServiceIntegrationTest
 
         String externalMessageId =
                 "telegram-message-" + UUID.randomUUID();
+        String senderExternalId = "telegram-sender-" + UUID.randomUUID();
 
-        InboundMessageRequest request =
-                new InboundMessageRequest(
+        PlatformMessageRequest request =
+                new PlatformMessageRequest(
                         channelAccountId,
                         clientExternalId,
                         "client_username",
                         "+79991112233",
                         "Test Client",
+                        senderExternalId,
                         externalMessageId,
                         MessageType.TEXT,
                         "Hello from Telegram",
                         "{\"source\":\"telegram\"}",
                         Instant.parse(
                                 "2026-08-30T14:00:00Z"
-                        )
+                        ),
+                        List.of()
                 );
 
         MessageDto result =
-                messageProcessingService.processInbound(
-                        request,
-                        List.of()
+                messageProcessingService.processPlatformMessage(
+                        request
                 );
 
         assertNotNull(result);
@@ -242,7 +244,7 @@ class MessageProcessingServiceIntegrationTest
     }
 
     @Test
-    void processInbound_existingClientAccount_reusesIt() {
+    void processPlatformMessage_existingClientAccount_reusesIt() {
 
         OrganizationEntity organization =
                 organizationRepository.saveAndFlush(
@@ -291,26 +293,27 @@ class MessageProcessingServiceIntegrationTest
         UUID existingClientAccountId =
                 existingClientAccount.getId();
 
-        InboundMessageRequest request =
-                new InboundMessageRequest(
+        PlatformMessageRequest request =
+                new PlatformMessageRequest(
                         channelAccount.getId(),
                         clientExternalId,
                         "new_username",
                         "+79991112244",
                         "New Display Name",
+                        "telegram-sender-" + UUID.randomUUID(),
                         "telegram-message-" + UUID.randomUUID(),
                         MessageType.TEXT,
                         "Second message",
                         null,
                         Instant.parse(
                                 "2026-08-30T14:01:00Z"
-                        )
+                        ),
+                        List.of()
                 );
 
         MessageDto result =
-                messageProcessingService.processInbound(
-                        request,
-                        List.of()
+                messageProcessingService.processPlatformMessage(
+                        request
                 );
 
         assertNotNull(result);
@@ -350,7 +353,7 @@ class MessageProcessingServiceIntegrationTest
     }
 
     @Test
-    void processInbound_existingMessage_isIdempotent() {
+    void processPlatformMessage_existingMessage_isIdempotent() {
 
         OrganizationEntity organization =
                 organizationRepository.saveAndFlush(
@@ -386,36 +389,39 @@ class MessageProcessingServiceIntegrationTest
 
         String clientExternalId =
                 "telegram-idempotent-client-" + UUID.randomUUID();
+        String senderExternalId =
+                "telegram-idempotent-sender-" + UUID.randomUUID();
 
         String externalMessageId =
                 "telegram-idempotent-message-" + UUID.randomUUID();
 
-        InboundMessageRequest request =
-                new InboundMessageRequest(
+
+        PlatformMessageRequest request =
+                new PlatformMessageRequest(
                         channelAccount.getId(),
                         clientExternalId,
                         "client_username",
                         null,
                         "Test Client",
+                        senderExternalId,
                         externalMessageId,
                         MessageType.TEXT,
                         "Idempotent message",
                         null,
                         Instant.parse(
                                 "2026-08-30T14:02:00Z"
-                        )
+                        ),
+                        List.of()
                 );
 
         MessageDto first =
-                messageProcessingService.processInbound(
-                        request,
-                        List.of()
+                messageProcessingService.processPlatformMessage(
+                        request
                 );
 
         MessageDto second =
-                messageProcessingService.processInbound(
-                        request,
-                        List.of()
+                messageProcessingService.processPlatformMessage(
+                        request
                 );
 
         assertNotNull(first);
@@ -466,32 +472,33 @@ class MessageProcessingServiceIntegrationTest
     }
 
     @Test
-    void processInbound_missingChannelAccount_throwsException() {
+    void processPlatformMessage_missingChannelAccount_throwsException() {
 
         UUID unknownChannelAccountId =
                 UUID.randomUUID();
 
-        InboundMessageRequest request =
-                new InboundMessageRequest(
+        PlatformMessageRequest request =
+                new PlatformMessageRequest(
                         unknownChannelAccountId,
                         "telegram-client-" + UUID.randomUUID(),
                         "client_username",
                         null,
                         "Test Client",
+                        "telegram-sender-" + UUID.randomUUID(),
                         "telegram-message-" + UUID.randomUUID(),
                         MessageType.TEXT,
                         "Message for unknown channel",
                         null,
-                        Instant.now()
+                        Instant.now(),
+                        List.of()
                 );
 
         EntityNotFoundException exception =
                 assertThrows(
                         EntityNotFoundException.class,
                         () ->
-                                messageProcessingService.processInbound(
-                                        request,
-                                        List.of()
+                                messageProcessingService.processPlatformMessage(
+                                        request
                                 )
                 );
 

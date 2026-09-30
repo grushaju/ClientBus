@@ -111,7 +111,6 @@ spring:
       value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
 
     consumer:
-      inbound-group-id: clientbus.inbound.processor
       outbound-group-id: clientbus.outbound.processor
       platform-events-group-id: clientbus.platform-events.processor
       platform-message-group-id: clientbus.platform-messages.processor

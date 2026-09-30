@@ -1,14 +1,24 @@
 package kit.penny.clientbus.server.integration;
 
-import kit.penny.clientbus.common.dto.message.InboundMessageRequest;
-import kit.penny.clientbus.common.dto.message.PlatformInboundMessageEvent;
+import kit.penny.clientbus.common.dto.message.PlatformMessageRequest;
+import kit.penny.clientbus.common.enums.ChannelType;
+import kit.penny.clientbus.common.enums.MessageDirection;
 import kit.penny.clientbus.common.enums.MessageType;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
+import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
+import kit.penny.clientbus.server.persistence.entity.ConversationEntity;
+import kit.penny.clientbus.server.persistence.entity.MessageEntity;
 import kit.penny.clientbus.server.persistence.entity.OrganizationEntity;
 import kit.penny.clientbus.server.persistence.entity.WorkspaceEntity;
-import kit.penny.clientbus.server.persistence.repository.*;
+import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
+import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
+import kit.penny.clientbus.server.persistence.repository.ClientAccountRepository;
+import kit.penny.clientbus.server.persistence.repository.ConversationRepository;
+import kit.penny.clientbus.server.persistence.repository.MessageRepository;
+import kit.penny.clientbus.server.persistence.repository.OrganizationRepository;
+import kit.penny.clientbus.server.persistence.repository.WorkspaceRepository;
 import kit.penny.clientbus.server.service.MessageProcessingService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,16 +26,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
-import kit.penny.clientbus.common.enums.ChannelType;
-import kit.penny.clientbus.common.enums.MessageDirection;
-import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
-import kit.penny.clientbus.server.persistence.entity.ConversationEntity;
-import kit.penny.clientbus.server.persistence.entity.MessageEntity;
-import kit.penny.clientbus.server.persistence.repository.ClientAccountRepository;
-import kit.penny.clientbus.server.persistence.repository.ConversationRepository;
-import kit.penny.clientbus.server.persistence.repository.MessageRepository;
-
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -61,7 +63,7 @@ class MessageInboundFlowIntegrationTest
     private MessageRepository messageRepository;
 
     @Test
-    void processInbound_createsMessageForExistingChannelAccount() {
+    void processPlatformMessage_createsMessageForExistingChannelAccount() {
 
         OrganizationEntity organization =
                 organizationRepository.saveAndFlush(
@@ -95,31 +97,27 @@ class MessageInboundFlowIntegrationTest
         String externalMessageId =
                 "message-" + UUID.randomUUID();
 
-        InboundMessageRequest request =
-                new InboundMessageRequest(
+        PlatformMessageRequest request =
+                new PlatformMessageRequest(
                         channelAccountId,
                         "client-external-id",
                         "client_username",
                         "+79990000003",
                         "Test Client",
+                        "client-sender-external-id",
                         externalMessageId,
                         MessageType.TEXT,
                         "Hello from integration test",
                         "{\"source\":\"integration-test\"}",
                         Instant.parse(
                                 "2026-08-30T10:00:00Z"
-                        )
-                );
-
-        PlatformInboundMessageEvent event =
-                new PlatformInboundMessageEvent(
-                        request,
-                        java.util.List.of()
+                        ),
+                        List.of()
                 );
 
         var result =
-                messageProcessingService.processInbound(
-                        event
+                messageProcessingService.processPlatformMessage(
+                        request
                 );
 
         assertNotNull(result);
@@ -142,7 +140,7 @@ class MessageInboundFlowIntegrationTest
     }
 
     @Test
-    void processInbound_sameExternalMessageId_doesNotCreateDuplicate() {
+    void processPlatformMessage_sameExternalMessageId_doesNotCreateDuplicate() {
 
         OrganizationEntity organization =
                 organizationRepository.saveAndFlush(
@@ -176,36 +174,32 @@ class MessageInboundFlowIntegrationTest
         String externalMessageId =
                 "duplicate-test-" + UUID.randomUUID();
 
-        InboundMessageRequest request =
-                new InboundMessageRequest(
+        PlatformMessageRequest request =
+                new PlatformMessageRequest(
                         channelAccountId,
                         "client-external-id",
                         "client_username",
                         "+79990000003",
                         "Test Client",
+                        "client-sender-external-id",
                         externalMessageId,
                         MessageType.TEXT,
                         "Duplicate test message",
                         "{\"source\":\"integration-test\"}",
                         Instant.parse(
                                 "2026-08-30T10:00:00Z"
-                        )
-                );
-
-        PlatformInboundMessageEvent event =
-                new PlatformInboundMessageEvent(
-                        request,
-                        java.util.List.of()
+                        ),
+                        List.of()
                 );
 
         var first =
-                messageProcessingService.processInbound(
-                        event
+                messageProcessingService.processPlatformMessage(
+                        request
                 );
 
         var second =
-                messageProcessingService.processInbound(
-                        event
+                messageProcessingService.processPlatformMessage(
+                        request
                 );
 
         assertNotNull(first);
@@ -228,7 +222,7 @@ class MessageInboundFlowIntegrationTest
     }
 
     @Test
-    void processInbound_createsClientAccountConversationAndMessage() {
+    void processPlatformMessage_createsClientAccountConversationAndMessage() {
 
         OrganizationEntity organization =
                 organizationRepository.saveAndFlush(
@@ -266,25 +260,28 @@ class MessageInboundFlowIntegrationTest
                 "telegram-message-" + UUID.randomUUID();
 
         Instant sentAt =
-                Instant.parse("2026-08-30T10:00:00Z");
+                Instant.parse(
+                        "2026-08-30T10:00:00Z"
+                );
 
-        InboundMessageRequest request =
-                new InboundMessageRequest(
+        PlatformMessageRequest request =
+                new PlatformMessageRequest(
                         channelAccountId,
                         clientExternalId,
                         "ivan_ivanov",
                         "+79991234567",
                         "Ivan Ivanov",
+                        "telegram-sender-" + UUID.randomUUID(),
                         externalMessageId,
                         MessageType.TEXT,
                         "Hello from Telegram",
                         null,
-                        sentAt
+                        sentAt,
+                        List.of()
                 );
 
-        messageProcessingService.processInbound(
-                request,
-                java.util.List.of()
+        messageProcessingService.processPlatformMessage(
+                request
         );
 
         ClientAccountEntity clientAccount =
@@ -299,14 +296,17 @@ class MessageInboundFlowIntegrationTest
                 clientExternalId,
                 clientAccount.getExternalId()
         );
+
         assertEquals(
                 "ivan_ivanov",
                 clientAccount.getUsername()
         );
+
         assertEquals(
                 "+79991234567",
                 clientAccount.getPhone()
         );
+
         assertEquals(
                 "Ivan Ivanov",
                 clientAccount.getDisplayName()
@@ -324,6 +324,7 @@ class MessageInboundFlowIntegrationTest
                 channelAccountId,
                 conversation.getChannelAccount().getId()
         );
+
         assertEquals(
                 clientAccount.getId(),
                 conversation.getClientAccount().getId()
@@ -341,26 +342,30 @@ class MessageInboundFlowIntegrationTest
                 externalMessageId,
                 message.getExternalId()
         );
+
         assertEquals(
                 MessageType.TEXT,
                 message.getType()
         );
+
         assertEquals(
                 MessageDirection.INBOUND,
                 message.getDirection()
         );
+
         assertEquals(
                 "Hello from Telegram",
                 message.getContent()
         );
+
         assertEquals(
                 sentAt,
                 message.getSentAt()
         );
+
         assertEquals(
                 conversation.getId(),
                 message.getConversation().getId()
         );
     }
-
 }

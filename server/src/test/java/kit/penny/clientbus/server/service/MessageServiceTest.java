@@ -1,8 +1,7 @@
 package kit.penny.clientbus.server.service;
 
 import jakarta.persistence.EntityNotFoundException;
-import kit.penny.clientbus.common.dto.message.CreateInboundMessageRequest;
-import kit.penny.clientbus.common.dto.message.CreateOutboundMessageRequest;
+import kit.penny.clientbus.common.dto.message.CreatePlatformMessageRequest;
 import kit.penny.clientbus.common.dto.message.MessageDto;
 import kit.penny.clientbus.common.enums.*;
 import kit.penny.clientbus.server.mapper.MessageMapper;
@@ -109,20 +108,21 @@ class MessageServiceTest {
     }
 
     // ============================================================
-    // CREATE INBOUND
+    // CREATE PLATFORM MESSAGE
     // ============================================================
 
     @Test
-    void createInboundMessage_newMessage_returnsExistedFalse() {
+    void createePlatformMessage_newMessage_returnsExistedFalse() {
 
-        CreateInboundMessageRequest request =
-                new CreateInboundMessageRequest(
+        CreatePlatformMessageRequest request =
+                new CreatePlatformMessageRequest(
                         conversation.getId(),
                         MessageType.TEXT,
                         "external-123",
                         "Hello",
                         "{\"source\":\"telegram\"}",
-                        Instant.now()
+                        Instant.now(),
+                        false
                 );
 
         when(conversationRepository.findById(conversation.getId()))
@@ -142,7 +142,7 @@ class MessageServiceTest {
                 .thenReturn(expectedDto);
 
         MessageCreationResult result =
-                messageService.createInboundMessage(request);
+                messageService.createPlatformMessage(request);
 
         assertNotNull(result);
         assertFalse(result.existed());
@@ -198,10 +198,10 @@ class MessageServiceTest {
     }
 
     @Test
-    void createInboundMessage_existingMessage_returnsExistedTrue() {
+    void createPlatformMessage_existingMessage_returnsExistedTrue() {
 
-        CreateInboundMessageRequest request =
-                new CreateInboundMessageRequest(
+        CreatePlatformMessageRequest request =
+                new CreatePlatformMessageRequest(
                         conversationId,
                         MessageType.TEXT,
                         "external-123",
@@ -209,7 +209,8 @@ class MessageServiceTest {
                         "{\"source\":\"telegram\"}",
                         Instant.parse(
                                 "2026-08-26T10:01:00Z"
-                        )
+                        ),
+                        false
                 );
 
         MessageDto expectedDto =
@@ -229,7 +230,7 @@ class MessageServiceTest {
                 .thenReturn(expectedDto);
 
         MessageCreationResult result =
-                messageService.createInboundMessage(request);
+                messageService.createPlatformMessage(request);
 
         assertNotNull(result);
         assertTrue(result.existed());
@@ -270,8 +271,8 @@ class MessageServiceTest {
     @Test
     void createInboundMessage_differentExternalId_createsNewMessage() {
 
-        CreateInboundMessageRequest request =
-                new CreateInboundMessageRequest(
+        CreatePlatformMessageRequest request =
+                new CreatePlatformMessageRequest(
                         conversationId,
                         MessageType.TEXT,
                         "external-456",
@@ -279,7 +280,8 @@ class MessageServiceTest {
                         null,
                         Instant.parse(
                                 "2026-08-26T11:00:00Z"
-                        )
+                        ),
+                        false
                 );
 
         MessageEntity newMessage =
@@ -319,7 +321,7 @@ class MessageServiceTest {
                 .thenReturn(expectedDto);
 
         MessageCreationResult result =
-                messageService.createInboundMessage(request);
+                messageService.createPlatformMessage(request);
 
         assertFalse(result.existed());
 
@@ -351,14 +353,15 @@ class MessageServiceTest {
     @Test
     void createInboundMessage_conversationNotFound_throwsException() {
 
-        CreateInboundMessageRequest request =
-                new CreateInboundMessageRequest(
+        CreatePlatformMessageRequest request =
+                new CreatePlatformMessageRequest(
                         conversationId,
                         MessageType.TEXT,
                         "external-123",
                         "Hello",
                         null,
-                        null
+                        null,
+                        false
                 );
 
         when(conversationRepository.findById(conversationId))
@@ -367,7 +370,7 @@ class MessageServiceTest {
         EntityNotFoundException exception =
                 assertThrows(
                         EntityNotFoundException.class,
-                        () -> messageService.createInboundMessage(
+                        () -> messageService.createPlatformMessage(
                                 request
                         )
                 );

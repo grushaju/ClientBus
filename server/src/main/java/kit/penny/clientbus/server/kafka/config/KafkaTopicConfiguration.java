@@ -27,26 +27,6 @@ public class KafkaTopicConfiguration {
     }
 
     @Bean
-    public NewTopic inboundTopic() {
-        return new NewTopic(
-                KafkaTopicNames.inbound(),
-                PARTITIONS,
-                REPLICATION_FACTOR
-        );
-    }
-
-    @Bean
-    public NewTopic inboundDlqTopic() {
-        return new NewTopic(
-                KafkaTopicNames.dlq(
-                        KafkaTopicNames.inbound()
-                ),
-                1,
-                REPLICATION_FACTOR
-        );
-    }
-
-    @Bean
     public NewTopic platformMessagesTopic() {
         return new NewTopic(
                 KafkaTopicNames.platformMessages(),

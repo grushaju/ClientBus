@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import kit.penny.clientbus.common.dto.message.PlatformInboundMessageEvent;
 import kit.penny.clientbus.common.dto.message.PlatformMessageRequest;
 import kit.penny.clientbus.common.kafka.*;
 import org.apache.kafka.common.errors.SerializationException;
@@ -97,12 +96,6 @@ public class KafkaEventJsonDeserializer
         }
 
         return switch (eventType) {
-
-            case INBOUND_MESSAGE ->
-                    objectMapper.convertValue(
-                            payload,
-                            PlatformInboundMessageEvent.class
-                    );
 
             case PLATFORM_MESSAGE ->
                     objectMapper.convertValue(

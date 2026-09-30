@@ -585,7 +585,7 @@ class KafkaOutboundMessageConsumerTest {
         KafkaEvent<OutboundMessageKafkaCommand> event =
                 new KafkaEvent<>(
                         UUID.randomUUID(),
-                        KafkaEventType.INBOUND_MESSAGE,
+                        KafkaEventType.OUTBOUND_MESSAGE,
                         1,
                         Instant.now(),
                         UUID.randomUUID(),
