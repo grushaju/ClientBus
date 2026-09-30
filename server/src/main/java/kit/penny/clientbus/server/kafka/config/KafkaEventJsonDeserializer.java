@@ -4,8 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import kit.penny.clientbus.common.dto.message.PlatformMessageRequest;
+import kit.penny.clientbus.common.dto.conversation.PlatformConversationRequest;
 import kit.penny.clientbus.common.kafka.*;
+import kit.penny.clientbus.common.dto.message.PlatformMessageRequest;
 import org.apache.kafka.common.errors.SerializationException;
 import org.apache.kafka.common.serialization.Deserializer;
 
@@ -103,6 +104,11 @@ public class KafkaEventJsonDeserializer
                             PlatformMessageRequest.class
                     );
 
+            case PLATFORM_MESSAGE_EVENT ->
+                    objectMapper.convertValue(
+                            payload,
+                            PlatformMessageKafkaEvent.class
+                    );
 
             case OUTBOUND_MESSAGE ->
                     objectMapper.convertValue(
@@ -110,16 +116,22 @@ public class KafkaEventJsonDeserializer
                             OutboundMessageKafkaCommand.class
                     );
 
-            case PLATFORM_MESSAGE_EVENT ->
-                    objectMapper.convertValue(
-                            payload,
-                            PlatformMessageKafkaEvent.class
-                    );
-
             case CHANNEL_READ ->
                     objectMapper.convertValue(
                             payload,
                             ChannelReadKafkaCommand.class
+                    );
+
+            case PLATFORM_CONVERSATION ->
+                    objectMapper.convertValue(
+                            payload,
+                            PlatformConversationRequest.class
+                    );
+
+            case SYNC_RECENT_CHATS ->
+                    objectMapper.convertValue(
+                            payload,
+                            SyncRecentChatsKafkaCommand.class
                     );
         };
     }

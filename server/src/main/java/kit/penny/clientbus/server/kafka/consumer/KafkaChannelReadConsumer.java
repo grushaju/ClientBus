@@ -53,7 +53,7 @@ public class KafkaChannelReadConsumer {
         ChannelReadKafkaCommand kafkaCommand =
                 event.payload();
 
-        log.info(
+        log.debug(
                 "Processing channel read: " +
                         "channelAccountId={}, " +
                         "channelType={}, " +

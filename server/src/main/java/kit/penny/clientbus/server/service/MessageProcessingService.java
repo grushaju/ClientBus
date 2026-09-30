@@ -2,6 +2,7 @@ package kit.penny.clientbus.server.service;
 
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
+import kit.penny.clientbus.common.dto.conversation.PlatformConversationRequest;
 import kit.penny.clientbus.common.dto.message.*;
 import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.server.kafka.producer.IOutboundMessagePublisher;
@@ -62,6 +63,7 @@ public class MessageProcessingService
     public MessageDto processPlatformMessage(
             PlatformMessageRequest request
     ) {
+
         if (request == null) {
             throw new IllegalArgumentException(
                     "PlatformMessageRequest must not be null"
@@ -163,10 +165,87 @@ public class MessageProcessingService
     }
 
     @Override
+    @Transactional
+    public void processPlatformConversation(
+            PlatformConversationRequest request
+    ) {
+
+        if (request == null) {
+            throw new IllegalArgumentException(
+                    "PlatformConversationRequest must not be null"
+            );
+        }
+
+        ChannelAccountEntity channelAccount =
+                channelAccountRepository
+                        .findById(request.channelAccountId())
+                        .orElseThrow(() ->
+                                new EntityNotFoundException(
+                                        "ChannelAccount not found: "
+                                                + request.channelAccountId()
+                                )
+                        );
+
+        ChannelType channelType =
+                channelAccount
+                        .getChannel()
+                        .getType();
+
+        ClientAccountEntity clientAccount =
+                clientAccountService.getOrCreateForInbound(
+                        channelType,
+                        request.clientExternalId(),
+                        request.clientUsername(),
+                        request.clientPhone(),
+                        request.clientDisplayName()
+                );
+
+        ConversationEntity conversation =
+                conversationService.findEntityByAccounts(
+                        channelAccount.getId(),
+                        clientAccount.getId()
+                );
+
+        boolean created = false;
+
+        if (conversation == null) {
+
+            conversation =
+                    conversationService.createConversationInternal(
+                            channelAccount,
+                            clientAccount
+                    );
+
+            created = true;
+        }
+
+        conversationService.updateLastMessage(
+                conversation,
+                request.lastMessageAt(),
+                request.lastMessagePreview()
+        );
+
+        /*
+         * Snapshot unreadCount is authoritative only for a newly
+         * created Conversation.
+         *
+         * For an existing Conversation the value may already have
+         * been modified by realtime message processing. Replacing it
+         * with an older snapshot could lose unread state.
+         */
+        if (created) {
+            conversation.setUnreadCount(
+                    request.unreadCount()
+            );
+        }
+    }
+
+    @Override
     public MessageDto processOutbound(
             OutboundMessageRequest request,
             List<AttachmentContent> attachments
     ) {
+
         OutboundMessageTransactionService
                 .OutboundMessageTransactionResult result =
                 outboundMessageTransactionService.prepare(
@@ -175,6 +254,7 @@ public class MessageProcessingService
                 );
 
         try {
+
             outboundMessagePublisher.publish(
                     result.channelType(),
                     result.command()
@@ -183,6 +263,7 @@ public class MessageProcessingService
             return result.message();
 
         } catch (RuntimeException e) {
+
             try {
                 messageService.markDeliveryFailed(
                         result.messageId()
@@ -196,7 +277,10 @@ public class MessageProcessingService
     }
 
     @Override
-    public MessageDto retryOutbound(UUID messageId) {
+    public MessageDto retryOutbound(
+            UUID messageId
+    ) {
+
         OutboundMessageTransactionService
                 .OutboundMessageTransactionResult result =
                 outboundMessageTransactionService.prepareRetry(
@@ -204,6 +288,7 @@ public class MessageProcessingService
                 );
 
         try {
+
             outboundMessagePublisher.publish(
                     result.channelType(),
                     result.command()
@@ -212,6 +297,7 @@ public class MessageProcessingService
             return result.message();
 
         } catch (RuntimeException e) {
+
             try {
                 messageService.markDeliveryFailed(
                         result.messageId()
@@ -229,6 +315,7 @@ public class MessageProcessingService
     public MessageDto forwardMessage(
             ForwardMessageRequest request
     ) {
+
         MessageEntity sourceMessage =
                 messageService.getMessageEntity(
                         request.messageId()
@@ -312,6 +399,7 @@ public class MessageProcessingService
     public MessageDto processPlatformEvent(
             PlatformMessageEvent event
     ) {
+
         if (event == null) {
             throw new IllegalArgumentException(
                     "PlatformMessageEvent must not be null"

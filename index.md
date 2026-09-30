@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-09-30 17:01:36
+- Generated: 2026-09-30 23:29:08
 - Branch: `main`
-- Commit: `ad4afac`
+- Commit: `1203bc1`
 
 ## Project Structure
 
@@ -48,6 +48,7 @@
 - `ConversationDto.java` — `common/src/main/java/kit/penny/clientbus/common/dto/conversation/ConversationDto.java`
 - `CreateConversationRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/conversation/CreateConversationRequest.java`
 - `CreateOutboundConversationRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/conversation/CreateOutboundConversationRequest.java`
+- `PlatformConversationRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/conversation/PlatformConversationRequest.java`
 
 ##### `kit.penny.clientbus.common.dto.employee`
 
@@ -107,11 +108,7 @@
 - `OutboundMessageKafkaCommand.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/OutboundMessageKafkaCommand.java`
 - `PlatformMessageKafkaEvent.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/PlatformMessageKafkaEvent.java`
 - `PlatformOutboundAttachment.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/PlatformOutboundAttachment.java`
-
-#### `src/main/resources`
-
-
-#### `src/test/java`
+- `SyncRecentChatsKafkaCommand.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/SyncRecentChatsKafkaCommand.java`
 
 ### server
 
@@ -226,19 +223,25 @@
 - `IPlatformEventConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/IPlatformEventConsumer.java`
 - `KafkaChannelReadConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaChannelReadConsumer.java`
 - `KafkaOutboundMessageConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaOutboundMessageConsumer.java`
+- `KafkaPlatformConversationConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaPlatformConversationConsumer.java`
 - `KafkaPlatformEventConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaPlatformEventConsumer.java`
 - `KafkaPlatformMessageConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaPlatformMessageConsumer.java`
+- `KafkaSyncRecentChatsConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaSyncRecentChatsConsumer.java`
 
 ##### `kit.penny.clientbus.server.kafka.producer`
 
 - `IChannelReadPublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/IChannelReadPublisher.java`
 - `IOutboundMessagePublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/IOutboundMessagePublisher.java`
+- `IPlatformConversationPublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/IPlatformConversationPublisher.java`
 - `IPlatformEventPublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/IPlatformEventPublisher.java`
 - `IPlatformMessagePublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/IPlatformMessagePublisher.java`
+- `ISyncRecentChatsCommandPublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/ISyncRecentChatsCommandPublisher.java`
 - `KafkaChannelReadPublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/KafkaChannelReadPublisher.java`
 - `KafkaOutboundMessagePublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/KafkaOutboundMessagePublisher.java`
+- `KafkaPlatformConversationPublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/KafkaPlatformConversationPublisher.java`
 - `KafkaPlatformEventPublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/KafkaPlatformEventPublisher.java`
 - `KafkaPlatformMessagePublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/KafkaPlatformMessagePublisher.java`
+- `KafkaSyncRecentChatsCommandPublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/KafkaSyncRecentChatsCommandPublisher.java`
 
 ##### `kit.penny.clientbus.server.kafka.routing`
 
@@ -432,6 +435,7 @@
 - `ChannelRepositoryTest.java` — `server/src/test/java/kit/penny/clientbus/server/persistence/repository/ChannelRepositoryTest.java`
 - `ClientAccountRepositoryTest.java` — `server/src/test/java/kit/penny/clientbus/server/persistence/repository/ClientAccountRepositoryTest.java`
 - `ClientRepositoryTest.java` — `server/src/test/java/kit/penny/clientbus/server/persistence/repository/ClientRepositoryTest.java`
+- `MessageRepositoryIdempotencyTest.java` — `server/src/test/java/kit/penny/clientbus/server/persistence/repository/MessageRepositoryIdempotencyTest.java`
 
 ##### `kit.penny.clientbus.server.security.jwt`
 
@@ -448,6 +452,7 @@
 - `ChannelServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/ChannelServiceTest.java`
 - `ClientAccountServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/ClientAccountServiceTest.java`
 - `ClientServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/ClientServiceTest.java`
+- `ConversationServiceOrderingTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/ConversationServiceOrderingTest.java`
 - `MessageAttachmentServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/MessageAttachmentServiceTest.java`
 - `MessageProcessingServiceIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/MessageProcessingServiceIntegrationTest.java`
 - `MessageProcessingServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/MessageProcessingServiceTest.java`
@@ -575,7 +580,7 @@
 ## Summary
 
 - Maven modules: 3
-- Java files: 246
+- Java files: 256
 - UI source files: 95
-- Git commit: `ad4afac`
+- Git commit: `1203bc1`
 

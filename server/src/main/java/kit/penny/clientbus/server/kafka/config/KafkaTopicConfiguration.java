@@ -47,6 +47,26 @@ public class KafkaTopicConfiguration {
     }
 
     @Bean
+    public NewTopic platformConversationsTopic() {
+        return new NewTopic(
+                KafkaTopicNames.platformConversations(),
+                PARTITIONS,
+                REPLICATION_FACTOR
+        );
+    }
+
+    @Bean
+    public NewTopic platformConversationsDlqTopic() {
+        return new NewTopic(
+                KafkaTopicNames.dlq(
+                        KafkaTopicNames.platformConversations()
+                ),
+                1,
+                REPLICATION_FACTOR
+        );
+    }
+
+    @Bean
     public NewTopic platformEventsTopic() {
         return new NewTopic(
                 KafkaTopicNames.platformEvents(),
@@ -68,6 +88,7 @@ public class KafkaTopicConfiguration {
 
     @Bean
     public List<NewTopic> outboundTopics() {
+
         List<NewTopic> topics =
                 new ArrayList<>();
 
@@ -90,6 +111,7 @@ public class KafkaTopicConfiguration {
 
     @Bean
     public List<NewTopic> outboundDlqTopics() {
+
         List<NewTopic> topics =
                 new ArrayList<>();
 
@@ -157,6 +179,55 @@ public class KafkaTopicConfiguration {
                             KafkaTopicNames.dlq(
                                     channelReadTopic
                             ),
+                            1,
+                            REPLICATION_FACTOR
+                    )
+            );
+        }
+
+        return topics;
+    }
+
+    @Bean
+    public List<NewTopic> channelCommandTopics() {
+
+        List<NewTopic> topics =
+                new ArrayList<>();
+
+        for (ChannelType channelType :
+                enabledOutboundChannels) {
+
+            topics.add(
+                    new NewTopic(
+                            KafkaTopicNames.channelCommand(
+                                    channelType
+                            ),
+                            PARTITIONS,
+                            REPLICATION_FACTOR
+                    )
+            );
+        }
+
+        return topics;
+    }
+
+    @Bean
+    public List<NewTopic> channelCommandDlqTopics() {
+
+        List<NewTopic> topics =
+                new ArrayList<>();
+
+        for (ChannelType channelType :
+                enabledOutboundChannels) {
+
+            String topic =
+                    KafkaTopicNames.channelCommand(
+                            channelType
+                    );
+
+            topics.add(
+                    new NewTopic(
+                            KafkaTopicNames.dlq(topic),
                             1,
                             REPLICATION_FACTOR
                     )

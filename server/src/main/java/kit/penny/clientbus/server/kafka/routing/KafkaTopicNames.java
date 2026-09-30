@@ -12,11 +12,18 @@ public final class KafkaTopicNames {
     private static final String CHANNEL_READ_PREFIX =
             PREFIX + ".channel-read.";
 
+    private static final String CHANNEL_COMMAND_PREFIX =
+            PREFIX + ".channel-command.";
+
     private KafkaTopicNames() {
     }
 
     public static String platformMessages() {
         return PREFIX + ".platform-messages";
+    }
+
+    public static String platformConversations() {
+        return PREFIX + ".platform-conversations";
     }
 
     public static String platformEvents() {
@@ -138,6 +145,65 @@ public final class KafkaTopicNames {
     public static String outboundPattern() {
         return "^"
                 + OUTBOUND_PREFIX.replace(".", "\\.")
+                + "[^.]+$";
+    }
+
+    public static String channelCommand(
+            ChannelType channelType
+    ) {
+        if (channelType == null) {
+            throw new IllegalArgumentException(
+                    "ChannelType must not be null"
+            );
+        }
+
+        return CHANNEL_COMMAND_PREFIX
+                + channelType.name().toLowerCase();
+    }
+
+    public static ChannelType channelCommandChannelType(
+            String topic
+    ) {
+        if (topic == null || topic.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Topic must not be blank"
+            );
+        }
+
+        if (!topic.startsWith(CHANNEL_COMMAND_PREFIX)) {
+            throw new IllegalArgumentException(
+                    "Not a channel-command topic: " + topic
+            );
+        }
+
+        String channelTypeName =
+                topic.substring(
+                        CHANNEL_COMMAND_PREFIX.length()
+                );
+
+        if (channelTypeName.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Channel-command topic does not contain channel type: "
+                            + topic
+            );
+        }
+
+        try {
+            return ChannelType.valueOf(
+                    channelTypeName.toUpperCase()
+            );
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(
+                    "Unknown channel type in channel-command topic: "
+                            + topic,
+                    e
+            );
+        }
+    }
+
+    public static String channelCommandPattern() {
+        return "^"
+                + CHANNEL_COMMAND_PREFIX.replace(".", "\\.")
                 + "[^.]+$";
     }
 

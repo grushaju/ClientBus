@@ -64,7 +64,7 @@ public class KafkaOutboundMessageConsumer {
         UUID messageId =
                 kafkaCommand.messageId();
 
-        log.info(
+        log.debug(
                 "Processing outbound message: messageId={}, " +
                         "channelType={}, topic={}, type={}, contentPresent={}, " +
                         "attachmentCount={}",

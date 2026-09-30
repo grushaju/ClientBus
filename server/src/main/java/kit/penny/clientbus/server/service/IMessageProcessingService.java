@@ -1,5 +1,6 @@
 package kit.penny.clientbus.server.service;
 
+import kit.penny.clientbus.common.dto.conversation.PlatformConversationRequest;
 import kit.penny.clientbus.common.dto.message.*;
 
 import java.util.List;
@@ -11,9 +12,18 @@ public interface IMessageProcessingService {
      * Обрабатывает входящее сообщение от ChannelConnector
      * вместе с его вложениями.
      */
-
     MessageDto processPlatformMessage(
             PlatformMessageRequest request
+    );
+
+    /**
+     * Обрабатывает snapshot Conversation,
+     * полученный от ChannelConnector.
+     *
+     * Message при этом не создаётся.
+     */
+    void processPlatformConversation(
+            PlatformConversationRequest request
     );
 
     /**
@@ -28,9 +38,6 @@ public interface IMessageProcessingService {
     /**
      * Форвардит существующее сообщение
      * в другой Conversation.
-     * <p>
-     * Attachments исходного сообщения будут обработаны
-     * внутри orchestration layer.
      */
     MessageDto forwardMessage(
             ForwardMessageRequest request
@@ -39,9 +46,6 @@ public interface IMessageProcessingService {
     /**
      * Обрабатывает lifecycle-событие
      * от внешней платформы.
-     * <p>
-     * Событие идентифицирует Message
-     * через channelAccountId + externalId.
      */
     MessageDto processPlatformEvent(
             PlatformMessageEvent event
@@ -49,11 +53,9 @@ public interface IMessageProcessingService {
 
     /**
      * Повторно отправляет сообщения
-     * со статусом FAILED
-     * @param messageId  - ID существующего сообщения
+     * со статусом FAILED.
      */
     MessageDto retryOutbound(
             UUID messageId
     );
-
 }

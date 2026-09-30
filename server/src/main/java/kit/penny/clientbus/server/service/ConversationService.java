@@ -880,9 +880,9 @@ public class ConversationService {
                                     .getExternalId()
                     )
             );
-        }
 
-        conversation.setUnreadCount(0);
+            conversation.setUnreadCount(0);
+        }
 
         return conversationMapper.toDto(
                 conversation
