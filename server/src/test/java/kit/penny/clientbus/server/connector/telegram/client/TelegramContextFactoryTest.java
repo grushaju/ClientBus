@@ -68,6 +68,8 @@ class TelegramContextFactoryTest {
                 Mockito.mock(MessageRepository.class);
         IAttachmentStorage attachmentStorage =
                 Mockito.mock(IAttachmentStorage.class);
+        IPlatformMessagePublisher platformMessagePublisher =
+                Mockito.mock(IPlatformMessagePublisher.class);
 
         TelegramContextFactory factory =
                 new TelegramContextFactory(
@@ -77,7 +79,8 @@ class TelegramContextFactoryTest {
                         conversationRepository,
                         messageService,
                         messageRepository,
-                        attachmentStorage
+                        attachmentStorage,
+                        platformMessagePublisher
                 );
 
         UUID accountA = UUID.randomUUID();
@@ -225,6 +228,9 @@ class TelegramContextFactoryTest {
         IAttachmentStorage attachmentStorage =
                 Mockito.mock(IAttachmentStorage.class);
 
+        IPlatformMessagePublisher platformMessagePublisher =
+                Mockito.mock(IPlatformMessagePublisher.class);
+
         TelegramContextFactory factory =
                 new TelegramContextFactory(
                         globalProperties,
@@ -233,7 +239,8 @@ class TelegramContextFactoryTest {
                         conversationRepository,
                         messageService,
                         messageRepository,
-                        attachmentStorage
+                        attachmentStorage,
+                        platformMessagePublisher
                 );
 
         UUID accountA = UUID.randomUUID();

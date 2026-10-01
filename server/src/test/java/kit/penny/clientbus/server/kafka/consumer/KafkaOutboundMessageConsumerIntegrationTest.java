@@ -603,7 +603,7 @@ class KafkaOutboundMessageConsumerIntegrationTest
                         AdminClient.create(
                                 Map.of(
                                         "bootstrap.servers",
-                                        "localhost:9092"
+                                        getKafkaBootstrapServers()
                                 )
                         )
         ) {

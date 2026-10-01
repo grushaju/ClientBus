@@ -1,20 +1,13 @@
 package kit.penny.clientbus.server.kafka.consumer;
 
-import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.common.enums.MessageType;
 import kit.penny.clientbus.common.kafka.KafkaEvent;
 import kit.penny.clientbus.common.kafka.KafkaEventType;
 import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
-import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
 import kit.penny.clientbus.server.connector.IChannelConnector;
 import kit.penny.clientbus.server.connector.command.SendMessageCommand;
 import kit.penny.clientbus.server.integration.AbstractIntegrationTest;
-import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
-import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
 import kit.penny.clientbus.server.persistence.repository.MessageRepository;
-import kit.penny.clientbus.server.persistence.repository.OrganizationRepository;
-import kit.penny.clientbus.server.persistence.repository.WorkspaceRepository;
-import kit.penny.clientbus.server.service.MessageService;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.junit.jupiter.api.BeforeEach;
@@ -62,26 +55,9 @@ class KafkaOutboundMessageConsumerDlqIntegrationTest
     @Autowired
     private MessageRepository messageRepository;
 
-    @Autowired
-    private MessageService messageService;
-
-    @MockitoBean
-    private ChannelConnectorRegistry channelConnectorRegistry;
-
     @MockitoBean
     private IChannelConnector channelConnector;
 
-    @Autowired
-    private OrganizationRepository organizationRepository;
-
-    @Autowired
-    private WorkspaceRepository workspaceRepository;
-
-    @Autowired
-    private ChannelRepository channelRepository;
-
-    @Autowired
-    private ChannelAccountRepository channelAccountRepository;
 
     @DynamicPropertySource
     static void kafkaProperties(
@@ -166,7 +142,7 @@ class KafkaOutboundMessageConsumerDlqIntegrationTest
                         AdminClient.create(
                                 Map.of(
                                         "bootstrap.servers",
-                                        "localhost:9092"
+                                        getKafkaBootstrapServers()
                                 )
                         )
         ) {

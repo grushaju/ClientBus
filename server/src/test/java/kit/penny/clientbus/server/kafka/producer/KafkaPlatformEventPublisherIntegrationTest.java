@@ -35,9 +35,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 class KafkaPlatformEventPublisherIntegrationTest
         extends AbstractIntegrationTest {
 
-    private static final String KAFKA_BOOTSTRAP_SERVERS =
-            "localhost:9092";
-
     private static final String CONSUMER_GROUP_ID =
             "clientbus.platform-events.integration-test";
 
@@ -224,7 +221,7 @@ class KafkaPlatformEventPublisherIntegrationTest
 
         properties.put(
                 ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG,
-                KAFKA_BOOTSTRAP_SERVERS
+                getKafkaBootstrapServers()
         );
 
         properties.put(

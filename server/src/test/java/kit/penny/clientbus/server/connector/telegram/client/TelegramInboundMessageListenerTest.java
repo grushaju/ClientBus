@@ -1,6 +1,7 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
 import kit.penny.clientbus.common.dto.message.PlatformMessageRequest;
+import kit.penny.clientbus.server.kafka.producer.KafkaPlatformMessagePublisher;
 import org.drinkless.tdlib.TdApi;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -31,6 +32,9 @@ class TelegramInboundMessageListenerTest {
     @Mock
     private TelegramInboundMessageProcessor messageProcessor;
 
+    @Mock
+    private KafkaPlatformMessagePublisher platformMessagePublisher;
+
     private TelegramInboundMessageListener listener;
 
     @BeforeEach
@@ -38,7 +42,8 @@ class TelegramInboundMessageListenerTest {
         listener =
                 new TelegramInboundMessageListener(
                         CHANNEL_ACCOUNT_ID,
-                        messageProcessor
+                        messageProcessor,
+                        platformMessagePublisher
                 );
     }
 

@@ -645,7 +645,8 @@ public class TelegramChannelConnector
             TdApi.InputMessageContent content =
                     contentFactory.create(
                             inputFile,
-                            command
+                            command,
+                            attachment.fileName()
                     );
 
             TdApi.Message message =
@@ -707,7 +708,8 @@ public class TelegramChannelConnector
 
     private TdApi.InputMessageContent createImageContent(
             TdApi.InputFileLocal inputFile,
-            SendMessageCommand command
+            SendMessageCommand command,
+            String fileName
     ) {
         TdApi.InputPhoto inputPhoto =
                 new TdApi.InputPhoto(
@@ -730,14 +732,15 @@ public class TelegramChannelConnector
 
     private TdApi.InputMessageContent createAudioContent(
             TdApi.InputFileLocal inputFile,
-            SendMessageCommand command
+            SendMessageCommand command,
+            String fileName
     ) {
         TdApi.InputAudio inputAudio =
                 new TdApi.InputAudio(
                         inputFile,
                         null,
                         0,
-                        "",
+                        fileName,
                         ""
                 );
 
@@ -961,7 +964,8 @@ public class TelegramChannelConnector
 
         TdApi.InputMessageContent create(
                 TdApi.InputFileLocal inputFile,
-                SendMessageCommand command
+                SendMessageCommand command,
+                String fileName
         );
     }
 }

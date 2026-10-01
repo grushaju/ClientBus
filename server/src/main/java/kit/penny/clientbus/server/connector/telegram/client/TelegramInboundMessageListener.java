@@ -1,5 +1,6 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
+import kit.penny.clientbus.server.kafka.producer.IPlatformMessagePublisher;
 import kit.penny.tdlib.updates.ITdlibUpdateListener;
 import org.drinkless.tdlib.TdApi;
 import org.slf4j.Logger;
@@ -20,12 +21,16 @@ public class TelegramInboundMessageListener
     private final TelegramInboundMessageProcessor
             messageProcessor;
 
+    private final IPlatformMessagePublisher platformMessagePublisher;
+
     public TelegramInboundMessageListener(
             UUID channelAccountId,
-            TelegramInboundMessageProcessor messageProcessor
+            TelegramInboundMessageProcessor messageProcessor,
+            IPlatformMessagePublisher platformMessagePublisher
     ) {
         this.channelAccountId = channelAccountId;
         this.messageProcessor = messageProcessor;
+        this.platformMessagePublisher = platformMessagePublisher;
     }
 
     @Override
@@ -98,6 +103,13 @@ public class TelegramInboundMessageListener
                         channelAccountId,
                         message
                 )
+                .thenAccept(platformMessage -> {
+                    if (platformMessage == null) {
+                        return;
+                    }
+
+                    platformMessagePublisher.publish(platformMessage);
+                })
                 .exceptionally(error -> {
 
                     log.error(

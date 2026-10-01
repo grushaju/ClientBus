@@ -1,36 +1,41 @@
 package kit.penny.clientbus.server.integration;
 
-import com.github.dockerjava.api.model.ExposedPort;
-import com.github.dockerjava.api.model.PortBinding;
-import com.github.dockerjava.api.model.Ports;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-// import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.kafka.KafkaContainer;
 
-//@Testcontainers
 public abstract class AbstractIntegrationTest {
 
-    @Container
     protected static final PostgreSQLContainer<?> postgres =
             new PostgreSQLContainer<>("postgres:16-alpine")
                     .withDatabaseName("clientbus")
                     .withUsername("clientbus")
                     .withPassword("clientbus")
-                    //.withReuse(true)
                     .withExposedPorts(5432)
                     .withCreateContainerCmdModifier(cmd ->
                             cmd.withName("clientbus-postgres-test")
                                     .getHostConfig()
                                     .withPortBindings(
-                                            PortBinding.parse("15432:5432")
+                                            com.github.dockerjava.api.model.PortBinding.parse(
+                                                    "15432:5432"
+                                            )
                                     )
                     );
-                    //.withExposedPorts(15432);
+
+    protected static final KafkaContainer kafka =
+            new KafkaContainer("apache/kafka-native:3.8.0")
+                    .withCreateContainerCmdModifier(cmd ->
+                            cmd.withName("clientbus-kafka-test")
+                    );
 
     static {
         postgres.start();
+        kafka.start();
+    }
+
+    protected static String getKafkaBootstrapServers() {
+        return kafka.getBootstrapServers();
     }
 
     @DynamicPropertySource
@@ -61,6 +66,11 @@ public abstract class AbstractIntegrationTest {
         registry.add(
                 "spring.datasource.hikari.schema",
                 () -> "dbo"
+        );
+
+        registry.add(
+                "spring.kafka.bootstrap-servers",
+                kafka::getBootstrapServers
         );
     }
 }

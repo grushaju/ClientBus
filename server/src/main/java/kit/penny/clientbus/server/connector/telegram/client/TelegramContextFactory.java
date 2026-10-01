@@ -1,6 +1,8 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
 import kit.penny.clientbus.server.connector.telegram.config.TelegramClientConfiguration;
+import kit.penny.clientbus.server.kafka.producer.IPlatformMessagePublisher;
+import kit.penny.clientbus.server.kafka.producer.KafkaPlatformMessagePublisher;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
 import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
@@ -61,6 +63,8 @@ public class TelegramContextFactory {
 
     private final IAttachmentStorage attachmentStorage;
 
+    private final IPlatformMessagePublisher platformMessagePublisher;
+
     public TelegramContextFactory(
             TelegramProperties globalProperties,
             ChannelAccountRepository channelAccountRepository,
@@ -68,7 +72,7 @@ public class TelegramContextFactory {
             ConversationRepository conversationRepository,
             MessageService messageService,
             MessageRepository messageRepository,
-            IAttachmentStorage attachmentStorage
+            IAttachmentStorage attachmentStorage, IPlatformMessagePublisher platformMessagePublisher
     ) {
         this.globalProperties =
                 globalProperties;
@@ -90,6 +94,7 @@ public class TelegramContextFactory {
 
         this.attachmentStorage =
                 attachmentStorage;
+        this.platformMessagePublisher = platformMessagePublisher;
     }
 
     public TelegramClientContext create(
@@ -299,9 +304,12 @@ public class TelegramContextFactory {
                         TelegramInboundMessageProcessor.class
                 );
 
+
+
         return new TelegramInboundMessageListener(
                 channelAccountId,
-                messageProcessor
+                messageProcessor,
+                platformMessagePublisher
         );
     }
 

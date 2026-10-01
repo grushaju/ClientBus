@@ -88,9 +88,6 @@ class KafkaOutboundMessageFailureIntegrationTest
     private static final String EXTERNAL_MESSAGE_ID =
             "telegram-external-message-recovered";
 
-    private static final String BOOTSTRAP_SERVERS =
-            "localhost:9092";
-
     @Autowired
     private KafkaTemplate<String, Object> kafkaTemplate;
 
@@ -583,7 +580,7 @@ class KafkaOutboundMessageFailureIntegrationTest
                         AdminClient.create(
                                 Map.of(
                                         "bootstrap.servers",
-                                        BOOTSTRAP_SERVERS
+                                        getKafkaBootstrapServers()
                                 )
                         )
         ) {
@@ -774,7 +771,7 @@ class KafkaOutboundMessageFailureIntegrationTest
 
         properties.put(
                 ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG,
-                BOOTSTRAP_SERVERS
+                getKafkaBootstrapServers()
         );
 
         properties.put(
