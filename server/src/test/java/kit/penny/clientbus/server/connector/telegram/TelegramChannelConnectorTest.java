@@ -47,12 +47,16 @@ class TelegramChannelConnectorTest {
     @Mock
     private TelegramClient telegramClient;
 
+    @Mock
+    private TelegramConversationMapper telegramConversationMapper;
+
     private TelegramChannelConnector connector;
 
     @BeforeEach
     void setUp() {
         connector = new TelegramChannelConnector(
-                telegramClientManager
+                telegramClientManager,
+                telegramConversationMapper
         );
     }
 

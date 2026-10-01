@@ -1,5 +1,6 @@
 package kit.penny.clientbus.server.kafka.consumer;
 
+import kit.penny.clientbus.common.dto.conversation.PlatformConversationRequest;
 import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.common.kafka.KafkaEvent;
 import kit.penny.clientbus.common.kafka.KafkaEventType;
@@ -7,12 +8,14 @@ import kit.penny.clientbus.common.kafka.SyncRecentChatsKafkaCommand;
 import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
 import kit.penny.clientbus.server.connector.IChannelConnector;
 import kit.penny.clientbus.server.connector.command.SyncRecentChatsCommand;
+import kit.penny.clientbus.server.kafka.producer.IPlatformConversationPublisher;
 import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
-import org.apache.kafka.common.header.Headers;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
+
+import java.util.List;
 
 @Component
 public class KafkaSyncRecentChatsConsumer {
@@ -20,11 +23,18 @@ public class KafkaSyncRecentChatsConsumer {
     private final ChannelConnectorRegistry
             channelConnectorRegistry;
 
+    private final IPlatformConversationPublisher
+            platformConversationPublisher;
+
     public KafkaSyncRecentChatsConsumer(
-            ChannelConnectorRegistry channelConnectorRegistry
+            ChannelConnectorRegistry channelConnectorRegistry,
+            IPlatformConversationPublisher platformConversationPublisher
     ) {
         this.channelConnectorRegistry =
                 channelConnectorRegistry;
+
+        this.platformConversationPublisher =
+                platformConversationPublisher;
     }
 
     @KafkaListener(
@@ -78,6 +88,18 @@ public class KafkaSyncRecentChatsConsumer {
                         channelType
                 );
 
-        connector.handle(command);
+        List<PlatformConversationRequest> conversations =
+                connector.handle(command);
+
+        if (conversations == null
+                || conversations.isEmpty()) {
+            return;
+        }
+
+        for (PlatformConversationRequest conversation : conversations) {
+            platformConversationPublisher.publish(
+                    conversation
+            );
+        }
     }
 }

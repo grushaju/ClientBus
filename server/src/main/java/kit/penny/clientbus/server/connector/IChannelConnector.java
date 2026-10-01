@@ -1,11 +1,14 @@
 package kit.penny.clientbus.server.connector;
 
+import kit.penny.clientbus.common.dto.conversation.PlatformConversationRequest;
 import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.server.connector.command.MarkMessagesReadCommand;
 import kit.penny.clientbus.server.connector.command.SendMessageCommand;
 import kit.penny.clientbus.server.connector.command.SyncAccountCommand;
 import kit.penny.clientbus.server.connector.command.SyncConversationHistoryCommand;
 import kit.penny.clientbus.server.connector.command.SyncRecentChatsCommand;
+
+import java.util.List;
 
 public interface IChannelConnector {
 
@@ -21,7 +24,7 @@ public interface IChannelConnector {
             MarkMessagesReadCommand command
     );
 
-    void handle(
+    List<PlatformConversationRequest> handle(
             SyncRecentChatsCommand command
     );
 

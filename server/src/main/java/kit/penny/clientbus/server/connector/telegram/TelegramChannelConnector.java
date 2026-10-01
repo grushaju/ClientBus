@@ -27,6 +27,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -43,11 +44,17 @@ public class TelegramChannelConnector
 
     private final TelegramClientManager telegramClientManager;
 
+    private final TelegramConversationMapper telegramConversationMapper;
+
     public TelegramChannelConnector(
-            TelegramClientManager telegramClientManager
+            TelegramClientManager telegramClientManager,
+            TelegramConversationMapper telegramConversationMapper
     ) {
         this.telegramClientManager =
                 telegramClientManager;
+
+        this.telegramConversationMapper =
+                telegramConversationMapper;
     }
 
     @Override
@@ -142,7 +149,7 @@ public class TelegramChannelConnector
     }
 
     @Override
-    public void handle(
+    public List<PlatformConversationRequest> handle(
             SyncRecentChatsCommand command
     ) {
 
@@ -176,18 +183,26 @@ public class TelegramChannelConnector
                     command.channelAccountId()
             );
 
-            return;
+            return List.of();
         }
+
+        List<PlatformConversationRequest> conversations =
+                new ArrayList<>();
 
         for (long chatId : chats.chatIds) {
 
             try {
 
-                syncChat(
-                        telegramClient,
-                        command.channelAccountId(),
-                        chatId
-                );
+                PlatformConversationRequest conversation =
+                        syncChat(
+                                telegramClient,
+                                command.channelAccountId(),
+                                chatId
+                        );
+
+                if (conversation != null) {
+                    conversations.add(conversation);
+                }
 
             } catch (RuntimeException e) {
 
@@ -207,13 +222,17 @@ public class TelegramChannelConnector
 
         log.info(
                 "Telegram recent chats synchronization completed: " +
-                        "channelAccountId={}, chatCount={}",
+                        "channelAccountId={}, fetchedChatCount={}, " +
+                        "conversationCount={}",
                 command.channelAccountId(),
-                chats.chatIds.length
+                chats.chatIds.length,
+                conversations.size()
         );
+
+        return List.copyOf(conversations);
     }
 
-    private void syncChat(
+    private PlatformConversationRequest syncChat(
             TelegramClient telegramClient,
             UUID channelAccountId,
             long chatId
@@ -227,13 +246,15 @@ public class TelegramChannelConnector
                         .getObjectOrThrow();
 
         if (chat == null) {
+
             log.warn(
                     "Telegram chat response is empty: " +
                             "channelAccountId={}, chatId={}",
                     channelAccountId,
                     chatId
             );
-            return;
+
+            return null;
         }
 
         if (!(chat.type
@@ -251,7 +272,7 @@ public class TelegramChannelConnector
                             .getSimpleName()
             );
 
-            return;
+            return null;
         }
 
         TdApi.User user =
@@ -264,6 +285,7 @@ public class TelegramChannelConnector
                         .getObjectOrThrow();
 
         if (user == null) {
+
             log.warn(
                     "Telegram user response is empty: " +
                             "channelAccountId={}, userId={}, chatId={}",
@@ -271,32 +293,17 @@ public class TelegramChannelConnector
                     privateChat.userId,
                     chatId
             );
-            return;
+
+            return null;
         }
 
-        PlatformConversationRequest request =
-                new PlatformConversationRequest(
-                        channelAccountId,
-                        Long.toString(user.id),
-                        extractUsername(user),
-                        user.phoneNumber,
-                        buildDisplayName(
-                                user.firstName,
-                                user.lastName
-                        ),
-                        extractLastMessageAt(
-                                chat.lastMessage
-                        ),
-                        extractLastMessagePreview(
-                                chat.lastMessage
-                        ),
-                        chat.unreadCount
-                );
-
-        platformConversationPublisher.publish(
-                request
+        return telegramConversationMapper.map(
+                channelAccountId,
+                chat,
+                user
         );
     }
+
 
     private Instant extractLastMessageAt(
             TdApi.Message message

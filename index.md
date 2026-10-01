@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-09-30 23:29:08
+- Generated: 2026-10-01 12:23:14
 - Branch: `main`
-- Commit: `1203bc1`
+- Commit: `779682f`
 
 ## Project Structure
 
@@ -155,6 +155,7 @@
 ##### `kit.penny.clientbus.server.connector.telegram`
 
 - `TelegramChannelConnector.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/TelegramChannelConnector.java`
+- `TelegramConversationMapper.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/TelegramConversationMapper.java`
 
 ##### `kit.penny.clientbus.server.connector.telegram.account`
 
@@ -580,7 +581,7 @@
 ## Summary
 
 - Maven modules: 3
-- Java files: 256
+- Java files: 257
 - UI source files: 95
-- Git commit: `1203bc1`
+- Git commit: `779682f`
 
