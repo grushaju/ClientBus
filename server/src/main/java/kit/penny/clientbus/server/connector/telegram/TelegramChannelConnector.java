@@ -50,13 +50,9 @@ public class TelegramChannelConnector
 
     private final TelegramConversationMapper telegramConversationMapper;
 
-    private final TelegramInboundMessageProcessor
-            telegramInboundMessageProcessor;
-
     public TelegramChannelConnector(
             TelegramClientManager telegramClientManager,
-            TelegramConversationMapper telegramConversationMapper,
-            TelegramInboundMessageProcessor telegramInboundMessageProcessor
+            TelegramConversationMapper telegramConversationMapper
     ) {
         this.telegramClientManager =
                 telegramClientManager;
@@ -64,8 +60,6 @@ public class TelegramChannelConnector
         this.telegramConversationMapper =
                 telegramConversationMapper;
 
-        this.telegramInboundMessageProcessor =
-                telegramInboundMessageProcessor;
     }
 
     @Override
@@ -296,6 +290,9 @@ public class TelegramChannelConnector
                 new ArrayList<>(
                         messages.messages.length
                 );
+
+        TelegramInboundMessageProcessor telegramInboundMessageProcessor = context.applicationContext()
+                .getBean(TelegramInboundMessageProcessor.class);
 
         for (TdApi.Message message : messages.messages) {
 

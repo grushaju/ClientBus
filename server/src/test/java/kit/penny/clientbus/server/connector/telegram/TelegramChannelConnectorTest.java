@@ -60,8 +60,7 @@ class TelegramChannelConnectorTest {
     void setUp() {
         connector = new TelegramChannelConnector(
                 telegramClientManager,
-                telegramConversationMapper,
-                telegramInboundMessageProcessor
+                telegramConversationMapper
         );
     }
 

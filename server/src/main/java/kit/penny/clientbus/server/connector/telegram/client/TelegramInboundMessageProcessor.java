@@ -174,6 +174,7 @@ public class TelegramInboundMessageProcessor {
                                 }
 
                                 return resolveContent(
+                                        channelAccountId,
                                         message
                                 ).thenApply(content -> {
 
@@ -194,6 +195,7 @@ public class TelegramInboundMessageProcessor {
     }
 
     private CompletableFuture<InboundContent> resolveContent(
+            UUID channelAccountId,
             TdApi.Message message
     ) {
         if (message.content
@@ -250,7 +252,7 @@ public class TelegramInboundMessageProcessor {
         log.debug(
                 "Ignoring unsupported Telegram message content: " +
                         "channelAccountId={}, messageId={}, contentType={}",
-                message.chatId,
+                channelAccountId,
                 message.id,
                 message.content == null
                         ? "null"

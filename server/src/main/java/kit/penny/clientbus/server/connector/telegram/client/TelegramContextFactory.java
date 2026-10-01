@@ -7,7 +7,9 @@ import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
 import kit.penny.clientbus.server.persistence.repository.ConversationRepository;
 import kit.penny.clientbus.server.persistence.repository.MessageRepository;
 import kit.penny.clientbus.server.service.MessageService;
+import kit.penny.clientbus.server.storage.IAttachmentStorage;
 import kit.penny.tdlib.properties.TelegramProperties;
+import kit.penny.tdlib.service.TelegramUserService;
 import kit.penny.tdlib.updates.ITdlibUpdateListener;
 import kit.penny.tdlib.updates.TelegramAuthorizationManager;
 import org.drinkless.tdlib.TdApi;
@@ -42,6 +44,9 @@ public class TelegramContextFactory {
     private static final String MESSAGE_SEND_FAILED_BEAN_NAME =
             "telegramMessageSendFailedListener";
 
+    private static final String INBOUND_MESSAGE_PROCESSOR_BEAN_NAME =
+            "telegramInboundMessageProcessor";
+
     private final TelegramProperties globalProperties;
 
     private final ChannelRepository channelRepository;
@@ -54,8 +59,7 @@ public class TelegramContextFactory {
 
     private final MessageService messageService;
 
-    private final TelegramInboundMessageProcessor
-            telegramInboundMessageProcessor;
+    private final IAttachmentStorage attachmentStorage;
 
     public TelegramContextFactory(
             TelegramProperties globalProperties,
@@ -64,7 +68,7 @@ public class TelegramContextFactory {
             ConversationRepository conversationRepository,
             MessageService messageService,
             MessageRepository messageRepository,
-            TelegramInboundMessageProcessor telegramInboundMessageProcessor
+            IAttachmentStorage attachmentStorage
     ) {
         this.globalProperties =
                 globalProperties;
@@ -84,8 +88,8 @@ public class TelegramContextFactory {
         this.messageRepository =
                 messageRepository;
 
-        this.telegramInboundMessageProcessor =
-                telegramInboundMessageProcessor;
+        this.attachmentStorage =
+                attachmentStorage;
     }
 
     public TelegramClientContext create(
@@ -170,6 +174,31 @@ public class TelegramContextFactory {
                         authorizationDefinition
                 );
 
+                if (registry.containsBeanDefinition(
+                        INBOUND_MESSAGE_BEAN_NAME
+                )) {
+                    registry.removeBeanDefinition(
+                            INBOUND_MESSAGE_BEAN_NAME
+                    );
+                }
+
+                RootBeanDefinition inboundMessageProcessorDefinition =
+                        new RootBeanDefinition(
+                                TelegramInboundMessageProcessor.class
+                        );
+
+                inboundMessageProcessorDefinition.setInstanceSupplier(
+                        () -> createInboundMessageProcessor(
+                                context
+                        )
+                );
+
+                registry.registerBeanDefinition(
+                        INBOUND_MESSAGE_PROCESSOR_BEAN_NAME,
+                        inboundMessageProcessorDefinition
+                );
+
+
                 RootBeanDefinition inboundMessageDefinition =
                         new RootBeanDefinition(
                                 ITdlibUpdateListener.class
@@ -177,6 +206,7 @@ public class TelegramContextFactory {
 
                 inboundMessageDefinition.setInstanceSupplier(
                         () -> createInboundMessageListener(
+                                context,
                                 channelAccountId
                         )
                 );
@@ -244,13 +274,34 @@ public class TelegramContextFactory {
         };
     }
 
+    private TelegramInboundMessageProcessor
+    createInboundMessageProcessor(
+            AnnotationConfigApplicationContext context
+    ) {
+        return new TelegramInboundMessageProcessor(
+                context.getBeanProvider(
+                        kit.penny.tdlib.client.TelegramClient.class
+                ),
+                context.getBean(
+                        TelegramUserService.class
+                ),
+                attachmentStorage
+        );
+    }
+
     private ITdlibUpdateListener<TdApi.UpdateNewMessage>
     createInboundMessageListener(
+            AnnotationConfigApplicationContext context,
             UUID channelAccountId
     ) {
+        TelegramInboundMessageProcessor messageProcessor =
+                context.getBean(
+                        TelegramInboundMessageProcessor.class
+                );
+
         return new TelegramInboundMessageListener(
                 channelAccountId,
-                telegramInboundMessageProcessor
+                messageProcessor
         );
     }
 
@@ -469,6 +520,19 @@ public class TelegramContextFactory {
                     PROPERTY_PREFIX + "proxy.http.http-only",
                     proxy.http().httpOnly()
             );
+        }
+
+        if (proxy.socks5() != null) {
+            properties.put(
+                    PROPERTY_PREFIX + "proxy.socks5.username",
+                    proxy.socks5().username()
+            );
+
+            properties.put(
+                    PROPERTY_PREFIX + "proxy.socks5.password",
+                    proxy.socks5().password()
+            );
+
         }
 
         if (proxy.socks5() != null) {
