@@ -7,6 +7,7 @@ import kit.penny.clientbus.server.connector.ConnectorSendResult;
 import kit.penny.clientbus.server.connector.command.SendMessageCommand;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientContext;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientManager;
+import kit.penny.clientbus.server.connector.telegram.client.TelegramInboundMessageProcessor;
 import kit.penny.clientbus.server.service.ChannelAttachment;
 import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.query.TdlibResponse;
@@ -50,13 +51,17 @@ class TelegramChannelConnectorTest {
     @Mock
     private TelegramConversationMapper telegramConversationMapper;
 
+    @Mock
+    private TelegramInboundMessageProcessor telegramInboundMessageProcessor;
+
     private TelegramChannelConnector connector;
 
     @BeforeEach
     void setUp() {
         connector = new TelegramChannelConnector(
                 telegramClientManager,
-                telegramConversationMapper
+                telegramConversationMapper,
+                telegramInboundMessageProcessor
         );
     }
 

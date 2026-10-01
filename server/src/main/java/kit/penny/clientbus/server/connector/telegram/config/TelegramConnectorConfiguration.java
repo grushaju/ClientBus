@@ -2,6 +2,7 @@ package kit.penny.clientbus.server.connector.telegram.config;
 
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientManager;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramContextFactory;
+import kit.penny.clientbus.server.connector.telegram.client.TelegramInboundMessageProcessor;
 import kit.penny.clientbus.server.kafka.producer.IPlatformMessagePublisher;
 import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
 import kit.penny.clientbus.server.persistence.repository.ConversationRepository;
@@ -25,8 +26,7 @@ public class TelegramConnectorConfiguration {
             ConversationRepository conversationRepository,
             MessageService messageService,
             MessageRepository messageRepository,
-            IPlatformMessagePublisher platformMessagePublisher,
-            IAttachmentStorage attachmentStorage
+            TelegramInboundMessageProcessor telegramInboundMessageProcessor
     ) {
         return new TelegramContextFactory(
                 properties,
@@ -35,8 +35,7 @@ public class TelegramConnectorConfiguration {
                 conversationRepository,
                 messageService,
                 messageRepository,
-                platformMessagePublisher,
-                attachmentStorage
+                telegramInboundMessageProcessor
         );
     }
 

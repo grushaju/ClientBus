@@ -66,10 +66,8 @@ class TelegramContextFactoryTest {
                 Mockito.mock(MessageService.class);
         MessageRepository messageRepository =
                 Mockito.mock(MessageRepository.class);
-        IPlatformMessagePublisher platformMessagePublisher =
-                Mockito.mock(IPlatformMessagePublisher.class);
-        IAttachmentStorage attachmentStorage =
-                Mockito.mock(IAttachmentStorage.class);
+        TelegramInboundMessageProcessor telegramInboundMessageProcessor =
+                Mockito.mock(TelegramInboundMessageProcessor.class);
 
         TelegramContextFactory factory =
                 new TelegramContextFactory(
@@ -79,8 +77,7 @@ class TelegramContextFactoryTest {
                         conversationRepository,
                         messageService,
                         messageRepository,
-                        platformMessagePublisher,
-                        attachmentStorage
+                        telegramInboundMessageProcessor
                 );
 
         UUID accountA = UUID.randomUUID();
@@ -225,10 +222,8 @@ class TelegramContextFactoryTest {
                 Mockito.mock(MessageService.class);
         MessageRepository messageRepository =
                 Mockito.mock(MessageRepository.class);
-        IPlatformMessagePublisher platformMessagePublisher =
-                Mockito.mock(IPlatformMessagePublisher.class);
-        IAttachmentStorage attachmentStorage =
-                Mockito.mock(IAttachmentStorage.class);
+        TelegramInboundMessageProcessor telegramInboundMessageProcessor =
+                Mockito.mock(TelegramInboundMessageProcessor.class);
 
         TelegramContextFactory factory =
                 new TelegramContextFactory(
@@ -238,8 +233,7 @@ class TelegramContextFactoryTest {
                         conversationRepository,
                         messageService,
                         messageRepository,
-                        platformMessagePublisher,
-                        attachmentStorage
+                        telegramInboundMessageProcessor
                 );
 
         UUID accountA = UUID.randomUUID();

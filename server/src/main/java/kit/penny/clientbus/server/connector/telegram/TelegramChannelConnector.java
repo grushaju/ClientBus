@@ -1,6 +1,7 @@
 package kit.penny.clientbus.server.connector.telegram;
 
 import kit.penny.clientbus.common.dto.conversation.PlatformConversationRequest;
+import kit.penny.clientbus.common.dto.message.PlatformMessageRequest;
 import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.common.enums.MessageAttachmentType;
 import kit.penny.clientbus.common.enums.MessageType;
@@ -13,7 +14,7 @@ import kit.penny.clientbus.server.connector.command.SyncConversationHistoryComma
 import kit.penny.clientbus.server.connector.command.SyncRecentChatsCommand;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientContext;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientManager;
-import kit.penny.clientbus.server.kafka.producer.IPlatformConversationPublisher;
+import kit.penny.clientbus.server.connector.telegram.client.TelegramInboundMessageProcessor;
 import kit.penny.clientbus.server.service.ChannelAttachment;
 import kit.penny.tdlib.client.TelegramClient;
 import org.drinkless.tdlib.TdApi;
@@ -26,7 +27,6 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -42,19 +42,30 @@ public class TelegramChannelConnector
 
     private static final int RECENT_CHATS_LIMIT = 100;
 
+    private static final int HISTORY_DEFAULT_LIMIT = 50;
+
+    private static final int HISTORY_MAX_LIMIT = 100;
+
     private final TelegramClientManager telegramClientManager;
 
     private final TelegramConversationMapper telegramConversationMapper;
 
+    private final TelegramInboundMessageProcessor
+            telegramInboundMessageProcessor;
+
     public TelegramChannelConnector(
             TelegramClientManager telegramClientManager,
-            TelegramConversationMapper telegramConversationMapper
+            TelegramConversationMapper telegramConversationMapper,
+            TelegramInboundMessageProcessor telegramInboundMessageProcessor
     ) {
         this.telegramClientManager =
                 telegramClientManager;
 
         this.telegramConversationMapper =
                 telegramConversationMapper;
+
+        this.telegramInboundMessageProcessor =
+                telegramInboundMessageProcessor;
     }
 
     @Override
@@ -68,7 +79,6 @@ public class TelegramChannelConnector
     public ConnectorSendResult handle(
             SendMessageCommand command
     ) {
-
         validateCommand(command);
 
         long chatId =
@@ -115,7 +125,6 @@ public class TelegramChannelConnector
     public void handle(
             MarkMessagesReadCommand command
     ) {
-
         validateReadCommand(command);
 
         long chatId =
@@ -133,10 +142,7 @@ public class TelegramChannelConnector
                         command.channelAccountId()
                 );
 
-        TelegramClient telegramClient =
-                context.telegramClient();
-
-        telegramClient
+        context.telegramClient()
                 .send(
                         new TdApi.ViewMessages(
                                 chatId,
@@ -152,7 +158,6 @@ public class TelegramChannelConnector
     public List<PlatformConversationRequest> handle(
             SyncRecentChatsCommand command
     ) {
-
         validateSyncRecentChatsCommand(command);
 
         TelegramClientContext context =
@@ -192,7 +197,6 @@ public class TelegramChannelConnector
         for (long chatId : chats.chatIds) {
 
             try {
-
                 PlatformConversationRequest conversation =
                         syncChat(
                                 telegramClient,
@@ -205,11 +209,6 @@ public class TelegramChannelConnector
                 }
 
             } catch (RuntimeException e) {
-
-                /*
-                 * A single chat must not abort the complete
-                 * recent-chats snapshot.
-                 */
                 log.warn(
                         "Failed to synchronize Telegram chat: " +
                                 "channelAccountId={}, chatId={}",
@@ -232,12 +231,148 @@ public class TelegramChannelConnector
         return List.copyOf(conversations);
     }
 
+    @Override
+    public List<PlatformMessageRequest> handle(
+            SyncConversationHistoryCommand command
+    ) {
+        validateSyncConversationHistoryCommand(command);
+
+        TelegramClientContext context =
+                telegramClientManager.require(
+                        command.channelAccountId()
+                );
+
+        TelegramClient telegramClient =
+                context.telegramClient();
+
+        long chatId =
+                parseChatId(
+                        command.conversationExternalId()
+                );
+
+        int limit =
+                normalizeHistoryLimit(
+                        command.limit()
+                );
+
+        long beforeMessageId =
+                command.beforeExternalId() == null
+                        || command.beforeExternalId().isBlank()
+                        ? 0
+                        : parseMessageId(
+                        command.beforeExternalId()
+                );
+
+        TdApi.Messages messages =
+                telegramClient
+                        .send(
+                                new TdApi.GetChatHistory(
+                                        chatId,
+                                        beforeMessageId,
+                                        0,
+                                        limit,
+                                        false
+                                )
+                        )
+                        .getObjectOrThrow();
+
+        if (messages == null
+                || messages.messages == null
+                || messages.messages.length == 0) {
+
+            log.debug(
+                    "Telegram conversation history returned no messages: " +
+                            "channelAccountId={}, chatId={}, beforeMessageId={}, limit={}",
+                    command.channelAccountId(),
+                    chatId,
+                    beforeMessageId,
+                    limit
+            );
+
+            return List.of();
+        }
+
+        List<PlatformMessageRequest> result =
+                new ArrayList<>(
+                        messages.messages.length
+                );
+
+        for (TdApi.Message message : messages.messages) {
+
+            if (message == null) {
+                continue;
+            }
+
+            /*
+             * TDLib may include the cursor message itself when
+             * fromMessageId is specified. It is a cursor, not part
+             * of the requested "before" page.
+             */
+            if (beforeMessageId != 0
+                    && message.id == beforeMessageId) {
+                continue;
+            }
+
+            try {
+                PlatformMessageRequest request =
+                        telegramInboundMessageProcessor
+                                .process(
+                                        command.channelAccountId(),
+                                        message
+                                )
+                                .join();
+
+                if (request != null) {
+                    result.add(request);
+                }
+
+            } catch (RuntimeException e) {
+                log.warn(
+                        "Failed to process Telegram history message: " +
+                                "channelAccountId={}, chatId={}, messageId={}",
+                        command.channelAccountId(),
+                        chatId,
+                        message.id,
+                        e
+                );
+            }
+        }
+
+        /*
+         * TDLib returns chat history newest -> oldest.
+         *
+         * ClientBus history consumers must receive the page in
+         * chronological order.
+         */
+        result.sort(
+                java.util.Comparator.comparing(
+                        PlatformMessageRequest::sentAt,
+                        java.util.Comparator.nullsLast(
+                                java.util.Comparator.naturalOrder()
+                        )
+                )
+        );
+
+        log.info(
+                "Telegram conversation history synchronization completed: " +
+                        "channelAccountId={}, chatId={}, beforeMessageId={}, " +
+                        "requestedLimit={}, fetchedMessages={}, processedMessages={}",
+                command.channelAccountId(),
+                chatId,
+                beforeMessageId,
+                limit,
+                messages.messages.length,
+                result.size()
+        );
+
+        return List.copyOf(result);
+    }
+
     private PlatformConversationRequest syncChat(
             TelegramClient telegramClient,
             UUID channelAccountId,
             long chatId
     ) {
-
         TdApi.Chat chat =
                 telegramClient
                         .send(
@@ -246,7 +381,6 @@ public class TelegramChannelConnector
                         .getObjectOrThrow();
 
         if (chat == null) {
-
             log.warn(
                     "Telegram chat response is empty: " +
                             "channelAccountId={}, chatId={}",
@@ -285,7 +419,6 @@ public class TelegramChannelConnector
                         .getObjectOrThrow();
 
         if (user == null) {
-
             log.warn(
                     "Telegram user response is empty: " +
                             "channelAccountId={}, userId={}, chatId={}",
@@ -304,136 +437,31 @@ public class TelegramChannelConnector
         );
     }
 
-
-    private Instant extractLastMessageAt(
-            TdApi.Message message
-    ) {
-
-        if (message == null) {
-            return null;
-        }
-
-        return Instant.ofEpochSecond(
-                message.date
-        );
-    }
-
-    private String extractLastMessagePreview(
-            TdApi.Message message
-    ) {
-
-        if (message == null
-                || message.content == null) {
-
-            return null;
-        }
-
-        if (message.content
-                instanceof TdApi.MessageText messageText) {
-
-            if (messageText.text == null) {
-                return null;
-            }
-
-            return messageText.text.text;
-        }
-
-        if (message.content
-                instanceof TdApi.MessagePhoto messagePhoto) {
-
-            return extractCaption(
-                    messagePhoto.caption
-            );
-        }
-
-        if (message.content
-                instanceof TdApi.MessageAudio messageAudio) {
-
-            return extractCaption(
-                    messageAudio.caption
-            );
-        }
-
-        return null;
-    }
-
-    private String extractCaption(
-            TdApi.FormattedText text
-    ) {
-
-        if (text == null) {
-            return null;
-        }
-
-        return text.text;
-    }
-
-    private String extractUsername(
-            TdApi.User user
-    ) {
-
-        if (user.usernames == null
-                || user.usernames.activeUsernames == null
-                || user.usernames.activeUsernames.length == 0) {
-
-            return null;
-        }
-
-        return user.usernames.activeUsernames[0];
-    }
-
-    private String buildDisplayName(
-            String firstName,
-            String lastName
-    ) {
-
-        String first =
-                firstName == null
-                        ? ""
-                        : firstName.trim();
-
-        String last =
-                lastName == null
-                        ? ""
-                        : lastName.trim();
-
-        if (first.isEmpty()) {
-            return last.isEmpty()
-                    ? null
-                    : last;
-        }
-
-        if (last.isEmpty()) {
-            return first;
-        }
-
-        return first + " " + last;
-    }
-
-    @Override
-    public void handle(
-            SyncConversationHistoryCommand command
-    ) {
-
-        throw new UnsupportedOperationException(
-                "Conversation history synchronization is not implemented yet"
-        );
-    }
-
     @Override
     public void handle(
             SyncAccountCommand command
     ) {
-
         throw new UnsupportedOperationException(
                 "Account synchronization is not implemented yet"
+        );
+    }
+
+    private int normalizeHistoryLimit(
+            int limit
+    ) {
+        if (limit <= 0) {
+            return HISTORY_DEFAULT_LIMIT;
+        }
+
+        return Math.min(
+                limit,
+                HISTORY_MAX_LIMIT
         );
     }
 
     private void validateSyncRecentChatsCommand(
             SyncRecentChatsCommand command
     ) {
-
         if (command == null) {
             throw new IllegalArgumentException(
                     "SyncRecentChatsCommand must not be null"
@@ -447,10 +475,39 @@ public class TelegramChannelConnector
         }
     }
 
+    private void validateSyncConversationHistoryCommand(
+            SyncConversationHistoryCommand command
+    ) {
+        if (command == null) {
+            throw new IllegalArgumentException(
+                    "SyncConversationHistoryCommand must not be null"
+            );
+        }
+
+        if (command.channelAccountId() == null) {
+            throw new IllegalArgumentException(
+                    "channelAccountId must not be null"
+            );
+        }
+
+        if (command.conversationExternalId() == null
+                || command.conversationExternalId().isBlank()) {
+            throw new IllegalArgumentException(
+                    "conversationExternalId must not be blank"
+            );
+        }
+
+        if (command.beforeExternalId() != null
+                && command.beforeExternalId().isBlank()) {
+            throw new IllegalArgumentException(
+                    "beforeExternalId must not be blank"
+            );
+        }
+    }
+
     private void validateReadCommand(
             MarkMessagesReadCommand command
     ) {
-
         if (command == null) {
             throw new IllegalArgumentException(
                     "MarkMessagesReadCommand must not be null"
@@ -483,7 +540,6 @@ public class TelegramChannelConnector
             long chatId,
             SendMessageCommand command
     ) {
-
         TdApi.InputMessageText content =
                 new TdApi.InputMessageText(
                         new TdApi.FormattedText(
@@ -518,7 +574,6 @@ public class TelegramChannelConnector
             long chatId,
             SendMessageCommand command
     ) {
-
         ChannelAttachment attachment =
                 getSingleAttachment(
                         command,
@@ -539,7 +594,6 @@ public class TelegramChannelConnector
             long chatId,
             SendMessageCommand command
     ) {
-
         ChannelAttachment attachment =
                 getSingleAttachment(
                         command,
@@ -562,7 +616,6 @@ public class TelegramChannelConnector
             ChannelAttachment attachment,
             TelegramContentFactory contentFactory
     ) {
-
         Path temporaryFile = null;
 
         try (InputStream inputStream =
@@ -642,7 +695,6 @@ public class TelegramChannelConnector
             UUID messageId,
             String fileName
     ) throws IOException {
-
         String suffix =
                 getFileSuffix(fileName);
 
@@ -660,7 +712,6 @@ public class TelegramChannelConnector
             TdApi.InputFileLocal inputFile,
             SendMessageCommand command
     ) {
-
         TdApi.InputPhoto inputPhoto =
                 new TdApi.InputPhoto(
                         inputFile,
@@ -684,7 +735,6 @@ public class TelegramChannelConnector
             TdApi.InputFileLocal inputFile,
             SendMessageCommand command
     ) {
-
         TdApi.InputAudio inputAudio =
                 new TdApi.InputAudio(
                         inputFile,
@@ -703,7 +753,6 @@ public class TelegramChannelConnector
     private TdApi.FormattedText toFormattedText(
             String text
     ) {
-
         return new TdApi.FormattedText(
                 text == null ? "" : text,
                 new TdApi.TextEntity[0]
@@ -714,22 +763,17 @@ public class TelegramChannelConnector
             SendMessageCommand command,
             MessageAttachmentType expectedType
     ) {
-
         return command.attachments().getFirst();
     }
 
     private long parseChatId(
             String recipientExternalId
     ) {
-
         try {
-
             return Long.parseLong(
                     recipientExternalId
             );
-
         } catch (NumberFormatException e) {
-
             throw new IllegalArgumentException(
                     "Telegram recipientExternalId must be a numeric chat ID: "
                             + recipientExternalId,
@@ -741,15 +785,11 @@ public class TelegramChannelConnector
     private long parseMessageId(
             String externalId
     ) {
-
         try {
-
             return Long.parseLong(
                     externalId
             );
-
         } catch (NumberFormatException e) {
-
             throw new IllegalArgumentException(
                     "Telegram message externalId must be numeric: "
                             + externalId,
@@ -761,7 +801,6 @@ public class TelegramChannelConnector
     private String getFileSuffix(
             String fileName
     ) {
-
         if (fileName == null || fileName.isBlank()) {
             return ".tmp";
         }
@@ -790,17 +829,14 @@ public class TelegramChannelConnector
     private void deleteTemporaryFile(
             Path temporaryFile
     ) {
-
         if (temporaryFile == null) {
             return;
         }
 
         try {
-
             Files.deleteIfExists(
                     temporaryFile
             );
-
         } catch (IOException ignored) {
             // Cleanup failure must not trigger another send attempt.
         }
@@ -809,7 +845,6 @@ public class TelegramChannelConnector
     private void validateCommand(
             SendMessageCommand command
     ) {
-
         if (command == null) {
             throw new IllegalArgumentException(
                     "SendMessageCommand must not be null"
@@ -889,7 +924,6 @@ public class TelegramChannelConnector
             SendMessageCommand command,
             MessageAttachmentType expectedType
     ) {
-
         List<ChannelAttachment> attachments =
                 command.attachments();
 

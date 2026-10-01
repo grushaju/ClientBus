@@ -12,6 +12,8 @@ public enum KafkaEventType {
 
     CHANNEL_READ,
 
-    SYNC_RECENT_CHATS
+    SYNC_RECENT_CHATS,
+
+    SYNC_CONVERSATION_HISTORY
 
 }

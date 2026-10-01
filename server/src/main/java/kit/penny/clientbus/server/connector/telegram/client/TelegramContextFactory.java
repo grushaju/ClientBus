@@ -1,21 +1,16 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
 import kit.penny.clientbus.server.connector.telegram.config.TelegramClientConfiguration;
-import kit.penny.clientbus.server.kafka.producer.IPlatformMessagePublisher;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
 import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
 import kit.penny.clientbus.server.persistence.repository.ConversationRepository;
 import kit.penny.clientbus.server.persistence.repository.MessageRepository;
 import kit.penny.clientbus.server.service.MessageService;
-import kit.penny.clientbus.server.storage.IAttachmentStorage;
-import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.properties.TelegramProperties;
-import kit.penny.tdlib.service.TelegramUserService;
 import kit.penny.tdlib.updates.ITdlibUpdateListener;
 import kit.penny.tdlib.updates.TelegramAuthorizationManager;
 import org.drinkless.tdlib.TdApi;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
 import org.springframework.beans.factory.support.RootBeanDefinition;
@@ -48,13 +43,19 @@ public class TelegramContextFactory {
             "telegramMessageSendFailedListener";
 
     private final TelegramProperties globalProperties;
+
     private final ChannelRepository channelRepository;
+
     private final ChannelAccountRepository channelAccountRepository;
+
     private final ConversationRepository conversationRepository;
+
     private final MessageRepository messageRepository;
+
     private final MessageService messageService;
-    private final IPlatformMessagePublisher platformMessagePublisher;
-    private final IAttachmentStorage attachmentStorage;
+
+    private final TelegramInboundMessageProcessor
+            telegramInboundMessageProcessor;
 
     public TelegramContextFactory(
             TelegramProperties globalProperties,
@@ -63,17 +64,28 @@ public class TelegramContextFactory {
             ConversationRepository conversationRepository,
             MessageService messageService,
             MessageRepository messageRepository,
-            IPlatformMessagePublisher platformMessagePublisher,
-            IAttachmentStorage attachmentStorage
+            TelegramInboundMessageProcessor telegramInboundMessageProcessor
     ) {
-        this.globalProperties = globalProperties;
-        this.channelAccountRepository = channelAccountRepository;
-        this.channelRepository = channelRepository;
-        this.conversationRepository = conversationRepository;
-        this.messageService = messageService;
-        this.messageRepository = messageRepository;
-        this.platformMessagePublisher = platformMessagePublisher;
-        this.attachmentStorage = attachmentStorage;
+        this.globalProperties =
+                globalProperties;
+
+        this.channelAccountRepository =
+                channelAccountRepository;
+
+        this.channelRepository =
+                channelRepository;
+
+        this.conversationRepository =
+                conversationRepository;
+
+        this.messageService =
+                messageService;
+
+        this.messageRepository =
+                messageRepository;
+
+        this.telegramInboundMessageProcessor =
+                telegramInboundMessageProcessor;
     }
 
     public TelegramClientContext create(
@@ -81,7 +93,10 @@ public class TelegramContextFactory {
             String phone
     ) {
         Map<String, Object> properties =
-                createAccountProperties(channelAccountId, phone);
+                createAccountProperties(
+                        channelAccountId,
+                        phone
+                );
 
         AnnotationConfigApplicationContext context =
                 new AnnotationConfigApplicationContext();
@@ -102,14 +117,21 @@ public class TelegramContextFactory {
                 )
         );
 
-        context.register(TelegramClientConfiguration.class);
+        context.register(
+                TelegramClientConfiguration.class
+        );
+
         context.refresh();
 
         return new TelegramClientContext(
                 channelAccountId,
                 context,
-                context.getBean(TelegramClient.class),
-                context.getBean(TelegramAuthorizationManager.class)
+                context.getBean(
+                        kit.penny.tdlib.client.TelegramClient.class
+                ),
+                context.getBean(
+                        TelegramAuthorizationManager.class
+                )
         );
     }
 
@@ -155,7 +177,6 @@ public class TelegramContextFactory {
 
                 inboundMessageDefinition.setInstanceSupplier(
                         () -> createInboundMessageListener(
-                                context,
                                 channelAccountId
                         )
                 );
@@ -225,21 +246,11 @@ public class TelegramContextFactory {
 
     private ITdlibUpdateListener<TdApi.UpdateNewMessage>
     createInboundMessageListener(
-            AnnotationConfigApplicationContext context,
             UUID channelAccountId
     ) {
-        ObjectProvider<TelegramClient> telegramClientProvider =
-                context.getBeanProvider(TelegramClient.class);
-
-        TelegramUserService telegramUserService =
-                context.getBean(TelegramUserService.class);
-
         return new TelegramInboundMessageListener(
                 channelAccountId,
-                telegramClientProvider,
-                telegramUserService,
-                platformMessagePublisher,
-                attachmentStorage
+                telegramInboundMessageProcessor
         );
     }
 
@@ -249,16 +260,24 @@ public class TelegramContextFactory {
             UUID channelAccountId
     ) {
         TelegramProperties properties =
-                context.getBean(TelegramProperties.class);
+                context.getBean(
+                        TelegramProperties.class
+                );
 
         TelegramAuthorizationManager authorizationManager =
-                context.getBean(TelegramAuthorizationManager.class);
+                context.getBean(
+                        TelegramAuthorizationManager.class
+                );
 
-        ObjectProvider<TelegramClient> telegramClientProvider =
-                context.getBeanProvider(TelegramClient.class);
+        var telegramClientProvider =
+                context.getBeanProvider(
+                        kit.penny.tdlib.client.TelegramClient.class
+                );
 
         ChannelAccountEntity account =
-                channelAccountRepository.findById(channelAccountId)
+                channelAccountRepository.findById(
+                                channelAccountId
+                        )
                         .orElseThrow(() ->
                                 new IllegalStateException(
                                         "Telegram channel account not found: "
@@ -266,7 +285,8 @@ public class TelegramContextFactory {
                                 )
                         );
 
-        UUID channelId = account.getChannel().getId();
+        UUID channelId =
+                account.getChannel().getId();
 
         return new TelegramAuthorizationStateListener(
                 channelId,
@@ -315,77 +335,94 @@ public class TelegramContextFactory {
             UUID channelAccountId,
             String phone
     ) {
-        Path accountDirectory = Path.of(
-                globalProperties.databaseDirectory(),
-                channelAccountId.toString()
-        );
+        Path accountDirectory =
+                Path.of(
+                        globalProperties.databaseDirectory(),
+                        channelAccountId.toString()
+                );
 
-        Map<String, Object> properties = new HashMap<>();
+        Map<String, Object> properties =
+                new HashMap<>();
 
         properties.put(
                 PROPERTY_PREFIX + "use-test-dc",
                 globalProperties.useTestDc()
         );
+
         properties.put(
                 PROPERTY_PREFIX + "database-directory",
                 accountDirectory
                         .resolve("database")
                         .toString()
         );
+
         properties.put(
                 PROPERTY_PREFIX + "files-directory",
                 accountDirectory
                         .resolve("files")
                         .toString()
         );
+
         properties.put(
                 PROPERTY_PREFIX + "database-encryption-key",
                 globalProperties.databaseEncryptionKey()
         );
+
         properties.put(
                 PROPERTY_PREFIX + "use-file-database",
                 globalProperties.useFileDatabase()
         );
+
         properties.put(
                 PROPERTY_PREFIX + "use-chat-info-database",
                 globalProperties.useChatInfoDatabase()
         );
+
         properties.put(
                 PROPERTY_PREFIX + "use-message-database",
                 globalProperties.useMessageDatabase()
         );
+
         properties.put(
                 PROPERTY_PREFIX + "use-secret-chats",
                 globalProperties.useSecretChats()
         );
+
         properties.put(
                 PROPERTY_PREFIX + "api-id",
                 globalProperties.apiId()
         );
+
         properties.put(
                 PROPERTY_PREFIX + "api-hash",
                 globalProperties.apiHash()
         );
+
         properties.put(
                 PROPERTY_PREFIX + "phone",
                 phone
         );
+
         properties.put(
                 PROPERTY_PREFIX + "system-language-code",
                 globalProperties.systemLanguageCode()
         );
+
         properties.put(
                 PROPERTY_PREFIX + "device-model",
                 globalProperties.deviceModel()
         );
+
         properties.put(
                 PROPERTY_PREFIX + "system-version",
                 globalProperties.systemVersion()
         );
+
         properties.put(
                 PROPERTY_PREFIX + "application-version",
                 globalProperties.applicationVersion()
         );
+
         properties.put(
                 PROPERTY_PREFIX + "log-verbosity-level",
                 globalProperties.logVerbosityLevel()
@@ -411,6 +448,7 @@ public class TelegramContextFactory {
                 PROPERTY_PREFIX + "proxy.server",
                 proxy.server()
         );
+
         properties.put(
                 PROPERTY_PREFIX + "proxy.port",
                 proxy.port()
@@ -421,10 +459,12 @@ public class TelegramContextFactory {
                     PROPERTY_PREFIX + "proxy.http.username",
                     proxy.http().username()
             );
+
             properties.put(
                     PROPERTY_PREFIX + "proxy.http.password",
                     proxy.http().password()
             );
+
             properties.put(
                     PROPERTY_PREFIX + "proxy.http.http-only",
                     proxy.http().httpOnly()
@@ -436,6 +476,7 @@ public class TelegramContextFactory {
                     PROPERTY_PREFIX + "proxy.socks5.username",
                     proxy.socks5().username()
             );
+
             properties.put(
                     PROPERTY_PREFIX + "proxy.socks5.password",
                     proxy.socks5().password()

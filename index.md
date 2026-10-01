@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-10-01 12:23:14
+- Generated: 2026-10-01 14:19:18
 - Branch: `main`
-- Commit: `779682f`
+- Commit: `c47520f`
 
 ## Project Structure
 
@@ -108,6 +108,7 @@
 - `OutboundMessageKafkaCommand.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/OutboundMessageKafkaCommand.java`
 - `PlatformMessageKafkaEvent.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/PlatformMessageKafkaEvent.java`
 - `PlatformOutboundAttachment.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/PlatformOutboundAttachment.java`
+- `SyncConversationHistoryKafkaCommand.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/SyncConversationHistoryKafkaCommand.java`
 - `SyncRecentChatsKafkaCommand.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/SyncRecentChatsKafkaCommand.java`
 
 ### server
@@ -175,6 +176,7 @@
 - `TelegramClientManager.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/client/TelegramClientManager.java`
 - `TelegramContextFactory.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/client/TelegramContextFactory.java`
 - `TelegramInboundMessageListener.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/client/TelegramInboundMessageListener.java`
+- `TelegramInboundMessageProcessor.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/client/TelegramInboundMessageProcessor.java`
 - `TelegramMessageReadListener.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/client/TelegramMessageReadListener.java`
 - `TelegramMessageSendListener.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/client/TelegramMessageSendListener.java`
 
@@ -227,6 +229,7 @@
 - `KafkaPlatformConversationConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaPlatformConversationConsumer.java`
 - `KafkaPlatformEventConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaPlatformEventConsumer.java`
 - `KafkaPlatformMessageConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaPlatformMessageConsumer.java`
+- `KafkaSyncConversationHistoryConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaSyncConversationHistoryConsumer.java`
 - `KafkaSyncRecentChatsConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaSyncRecentChatsConsumer.java`
 
 ##### `kit.penny.clientbus.server.kafka.producer`
@@ -236,12 +239,14 @@
 - `IPlatformConversationPublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/IPlatformConversationPublisher.java`
 - `IPlatformEventPublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/IPlatformEventPublisher.java`
 - `IPlatformMessagePublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/IPlatformMessagePublisher.java`
+- `ISyncConversationHistoryCommandPublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/ISyncConversationHistoryCommandPublisher.java`
 - `ISyncRecentChatsCommandPublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/ISyncRecentChatsCommandPublisher.java`
 - `KafkaChannelReadPublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/KafkaChannelReadPublisher.java`
 - `KafkaOutboundMessagePublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/KafkaOutboundMessagePublisher.java`
 - `KafkaPlatformConversationPublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/KafkaPlatformConversationPublisher.java`
 - `KafkaPlatformEventPublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/KafkaPlatformEventPublisher.java`
 - `KafkaPlatformMessagePublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/KafkaPlatformMessagePublisher.java`
+- `KafkaSyncConversationHistoryCommandPublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/KafkaSyncConversationHistoryCommandPublisher.java`
 - `KafkaSyncRecentChatsCommandPublisher.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/producer/KafkaSyncRecentChatsCommandPublisher.java`
 
 ##### `kit.penny.clientbus.server.kafka.routing`
@@ -581,7 +586,7 @@
 ## Summary
 
 - Maven modules: 3
-- Java files: 257
+- Java files: 262
 - UI source files: 95
-- Git commit: `779682f`
+- Git commit: `c47520f`
 

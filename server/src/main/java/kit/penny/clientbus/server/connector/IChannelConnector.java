@@ -1,6 +1,7 @@
 package kit.penny.clientbus.server.connector;
 
 import kit.penny.clientbus.common.dto.conversation.PlatformConversationRequest;
+import kit.penny.clientbus.common.dto.message.PlatformMessageRequest;
 import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.server.connector.command.MarkMessagesReadCommand;
 import kit.penny.clientbus.server.connector.command.SendMessageCommand;
@@ -28,7 +29,7 @@ public interface IChannelConnector {
             SyncRecentChatsCommand command
     );
 
-    void handle(
+    List<PlatformMessageRequest> handle(
             SyncConversationHistoryCommand command
     );
 
