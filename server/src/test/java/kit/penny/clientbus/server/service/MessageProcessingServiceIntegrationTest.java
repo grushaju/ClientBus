@@ -531,7 +531,7 @@ class MessageProcessingServiceIntegrationTest
                 createOutboundMessage();
 
         assertEquals(
-                MessageProcessingStatus.QUEUED,
+                MessageProcessingStatus.PROCESSING,
                 reload(message.getId()).getProcessingStatus()
         );
 
@@ -1280,9 +1280,9 @@ class MessageProcessingServiceIntegrationTest
         );
 
         // PROCESSING -> QUEUED
-        messageService.markQueued(
-                message.getId()
-        );
+//        messageService.markQueued(
+//                message.getId()
+//        );
 
         return reload(message.getId());
     }

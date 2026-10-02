@@ -6,6 +6,7 @@ import kit.penny.clientbus.server.connector.telegram.client.TelegramClientContex
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientManager;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramMessageSendListener;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
+import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
 import kit.penny.clientbus.server.persistence.entity.*;
 import kit.penny.clientbus.server.persistence.repository.*;
 import kit.penny.clientbus.server.security.UserPrincipal;
@@ -14,6 +15,8 @@ import kit.penny.clientbus.server.service.MessageService;
 import kit.penny.clientbus.server.storage.IAttachmentStorage;
 import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.query.TdlibResponse;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.NewTopic;
 import org.drinkless.tdlib.TdApi;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,6 +25,7 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
+import org.springframework.kafka.listener.MessageListenerContainer;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.ActiveProfiles;
@@ -30,8 +34,8 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.time.Duration;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
@@ -53,6 +57,9 @@ class TelegramOutboundMessageFlowIntegrationTest
 
     private static final long TELEGRAM_MESSAGE_ID =
             987654321L;
+
+    private static final String TOPIC =
+            KafkaTopicNames.outbound(ChannelType.TELEGRAM);
 
     @Autowired
     private KafkaListenerEndpointRegistry kafkaListenerEndpointRegistry;
@@ -119,7 +126,7 @@ class TelegramOutboundMessageFlowIntegrationTest
     }
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception{
 
         telegramChatId  =
                 100000000L
@@ -199,6 +206,9 @@ class TelegramOutboundMessageFlowIntegrationTest
                         null
                 )
         );
+
+        createTopicsIfNeeded();
+        startOutboundConsumer();
     }
 
     @AfterEach
@@ -440,7 +450,7 @@ class TelegramOutboundMessageFlowIntegrationTest
                 );
 
         assertEquals(
-                MessageProcessingStatus.QUEUED,
+                MessageProcessingStatus.PROCESSING,
                 pendingMessage.getProcessingStatus()
         );
 
@@ -669,7 +679,7 @@ class TelegramOutboundMessageFlowIntegrationTest
                 );
 
         assertEquals(
-                MessageProcessingStatus.QUEUED,
+                MessageProcessingStatus.PROCESSING,
                 pendingMessage.getProcessingStatus()
         );
 
@@ -687,7 +697,7 @@ class TelegramOutboundMessageFlowIntegrationTest
                 );
 
         assertEquals(
-                MessageProcessingStatus.QUEUED,
+                MessageProcessingStatus.PROCESSING,
                 pendingMessageWithExternalId.getProcessingStatus()
         );
 
@@ -946,7 +956,7 @@ class TelegramOutboundMessageFlowIntegrationTest
                 );
 
         assertEquals(
-                MessageProcessingStatus.QUEUED,
+                MessageProcessingStatus.PROCESSING,
                 pendingMessage.getProcessingStatus()
         );
 
@@ -964,7 +974,7 @@ class TelegramOutboundMessageFlowIntegrationTest
                 );
 
         assertEquals(
-                MessageProcessingStatus.QUEUED,
+                MessageProcessingStatus.PROCESSING,
                 pendingMessageWithExternalId.getProcessingStatus()
         );
 
@@ -1209,7 +1219,7 @@ class TelegramOutboundMessageFlowIntegrationTest
                 );
 
         assertEquals(
-                MessageProcessingStatus.QUEUED,
+                MessageProcessingStatus.PROCESSING,
                 pendingMessage.getProcessingStatus()
         );
 
@@ -1526,7 +1536,7 @@ class TelegramOutboundMessageFlowIntegrationTest
                 );
 
         assertEquals(
-                MessageProcessingStatus.QUEUED,
+                MessageProcessingStatus.PROCESSING,
                 pendingMessage.getProcessingStatus()
         );
 
@@ -1677,7 +1687,7 @@ class TelegramOutboundMessageFlowIntegrationTest
                 );
 
         assertEquals(
-                MessageProcessingStatus.QUEUED,
+                MessageProcessingStatus.PROCESSING,
                 retryPendingMessage.getProcessingStatus()
         );
 
@@ -2061,5 +2071,66 @@ class TelegramOutboundMessageFlowIntegrationTest
         );
 
         return message;
+    }
+
+    private void createTopicsIfNeeded() throws Exception {
+        try (
+                AdminClient adminClient =
+                        AdminClient.create(
+                                Map.of(
+                                        "bootstrap.servers",
+                                        getKafkaBootstrapServers()
+                                )
+                        )
+        ) {
+            Set<String> existingTopics =
+                    adminClient
+                            .listTopics()
+                            .names()
+                            .get();
+
+            if (!existingTopics.contains(TOPIC)) {
+                adminClient
+                        .createTopics(
+                                List.of(
+                                        new NewTopic(
+                                                TOPIC,
+                                                3,
+                                                (short) 1
+                                        )
+                                )
+                        )
+                        .all()
+                        .get(10, TimeUnit.SECONDS);
+            }
+        }
+    }
+
+    private void startOutboundConsumer() {
+        MessageListenerContainer container =
+                kafkaListenerEndpointRegistry
+                        .getListenerContainer(
+                                "kafkaOutboundMessageConsumer"
+                        );
+
+        assertNotNull(container);
+
+        if (container.isRunning()) {
+            container.stop();
+        }
+
+        await()
+                .atMost(Duration.ofSeconds(10))
+                .until(() -> !container.isRunning());
+
+        container.start();
+
+        await()
+                .atMost(Duration.ofSeconds(10))
+                .untilAsserted(() ->
+                        assertFalse(
+                                container.getAssignedPartitions().isEmpty()
+                        )
+                );
     }
 }

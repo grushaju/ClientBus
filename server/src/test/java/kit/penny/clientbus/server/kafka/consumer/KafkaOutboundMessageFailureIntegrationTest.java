@@ -40,24 +40,26 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.StringDeserializer;
+import org.awaitility.Awaitility;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.listener.ConcurrentMessageListenerContainer;
+import org.springframework.kafka.listener.MessageListenerContainer;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 
+import static org.junit.Assert.assertNull;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -118,6 +120,9 @@ class KafkaOutboundMessageFailureIntegrationTest
     @Autowired
     private ChannelAccountRepository channelAccountRepository;
 
+    @Autowired
+    private KafkaListenerEndpointRegistry kafkaListenerEndpointRegistry;
+
     @MockitoBean
     private ChannelConnectorRegistry channelConnectorRegistry;
 
@@ -131,6 +136,11 @@ class KafkaOutboundMessageFailureIntegrationTest
         registry.add(
                 "spring.kafka.consumer.outbound-group-id",
                 () -> CONSUMER_GROUP
+        );
+
+        registry.add(
+                "spring.kafka.listener.auto-startup",
+                () -> "false"
         );
     }
 
@@ -149,6 +159,8 @@ class KafkaOutboundMessageFailureIntegrationTest
         ).thenReturn(channelConnector);
 
         createTopicsIfNeeded();
+
+        startOutboundConsumer();
     }
 
     @Test
@@ -157,6 +169,27 @@ class KafkaOutboundMessageFailureIntegrationTest
 
         QueuedOutboundMessage queuedMessage =
                 createQueuedOutboundMessage();
+
+        MessageEntity beforeSend =
+                messageRepository.findById(queuedMessage.messageId())
+                        .orElseThrow();
+
+        assertEquals(
+                MessageDirection.OUTBOUND,
+                beforeSend.getDirection()
+        );
+
+        assertEquals(
+                MessageProcessingStatus.QUEUED,
+                beforeSend.getProcessingStatus()
+        );
+
+        assertEquals(
+                MessageDeliveryStatus.PENDING,
+                beforeSend.getDeliveryStatus()
+        );
+
+        assertNull(beforeSend.getExternalId());
 
         UUID messageId =
                 queuedMessage.messageId();
@@ -171,7 +204,7 @@ class KafkaOutboundMessageFailureIntegrationTest
                 getEndOffsets(DLQ_TOPIC);
 
         when(
-                channelConnector.handle((SendMessageCommand)any())
+                channelConnector.handle((SendMessageCommand) any())
         )
                 .thenThrow(
                         new IllegalStateException(
@@ -211,23 +244,33 @@ class KafkaOutboundMessageFailureIntegrationTest
                 channelConnector,
                 timeout(15_000)
                         .times(3)
-        ).handle((SendMessageCommand)any());
+        ).handle((SendMessageCommand) any());
 
-        MessageEntity pendingMessage =
-                awaitMessageStatus(
-                        messageId,
-                        MessageDeliveryStatus.PENDING
-                );
+        Awaitility.await()
+                .atMost(15, TimeUnit.SECONDS)
+                .untilAsserted(() -> {
+                    entityManager.clear();
 
-        assertEquals(
-                MessageProcessingStatus.QUEUED,
-                pendingMessage.getProcessingStatus()
-        );
+                    MessageEntity message =
+                            messageRepository
+                                    .findById(messageId)
+                                    .orElseThrow();
 
-        assertEquals(
-                EXTERNAL_MESSAGE_ID,
-                pendingMessage.getExternalId()
-        );
+                    assertEquals(
+                            MessageProcessingStatus.PROCESSING,
+                            message.getProcessingStatus()
+                    );
+
+                    assertEquals(
+                            MessageDeliveryStatus.PENDING,
+                            message.getDeliveryStatus()
+                    );
+
+                    assertEquals(
+                            EXTERNAL_MESSAGE_ID,
+                            message.getExternalId()
+                    );
+                });
 
         messageService.markSent(
                 messageId,
@@ -292,7 +335,7 @@ class KafkaOutboundMessageFailureIntegrationTest
                         "Permanent Telegram failure"
                 )
         ).when(channelConnector)
-                .handle((SendMessageCommand)any());
+                .handle((SendMessageCommand) any());
 
         KafkaEvent<OutboundMessageKafkaCommand> event =
                 createOutboundEvent(
@@ -316,7 +359,7 @@ class KafkaOutboundMessageFailureIntegrationTest
                 channelConnector,
                 timeout(15_000)
                         .times(4)
-        ).handle((SendMessageCommand)any());
+        ).handle((SendMessageCommand) any());
 
         MessageEntity failedMessage =
                 awaitMessageStatus(
@@ -390,6 +433,36 @@ class KafkaOutboundMessageFailureIntegrationTest
                 messageId,
                 dlqCommand.messageId()
         );
+    }
+
+    private void startOutboundConsumer() {
+        MessageListenerContainer container =
+                kafkaListenerEndpointRegistry
+                        .getListenerContainer(
+                                "kafkaOutboundMessageConsumer"
+                        );
+
+        assertNotNull(container);
+
+        if (container.isRunning()) {
+            container.stop();
+        }
+
+        Awaitility.await()
+                .atMost(10, TimeUnit.SECONDS)
+                .until(() -> !container.isRunning());
+
+        container.start();
+
+        Awaitility.await()
+                .atMost(10, TimeUnit.SECONDS)
+                .untilAsserted(() ->
+                        assertTrue(
+                                !container
+                                        .getAssignedPartitions()
+                                        .isEmpty()
+                        )
+                );
     }
 
     private KafkaEvent<OutboundMessageKafkaCommand>
@@ -572,9 +645,7 @@ class KafkaOutboundMessageFailureIntegrationTest
         return message;
     }
 
-    private void createTopicsIfNeeded()
-            throws Exception {
-
+    private void createTopicsIfNeeded() throws Exception {
         try (
                 AdminClient adminClient =
                         AdminClient.create(
@@ -584,17 +655,13 @@ class KafkaOutboundMessageFailureIntegrationTest
                                 )
                         )
         ) {
+            Set<String> existingTopics =
+                    adminClient
+                            .listTopics()
+                            .names()
+                            .get();
 
-            List<String> existingTopics =
-                    new ArrayList<>(
-                            adminClient
-                                    .listTopics()
-                                    .names()
-                                    .get()
-                    );
-
-            List<NewTopic> topics =
-                    new ArrayList<>();
+            List<NewTopic> topics = new ArrayList<>();
 
             if (!existingTopics.contains(TOPIC)) {
                 topics.add(
@@ -620,13 +687,11 @@ class KafkaOutboundMessageFailureIntegrationTest
                 adminClient
                         .createTopics(topics)
                         .all()
-                        .get(
-                                10,
-                                TimeUnit.SECONDS
-                        );
+                        .get(10, TimeUnit.SECONDS);
             }
         }
     }
+
 
     /**
      * Returns the current end offset of every partition.
@@ -809,5 +874,63 @@ class KafkaOutboundMessageFailureIntegrationTest
             UUID channelAccountId,
             String clientExternalId
     ) {
+    }
+
+    private void diagnoseKafkaPatternSubscription() throws Exception {
+
+        Properties properties = new Properties();
+
+        properties.put(
+                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG,
+                getKafkaBootstrapServers()
+        );
+
+        properties.put(
+                ConsumerConfig.GROUP_ID_CONFIG,
+                "diagnostic-pattern-" + UUID.randomUUID()
+        );
+
+        properties.put(
+                ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,
+                StringDeserializer.class
+        );
+
+        properties.put(
+                ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,
+                StringDeserializer.class
+        );
+
+        properties.put(
+                ConsumerConfig.AUTO_OFFSET_RESET_CONFIG,
+                "earliest"
+        );
+
+        try (KafkaConsumer<String, String> consumer =
+                     new KafkaConsumer<>(properties)) {
+
+            Pattern pattern = Pattern.compile(
+                    KafkaTopicNames.outboundPattern()
+            );
+
+            System.out.println(
+                    "DIAGNOSTIC PATTERN = " + pattern
+            );
+
+            consumer.subscribe(pattern);
+
+            for (int i = 0; i < 20; i++) {
+
+                consumer.poll(Duration.ofMillis(500));
+
+                System.out.println(
+                        "DIAGNOSTIC ASSIGNMENT = "
+                                + consumer.assignment()
+                );
+
+                if (!consumer.assignment().isEmpty()) {
+                    break;
+                }
+            }
+        }
     }
 }

@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-10-01 19:12:45
+- Generated: 2026-10-02 17:53:26
 - Branch: `main`
-- Commit: `e3deb68`
+- Commit: `4ea9253`
 
 ## Project Structure
 
@@ -364,6 +364,7 @@
 ##### `kit.penny.clientbus.server.connector.telegram`
 
 - `TelegramChannelConnectorTest.java` — `server/src/test/java/kit/penny/clientbus/server/connector/telegram/TelegramChannelConnectorTest.java`
+- `TelegramConversationMapperTest.java` — `server/src/test/java/kit/penny/clientbus/server/connector/telegram/TelegramConversationMapperTest.java`
 
 ##### `kit.penny.clientbus.server.connector.telegram.account`
 
@@ -380,6 +381,7 @@
 - `TelegramClientManagerTest.java` — `server/src/test/java/kit/penny/clientbus/server/connector/telegram/client/TelegramClientManagerTest.java`
 - `TelegramContextFactoryTest.java` — `server/src/test/java/kit/penny/clientbus/server/connector/telegram/client/TelegramContextFactoryTest.java`
 - `TelegramInboundMessageListenerTest.java` — `server/src/test/java/kit/penny/clientbus/server/connector/telegram/client/TelegramInboundMessageListenerTest.java`
+- `TelegramInboundMessageProcessorTest.java` — `server/src/test/java/kit/penny/clientbus/server/connector/telegram/client/TelegramInboundMessageProcessorTest.java`
 - `TelegramMessageReadListenerIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/connector/telegram/client/TelegramMessageReadListenerIntegrationTest.java`
 - `TelegramMessageReadListenerTest.java` — `server/src/test/java/kit/penny/clientbus/server/connector/telegram/client/TelegramMessageReadListenerTest.java`
 
@@ -423,6 +425,8 @@
 - `KafkaOutboundMessageConsumerTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaOutboundMessageConsumerTest.java`
 - `KafkaOutboundMessageFailureIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaOutboundMessageFailureIntegrationTest.java`
 - `KafkaPlatformEventConsumerTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaPlatformEventConsumerTest.java`
+- `KafkaSyncConversationHistoryConsumerTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaSyncConversationHistoryConsumerTest.java`
+- `KafkaSyncRecentChatsConsumerTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaSyncRecentChatsConsumerTest.java`
 
 ##### `kit.penny.clientbus.server.kafka.producer`
 
@@ -586,7 +590,7 @@
 ## Summary
 
 - Maven modules: 3
-- Java files: 262
+- Java files: 266
 - UI source files: 95
-- Git commit: `e3deb68`
+- Git commit: `4ea9253`
 

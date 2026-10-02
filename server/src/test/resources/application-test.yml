@@ -44,8 +44,9 @@ logging:
     org.apache.kafka.common.config.AbstractConfig: WARN
     org.apache.kafka.common.metrics.Metrics: WARN
     org.apache.kafka.common.utils.AppInfoParser: WARN
-#  level:
+
 #    org.apache.kafka.clients.consumer: DEBUG
+#    org.apache.kafka.clients.consumer.internals.ConsumerCoordinator: DEBUG
 #    org.springframework.kafka.listener: DEBUG
 #    org.springframework.kafka.config: DEBUG
 

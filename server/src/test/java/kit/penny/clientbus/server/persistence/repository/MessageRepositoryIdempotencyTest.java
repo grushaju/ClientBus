@@ -18,6 +18,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 
@@ -116,6 +117,7 @@ class MessageRepositoryIdempotencyTest
     }
 
     @Test
+    @Transactional
     void claimOutboundDelivery_shouldBeAcquiredOnlyOnce() {
 
         Instant attemptAt =
@@ -180,6 +182,7 @@ class MessageRepositoryIdempotencyTest
     }
 
     @Test
+    @Transactional
     void releaseOutboundDeliveryClaim_shouldReturnMessageToQueued() {
 
         Instant attemptAt =
@@ -243,6 +246,7 @@ class MessageRepositoryIdempotencyTest
     }
 
     @Test
+    @Transactional
     void claimOutboundDelivery_shouldNotClaimMessageWithExternalId() {
 
         message.setExternalId(

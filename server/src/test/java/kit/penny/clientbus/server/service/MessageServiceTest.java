@@ -880,7 +880,7 @@ class MessageServiceTest {
         );
 
         message.setProcessingStatus(
-                MessageProcessingStatus.QUEUED
+                MessageProcessingStatus.PROCESSING
         );
 
         message.setDeliveryStatus(
