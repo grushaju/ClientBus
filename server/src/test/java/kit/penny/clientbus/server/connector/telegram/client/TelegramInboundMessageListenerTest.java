@@ -1,6 +1,7 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
 import kit.penny.clientbus.common.dto.message.PlatformMessageRequest;
+import kit.penny.clientbus.common.enums.MessageType;
 import kit.penny.clientbus.server.kafka.producer.KafkaPlatformMessagePublisher;
 import org.drinkless.tdlib.TdApi;
 import org.junit.jupiter.api.BeforeEach;
@@ -10,6 +11,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
@@ -253,27 +256,66 @@ class TelegramInboundMessageListenerTest {
                         "Hello"
                 );
 
-        CompletableFuture<PlatformMessageRequest> failedFuture =
-                CompletableFuture.failedFuture(
-                        new IllegalStateException(
-                                "processing failed"
-                        )
-                );
-
         when(messageProcessor.process(
                 CHANNEL_ACCOUNT_ID,
                 message
-        )).thenReturn(failedFuture);
+        )).thenReturn(
+                CompletableFuture.failedFuture(
+                        new IllegalStateException("processing failed")
+                )
+        );
 
         listener.handleNotification(
                 new TdApi.UpdateNewMessage(message)
         );
 
         verify(messageProcessor)
-                .process(
-                        CHANNEL_ACCOUNT_ID,
-                        message
+                .process(CHANNEL_ACCOUNT_ID, message);
+
+        verifyNoInteractions(platformMessagePublisher);
+    }
+
+    @Test
+    void shouldPublishProcessedInboundMessage() {
+
+        TdApi.Message message =
+                createTextMessage(
+                        false,
+                        new TdApi.MessageSenderUser(USER_ID),
+                        "Hello"
                 );
+
+        PlatformMessageRequest platformMessage =
+                new PlatformMessageRequest(
+                        CHANNEL_ACCOUNT_ID,
+                        "telegram-client-" + USER_ID,
+                        "test_user",
+                        "+79990000000",
+                        "Test User",
+                        String.valueOf(USER_ID),
+                        String.valueOf(MESSAGE_ID),
+                        MessageType.TEXT,
+                        "Hello",
+                        null,
+                        Instant.ofEpochSecond(message.date),
+                        List.of()
+                );
+
+        when(messageProcessor.process(
+                CHANNEL_ACCOUNT_ID,
+                message
+        )).thenReturn(
+                CompletableFuture.completedFuture(
+                        platformMessage
+                )
+        );
+
+        listener.handleNotification(
+                new TdApi.UpdateNewMessage(message)
+        );
+
+        verify(platformMessagePublisher)
+                .publish(platformMessage);
     }
 
     private TdApi.Message createTextMessage(

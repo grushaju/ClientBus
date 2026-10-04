@@ -9,6 +9,11 @@ import kit.penny.clientbus.server.connector.telegram.client.TelegramClientContex
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientManager;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramInboundMessageProcessor;
 import kit.penny.clientbus.server.service.ChannelAttachment;
+import kit.penny.clientbus.server.connector.SyncConversationHistoryResult;
+import kit.penny.clientbus.server.connector.command.SyncConversationHistoryCommand;
+import org.springframework.context.ConfigurableApplicationContext;
+
+import java.util.concurrent.CompletableFuture;
 import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.query.TdlibResponse;
 import org.drinkless.tdlib.TdApi;
@@ -62,6 +67,7 @@ class TelegramChannelConnectorTest {
                 telegramClientManager,
                 telegramConversationMapper
         );
+
     }
 
     @Test
@@ -834,6 +840,171 @@ class TelegramChannelConnectorTest {
                 .send(any());
 
         return temporaryFile[0];
+    }
+
+    @Test
+    void shouldMarkHistoryStartReachedWhenTelegramReturnsEmptyHistory() {
+        stubTelegramClient();
+
+        when(telegramClient.send(any()))
+                .thenReturn(new TdlibResponse<>(
+                        new TdApi.Messages(
+                                0,
+                                new TdApi.Message[0]
+                        ),
+                        null
+                ));
+
+        SyncConversationHistoryCommand command =
+                new SyncConversationHistoryCommand(
+                        CHANNEL_ACCOUNT_ID,
+                        String.valueOf(CHAT_ID),
+                        null,
+                        50
+                );
+
+        SyncConversationHistoryResult result =
+                connector.handle(command);
+
+        assertTrue(result.historyStartReached());
+        assertTrue(result.messages().isEmpty());
+    }
+
+    @Test
+    void shouldMarkHistoryStartReachedWhenResponseContainsOnlyCursor() {
+        stubTelegramClient();
+
+        long cursorMessageId = 100L;
+
+        when(telegramClient.send(any()))
+                .thenReturn(new TdlibResponse<>(
+                        new TdApi.Messages(
+                                1,
+                                new TdApi.Message[]{
+                                        telegramMessage(cursorMessageId)
+                                }
+                        ),
+                        null
+                ));
+
+        SyncConversationHistoryCommand command =
+                new SyncConversationHistoryCommand(
+                        CHANNEL_ACCOUNT_ID,
+                        String.valueOf(CHAT_ID),
+                        String.valueOf(cursorMessageId),
+                        50
+                );
+
+        ConfigurableApplicationContext applicationContext =
+                mock(ConfigurableApplicationContext.class);
+
+        when(telegramClientContext.applicationContext())
+                .thenReturn(applicationContext);
+
+        SyncConversationHistoryResult result =
+                connector.handle(command);
+
+        assertTrue(result.historyStartReached());
+
+        assertTrue(
+                result.messages().isEmpty(),
+                "Cursor message must be filtered from the result"
+        );
+    }
+
+    @Test
+    void shouldNotMarkHistoryStartReachedWhenResponseContainsOlderMessage() {
+        stubTelegramClient();
+
+        long cursorMessageId = 100L;
+
+        TdApi.Message olderMessage =
+                telegramMessage(99L);
+
+        when(telegramClient.send(any()))
+                .thenReturn(new TdlibResponse<>(
+                        new TdApi.Messages(
+                                2,
+                                new TdApi.Message[]{
+                                        telegramMessage(cursorMessageId),
+                                        olderMessage
+                                }
+                        ),
+                        null
+                ));
+
+        SyncConversationHistoryCommand command =
+                new SyncConversationHistoryCommand(
+                        CHANNEL_ACCOUNT_ID,
+                        String.valueOf(CHAT_ID),
+                        String.valueOf(cursorMessageId),
+                        50
+                );
+
+        ConfigurableApplicationContext applicationContext =
+                mock(ConfigurableApplicationContext.class);
+
+        when(telegramClientContext.applicationContext())
+                .thenReturn(applicationContext);
+
+        when(applicationContext.getBean(TelegramInboundMessageProcessor.class))
+                .thenReturn(telegramInboundMessageProcessor);
+
+        when(telegramInboundMessageProcessor.process(any(), any()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        SyncConversationHistoryResult result =
+                connector.handle(command);
+
+        assertFalse(
+                result.historyStartReached(),
+                "An older message proves that history continues"
+        );
+    }
+
+    @Test
+    void shouldNotMarkHistoryStartReachedForShortPageWhenHistoryContinues() {
+        stubTelegramClient();
+
+        when(telegramClient.send(any()))
+                .thenReturn(new TdlibResponse<>(
+                        new TdApi.Messages(
+                                2,
+                                new TdApi.Message[]{
+                                        telegramMessage(200L),
+                                        telegramMessage(199L)
+                                }
+                        ),
+                        null
+                ));
+
+        SyncConversationHistoryCommand command =
+                new SyncConversationHistoryCommand(
+                        CHANNEL_ACCOUNT_ID,
+                        String.valueOf(CHAT_ID),
+                        null,
+                        50
+                );
+
+        ConfigurableApplicationContext applicationContext =
+                mock(ConfigurableApplicationContext.class);
+
+        when(telegramClientContext.applicationContext())
+                .thenReturn(applicationContext);
+
+        when(applicationContext.getBean(TelegramInboundMessageProcessor.class))
+                .thenReturn(telegramInboundMessageProcessor);
+
+        when(telegramInboundMessageProcessor.process(any(), any()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        SyncConversationHistoryResult result =
+                connector.handle(command);
+
+        assertFalse(
+                result.historyStartReached(),
+                "A non-empty page without a cursor is not evidence of EOF"
+        );
     }
 
     private Path extractTemporaryFile(

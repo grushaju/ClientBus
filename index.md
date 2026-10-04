@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-10-04 10:16:52
+- Generated: 2026-10-04 15:02:52
 - Branch: `main`
-- Commit: `cd010f2`
+- Commit: `250441a`
 
 ## Project Structure
 
@@ -351,7 +351,6 @@
 
 - `server/src/main/resources/application.yml`
 - `server/src/main/resources/db/migration/V0__init_schemas.sql`
-- `server/src/main/resources/db/migration/V1__conversation_history_start.sql`
 
 #### `src/test/java`
 
@@ -594,5 +593,5 @@
 - Maven modules: 3
 - Java files: 267
 - UI source files: 95
-- Git commit: `cd010f2`
+- Git commit: `250441a`
 

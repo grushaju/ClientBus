@@ -472,6 +472,243 @@ class MessageProcessingServiceIntegrationTest
     }
 
     @Test
+    void processPlatformMessage_historyAfterRealtime_doesNotCreateDuplicateMessage() {
+
+        OrganizationEntity organization =
+                organizationRepository.saveAndFlush(
+                        TestDataFactory.organization()
+                );
+
+        WorkspaceEntity workspace =
+                workspaceRepository.saveAndFlush(
+                        TestDataFactory.workspace(
+                                organization
+                        )
+                );
+
+        ChannelEntity channel =
+                channelRepository.saveAndFlush(
+                        TestDataFactory.channel(
+                                workspace,
+                                ChannelType.TELEGRAM,
+                                "Telegram realtime/history convergence"
+                        )
+                );
+
+        ChannelAccountEntity channelAccount =
+                channelAccountRepository.saveAndFlush(
+                        TestDataFactory.channelAccount(
+                                channel,
+                                "telegram-company-convergence-001",
+                                "company_channel",
+                                "+79990000010",
+                                "Company Telegram"
+                        )
+                );
+
+        String clientExternalId =
+                "telegram-convergence-client-" + UUID.randomUUID();
+
+        String externalMessageId =
+                "telegram-convergence-message-" + UUID.randomUUID();
+
+        String senderExternalId =
+                "telegram-convergence-sender-" + UUID.randomUUID();
+
+        Instant sentAt =
+                Instant.parse("2026-08-30T15:00:00Z");
+
+        PlatformMessageRequest realtimeRequest =
+                new PlatformMessageRequest(
+                        channelAccount.getId(),
+                        clientExternalId,
+                        "client_username",
+                        "+79991112233",
+                        "Test Client",
+                        senderExternalId,
+                        externalMessageId,
+                        MessageType.TEXT,
+                        "Realtime message",
+                        "{\"source\":\"realtime\"}",
+                        sentAt,
+                        List.of()
+                );
+
+        PlatformMessageRequest historyRequest =
+                new PlatformMessageRequest(
+                        channelAccount.getId(),
+                        clientExternalId,
+                        "client_username",
+                        "+79991112233",
+                        "Test Client",
+                        senderExternalId,
+                        externalMessageId,
+                        MessageType.TEXT,
+                        "Realtime message",
+                        "{\"source\":\"history\"}",
+                        sentAt,
+                        List.of()
+                );
+
+        MessageDto realtimeResult =
+                messageProcessingService.processPlatformMessage(
+                        realtimeRequest
+                );
+
+        MessageDto historyResult =
+                messageProcessingService.processPlatformMessage(
+                        historyRequest
+                );
+
+        assertNotNull(realtimeResult);
+        assertNotNull(historyResult);
+
+        assertEquals(
+                realtimeResult.id(),
+                historyResult.id()
+        );
+
+        assertEquals(
+                1,
+                messageRepository.count()
+        );
+
+        MessageEntity message =
+                messageRepository
+                        .findById(realtimeResult.id())
+                        .orElseThrow();
+
+        assertEquals(
+                externalMessageId,
+                message.getExternalId()
+        );
+
+        assertEquals(
+                "Realtime message",
+                message.getContent()
+        );
+    }
+
+
+    @Test
+    void processPlatformMessage_realtimeAfterHistory_doesNotCreateDuplicateMessage() {
+
+        OrganizationEntity organization =
+                organizationRepository.saveAndFlush(
+                        TestDataFactory.organization()
+                );
+
+        WorkspaceEntity workspace =
+                workspaceRepository.saveAndFlush(
+                        TestDataFactory.workspace(
+                                organization
+                        )
+                );
+
+        ChannelEntity channel =
+                channelRepository.saveAndFlush(
+                        TestDataFactory.channel(
+                                workspace,
+                                ChannelType.TELEGRAM,
+                                "Telegram history/realtime convergence"
+                        )
+                );
+
+        ChannelAccountEntity channelAccount =
+                channelAccountRepository.saveAndFlush(
+                        TestDataFactory.channelAccount(
+                                channel,
+                                "telegram-company-convergence-002",
+                                "company_channel",
+                                "+79990000011",
+                                "Company Telegram"
+                        )
+                );
+
+        String clientExternalId =
+                "telegram-convergence-client-" + UUID.randomUUID();
+
+        String externalMessageId =
+                "telegram-convergence-message-" + UUID.randomUUID();
+
+        String senderExternalId =
+                "telegram-convergence-sender-" + UUID.randomUUID();
+
+        Instant sentAt =
+                Instant.parse("2026-08-30T15:01:00Z");
+
+        PlatformMessageRequest historyRequest =
+                new PlatformMessageRequest(
+                        channelAccount.getId(),
+                        clientExternalId,
+                        "client_username",
+                        "+79991112244",
+                        "Test Client",
+                        senderExternalId,
+                        externalMessageId,
+                        MessageType.TEXT,
+                        "History message",
+                        "{\"source\":\"history\"}",
+                        sentAt,
+                        List.of()
+                );
+
+        PlatformMessageRequest realtimeRequest =
+                new PlatformMessageRequest(
+                        channelAccount.getId(),
+                        clientExternalId,
+                        "client_username",
+                        "+79991112244",
+                        "Test Client",
+                        senderExternalId,
+                        externalMessageId,
+                        MessageType.TEXT,
+                        "History message",
+                        "{\"source\":\"realtime\"}",
+                        sentAt,
+                        List.of()
+                );
+
+        MessageDto historyResult =
+                messageProcessingService.processPlatformMessage(
+                        historyRequest
+                );
+
+        MessageDto realtimeResult =
+                messageProcessingService.processPlatformMessage(
+                        realtimeRequest
+                );
+
+        assertNotNull(historyResult);
+        assertNotNull(realtimeResult);
+
+        assertEquals(
+                historyResult.id(),
+                realtimeResult.id()
+        );
+
+        assertEquals(
+                1,
+                messageRepository.count()
+        );
+
+        MessageEntity message =
+                messageRepository
+                        .findById(historyResult.id())
+                        .orElseThrow();
+
+        assertEquals(
+                externalMessageId,
+                message.getExternalId()
+        );
+
+        assertEquals(
+                "History message",
+                message.getContent()
+        );
+    }
+
+    @Test
     void processPlatformMessage_missingChannelAccount_throwsException() {
 
         UUID unknownChannelAccountId =
