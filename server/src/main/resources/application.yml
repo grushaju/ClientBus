@@ -160,10 +160,10 @@ spring:
       database-encryption-key: TELEGRAM_DATABASE_SECRET
 
       use-test-dc: false
-      use-file-database: true
-      use-chat-info-database: true
-      use-message-database: true
-      use-secret-chats: true
+      use-file-database: false
+      use-chat-info-database: false
+      use-message-database: false
+      use-secret-chats: false
 
       system-language-code: en
       device-model: ClientBus

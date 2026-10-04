@@ -148,6 +148,15 @@ public class ConversationEntity {
     @Column(name = "updatedat")
     private Instant updatedAt;
 
+    @Column(name = "firstmessageat")
+    private Instant firstMessageAt;
+
+    @Column(
+            name = "historystartreached",
+            nullable = false
+    )
+    private boolean historyStartReached = false;
+
     public ConversationEntity() {
     }
 
@@ -251,5 +260,25 @@ public class ConversationEntity {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public Instant getFirstMessageAt() {
+        return firstMessageAt;
+    }
+
+    public void setFirstMessageAt(
+            Instant firstMessageAt
+    ) {
+        this.firstMessageAt = firstMessageAt;
+    }
+
+    public boolean isHistoryStartReached() {
+        return historyStartReached;
+    }
+
+    public void setHistoryStartReached(
+            boolean historyStartReached
+    ) {
+        this.historyStartReached = historyStartReached;
     }
 }

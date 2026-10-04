@@ -7,6 +7,7 @@ import kit.penny.clientbus.common.enums.MessageAttachmentType;
 import kit.penny.clientbus.common.enums.MessageType;
 import kit.penny.clientbus.server.connector.ConnectorSendResult;
 import kit.penny.clientbus.server.connector.IChannelConnector;
+import kit.penny.clientbus.server.connector.SyncConversationHistoryResult;
 import kit.penny.clientbus.server.connector.command.MarkMessagesReadCommand;
 import kit.penny.clientbus.server.connector.command.SendMessageCommand;
 import kit.penny.clientbus.server.connector.command.SyncAccountCommand;
@@ -226,7 +227,7 @@ public class TelegramChannelConnector
     }
 
     @Override
-    public List<PlatformMessageRequest> handle(
+    public SyncConversationHistoryResult handle(
             SyncConversationHistoryCommand command
     ) {
         validateSyncConversationHistoryCommand(command);
@@ -275,24 +276,60 @@ public class TelegramChannelConnector
                 || messages.messages.length == 0) {
 
             log.debug(
-                    "Telegram conversation history returned no messages: " +
-                            "channelAccountId={}, chatId={}, beforeMessageId={}, limit={}",
+                    "Telegram conversation history reached its start: " +
+                            "channelAccountId={}, chatId={}, " +
+                            "beforeMessageId={}, limit={}",
                     command.channelAccountId(),
                     chatId,
                     beforeMessageId,
                     limit
             );
 
-            return List.of();
+            return new SyncConversationHistoryResult(
+                    List.of(),
+                    true
+            );
         }
+
+        /*
+         * End-of-history MUST be determined from the raw TDLib
+         * response, before the cursor message is filtered out.
+         *
+         * If TDLib returned any actual message older than the cursor,
+         * there is still history available.
+         *
+         * The cursor message itself is not an older message.
+         */
+        boolean hasOlderMessage =
+                false;
+
+        for (TdApi.Message message : messages.messages) {
+
+            if (message == null) {
+                continue;
+            }
+
+            if (beforeMessageId == 0
+                    || message.id < beforeMessageId) {
+                hasOlderMessage = true;
+                break;
+            }
+        }
+
+        boolean historyStartReached =
+                !hasOlderMessage;
 
         List<PlatformMessageRequest> result =
                 new ArrayList<>(
                         messages.messages.length
                 );
 
-        TelegramInboundMessageProcessor telegramInboundMessageProcessor = context.applicationContext()
-                .getBean(TelegramInboundMessageProcessor.class);
+        TelegramInboundMessageProcessor
+                telegramInboundMessageProcessor =
+                context.applicationContext()
+                        .getBean(
+                                TelegramInboundMessageProcessor.class
+                        );
 
         for (TdApi.Message message : messages.messages) {
 
@@ -338,8 +375,8 @@ public class TelegramChannelConnector
         /*
          * TDLib returns chat history newest -> oldest.
          *
-         * ClientBus history consumers must receive the page in
-         * chronological order.
+         * ClientBus history consumers must receive the page
+         * in chronological order.
          */
         result.sort(
                 java.util.Comparator.comparing(
@@ -353,16 +390,21 @@ public class TelegramChannelConnector
         log.info(
                 "Telegram conversation history synchronization completed: " +
                         "channelAccountId={}, chatId={}, beforeMessageId={}, " +
-                        "requestedLimit={}, fetchedMessages={}, processedMessages={}",
+                        "requestedLimit={}, fetchedMessages={}, " +
+                        "processedMessages={}, historyStartReached={}",
                 command.channelAccountId(),
                 chatId,
                 beforeMessageId,
                 limit,
                 messages.messages.length,
-                result.size()
+                result.size(),
+                historyStartReached
         );
 
-        return List.copyOf(result);
+        return new SyncConversationHistoryResult(
+                List.copyOf(result),
+                historyStartReached
+        );
     }
 
     private PlatformConversationRequest syncChat(

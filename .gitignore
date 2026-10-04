@@ -1,7 +1,7 @@
 /common/target/
 /server/target/
-/ui/dist/
-/ui/node_modules/
+/fe/dist/
+/fe/node_modules/
 /server/data/
 /data/
 /data/telegram/

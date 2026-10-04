@@ -9,6 +9,8 @@ import kit.penny.clientbus.common.enums.MessageDeliveryStatus;
 import kit.penny.clientbus.common.enums.MessageDirection;
 import kit.penny.clientbus.common.enums.MessageProcessingStatus;
 import kit.penny.clientbus.common.enums.MessageSenderType;
+import kit.penny.clientbus.server.connector.command.SyncConversationHistoryCommand;
+import kit.penny.clientbus.server.kafka.producer.ISyncConversationHistoryCommandPublisher;
 import kit.penny.clientbus.server.mapper.MessageMapper;
 import kit.penny.clientbus.server.persistence.entity.ConversationEntity;
 import kit.penny.clientbus.server.persistence.entity.MessageEntity;
@@ -31,19 +33,21 @@ public class MessageService {
     private final ConversationService conversationService;
     private final MessageMapper messageMapper;
     private final CurrentUserService currentUserService;
+    private final ISyncConversationHistoryCommandPublisher syncConversationHistoryCommandPublisher;
 
     public MessageService(
             MessageRepository messageRepository,
             ConversationRepository conversationRepository,
             ConversationService conversationService,
             MessageMapper messageMapper,
-            CurrentUserService currentUserService
+            CurrentUserService currentUserService, ISyncConversationHistoryCommandPublisher syncConversationHistoryCommandPublisher
     ) {
         this.messageRepository = messageRepository;
         this.conversationRepository = conversationRepository;
         this.conversationService = conversationService;
         this.messageMapper = messageMapper;
         this.currentUserService = currentUserService;
+        this.syncConversationHistoryCommandPublisher = syncConversationHistoryCommandPublisher;
     }
 
     /**
@@ -200,6 +204,11 @@ public class MessageService {
                 message.getSentAt() != null
                         ? message.getSentAt()
                         : message.getCreatedAt();
+
+        conversationService.updateFirstMessage(
+                conversation,
+                messageTime
+        );
 
         conversationService.updateLastMessage(
                 conversation,
@@ -1142,6 +1151,48 @@ public class MessageService {
 
         return messageMapper.toDto(
                 retriedMessage
+        );
+    }
+
+
+    /**
+     * Requests synchronization of remote conversation history.
+     *
+     * <p>The caller supplies the remote history cursor explicitly.
+     * A {@code null} cursor requests the newest messages.
+     *
+     * <p>The request is published asynchronously through Kafka.
+     */
+    @Transactional
+    public void syncConversationHistory(
+            UUID conversationId,
+            String beforeExternalId,
+            int limit
+    ) {
+        ConversationEntity conversation =
+                conversationRepository.findById(conversationId)
+                        .orElseThrow(() ->
+                                new EntityNotFoundException(
+                                        "Conversation not found: " + conversationId
+                                )
+                        );
+
+        currentUserService.requireConversationAccess(conversation);
+
+        currentUserService.requireWorkspaceAccess(
+                conversation.getWorkspace().getId()
+        );
+
+        syncConversationHistoryCommandPublisher.publish(
+                conversation.getChannelAccount()
+                        .getChannel()
+                        .getType(),
+                new SyncConversationHistoryCommand(
+                        conversation.getChannelAccount().getId(),
+                        conversation.getClientAccount().getExternalId(),
+                        beforeExternalId,
+                        limit
+                )
         );
     }
 

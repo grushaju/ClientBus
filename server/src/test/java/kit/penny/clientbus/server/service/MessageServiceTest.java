@@ -4,11 +4,10 @@ import jakarta.persistence.EntityNotFoundException;
 import kit.penny.clientbus.common.dto.message.CreatePlatformMessageRequest;
 import kit.penny.clientbus.common.dto.message.MessageDto;
 import kit.penny.clientbus.common.enums.*;
+import kit.penny.clientbus.server.connector.command.SyncConversationHistoryCommand;
+import kit.penny.clientbus.server.kafka.producer.ISyncConversationHistoryCommandPublisher;
 import kit.penny.clientbus.server.mapper.MessageMapper;
-import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
-import kit.penny.clientbus.server.persistence.entity.ConversationEntity;
-import kit.penny.clientbus.server.persistence.entity.MessageEntity;
-import kit.penny.clientbus.server.persistence.entity.WorkspaceEntity;
+import kit.penny.clientbus.server.persistence.entity.*;
 import kit.penny.clientbus.server.persistence.repository.ConversationRepository;
 import kit.penny.clientbus.server.persistence.repository.MessageRepository;
 import kit.penny.clientbus.server.security.service.CurrentUserService;
@@ -63,6 +62,9 @@ class MessageServiceTest {
 
     @Mock
     private MessageDto expectedDto;
+
+    @Mock
+    private ISyncConversationHistoryCommandPublisher syncConversationHistoryCommandPublisher;
 
     @BeforeEach
     void setUp() {
@@ -2509,6 +2511,187 @@ class MessageServiceTest {
                 .save(any(MessageEntity.class));
 
         verifyNoInteractions(messageMapper);
+    }
+
+    @Test
+    void syncConversationHistory_newestMessages_publishesCommand() {
+
+        ChannelEntity channel =
+                new ChannelEntity(
+                        workspace,
+                        ChannelType.TELEGRAM,
+                        "Telegram"
+                );
+
+        ChannelAccountEntity channelAccount =
+                new ChannelAccountEntity();
+
+        channelAccount.setId(UUID.randomUUID());
+        channelAccount.setChannel(channel);
+
+        conversation.setChannelAccount(channelAccount);
+
+        when(conversationRepository.findById(conversationId))
+                .thenReturn(Optional.of(conversation));
+
+        messageService.syncConversationHistory(
+                conversationId,
+                null,
+                50
+        );
+
+        verify(currentUserService)
+                .requireConversationAccess(conversation);
+
+        verify(currentUserService)
+                .requireWorkspaceAccess(
+                        workspace.getId()
+                );
+
+        verify(syncConversationHistoryCommandPublisher)
+                .publish(
+                        eq(ChannelType.TELEGRAM),
+                        eq(
+                                new SyncConversationHistoryCommand(
+                                        channelAccount.getId(),
+                                        clientAccount.getExternalId(),
+                                        null,
+                                        50
+                                )
+                        )
+                );
+    }
+
+    @Test
+    void syncConversationHistory_withCursor_publishesCommandWithCursor() {
+
+        ChannelEntity channel =
+                new ChannelEntity(
+                        workspace,
+                        ChannelType.TELEGRAM,
+                        "Telegram"
+                );
+
+        ChannelAccountEntity channelAccount =
+                new ChannelAccountEntity();
+
+        channelAccount.setId(UUID.randomUUID());
+        channelAccount.setChannel(channel);
+
+        conversation.setChannelAccount(channelAccount);
+
+        when(conversationRepository.findById(conversationId))
+                .thenReturn(Optional.of(conversation));
+
+        messageService.syncConversationHistory(
+                conversationId,
+                "123456789",
+                25
+        );
+
+        verify(syncConversationHistoryCommandPublisher)
+                .publish(
+                        eq(ChannelType.TELEGRAM),
+                        eq(
+                                new SyncConversationHistoryCommand(
+                                        channelAccount.getId(),
+                                        clientAccount.getExternalId(),
+                                        "123456789",
+                                        25
+                                )
+                        )
+                );
+    }
+
+    @Test
+    void syncConversationHistory_conversationNotFound_throwsException() {
+
+        when(conversationRepository.findById(conversationId))
+                .thenReturn(Optional.empty());
+
+        EntityNotFoundException exception =
+                assertThrows(
+                        EntityNotFoundException.class,
+                        () -> messageService.syncConversationHistory(
+                                conversationId,
+                                null,
+                                50
+                        )
+                );
+
+        assertEquals(
+                "Conversation not found: " + conversationId,
+                exception.getMessage()
+        );
+
+        verifyNoInteractions(
+                currentUserService,
+                syncConversationHistoryCommandPublisher
+        );
+    }
+
+    @Test
+    void syncConversationHistory_conversationAccessDenied_doesNotPublish() {
+
+        when(conversationRepository.findById(conversationId))
+                .thenReturn(Optional.of(conversation));
+
+        doThrow(
+                new AccessDeniedException("Access denied")
+        )
+                .when(currentUserService)
+                .requireConversationAccess(conversation);
+
+        assertThrows(
+                AccessDeniedException.class,
+                () -> messageService.syncConversationHistory(
+                        conversationId,
+                        null,
+                        50
+                )
+        );
+
+        verify(currentUserService)
+                .requireConversationAccess(conversation);
+
+        verify(currentUserService, never())
+                .requireWorkspaceAccess(any());
+
+        verifyNoInteractions(
+                syncConversationHistoryCommandPublisher
+        );
+    }
+
+    @Test
+    void syncConversationHistory_workspaceAccessDenied_doesNotPublish() {
+
+        when(conversationRepository.findById(conversationId))
+                .thenReturn(Optional.of(conversation));
+
+        doThrow(
+                new AccessDeniedException("Workspace access denied")
+        )
+                .when(currentUserService)
+                .requireWorkspaceAccess(workspace.getId());
+
+        assertThrows(
+                AccessDeniedException.class,
+                () -> messageService.syncConversationHistory(
+                        conversationId,
+                        null,
+                        50
+                )
+        );
+
+        verify(currentUserService)
+                .requireConversationAccess(conversation);
+
+        verify(currentUserService)
+                .requireWorkspaceAccess(workspace.getId());
+
+        verifyNoInteractions(
+                syncConversationHistoryCommandPublisher
+        );
     }
 
     private MessageEntity message(

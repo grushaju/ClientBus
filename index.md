@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-10-02 17:53:26
+- Generated: 2026-10-04 10:16:52
 - Branch: `main`
-- Commit: `4ea9253`
+- Commit: `cd010f2`
 
 ## Project Structure
 
@@ -143,6 +143,7 @@
 - `IChannelConnector.java` — `server/src/main/java/kit/penny/clientbus/server/connector/IChannelConnector.java`
 - `IChannelConnectorRegistry.java` — `server/src/main/java/kit/penny/clientbus/server/connector/IChannelConnectorRegistry.java`
 - `IChannelEventHandler.java` — `server/src/main/java/kit/penny/clientbus/server/connector/IChannelEventHandler.java`
+- `SyncConversationHistoryResult.java` — `server/src/main/java/kit/penny/clientbus/server/connector/SyncConversationHistoryResult.java`
 
 ##### `kit.penny.clientbus.server.connector.command`
 
@@ -350,6 +351,7 @@
 
 - `server/src/main/resources/application.yml`
 - `server/src/main/resources/db/migration/V0__init_schemas.sql`
+- `server/src/main/resources/db/migration/V1__conversation_history_start.sql`
 
 #### `src/test/java`
 
@@ -590,7 +592,7 @@
 ## Summary
 
 - Maven modules: 3
-- Java files: 266
+- Java files: 267
 - UI source files: 95
-- Git commit: `4ea9253`
+- Git commit: `cd010f2`
 

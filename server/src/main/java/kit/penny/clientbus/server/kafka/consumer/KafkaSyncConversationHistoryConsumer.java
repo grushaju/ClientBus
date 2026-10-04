@@ -7,15 +7,15 @@ import kit.penny.clientbus.common.kafka.KafkaEventType;
 import kit.penny.clientbus.common.kafka.SyncConversationHistoryKafkaCommand;
 import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
 import kit.penny.clientbus.server.connector.IChannelConnector;
+import kit.penny.clientbus.server.connector.SyncConversationHistoryResult;
 import kit.penny.clientbus.server.connector.command.SyncConversationHistoryCommand;
 import kit.penny.clientbus.server.kafka.producer.IPlatformMessagePublisher;
 import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
+import kit.penny.clientbus.server.service.ConversationService;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
-
-import java.util.List;
 
 @Component
 public class KafkaSyncConversationHistoryConsumer {
@@ -26,15 +26,22 @@ public class KafkaSyncConversationHistoryConsumer {
     private final IPlatformMessagePublisher
             platformMessagePublisher;
 
+    private final ConversationService
+            conversationService;
+
     public KafkaSyncConversationHistoryConsumer(
             ChannelConnectorRegistry channelConnectorRegistry,
-            IPlatformMessagePublisher platformMessagePublisher
+            IPlatformMessagePublisher platformMessagePublisher,
+            ConversationService conversationService
     ) {
         this.channelConnectorRegistry =
                 channelConnectorRegistry;
 
         this.platformMessagePublisher =
                 platformMessagePublisher;
+
+        this.conversationService =
+                conversationService;
     }
 
     @KafkaListener(
@@ -89,21 +96,33 @@ public class KafkaSyncConversationHistoryConsumer {
                         channelType
                 );
 
-        List<PlatformMessageRequest> messages =
+        SyncConversationHistoryResult result =
                 connector.handle(command);
 
-        if (messages == null
-                || messages.isEmpty()) {
+        if (result == null) {
             return;
         }
 
-        for (PlatformMessageRequest message : messages) {
-            if (message == null) {
-                continue;
-            }
+        if (result.messages() != null) {
 
-            platformMessagePublisher.publish(
-                    message
+            for (PlatformMessageRequest message :
+                    result.messages()) {
+
+                if (message == null) {
+                    continue;
+                }
+
+                platformMessagePublisher.publish(
+                        message
+                );
+            }
+        }
+
+        if (result.historyStartReached()) {
+
+            conversationService.markHistoryStartReached(
+                    command.channelAccountId(),
+                    command.conversationExternalId()
             );
         }
     }

@@ -989,6 +989,47 @@ public class ConversationService {
                 );
     }
 
+    @Transactional
+    public void markHistoryStartReached(
+            UUID channelAccountId,
+            String clientAccountExternalId
+    ) {
+        ConversationEntity conversation =
+                conversationRepository
+                        .findByChannelAccountIdAndClientAccountExternalId(
+                                channelAccountId,
+                                clientAccountExternalId
+                        )
+                        .orElseThrow(() ->
+                                new EntityNotFoundException(
+                                        "Conversation not found for " +
+                                                "channelAccountId="
+                                                + channelAccountId
+                                                + " and clientAccountExternalId="
+                                                + clientAccountExternalId
+                                )
+                        );
+
+        conversation.setHistoryStartReached(true);
+
+        conversationRepository.save(conversation);
+    }
+
+    public void updateFirstMessage(
+            ConversationEntity conversation,
+            Instant messageTime
+    ) {
+        if (conversation.getFirstMessageAt() == null
+                || messageTime.isBefore(
+                conversation.getFirstMessageAt()
+        )) {
+
+            conversation.setFirstMessageAt(
+                    messageTime
+            );
+        }
+    }
+
     public ConversationEntity incrementUnreadCount(
             ConversationEntity conversation
     ) {

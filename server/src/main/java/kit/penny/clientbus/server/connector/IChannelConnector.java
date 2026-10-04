@@ -29,7 +29,7 @@ public interface IChannelConnector {
             SyncRecentChatsCommand command
     );
 
-    List<PlatformMessageRequest> handle(
+    SyncConversationHistoryResult handle(
             SyncConversationHistoryCommand command
     );
 
