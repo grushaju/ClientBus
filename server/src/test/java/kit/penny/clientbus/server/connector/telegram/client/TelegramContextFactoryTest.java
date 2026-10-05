@@ -18,6 +18,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mockito;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -80,7 +81,8 @@ class TelegramContextFactoryTest {
                         messageService,
                         messageRepository,
                         attachmentStorage,
-                        platformMessagePublisher
+                        platformMessagePublisher,
+                        List.of()
                 );
 
         UUID accountA = UUID.randomUUID();
@@ -240,7 +242,8 @@ class TelegramContextFactoryTest {
                         messageService,
                         messageRepository,
                         attachmentStorage,
-                        platformMessagePublisher
+                        platformMessagePublisher,
+                        List.of()
                 );
 
         UUID accountA = UUID.randomUUID();

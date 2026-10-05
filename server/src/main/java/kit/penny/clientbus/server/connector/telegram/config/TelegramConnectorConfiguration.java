@@ -1,5 +1,6 @@
 package kit.penny.clientbus.server.connector.telegram.config;
 
+import kit.penny.clientbus.server.connector.IChannelListener;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientManager;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramContextFactory;
 import kit.penny.clientbus.server.kafka.producer.IPlatformMessagePublisher;
@@ -13,6 +14,8 @@ import kit.penny.tdlib.properties.TelegramProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.util.List;
+
 @Configuration
 public class TelegramConnectorConfiguration {
 
@@ -25,7 +28,8 @@ public class TelegramConnectorConfiguration {
             MessageService messageService,
             MessageRepository messageRepository,
             IAttachmentStorage attachmentStorage,
-            IPlatformMessagePublisher platformMessagePublisher
+            IPlatformMessagePublisher platformMessagePublisher,
+            List<IChannelListener> channelListeners
     ) {
         return new TelegramContextFactory(
                 properties,
@@ -35,7 +39,8 @@ public class TelegramConnectorConfiguration {
                 messageService,
                 messageRepository,
                 attachmentStorage,
-                platformMessagePublisher
+                platformMessagePublisher,
+                channelListeners
         );
     }
 

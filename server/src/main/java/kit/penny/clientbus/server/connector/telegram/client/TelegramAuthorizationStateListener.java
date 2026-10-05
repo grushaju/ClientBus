@@ -1,6 +1,9 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
 import kit.penny.clientbus.common.enums.ChannelConnectionStatus;
+import kit.penny.clientbus.server.connector.AbstractEventDispatcher;
+import kit.penny.clientbus.server.connector.ChannelEvent;
+import kit.penny.clientbus.server.connector.IChannelListener;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
 import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
@@ -15,9 +18,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 
+import java.util.List;
 import java.util.UUID;
 
 public class TelegramAuthorizationStateListener
+        extends AbstractEventDispatcher
         implements ITdlibUpdateListener<TdApi.UpdateAuthorizationState> {
 
     private static final Logger log =
@@ -26,6 +31,7 @@ public class TelegramAuthorizationStateListener
             );
 
     private final UUID channelId;
+    private final UUID channelAccountId;
     private final ChannelRepository channelRepository;
     private final TelegramProperties properties;
     private final TelegramAuthorizationManager authorizationManager;
@@ -36,13 +42,18 @@ public class TelegramAuthorizationStateListener
 
     public TelegramAuthorizationStateListener(
             UUID channelId,
+            UUID channelAccountId,
             ChannelRepository channelRepository,
             ChannelAccountRepository channelAccountRepository,
             TelegramProperties properties,
             TelegramAuthorizationManager authorizationManager,
-            ObjectProvider<TelegramClient> telegramClientProvider
+            ObjectProvider<TelegramClient> telegramClientProvider,
+            List<IChannelListener> listeners
     ) {
+        super(listeners);
+
         this.channelId = channelId;
+        this.channelAccountId = channelAccountId;
         this.channelRepository = channelRepository;
         this.channelAccountRepository = channelAccountRepository;
         this.properties = properties;
@@ -102,8 +113,9 @@ public class TelegramAuthorizationStateListener
         } catch (RuntimeException e) {
             log.error(
                     "Failed to process Telegram authorization state: " +
-                            "channelId={}",
+                            "channelId={}, channelAccountId={}",
                     channelId,
+                    channelAccountId,
                     e
             );
         }
@@ -231,11 +243,19 @@ public class TelegramAuthorizationStateListener
                     state.getClass().getSimpleName()
             );
 
+            fireChannelChanged(
+                    new ChannelEvent(
+                            channelAccountId,
+                            status
+                    )
+            );
+
         } catch (RuntimeException e) {
             log.error(
                     "Failed to update Telegram connection status: " +
-                            "channelId={}, status={}",
+                            "channelId={}, channelAccountId={}, status={}",
                     channelId,
+                    channelAccountId,
                     status,
                     e
             );

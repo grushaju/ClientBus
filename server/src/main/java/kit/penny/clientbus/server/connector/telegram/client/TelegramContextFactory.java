@@ -1,5 +1,6 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
+import kit.penny.clientbus.server.connector.IChannelListener;
 import kit.penny.clientbus.server.connector.telegram.config.TelegramClientConfiguration;
 import kit.penny.clientbus.server.kafka.producer.IPlatformMessagePublisher;
 import kit.penny.clientbus.server.kafka.producer.KafkaPlatformMessagePublisher;
@@ -23,6 +24,7 @@ import org.springframework.core.env.MapPropertySource;
 
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -65,6 +67,8 @@ public class TelegramContextFactory {
 
     private final IPlatformMessagePublisher platformMessagePublisher;
 
+    private final List<IChannelListener> channelListeners;
+
     public TelegramContextFactory(
             TelegramProperties globalProperties,
             ChannelAccountRepository channelAccountRepository,
@@ -72,7 +76,9 @@ public class TelegramContextFactory {
             ConversationRepository conversationRepository,
             MessageService messageService,
             MessageRepository messageRepository,
-            IAttachmentStorage attachmentStorage, IPlatformMessagePublisher platformMessagePublisher
+            IAttachmentStorage attachmentStorage,
+            IPlatformMessagePublisher platformMessagePublisher,
+            List<IChannelListener> channelListeners
     ) {
         this.globalProperties =
                 globalProperties;
@@ -94,7 +100,12 @@ public class TelegramContextFactory {
 
         this.attachmentStorage =
                 attachmentStorage;
-        this.platformMessagePublisher = platformMessagePublisher;
+
+        this.platformMessagePublisher =
+                platformMessagePublisher;
+
+        this.channelListeners =
+                channelListeners;
     }
 
     public TelegramClientContext create(
@@ -349,11 +360,13 @@ public class TelegramContextFactory {
 
         return new TelegramAuthorizationStateListener(
                 channelId,
+                channelAccountId,
                 channelRepository,
                 channelAccountRepository,
                 properties,
                 authorizationManager,
-                telegramClientProvider
+                telegramClientProvider,
+                channelListeners
         );
     }
 

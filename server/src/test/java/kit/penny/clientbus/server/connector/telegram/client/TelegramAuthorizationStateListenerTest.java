@@ -1,6 +1,8 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
 import kit.penny.clientbus.common.enums.ChannelConnectionStatus;
+import kit.penny.clientbus.server.connector.ChannelEvent;
+import kit.penny.clientbus.server.connector.IChannelListener;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
@@ -12,8 +14,10 @@ import kit.penny.tdlib.updates.TelegramAuthorizationManager;
 import org.drinkless.tdlib.TdApi;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.springframework.beans.factory.ObjectProvider;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -36,6 +40,8 @@ class TelegramAuthorizationStateListenerTest {
 
     private ChannelEntity channel;
     private ChannelAccountEntity account;
+    private IChannelListener channelListener =
+            Mockito.mock(IChannelListener.class);
 
     private TelegramAuthorizationStateListener listener;
 
@@ -74,17 +80,26 @@ class TelegramAuthorizationStateListenerTest {
         channel.setId(channelId);
         channel.setAccount(account);
 
+
+
+        List<IChannelListener> channelListeners =
+                List.of(channelListener);
+
         when(channelRepository.findById(channelId))
                 .thenReturn(Optional.of(channel));
+
+
 
         listener =
                 new TelegramAuthorizationStateListener(
                         channelId,
+                        account.getId(),
                         channelRepository,
                         channelAccountRepository,
                         properties,
                         authorizationManager,
-                        telegramClientProvider
+                        telegramClientProvider,
+                        channelListeners
                 );
     }
 
@@ -356,5 +371,50 @@ class TelegramAuthorizationStateListenerTest {
 
         verify(channelRepository, never())
                 .save(channel);
+    }
+
+    @Test void shouldNotifyListenersWhenStatusChangesToConnected() {
+        IChannelListener listener = Mockito.mock(IChannelListener.class);
+        TelegramClient telegramClient = Mockito.mock(TelegramClient.class);
+        Mockito.when(telegramClientProvider.getObject())
+                .thenReturn(telegramClient);
+        UUID channelId = UUID.randomUUID();
+        UUID channelAccountId = UUID.randomUUID();
+        ChannelEntity channel = TestDataFactory.channel(null);
+        ChannelAccountEntity account = TestDataFactory.channelAccount(channel);
+        account.setId(channelAccountId);
+        channel.setId(channelId);
+        channel.setAccount(account);
+        Mockito.when(channelRepository.findById(channelId))
+                .thenReturn(Optional.of(channel));
+        TelegramAuthorizationStateListener target = new TelegramAuthorizationStateListener(
+                channelId,
+                channelAccountId,
+                channelRepository,
+                channelAccountRepository,
+                properties,
+                authorizationManager,
+                telegramClientProvider,
+                List.of(listener)
+        );
+        assertEquals(ChannelConnectionStatus.CREATED, channel.getStatus());
+        target.handleNotification(
+                new TdApi.UpdateAuthorizationState(
+                        new TdApi.AuthorizationStateReady()
+                )
+        );
+        assertEquals(
+                ChannelConnectionStatus.CONNECTED, channel.getStatus()
+        );
+
+        Mockito.verify(channelRepository)
+                .save(channel);
+        Mockito.verify(listener)
+                .channelChanged(
+                        new ChannelEvent(
+                                channelAccountId,
+                                ChannelConnectionStatus.CONNECTED
+                        )
+                );
     }
 }

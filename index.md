@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-10-04 15:02:52
+- Generated: 2026-10-05 17:29:08
 - Branch: `main`
-- Commit: `250441a`
+- Commit: `6e72a4c`
 
 ## Project Structure
 
@@ -111,6 +111,11 @@
 - `SyncConversationHistoryKafkaCommand.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/SyncConversationHistoryKafkaCommand.java`
 - `SyncRecentChatsKafkaCommand.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/SyncRecentChatsKafkaCommand.java`
 
+#### `src/main/resources`
+
+
+#### `src/test/java`
+
 ### server
 
 #### `src/main/java`
@@ -135,14 +140,17 @@
 
 ##### `kit.penny.clientbus.server.connector`
 
+- `AbstractEventDispatcher.java` — `server/src/main/java/kit/penny/clientbus/server/connector/AbstractEventDispatcher.java`
 - `ChannelAccountLifecycleRegistry.java` — `server/src/main/java/kit/penny/clientbus/server/connector/ChannelAccountLifecycleRegistry.java`
 - `ChannelConnectorRegistry.java` — `server/src/main/java/kit/penny/clientbus/server/connector/ChannelConnectorRegistry.java`
+- `ChannelEvent.java` — `server/src/main/java/kit/penny/clientbus/server/connector/ChannelEvent.java`
 - `ChannelEventHandler.java` — `server/src/main/java/kit/penny/clientbus/server/connector/ChannelEventHandler.java`
 - `ConnectorSendResult.java` — `server/src/main/java/kit/penny/clientbus/server/connector/ConnectorSendResult.java`
 - `IChannelAccountLifecycle.java` — `server/src/main/java/kit/penny/clientbus/server/connector/IChannelAccountLifecycle.java`
 - `IChannelConnector.java` — `server/src/main/java/kit/penny/clientbus/server/connector/IChannelConnector.java`
 - `IChannelConnectorRegistry.java` — `server/src/main/java/kit/penny/clientbus/server/connector/IChannelConnectorRegistry.java`
 - `IChannelEventHandler.java` — `server/src/main/java/kit/penny/clientbus/server/connector/IChannelEventHandler.java`
+- `IChannelListener.java` — `server/src/main/java/kit/penny/clientbus/server/connector/IChannelListener.java`
 - `SyncConversationHistoryResult.java` — `server/src/main/java/kit/penny/clientbus/server/connector/SyncConversationHistoryResult.java`
 
 ##### `kit.penny.clientbus.server.connector.command`
@@ -591,7 +599,7 @@
 ## Summary
 
 - Maven modules: 3
-- Java files: 267
+- Java files: 270
 - UI source files: 95
-- Git commit: `250441a`
+- Git commit: `6e72a4c`
 
