@@ -10,6 +10,7 @@ import kit.penny.clientbus.server.connector.IChannelConnector;
 import kit.penny.clientbus.server.connector.command.SyncRecentChatsCommand;
 import kit.penny.clientbus.server.kafka.producer.IPlatformConversationPublisher;
 import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
+import kit.penny.clientbus.server.service.RecentChatsSynchronizationService;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.handler.annotation.Header;
@@ -23,18 +24,19 @@ public class KafkaSyncRecentChatsConsumer {
     private final ChannelConnectorRegistry
             channelConnectorRegistry;
 
-    private final IPlatformConversationPublisher
-            platformConversationPublisher;
+    private final RecentChatsSynchronizationService
+            recentChatsSynchronizationService;
 
     public KafkaSyncRecentChatsConsumer(
             ChannelConnectorRegistry channelConnectorRegistry,
-            IPlatformConversationPublisher platformConversationPublisher
+            RecentChatsSynchronizationService
+                    recentChatsSynchronizationService
     ) {
         this.channelConnectorRegistry =
                 channelConnectorRegistry;
 
-        this.platformConversationPublisher =
-                platformConversationPublisher;
+        this.recentChatsSynchronizationService =
+                recentChatsSynchronizationService;
     }
 
     @KafkaListener(
@@ -91,15 +93,9 @@ public class KafkaSyncRecentChatsConsumer {
         List<PlatformConversationRequest> conversations =
                 connector.handle(command);
 
-        if (conversations == null
-                || conversations.isEmpty()) {
-            return;
-        }
-
-        for (PlatformConversationRequest conversation : conversations) {
-            platformConversationPublisher.publish(
-                    conversation
-            );
-        }
+        recentChatsSynchronizationService.process(
+                channelType,
+                conversations
+        );
     }
 }

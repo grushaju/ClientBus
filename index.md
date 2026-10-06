@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-10-05 17:29:08
+- Generated: 2026-10-06 14:03:45
 - Branch: `main`
-- Commit: `6e72a4c`
+- Commit: `40e0b53`
 
 ## Project Structure
 
@@ -145,6 +145,7 @@
 - `ChannelConnectorRegistry.java` — `server/src/main/java/kit/penny/clientbus/server/connector/ChannelConnectorRegistry.java`
 - `ChannelEvent.java` — `server/src/main/java/kit/penny/clientbus/server/connector/ChannelEvent.java`
 - `ChannelEventHandler.java` — `server/src/main/java/kit/penny/clientbus/server/connector/ChannelEventHandler.java`
+- `ChannelSynchronizationListener.java` — `server/src/main/java/kit/penny/clientbus/server/connector/ChannelSynchronizationListener.java`
 - `ConnectorSendResult.java` — `server/src/main/java/kit/penny/clientbus/server/connector/ConnectorSendResult.java`
 - `IChannelAccountLifecycle.java` — `server/src/main/java/kit/penny/clientbus/server/connector/IChannelAccountLifecycle.java`
 - `IChannelConnector.java` — `server/src/main/java/kit/penny/clientbus/server/connector/IChannelConnector.java`
@@ -340,6 +341,7 @@
 - `MessageService.java` — `server/src/main/java/kit/penny/clientbus/server/service/MessageService.java`
 - `OrganizationService.java` — `server/src/main/java/kit/penny/clientbus/server/service/OrganizationService.java`
 - `OutboundMessageTransactionService.java` — `server/src/main/java/kit/penny/clientbus/server/service/OutboundMessageTransactionService.java`
+- `RecentChatsSynchronizationService.java` — `server/src/main/java/kit/penny/clientbus/server/service/RecentChatsSynchronizationService.java`
 - `WorkspaceService.java` — `server/src/main/java/kit/penny/clientbus/server/service/WorkspaceService.java`
 
 ##### `kit.penny.clientbus.server.storage`
@@ -369,6 +371,7 @@
 ##### `kit.penny.clientbus.server.connector`
 
 - `ChannelEventHandlerTest.java` — `server/src/test/java/kit/penny/clientbus/server/connector/ChannelEventHandlerTest.java`
+- `ChannelSynchronizationListenerTest.java` — `server/src/test/java/kit/penny/clientbus/server/connector/ChannelSynchronizationListenerTest.java`
 
 ##### `kit.penny.clientbus.server.connector.telegram`
 
@@ -476,6 +479,7 @@
 - `MessageProcessingServiceIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/MessageProcessingServiceIntegrationTest.java`
 - `MessageProcessingServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/MessageProcessingServiceTest.java`
 - `MessageServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/MessageServiceTest.java`
+- `RecentChatsSynchronizationServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/RecentChatsSynchronizationServiceTest.java`
 
 #### `src/test/resources`
 
@@ -599,7 +603,7 @@
 ## Summary
 
 - Maven modules: 3
-- Java files: 270
+- Java files: 274
 - UI source files: 95
-- Git commit: `6e72a4c`
+- Git commit: `40e0b53`
 

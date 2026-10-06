@@ -8,8 +8,8 @@ import kit.penny.clientbus.common.kafka.SyncRecentChatsKafkaCommand;
 import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
 import kit.penny.clientbus.server.connector.IChannelConnector;
 import kit.penny.clientbus.server.connector.command.SyncRecentChatsCommand;
-import kit.penny.clientbus.server.kafka.producer.IPlatformConversationPublisher;
 import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
+import kit.penny.clientbus.server.service.RecentChatsSynchronizationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,7 +20,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -37,7 +37,8 @@ class KafkaSyncRecentChatsConsumerTest {
     private IChannelConnector connector;
 
     @Mock
-    private IPlatformConversationPublisher publisher;
+    private RecentChatsSynchronizationService
+            recentChatsSynchronizationService;
 
     private KafkaSyncRecentChatsConsumer consumer;
 
@@ -45,41 +46,87 @@ class KafkaSyncRecentChatsConsumerTest {
     void setUp() {
         consumer = new KafkaSyncRecentChatsConsumer(
                 connectorRegistry,
-                publisher
+                recentChatsSynchronizationService
         );
-
     }
 
     @Test
-    void shouldPublishEverySynchronizedConversation() {
-        PlatformConversationRequest first = conversation("200");
-        PlatformConversationRequest second = conversation("201");
+    void shouldDelegateSynchronizedConversationsToService() {
+
+        PlatformConversationRequest first =
+                conversation("200");
+
+        PlatformConversationRequest second =
+                conversation("201");
+
+        List<PlatformConversationRequest> conversations =
+                List.of(first, second);
 
         when(connectorRegistry.getConnector(ChannelType.TELEGRAM))
                 .thenReturn(connector);
 
         when(connector.handle(any(SyncRecentChatsCommand.class)))
-                .thenReturn(List.of(first, second));
+                .thenReturn(conversations);
 
-        consumer.consume(event(), KafkaTopicNames.channelCommand(ChannelType.TELEGRAM));
-
-        verify(connectorRegistry).getConnector(ChannelType.TELEGRAM);
-        verify(connector).handle(
-                new SyncRecentChatsCommand(ACCOUNT_ID)
+        consumer.consume(
+                event(),
+                KafkaTopicNames.channelCommand(
+                        ChannelType.TELEGRAM
+                )
         );
-        verify(publisher).publish(first);
-        verify(publisher).publish(second);
-        verifyNoMoreInteractions(publisher);
+
+        verify(connectorRegistry)
+                .getConnector(ChannelType.TELEGRAM);
+
+        verify(connector)
+                .handle(
+                        new SyncRecentChatsCommand(ACCOUNT_ID)
+                );
+
+        verify(recentChatsSynchronizationService)
+                .process(
+                        ChannelType.TELEGRAM,
+                        conversations
+                );
+
+        verifyNoMoreInteractions(
+                connectorRegistry,
+                connector,
+                recentChatsSynchronizationService
+        );
     }
 
     @Test
-    void shouldNotPublishWhenNoConversationsFound() {
+    void shouldDelegateEmptyResultToService() {
+
         when(connectorRegistry.getConnector(ChannelType.TELEGRAM))
                 .thenReturn(connector);
 
-        consumer.consume(event(), KafkaTopicNames.channelCommand(ChannelType.TELEGRAM));
+        when(connector.handle(any(SyncRecentChatsCommand.class)))
+                .thenReturn(List.of());
 
-        verifyNoInteractions(publisher);
+        consumer.consume(
+                event(),
+                KafkaTopicNames.channelCommand(ChannelType.TELEGRAM)
+        );
+
+        verify(connectorRegistry)
+                .getConnector(ChannelType.TELEGRAM);
+
+        verify(connector)
+                .handle(new SyncRecentChatsCommand(ACCOUNT_ID));
+
+        verify(recentChatsSynchronizationService)
+                .process(
+                        ChannelType.TELEGRAM,
+                        List.of()
+                );
+
+        verifyNoMoreInteractions(
+                connectorRegistry,
+                connector,
+                recentChatsSynchronizationService
+        );
     }
 
     @Test
@@ -89,7 +136,9 @@ class KafkaSyncRecentChatsConsumerTest {
                 IllegalArgumentException.class,
                 () -> consumer.consume(
                         null,
-                        KafkaTopicNames.channelCommand(ChannelType.TELEGRAM)
+                        KafkaTopicNames.channelCommand(
+                                ChannelType.TELEGRAM
+                        )
                 )
         );
     }
@@ -111,11 +160,16 @@ class KafkaSyncRecentChatsConsumerTest {
                 IllegalArgumentException.class,
                 () -> consumer.consume(
                         event,
-                        KafkaTopicNames.channelCommand(ChannelType.TELEGRAM)
+                        KafkaTopicNames.channelCommand(
+                                ChannelType.TELEGRAM
+                        )
                 )
         );
 
-        verifyNoInteractions(connectorRegistry, publisher);
+        verifyNoInteractions(
+                connectorRegistry,
+                recentChatsSynchronizationService
+        );
     }
 
     @Test
@@ -135,12 +189,20 @@ class KafkaSyncRecentChatsConsumerTest {
                 IllegalArgumentException.class,
                 () -> consumer.consume(
                         event,
-                        KafkaTopicNames.channelCommand(ChannelType.TELEGRAM)
+                        KafkaTopicNames.channelCommand(
+                                ChannelType.TELEGRAM
+                        )
                 )
+        );
+
+        verifyNoInteractions(
+                connectorRegistry,
+                recentChatsSynchronizationService
         );
     }
 
     private static KafkaEvent<SyncRecentChatsKafkaCommand> event() {
+
         return new KafkaEvent<>(
                 UUID.randomUUID(),
                 KafkaEventType.SYNC_RECENT_CHATS,
@@ -154,6 +216,7 @@ class KafkaSyncRecentChatsConsumerTest {
     private static PlatformConversationRequest conversation(
             String externalId
     ) {
+
         return new PlatformConversationRequest(
                 ACCOUNT_ID,
                 externalId,
