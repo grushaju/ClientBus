@@ -1,4 +1,9 @@
 clientbus:
+  sync:
+    recent-chats:
+      interval: PT15M
+      lease: PT30M
+
   jwt:
     # YOUR_BASE64_SECRET_KEY
     secret: FnQHtz4yCzaBgma1a25xV30mShdAQZx/33msarZ57f0=

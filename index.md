@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-10-06 14:03:45
+- Generated: 2026-10-06 17:33:12
 - Branch: `main`
-- Commit: `40e0b53`
+- Commit: `059d758`
 
 ## Project Structure
 
@@ -136,6 +136,7 @@
 ##### `kit.penny.clientbus.server.config.properties`
 
 - `BootstrapAdminProperties.java` — `server/src/main/java/kit/penny/clientbus/server/config/properties/BootstrapAdminProperties.java`
+- `RecentChatsSyncProperties.java` — `server/src/main/java/kit/penny/clientbus/server/config/properties/RecentChatsSyncProperties.java`
 - `StorageProperties.java` — `server/src/main/java/kit/penny/clientbus/server/config/properties/StorageProperties.java`
 
 ##### `kit.penny.clientbus.server.connector`
@@ -288,6 +289,7 @@
 - `MessageAttachmentEntity.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/entity/MessageAttachmentEntity.java`
 - `MessageEntity.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/entity/MessageEntity.java`
 - `OrganizationEntity.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/entity/OrganizationEntity.java`
+- `RecentChatsSyncRunEntity.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/entity/RecentChatsSyncRunEntity.java`
 - `UserEntity.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/entity/UserEntity.java`
 - `WorkspaceEntity.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/entity/WorkspaceEntity.java`
 
@@ -303,6 +305,7 @@
 - `MessageAttachmentRepository.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/repository/MessageAttachmentRepository.java`
 - `MessageRepository.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/repository/MessageRepository.java`
 - `OrganizationRepository.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/repository/OrganizationRepository.java`
+- `RecentChatsSyncRunRepository.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/repository/RecentChatsSyncRunRepository.java`
 - `UserRepository.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/repository/UserRepository.java`
 - `WorkspaceRepository.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/repository/WorkspaceRepository.java`
 
@@ -341,7 +344,10 @@
 - `MessageService.java` — `server/src/main/java/kit/penny/clientbus/server/service/MessageService.java`
 - `OrganizationService.java` — `server/src/main/java/kit/penny/clientbus/server/service/OrganizationService.java`
 - `OutboundMessageTransactionService.java` — `server/src/main/java/kit/penny/clientbus/server/service/OutboundMessageTransactionService.java`
+- `RecentChatsSyncCoordinator.java` — `server/src/main/java/kit/penny/clientbus/server/service/RecentChatsSyncCoordinator.java`
 - `RecentChatsSynchronizationService.java` — `server/src/main/java/kit/penny/clientbus/server/service/RecentChatsSynchronizationService.java`
+- `RecentChatsSyncRunService.java` — `server/src/main/java/kit/penny/clientbus/server/service/RecentChatsSyncRunService.java`
+- `RecentChatsSyncScheduler.java` — `server/src/main/java/kit/penny/clientbus/server/service/RecentChatsSyncScheduler.java`
 - `WorkspaceService.java` — `server/src/main/java/kit/penny/clientbus/server/service/WorkspaceService.java`
 
 ##### `kit.penny.clientbus.server.storage`
@@ -480,6 +486,8 @@
 - `MessageProcessingServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/MessageProcessingServiceTest.java`
 - `MessageServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/MessageServiceTest.java`
 - `RecentChatsSynchronizationServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/RecentChatsSynchronizationServiceTest.java`
+- `RecentChatsSyncRunConcurrencyIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/RecentChatsSyncRunConcurrencyIntegrationTest.java`
+- `RecentChatsSyncRunServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/RecentChatsSyncRunServiceTest.java`
 
 #### `src/test/resources`
 
@@ -603,7 +611,7 @@
 ## Summary
 
 - Maven modules: 3
-- Java files: 274
+- Java files: 282
 - UI source files: 95
-- Git commit: `40e0b53`
+- Git commit: `059d758`
 

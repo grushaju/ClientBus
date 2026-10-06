@@ -10,6 +10,7 @@ import kit.penny.clientbus.server.connector.IChannelConnector;
 import kit.penny.clientbus.server.connector.command.SyncRecentChatsCommand;
 import kit.penny.clientbus.server.kafka.producer.IPlatformConversationPublisher;
 import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
+import kit.penny.clientbus.server.service.RecentChatsSyncCoordinator;
 import kit.penny.clientbus.server.service.RecentChatsSynchronizationService;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.KafkaHeaders;
@@ -17,6 +18,7 @@ import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.UUID;
 
 @Component
 public class KafkaSyncRecentChatsConsumer {
@@ -27,16 +29,24 @@ public class KafkaSyncRecentChatsConsumer {
     private final RecentChatsSynchronizationService
             recentChatsSynchronizationService;
 
+    private final RecentChatsSyncCoordinator
+            recentChatsSyncCoordinator;
+
     public KafkaSyncRecentChatsConsumer(
             ChannelConnectorRegistry channelConnectorRegistry,
             RecentChatsSynchronizationService
-                    recentChatsSynchronizationService
+                    recentChatsSynchronizationService,
+            RecentChatsSyncCoordinator
+                    recentChatsSyncCoordinator
     ) {
         this.channelConnectorRegistry =
                 channelConnectorRegistry;
 
         this.recentChatsSynchronizationService =
                 recentChatsSynchronizationService;
+
+        this.recentChatsSyncCoordinator =
+                recentChatsSyncCoordinator;
     }
 
     @KafkaListener(
@@ -72,6 +82,35 @@ public class KafkaSyncRecentChatsConsumer {
             );
         }
 
+        UUID channelAccountId =
+                event.payload().channelAccountId();
+
+        if (channelAccountId == null) {
+            throw new IllegalArgumentException(
+                    "Kafka sync recent chats channelAccountId must not be null"
+            );
+        }
+
+        UUID syncRunId = event.eventId();
+
+        if (syncRunId == null) {
+            throw new IllegalArgumentException(
+                    "Kafka sync recent chats eventId must not be null"
+            );
+        }
+
+        if (!recentChatsSyncCoordinator.isExecutable(
+                channelAccountId,
+                syncRunId
+        )) {
+            recentChatsSyncCoordinator.complete(
+                    channelAccountId,
+                    syncRunId
+            );
+
+            return;
+        }
+
         ChannelType channelType =
                 KafkaTopicNames.channelCommandChannelType(
                         topic
@@ -96,6 +135,11 @@ public class KafkaSyncRecentChatsConsumer {
         recentChatsSynchronizationService.process(
                 channelType,
                 conversations
+        );
+
+        recentChatsSyncCoordinator.complete(
+                channelAccountId,
+                syncRunId
         );
     }
 }

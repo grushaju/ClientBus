@@ -10,6 +10,7 @@ import kit.penny.clientbus.server.connector.IChannelConnector;
 import kit.penny.clientbus.server.connector.command.SyncRecentChatsCommand;
 import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
 import kit.penny.clientbus.server.service.RecentChatsSynchronizationService;
+import kit.penny.clientbus.server.service.RecentChatsSyncCoordinator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -28,7 +29,14 @@ import static org.mockito.Mockito.*;
 class KafkaSyncRecentChatsConsumerTest {
 
     private static final UUID ACCOUNT_ID =
-            UUID.fromString("11111111-1111-1111-1111-111111111111");
+            UUID.fromString(
+                    "11111111-1111-1111-1111-111111111111"
+            );
+
+    private static final UUID SYNC_RUN_ID =
+            UUID.fromString(
+                    "22222222-2222-2222-2222-222222222222"
+            );
 
     @Mock
     private ChannelConnectorRegistry connectorRegistry;
@@ -40,18 +48,24 @@ class KafkaSyncRecentChatsConsumerTest {
     private RecentChatsSynchronizationService
             recentChatsSynchronizationService;
 
+    @Mock
+    private RecentChatsSyncCoordinator coordinator;
+
     private KafkaSyncRecentChatsConsumer consumer;
 
     @BeforeEach
     void setUp() {
-        consumer = new KafkaSyncRecentChatsConsumer(
-                connectorRegistry,
-                recentChatsSynchronizationService
-        );
+
+        consumer =
+                new KafkaSyncRecentChatsConsumer(
+                        connectorRegistry,
+                        recentChatsSynchronizationService,
+                        coordinator
+                );
     }
 
     @Test
-    void shouldDelegateSynchronizedConversationsToService() {
+    void currentRun_connectorServiceAndComplete() {
 
         PlatformConversationRequest first =
                 conversation("200");
@@ -62,11 +76,18 @@ class KafkaSyncRecentChatsConsumerTest {
         List<PlatformConversationRequest> conversations =
                 List.of(first, second);
 
-        when(connectorRegistry.getConnector(ChannelType.TELEGRAM))
-                .thenReturn(connector);
+        when(coordinator.isExecutable(
+                ACCOUNT_ID,
+                SYNC_RUN_ID
+        )).thenReturn(true);
 
-        when(connector.handle(any(SyncRecentChatsCommand.class)))
-                .thenReturn(conversations);
+        when(connectorRegistry.getConnector(
+                ChannelType.TELEGRAM
+        )).thenReturn(connector);
+
+        when(connector.handle(
+                any(SyncRecentChatsCommand.class)
+        )).thenReturn(conversations);
 
         consumer.consume(
                 event(),
@@ -75,12 +96,20 @@ class KafkaSyncRecentChatsConsumerTest {
                 )
         );
 
+        verify(coordinator)
+                .isExecutable(
+                        ACCOUNT_ID,
+                        SYNC_RUN_ID
+                );
+
         verify(connectorRegistry)
                 .getConnector(ChannelType.TELEGRAM);
 
         verify(connector)
                 .handle(
-                        new SyncRecentChatsCommand(ACCOUNT_ID)
+                        new SyncRecentChatsCommand(
+                                ACCOUNT_ID
+                        )
                 );
 
         verify(recentChatsSynchronizationService)
@@ -89,7 +118,82 @@ class KafkaSyncRecentChatsConsumerTest {
                         conversations
                 );
 
+        verify(coordinator)
+                .complete(
+                        ACCOUNT_ID,
+                        SYNC_RUN_ID
+                );
+
         verifyNoMoreInteractions(
+                connectorRegistry,
+                connector,
+                recentChatsSynchronizationService,
+                coordinator
+        );
+    }
+
+    @Test
+    void staleRun_noConnectorNoService() {
+
+        when(coordinator.isExecutable(
+                ACCOUNT_ID,
+                SYNC_RUN_ID
+        )).thenReturn(false);
+
+        consumer.consume(
+                event(),
+                KafkaTopicNames.channelCommand(
+                        ChannelType.TELEGRAM
+                )
+        );
+
+        verify(coordinator)
+                .isExecutable(
+                        ACCOUNT_ID,
+                        SYNC_RUN_ID
+                );
+
+        verify(coordinator)
+                .complete(
+                        ACCOUNT_ID,
+                        SYNC_RUN_ID
+                );
+
+        verifyNoInteractions(
+                connectorRegistry,
+                connector,
+                recentChatsSynchronizationService
+        );
+    }
+
+    @Test
+    void disconnectedCurrentRun_noConnectorNoServiceAndComplete() {
+
+        when(coordinator.isExecutable(
+                ACCOUNT_ID,
+                SYNC_RUN_ID
+        )).thenReturn(false);
+
+        consumer.consume(
+                event(),
+                KafkaTopicNames.channelCommand(
+                        ChannelType.TELEGRAM
+                )
+        );
+
+        verify(coordinator)
+                .isExecutable(
+                        ACCOUNT_ID,
+                        SYNC_RUN_ID
+                );
+
+        verify(coordinator)
+                .complete(
+                        ACCOUNT_ID,
+                        SYNC_RUN_ID
+                );
+
+        verifyNoInteractions(
                 connectorRegistry,
                 connector,
                 recentChatsSynchronizationService
@@ -99,22 +203,32 @@ class KafkaSyncRecentChatsConsumerTest {
     @Test
     void shouldDelegateEmptyResultToService() {
 
-        when(connectorRegistry.getConnector(ChannelType.TELEGRAM))
-                .thenReturn(connector);
+        when(coordinator.isExecutable(
+                ACCOUNT_ID,
+                SYNC_RUN_ID
+        )).thenReturn(true);
 
-        when(connector.handle(any(SyncRecentChatsCommand.class)))
-                .thenReturn(List.of());
+        when(connectorRegistry.getConnector(
+                ChannelType.TELEGRAM
+        )).thenReturn(connector);
+
+        when(connector.handle(
+                any(SyncRecentChatsCommand.class)
+        )).thenReturn(List.of());
 
         consumer.consume(
                 event(),
-                KafkaTopicNames.channelCommand(ChannelType.TELEGRAM)
+                KafkaTopicNames.channelCommand(
+                        ChannelType.TELEGRAM
+                )
         );
 
-        verify(connectorRegistry)
-                .getConnector(ChannelType.TELEGRAM);
-
         verify(connector)
-                .handle(new SyncRecentChatsCommand(ACCOUNT_ID));
+                .handle(
+                        new SyncRecentChatsCommand(
+                                ACCOUNT_ID
+                        )
+                );
 
         verify(recentChatsSynchronizationService)
                 .process(
@@ -122,11 +236,11 @@ class KafkaSyncRecentChatsConsumerTest {
                         List.of()
                 );
 
-        verifyNoMoreInteractions(
-                connectorRegistry,
-                connector,
-                recentChatsSynchronizationService
-        );
+        verify(coordinator)
+                .complete(
+                        ACCOUNT_ID,
+                        SYNC_RUN_ID
+                );
     }
 
     @Test
@@ -141,6 +255,12 @@ class KafkaSyncRecentChatsConsumerTest {
                         )
                 )
         );
+
+        verifyNoInteractions(
+                coordinator,
+                connectorRegistry,
+                recentChatsSynchronizationService
+        );
     }
 
     @Test
@@ -148,12 +268,14 @@ class KafkaSyncRecentChatsConsumerTest {
 
         KafkaEvent<SyncRecentChatsKafkaCommand> event =
                 new KafkaEvent<>(
-                        UUID.randomUUID(),
+                        SYNC_RUN_ID,
                         KafkaEventType.PLATFORM_MESSAGE,
                         1,
                         Instant.now(),
                         null,
-                        new SyncRecentChatsKafkaCommand(ACCOUNT_ID)
+                        new SyncRecentChatsKafkaCommand(
+                                ACCOUNT_ID
+                        )
                 );
 
         assertThrows(
@@ -167,6 +289,7 @@ class KafkaSyncRecentChatsConsumerTest {
         );
 
         verifyNoInteractions(
+                coordinator,
                 connectorRegistry,
                 recentChatsSynchronizationService
         );
@@ -177,7 +300,7 @@ class KafkaSyncRecentChatsConsumerTest {
 
         KafkaEvent<SyncRecentChatsKafkaCommand> event =
                 new KafkaEvent<>(
-                        UUID.randomUUID(),
+                        SYNC_RUN_ID,
                         KafkaEventType.SYNC_RECENT_CHATS,
                         1,
                         Instant.now(),
@@ -196,6 +319,7 @@ class KafkaSyncRecentChatsConsumerTest {
         );
 
         verifyNoInteractions(
+                coordinator,
                 connectorRegistry,
                 recentChatsSynchronizationService
         );
@@ -204,12 +328,14 @@ class KafkaSyncRecentChatsConsumerTest {
     private static KafkaEvent<SyncRecentChatsKafkaCommand> event() {
 
         return new KafkaEvent<>(
-                UUID.randomUUID(),
+                SYNC_RUN_ID,
                 KafkaEventType.SYNC_RECENT_CHATS,
                 1,
                 Instant.now(),
                 null,
-                new SyncRecentChatsKafkaCommand(ACCOUNT_ID)
+                new SyncRecentChatsKafkaCommand(
+                        ACCOUNT_ID
+                )
         );
     }
 
@@ -223,7 +349,9 @@ class KafkaSyncRecentChatsConsumerTest {
                 null,
                 null,
                 "Client " + externalId,
-                Instant.parse("2026-10-01T10:00:00Z"),
+                Instant.parse(
+                        "2026-10-01T10:00:00Z"
+                ),
                 "Hello",
                 0
         );

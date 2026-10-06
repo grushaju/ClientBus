@@ -1,10 +1,7 @@
 package kit.penny.clientbus.server.connector;
 
 import kit.penny.clientbus.common.enums.ChannelConnectionStatus;
-import kit.penny.clientbus.server.connector.command.SyncRecentChatsCommand;
-import kit.penny.clientbus.server.kafka.producer.ISyncRecentChatsCommandPublisher;
-import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
-import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
+import kit.penny.clientbus.server.service.RecentChatsSyncCoordinator;
 import org.springframework.stereotype.Component;
 
 import java.util.UUID;
@@ -13,25 +10,27 @@ import java.util.UUID;
 public class ChannelSynchronizationListener
         implements IChannelListener {
 
-    private final ISyncRecentChatsCommandPublisher publisher;
-    private final ChannelAccountRepository channelAccountRepository;
+    private final RecentChatsSyncCoordinator coordinator;
 
     public ChannelSynchronizationListener(
-            ISyncRecentChatsCommandPublisher publisher,
-            ChannelAccountRepository channelAccountRepository
+            RecentChatsSyncCoordinator coordinator
     ) {
-        this.publisher = publisher;
-        this.channelAccountRepository = channelAccountRepository;
+        this.coordinator =
+                coordinator;
     }
 
     @Override
-    public void channelChanged(ChannelEvent event) {
+    public void channelChanged(
+            ChannelEvent event
+    ) {
         if (event == null
-                || event.status() != ChannelConnectionStatus.CONNECTED) {
+                || event.status()
+                != ChannelConnectionStatus.CONNECTED) {
             return;
         }
 
-        UUID channelAccountId = event.channelAccountId();
+        UUID channelAccountId =
+                event.channelAccountId();
 
         if (channelAccountId == null) {
             throw new IllegalArgumentException(
@@ -39,23 +38,8 @@ public class ChannelSynchronizationListener
             );
         }
 
-        ChannelAccountEntity channelAccount =
-                channelAccountRepository.findById(channelAccountId)
-                        .orElseThrow(() -> new IllegalStateException(
-                                "Channel account not found: "
-                                        + channelAccountId
-                        ));
-
-        if (channelAccount.getChannel() == null) {
-            throw new IllegalStateException(
-                    "Channel account has no channel: "
-                            + channelAccountId
-            );
-        }
-
-        publisher.publish(
-                channelAccount.getChannel().getType(),
-                new SyncRecentChatsCommand(channelAccountId)
+        coordinator.request(
+                channelAccountId
         );
     }
 }

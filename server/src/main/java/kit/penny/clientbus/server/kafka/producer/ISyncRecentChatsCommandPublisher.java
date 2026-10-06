@@ -3,10 +3,14 @@ package kit.penny.clientbus.server.kafka.producer;
 import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.server.connector.command.SyncRecentChatsCommand;
 
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+
 public interface ISyncRecentChatsCommandPublisher {
 
-    void publish(
+    CompletableFuture<Void> publish(
             ChannelType channelType,
-            SyncRecentChatsCommand command
+            SyncRecentChatsCommand command,
+            UUID syncRunId
     );
 }

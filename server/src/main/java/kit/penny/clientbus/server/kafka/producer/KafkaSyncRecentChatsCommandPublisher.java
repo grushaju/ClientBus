@@ -1,9 +1,9 @@
 package kit.penny.clientbus.server.kafka.producer;
 
+import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.common.kafka.KafkaEvent;
 import kit.penny.clientbus.common.kafka.KafkaEventType;
 import kit.penny.clientbus.common.kafka.SyncRecentChatsKafkaCommand;
-import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.server.connector.command.SyncRecentChatsCommand;
 import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 @Component
 public class KafkaSyncRecentChatsCommandPublisher
@@ -18,18 +19,21 @@ public class KafkaSyncRecentChatsCommandPublisher
 
     private static final int SCHEMA_VERSION = 1;
 
-    private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final KafkaTemplate<String, Object>
+            kafkaTemplate;
 
     public KafkaSyncRecentChatsCommandPublisher(
             KafkaTemplate<String, Object> kafkaTemplate
     ) {
-        this.kafkaTemplate = kafkaTemplate;
+        this.kafkaTemplate =
+                kafkaTemplate;
     }
 
     @Override
-    public void publish(
+    public CompletableFuture<Void> publish(
             ChannelType channelType,
-            SyncRecentChatsCommand command
+            SyncRecentChatsCommand command,
+            UUID syncRunId
     ) {
 
         if (channelType == null) {
@@ -50,6 +54,12 @@ public class KafkaSyncRecentChatsCommandPublisher
             );
         }
 
+        if (syncRunId == null) {
+            throw new IllegalArgumentException(
+                    "syncRunId must not be null"
+            );
+        }
+
         SyncRecentChatsKafkaCommand payload =
                 new SyncRecentChatsKafkaCommand(
                         command.channelAccountId()
@@ -57,7 +67,7 @@ public class KafkaSyncRecentChatsCommandPublisher
 
         KafkaEvent<SyncRecentChatsKafkaCommand> event =
                 new KafkaEvent<>(
-                        UUID.randomUUID(),
+                        syncRunId,
                         KafkaEventType.SYNC_RECENT_CHATS,
                         SCHEMA_VERSION,
                         Instant.now(),
@@ -65,12 +75,16 @@ public class KafkaSyncRecentChatsCommandPublisher
                         payload
                 );
 
-        kafkaTemplate.send(
-                KafkaTopicNames.channelCommand(
-                        channelType
-                ),
-                command.channelAccountId().toString(),
-                event
-        );
+        return kafkaTemplate
+                .send(
+                        KafkaTopicNames.channelCommand(
+                                channelType
+                        ),
+                        command.channelAccountId().toString(),
+                        event
+                )
+                .thenApply(
+                        ignored -> null
+                );
     }
 }

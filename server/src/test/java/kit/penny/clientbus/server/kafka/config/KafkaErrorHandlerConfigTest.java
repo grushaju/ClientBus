@@ -4,13 +4,16 @@ import jakarta.persistence.EntityNotFoundException;
 import kit.penny.clientbus.common.kafka.KafkaEvent;
 import kit.penny.clientbus.common.kafka.KafkaEventType;
 import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
+import kit.penny.clientbus.common.kafka.SyncRecentChatsKafkaCommand;
 import kit.penny.clientbus.server.service.MessageService;
+import kit.penny.clientbus.server.service.RecentChatsSyncCoordinator;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
 import org.springframework.kafka.listener.CommonErrorHandler;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.MessageListenerContainer;
@@ -21,9 +24,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.*;
 
 class KafkaErrorHandlerConfigTest {
 
@@ -44,15 +45,30 @@ class KafkaErrorHandlerConfigTest {
 
     private MessageListenerContainer container;
 
+    @Mock
+    private RecentChatsSyncCoordinator recentChatsSyncCoordinator;
+
     @BeforeEach
     void setUp() {
-        config = new KafkaErrorHandlerConfig();
+        messageService =
+                mock(MessageService.class);
 
-        messageService = mock(MessageService.class);
         deadLetterPublishingRecoverer =
                 mock(DeadLetterPublishingRecoverer.class);
-        consumer = mock(Consumer.class);
-        container = mock(MessageListenerContainer.class);
+
+        recentChatsSyncCoordinator =
+                mock(RecentChatsSyncCoordinator.class);
+
+        consumer =
+                mock(Consumer.class);
+
+        container =
+                mock(MessageListenerContainer.class);
+
+        config =
+                new KafkaErrorHandlerConfig(
+                        recentChatsSyncCoordinator
+                );
     }
 
     @Test
@@ -167,6 +183,8 @@ class KafkaErrorHandlerConfigTest {
         verify(messageService)
                 .markDeliveryFailed(messageIdCaptor.capture());
 
+        verifyNoInteractions(recentChatsSyncCoordinator);
+
         assertEquals(
                 messageId,
                 messageIdCaptor.getValue()
@@ -246,6 +264,72 @@ class KafkaErrorHandlerConfigTest {
     }
 
 
+    @Test
+    void shouldReleaseRecentChatsSyncRunOnlyOnTerminalRecovery() {
+        CommonErrorHandler errorHandler =
+                config.kafkaCommonErrorHandler(
+                        deadLetterPublishingRecoverer,
+                        messageService
+                );
+
+        UUID channelAccountId = UUID.randomUUID();
+        UUID syncRunId = UUID.randomUUID();
+
+        SyncRecentChatsKafkaCommand command =
+                new SyncRecentChatsKafkaCommand(
+                        channelAccountId
+                );
+
+        KafkaEvent<SyncRecentChatsKafkaCommand> event =
+                new KafkaEvent<>(
+                        syncRunId,
+                        KafkaEventType.SYNC_RECENT_CHATS,
+                        1,
+                        Instant.now(),
+                        UUID.randomUUID(),
+                        command
+                );
+
+        ConsumerRecord<String, Object> record =
+                new ConsumerRecord<>(
+                        "clientbus.outbound.telegram",
+                        PARTITION,
+                        OFFSET,
+                        "key",
+                        event
+                );
+
+        RuntimeException exception =
+                new RuntimeException("Connector failure");
+
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            errorHandler.handleOne(
+                    exception,
+                    record,
+                    consumer,
+                    container
+            );
+        }
+
+        verify(recentChatsSyncCoordinator, never())
+                .complete(channelAccountId, syncRunId);
+
+        errorHandler.handleOne(
+                exception,
+                record,
+                consumer,
+                container
+        );
+
+        verify(recentChatsSyncCoordinator)
+                .complete(channelAccountId, syncRunId);
+
+        verify(messageService, never())
+                .markDeliveryFailed(any());
+
+        verify(deadLetterPublishingRecoverer)
+                .accept(record, exception);
+    }
 
 
     private ConsumerRecord<String, Object> outboundRecord(
