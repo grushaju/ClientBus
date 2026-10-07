@@ -87,7 +87,7 @@ public class KafkaSyncConversationHistoryCommandPublisher
                 );
 
         kafkaTemplate.send(
-                KafkaTopicNames.channelCommand(
+                KafkaTopicNames.conversationHistoryCommand(
                         channelType
                 ),
                 command.channelAccountId().toString(),

@@ -54,7 +54,7 @@ public class KafkaSyncRecentChatsConsumer {
             groupId =
                     "${spring.kafka.consumer.connector-command-group-id}",
             topicPattern =
-                    "#{T(kit.penny.clientbus.server.kafka.routing.KafkaTopicNames).channelCommandPattern()}"
+                    "#{T(kit.penny.clientbus.server.kafka.routing.KafkaTopicNames).recentChatsCommandPattern()}"
     )
     public void consume(
             KafkaEvent<SyncRecentChatsKafkaCommand> event,
@@ -112,7 +112,7 @@ public class KafkaSyncRecentChatsConsumer {
         }
 
         ChannelType channelType =
-                KafkaTopicNames.channelCommandChannelType(
+                KafkaTopicNames.recentChatsCommandChannelType(
                         topic
                 );
 

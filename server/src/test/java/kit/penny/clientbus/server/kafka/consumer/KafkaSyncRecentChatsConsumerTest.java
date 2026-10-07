@@ -91,7 +91,7 @@ class KafkaSyncRecentChatsConsumerTest {
 
         consumer.consume(
                 event(),
-                KafkaTopicNames.channelCommand(
+                KafkaTopicNames.recentChatsCommand(
                         ChannelType.TELEGRAM
                 )
         );
@@ -142,7 +142,7 @@ class KafkaSyncRecentChatsConsumerTest {
 
         consumer.consume(
                 event(),
-                KafkaTopicNames.channelCommand(
+                KafkaTopicNames.recentChatsCommand(
                         ChannelType.TELEGRAM
                 )
         );
@@ -176,7 +176,7 @@ class KafkaSyncRecentChatsConsumerTest {
 
         consumer.consume(
                 event(),
-                KafkaTopicNames.channelCommand(
+                KafkaTopicNames.recentChatsCommand(
                         ChannelType.TELEGRAM
                 )
         );
@@ -218,7 +218,7 @@ class KafkaSyncRecentChatsConsumerTest {
 
         consumer.consume(
                 event(),
-                KafkaTopicNames.channelCommand(
+                KafkaTopicNames.recentChatsCommand(
                         ChannelType.TELEGRAM
                 )
         );
@@ -250,7 +250,7 @@ class KafkaSyncRecentChatsConsumerTest {
                 IllegalArgumentException.class,
                 () -> consumer.consume(
                         null,
-                        KafkaTopicNames.channelCommand(
+                        KafkaTopicNames.recentChatsCommand(
                                 ChannelType.TELEGRAM
                         )
                 )
@@ -282,7 +282,7 @@ class KafkaSyncRecentChatsConsumerTest {
                 IllegalArgumentException.class,
                 () -> consumer.consume(
                         event,
-                        KafkaTopicNames.channelCommand(
+                        KafkaTopicNames.recentChatsCommand(
                                 ChannelType.TELEGRAM
                         )
                 )
@@ -312,7 +312,7 @@ class KafkaSyncRecentChatsConsumerTest {
                 IllegalArgumentException.class,
                 () -> consumer.consume(
                         event,
-                        KafkaTopicNames.channelCommand(
+                        KafkaTopicNames.recentChatsCommand(
                                 ChannelType.TELEGRAM
                         )
                 )

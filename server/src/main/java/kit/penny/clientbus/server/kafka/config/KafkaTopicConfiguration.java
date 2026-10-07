@@ -189,7 +189,7 @@ public class KafkaTopicConfiguration {
     }
 
     @Bean
-    public List<NewTopic> channelCommandTopics() {
+    public List<NewTopic> recentChatsCommandTopics() {
 
         List<NewTopic> topics =
                 new ArrayList<>();
@@ -199,7 +199,7 @@ public class KafkaTopicConfiguration {
 
             topics.add(
                     new NewTopic(
-                            KafkaTopicNames.channelCommand(
+                            KafkaTopicNames.recentChatsCommand(
                                     channelType
                             ),
                             PARTITIONS,
@@ -212,7 +212,7 @@ public class KafkaTopicConfiguration {
     }
 
     @Bean
-    public List<NewTopic> channelCommandDlqTopics() {
+    public List<NewTopic> recentChatsCommandDlqTopics() {
 
         List<NewTopic> topics =
                 new ArrayList<>();
@@ -221,7 +221,56 @@ public class KafkaTopicConfiguration {
                 enabledOutboundChannels) {
 
             String topic =
-                    KafkaTopicNames.channelCommand(
+                    KafkaTopicNames.recentChatsCommand(
+                            channelType
+                    );
+
+            topics.add(
+                    new NewTopic(
+                            KafkaTopicNames.dlq(topic),
+                            1,
+                            REPLICATION_FACTOR
+                    )
+            );
+        }
+
+        return topics;
+    }
+
+    @Bean
+    public List<NewTopic> conversationHistoryCommandTopics() {
+
+        List<NewTopic> topics =
+                new ArrayList<>();
+
+        for (ChannelType channelType :
+                enabledOutboundChannels) {
+
+            topics.add(
+                    new NewTopic(
+                            KafkaTopicNames.conversationHistoryCommand(
+                                    channelType
+                            ),
+                            PARTITIONS,
+                            REPLICATION_FACTOR
+                    )
+            );
+        }
+
+        return topics;
+    }
+
+    @Bean
+    public List<NewTopic> conversationHistoryCommandDlqTopics() {
+
+        List<NewTopic> topics =
+                new ArrayList<>();
+
+        for (ChannelType channelType :
+                enabledOutboundChannels) {
+
+            String topic =
+                    KafkaTopicNames.conversationHistoryCommand(
                             channelType
                     );
 

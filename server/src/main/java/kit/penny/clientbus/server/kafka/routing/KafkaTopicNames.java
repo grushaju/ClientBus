@@ -15,6 +15,14 @@ public final class KafkaTopicNames {
     private static final String CHANNEL_COMMAND_PREFIX =
             PREFIX + ".channel-command.";
 
+    // NEW
+    private static final String RECENT_CHATS_COMMAND_PREFIX =
+            CHANNEL_COMMAND_PREFIX + "recent-chats.";
+
+    // NEW
+    private static final String CONVERSATION_HISTORY_COMMAND_PREFIX =
+            CHANNEL_COMMAND_PREFIX + "conversation-history.";
+
     private KafkaTopicNames() {
     }
 
@@ -148,7 +156,8 @@ public final class KafkaTopicNames {
                 + "[^.]+$";
     }
 
-    public static String channelCommand(
+    // NEW
+    public static String recentChatsCommand(
             ChannelType channelType
     ) {
         if (channelType == null) {
@@ -157,11 +166,12 @@ public final class KafkaTopicNames {
             );
         }
 
-        return CHANNEL_COMMAND_PREFIX
+        return RECENT_CHATS_COMMAND_PREFIX
                 + channelType.name().toLowerCase();
     }
 
-    public static ChannelType channelCommandChannelType(
+    // NEW
+    public static ChannelType recentChatsCommandChannelType(
             String topic
     ) {
         if (topic == null || topic.isBlank()) {
@@ -170,20 +180,23 @@ public final class KafkaTopicNames {
             );
         }
 
-        if (!topic.startsWith(CHANNEL_COMMAND_PREFIX)) {
+        if (!topic.startsWith(
+                RECENT_CHATS_COMMAND_PREFIX
+        )) {
             throw new IllegalArgumentException(
-                    "Not a channel-command topic: " + topic
+                    "Not a recent-chats command topic: "
+                            + topic
             );
         }
 
         String channelTypeName =
                 topic.substring(
-                        CHANNEL_COMMAND_PREFIX.length()
+                        RECENT_CHATS_COMMAND_PREFIX.length()
                 );
 
         if (channelTypeName.isBlank()) {
             throw new IllegalArgumentException(
-                    "Channel-command topic does not contain channel type: "
+                    "Recent-chats command topic does not contain channel type: "
                             + topic
             );
         }
@@ -194,16 +207,84 @@ public final class KafkaTopicNames {
             );
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException(
-                    "Unknown channel type in channel-command topic: "
+                    "Unknown channel type in recent-chats command topic: "
                             + topic,
                     e
             );
         }
     }
 
-    public static String channelCommandPattern() {
+    // NEW
+    public static String recentChatsCommandPattern() {
         return "^"
-                + CHANNEL_COMMAND_PREFIX.replace(".", "\\.")
+                + RECENT_CHATS_COMMAND_PREFIX
+                .replace(".", "\\.")
+                + "[^.]+$";
+    }
+
+    // NEW
+    public static String conversationHistoryCommand(
+            ChannelType channelType
+    ) {
+        if (channelType == null) {
+            throw new IllegalArgumentException(
+                    "ChannelType must not be null"
+            );
+        }
+
+        return CONVERSATION_HISTORY_COMMAND_PREFIX
+                + channelType.name().toLowerCase();
+    }
+
+    // NEW
+    public static ChannelType conversationHistoryCommandChannelType(
+            String topic
+    ) {
+        if (topic == null || topic.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Topic must not be blank"
+            );
+        }
+
+        if (!topic.startsWith(
+                CONVERSATION_HISTORY_COMMAND_PREFIX
+        )) {
+            throw new IllegalArgumentException(
+                    "Not a conversation-history command topic: "
+                            + topic
+            );
+        }
+
+        String channelTypeName =
+                topic.substring(
+                        CONVERSATION_HISTORY_COMMAND_PREFIX.length()
+                );
+
+        if (channelTypeName.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Conversation-history command topic does not contain channel type: "
+                            + topic
+            );
+        }
+
+        try {
+            return ChannelType.valueOf(
+                    channelTypeName.toUpperCase()
+            );
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(
+                    "Unknown channel type in conversation-history command topic: "
+                            + topic,
+                    e
+            );
+        }
+    }
+
+    // NEW
+    public static String conversationHistoryCommandPattern() {
+        return "^"
+                + CONVERSATION_HISTORY_COMMAND_PREFIX
+                .replace(".", "\\.")
                 + "[^.]+$";
     }
 

@@ -45,7 +45,7 @@ class KafkaSyncConversationHistoryConsumerTest {
     private static final int LIMIT = 50;
 
     private static final String TELEGRAM_TOPIC =
-            KafkaTopicNames.channelCommand(
+            KafkaTopicNames.conversationHistoryCommand(
                     ChannelType.TELEGRAM
             );
 

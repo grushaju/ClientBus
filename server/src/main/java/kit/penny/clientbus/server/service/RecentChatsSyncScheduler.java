@@ -34,8 +34,8 @@ public class RecentChatsSyncScheduler {
     }
 
     @Scheduled(
-            initialDelayString =
-                    "${clientbus.sync.recent-chats.interval}",
+            initialDelay=
+                    0,
             fixedDelayString =
                     "${clientbus.sync.recent-chats.interval}"
     )
@@ -77,7 +77,7 @@ public class RecentChatsSyncScheduler {
             }
         }
 
-        log.debug(
+        log.info(
                 "Recent chats periodic sync finished: " +
                         "candidates={}, started={}, skipped={}, failed={}",
                 accounts.size(),

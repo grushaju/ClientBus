@@ -77,7 +77,7 @@ public class KafkaSyncRecentChatsCommandPublisher
 
         return kafkaTemplate
                 .send(
-                        KafkaTopicNames.channelCommand(
+                        KafkaTopicNames.recentChatsCommand(
                                 channelType
                         ),
                         command.channelAccountId().toString(),

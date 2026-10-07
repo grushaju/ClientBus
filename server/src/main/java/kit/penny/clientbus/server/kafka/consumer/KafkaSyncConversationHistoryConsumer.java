@@ -49,7 +49,7 @@ public class KafkaSyncConversationHistoryConsumer {
             groupId =
                     "${spring.kafka.consumer.connector-command-group-id}",
             topicPattern =
-                    "#{T(kit.penny.clientbus.server.kafka.routing.KafkaTopicNames).channelCommandPattern()}"
+                    "#{T(kit.penny.clientbus.server.kafka.routing.KafkaTopicNames).conversationHistoryCommandPattern()}"
     )
     public void consume(
             KafkaEvent<SyncConversationHistoryKafkaCommand> event,
@@ -76,7 +76,7 @@ public class KafkaSyncConversationHistoryConsumer {
         }
 
         ChannelType channelType =
-                KafkaTopicNames.channelCommandChannelType(
+                KafkaTopicNames.conversationHistoryCommandChannelType(
                         topic
                 );
 
