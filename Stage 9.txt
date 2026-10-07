@@ -15,6 +15,17 @@
 9.8  Realtime + history convergence
 9.9  Initial/recovery synchronization
 9.10 UI lazy history loading
+    9.10.1  Зафиксировать контракт lazy loading
+    9.10.2  Backend endpoint для lazy history
+    9.10.3  UI API для remote history sync
+    9.10.4  Расширить useConversationMessages
+    9.10.5  Привязать remote sync к достижению начала
+    9.10.6  Получение догруженной истории через существующий DB/Kafka flow
+    9.10.7  Обработка historyStartReached
+    9.10.8  Prepend без скачка scroll position
+    9.10.9  Совместимость с realtime
+    9.10.10 Ошибки и retry
+    9.10.11 Финальное интеграционное тестирование
 9.11 Concurrent synchronization
 9.12 Account/profile synchronization
 9.13 Avatars

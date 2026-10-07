@@ -16,6 +16,89 @@ interface Props {
     onLoadOlder: () => Promise<void>
 }
 
+function getMessageDate(
+    message: MessageDto,
+): string {
+    const value =
+        message.sentAt ??
+        message.createdAt
+
+    const date =
+        new Date(value)
+
+    if (Number.isNaN(date.getTime())) {
+        return ''
+    }
+
+    return [
+        date.getFullYear(),
+        date.getMonth(),
+        date.getDate(),
+    ].join('-')
+}
+
+function formatMessageDate(
+    dateKey: string,
+): string {
+    if (!dateKey) {
+        return ''
+    }
+
+    const [
+        year,
+        month,
+        day,
+    ] = dateKey
+        .split('-')
+        .map(Number)
+
+    const date =
+        new Date(
+            year,
+            month,
+            day,
+        )
+
+    const today =
+        new Date()
+
+    const todayKey = [
+        today.getFullYear(),
+        today.getMonth(),
+        today.getDate(),
+    ].join('-')
+
+    if (dateKey === todayKey) {
+        return 'Сегодня'
+    }
+
+    const yesterday =
+        new Date(
+            today.getFullYear(),
+            today.getMonth(),
+            today.getDate() - 1,
+        )
+
+    const yesterdayKey = [
+        yesterday.getFullYear(),
+        yesterday.getMonth(),
+        yesterday.getDate(),
+    ].join('-')
+
+    if (dateKey === yesterdayKey) {
+        return 'Вчера'
+    }
+
+    return date.toLocaleDateString(
+        'ru-RU',
+        {
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric',
+        },
+    )
+}
+
 function MessageList({
                          messages,
                          loading,
@@ -174,12 +257,43 @@ function MessageList({
             )}
 
             {messages.map(
-                message => (
-                    <MessageBubble
-                        key={message.id}
-                        message={message}
-                    />
-                ),
+                (message, index) => {
+                    const messageDate =
+                        getMessageDate(message)
+
+                    const previousMessage =
+                        index > 0
+                            ? messages[index - 1]
+                            : null
+
+                    const previousDate =
+                        previousMessage
+                            ? getMessageDate(
+                                previousMessage,
+                            )
+                            : null
+
+                    const showDateSeparator =
+                        messageDate !== previousDate
+
+                    return (
+                        <div key={message.id}>
+                            {showDateSeparator && (
+                                <div className="message-date-separator">
+                        <span>
+                            {formatMessageDate(
+                                messageDate,
+                            )}
+                        </span>
+                                </div>
+                            )}
+
+                            <MessageBubble
+                                message={message}
+                            />
+                        </div>
+                    )
+                },
             )}
         </div>
     )

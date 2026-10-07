@@ -540,6 +540,44 @@
     line-height: 1.4;
 }
 
+.message-date-separator {
+    display: flex;
+    align-items: center;
+
+    gap: var(--ui-space-3);
+
+    margin: var(--ui-space-4) 0;
+
+    color: var(--ui-color-text-muted);
+
+    font-size: var(--ui-font-size-xs);
+    line-height: 1.3;
+
+    text-align: center;
+}
+
+.message-date-separator::before,
+.message-date-separator::after {
+    content: '';
+
+    flex: 1;
+
+    height: 1px;
+
+    background: var(--ui-color-border-light);
+}
+
+.message-date-separator span {
+    flex-shrink: 0;
+
+    padding: 4px 10px;
+
+    border: 1px solid var(--ui-color-border-light);
+    border-radius: 999px;
+
+    background: var(--ui-color-background-subtle);
+}
+
 
 /* =========================================================
    RESPONSIVE

@@ -138,7 +138,7 @@ public class KafkaEventJsonDeserializer
             case SYNC_CONVERSATION_HISTORY ->
                     objectMapper.convertValue(
                             payload,
-                            SyncConversationHistoryCommand.class
+                            SyncConversationHistoryKafkaCommand.class
                     );
         };
     }

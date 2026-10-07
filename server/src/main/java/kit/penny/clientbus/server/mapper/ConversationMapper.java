@@ -36,7 +36,9 @@ public class ConversationMapper {
 
                 entity.getCreatedAt(),
 
-                entity.getUpdatedAt()
+                entity.getUpdatedAt(),
+
+                entity.isHistoryStartReached()
         );
     }
 }

@@ -12,6 +12,7 @@ export interface ConversationDto {
     unreadCount: number
     createdAt: string
     updatedAt: string
+    historyStartReached: boolean
 }
 
 export interface CreateConversationRequest {

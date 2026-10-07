@@ -226,7 +226,6 @@ public class TelegramChannelConnector
         return List.copyOf(conversations);
     }
 
-    @Override
     public SyncConversationHistoryResult handle(
             SyncConversationHistoryCommand command
     ) {
@@ -292,32 +291,42 @@ public class TelegramChannelConnector
         }
 
         /*
-         * End-of-history MUST be determined from the raw TDLib
-         * response, before the cursor message is filtered out.
+         * End-of-history detection:
          *
-         * If TDLib returned any actual message older than the cursor,
-         * there is still history available.
+         * For the initial request (beforeMessageId == 0), TDLib starts
+         * from the newest messages. If fewer messages than requested
+         * were returned, the beginning of the history has been reached.
+         *
+         * For subsequent pages, determine the end of history from the
+         * raw TDLib response before filtering out the cursor message.
          *
          * The cursor message itself is not an older message.
          */
-        boolean hasOlderMessage =
-                false;
+        boolean historyStartReached;
 
-        for (TdApi.Message message : messages.messages) {
+        if (beforeMessageId == 0) {
 
-            if (message == null) {
-                continue;
+            historyStartReached =
+                    messages.messages.length < limit;
+
+        } else {
+
+            boolean hasOlderMessage = false;
+
+            for (TdApi.Message message : messages.messages) {
+
+                if (message == null) {
+                    continue;
+                }
+
+                if (message.id < beforeMessageId) {
+                    hasOlderMessage = true;
+                    break;
+                }
             }
 
-            if (beforeMessageId == 0
-                    || message.id < beforeMessageId) {
-                hasOlderMessage = true;
-                break;
-            }
+            historyStartReached = !hasOlderMessage;
         }
-
-        boolean historyStartReached =
-                !hasOlderMessage;
 
         List<PlatformMessageRequest> result =
                 new ArrayList<>(

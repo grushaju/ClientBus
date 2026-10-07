@@ -22,6 +22,8 @@ public record ConversationDto(
 
         Instant createdAt,
 
-        Instant updatedAt
+        Instant updatedAt,
+
+        boolean historyStartReached
 ) {
 }
