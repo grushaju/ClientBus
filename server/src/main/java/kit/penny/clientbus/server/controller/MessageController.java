@@ -98,6 +98,30 @@ public class MessageController {
         );
     }
 
+    @PostMapping("/conversation/{conversationId}/history/sync")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> syncConversationHistory(
+            @PathVariable UUID conversationId,
+            @RequestParam(required = false) String beforeExternalId,
+            @RequestParam(defaultValue = "50") int limit
+    ) {
+        if (limit <= 0) {
+            throw new IllegalArgumentException(
+                    "Limit must be greater than 0"
+            );
+        }
+
+        int normalizedLimit = Math.min(limit, 100);
+
+        messageService.syncConversationHistory(
+                conversationId,
+                beforeExternalId,
+                normalizedLimit
+        );
+
+        return ResponseEntity.accepted().build();
+    }
+
     @PostMapping(
             value = "/outbound",
             consumes = MediaType.MULTIPART_FORM_DATA_VALUE

@@ -97,3 +97,30 @@ export async function retryOutboundMessage(
 
     return response.json()
 }
+
+export async function syncConversationHistory(
+    conversationId: string,
+    beforeExternalId: string | null,
+    limit = 50,
+): Promise<void> {
+    const params = new URLSearchParams()
+
+    if (beforeExternalId !== null) {
+        params.set(
+            'beforeExternalId',
+            beforeExternalId,
+        )
+    }
+
+    params.set(
+        'limit',
+        String(limit),
+    )
+
+    await apiFetch(
+        `/api/messages/conversation/${conversationId}/history/sync?${params.toString()}`,
+        {
+            method: 'POST',
+        },
+    )
+}

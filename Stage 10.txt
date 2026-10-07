@@ -1,0 +1,24 @@
+Notification
+10.1  Семантика и гарантии
+          ↓
+10.2  Event / Notification contract
+          ↓
+10.3  Routing + Security model
+          ↓
+10.4  Transport
+          ↓
+10.5  Backend Notification Gateway
+          ↓
+10.6  UI Notification Client
+          ↓
+10.7  Reconnect + State Recovery
+          ↓
+10.8  Первый E2E event
+          ↓
+10.9  Conversation / Inbox events
+          ↓
+10.10 History Sync integration
+          ↓
+10.11 Observability
+          ↓
+10.12 Integration / E2E tests
