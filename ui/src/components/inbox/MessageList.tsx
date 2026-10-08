@@ -1,4 +1,5 @@
 import {
+    useCallback,
     useLayoutEffect,
     useRef,
 } from 'react'
@@ -12,6 +13,7 @@ interface Props {
     loading: boolean
     loadingOlder: boolean
     hasMore: boolean
+    historyStartReached: boolean
     error: string | null
     onLoadOlder: () => Promise<void>
 }
@@ -104,6 +106,7 @@ function MessageList({
                          loading,
                          loadingOlder,
                          hasMore,
+                         historyStartReached,
                          error,
                          onLoadOlder,
                      }: Props) {
@@ -135,6 +138,10 @@ function MessageList({
 
         const currentCount =
             messages.length
+
+        if (currentCount === 0) {
+            initialScrollDoneRef.current = false
+        }
 
         /*
          * Первоначальная загрузка:
@@ -178,6 +185,91 @@ function MessageList({
             currentCount
     }, [messages])
 
+    const tryLoadOlder =
+        useCallback(async () => {
+            const container =
+                containerRef.current
+
+            if (!container) {
+                return
+            }
+
+            if (
+                loadingOlder ||
+                !hasMore ||
+                historyStartReached
+            ) {
+                return
+            }
+
+            const threshold = 120
+
+            const reachedTop =
+                container.scrollTop <=
+                threshold
+
+            const contentDoesNotScroll =
+                container.scrollHeight <=
+                container.clientHeight
+
+            if (
+                !reachedTop &&
+                !contentDoesNotScroll
+            ) {
+                return
+            }
+
+            preserveScrollRef.current = {
+                scrollHeight:
+                container.scrollHeight,
+                scrollTop:
+                container.scrollTop,
+            }
+
+            await onLoadOlder()
+        }, [
+            loadingOlder,
+            hasMore,
+            historyStartReached,
+            onLoadOlder,
+        ])
+
+    useLayoutEffect(() => {
+        const container =
+            containerRef.current
+
+        if (!container) {
+            return
+        }
+
+        if (
+            loading ||
+            loadingOlder ||
+            !hasMore ||
+            historyStartReached ||
+            messages.length === 0
+        ) {
+            return
+        }
+
+        const contentDoesNotScroll =
+            container.scrollHeight <=
+            container.clientHeight
+
+        if (!contentDoesNotScroll) {
+            return
+        }
+
+        void tryLoadOlder()
+    }, [
+        messages,
+        loading,
+        loadingOlder,
+        hasMore,
+        historyStartReached,
+        tryLoadOlder,
+    ])
+
     /*
      * При смене conversationId MessageList
      * фактически получает новый набор сообщений.
@@ -210,6 +302,8 @@ function MessageList({
         )
     }
 
+
+
     const handleScroll = async () => {
         const container =
             containerRef.current
@@ -218,27 +312,11 @@ function MessageList({
             return
         }
 
-        const threshold = 120
-
         if (
             container.scrollTop <=
-            threshold
+            120
         ) {
-            if (
-                loadingOlder ||
-                !hasMore
-            ) {
-                return
-            }
-
-            preserveScrollRef.current = {
-                scrollHeight:
-                    container.scrollHeight,
-                scrollTop:
-                    container.scrollTop,
-            }
-
-            await onLoadOlder()
+            await tryLoadOlder()
         }
     }
 
@@ -277,14 +355,23 @@ function MessageList({
                         messageDate !== previousDate
 
                     return (
+
                         <div key={message.id}>
+                            {index === 0 &&
+                                historyStartReached && (
+                                    <div className="message-date-separator">
+                                        <span>
+                                            Начало диалога
+                                        </span>
+                                    </div>
+                                )}
                             {showDateSeparator && (
                                 <div className="message-date-separator">
-                        <span>
-                            {formatMessageDate(
-                                messageDate,
-                            )}
-                        </span>
+                                    <span>
+                                        {formatMessageDate(
+                                            messageDate,
+                                        )}
+                                    </span>
                                 </div>
                             )}
 

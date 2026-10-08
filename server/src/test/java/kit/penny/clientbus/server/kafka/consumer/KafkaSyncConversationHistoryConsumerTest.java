@@ -13,20 +13,31 @@ import kit.penny.clientbus.server.connector.command.SyncConversationHistoryComma
 import kit.penny.clientbus.server.kafka.producer.IPlatformMessagePublisher;
 import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
 import kit.penny.clientbus.server.service.ConversationService;
+import kit.penny.clientbus.server.service.IMessageProcessingService;
+import kit.penny.clientbus.server.service.MessageService;
+import kit.penny.clientbus.common.dto.message.MessageDto;
+import kit.penny.clientbus.common.kafka.SyncConversationHistoryKafkaCommand;
+import kit.penny.clientbus.server.service.IMessageProcessingService;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.kafka.core.KafkaTemplate;
 
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.eq;
 
 @ExtendWith(MockitoExtension.class)
 class KafkaSyncConversationHistoryConsumerTest {
@@ -61,6 +72,15 @@ class KafkaSyncConversationHistoryConsumerTest {
     @Mock
     private ConversationService conversationService;
 
+    @Mock
+    private IMessageProcessingService messageProcessingService;
+
+    @Mock
+    private KafkaTemplate<String, Object> kafkaTemplate;
+
+    @Mock
+    private MessageService messageService;
+
     private KafkaSyncConversationHistoryConsumer consumer;
 
     @BeforeEach
@@ -68,7 +88,10 @@ class KafkaSyncConversationHistoryConsumerTest {
         consumer = new KafkaSyncConversationHistoryConsumer(
                 connectorRegistry,
                 publisher,
-                conversationService
+                conversationService,
+                messageProcessingService,
+                messageService,
+                kafkaTemplate
         );
 
     }
@@ -306,13 +329,138 @@ class KafkaSyncConversationHistoryConsumerTest {
         );
     }
 
+    @Test
+    void shouldProcessMessagesDirectlyForSynchronousHistorySync() {
+        UUID correlationId = UUID.randomUUID();
+
+        PlatformMessageRequest first =
+                message("101");
+
+        PlatformMessageRequest second =
+                message("102");
+
+        MessageDto firstDto = mock(MessageDto.class);
+        MessageDto secondDto = mock(MessageDto.class);
+
+        when(connector.handle(
+                any(SyncConversationHistoryCommand.class)
+        )).thenReturn(
+                new SyncConversationHistoryResult(
+                        List.of(first, second),
+                        false
+                )
+        );
+
+        when(connectorRegistry.getConnector(
+                ChannelType.TELEGRAM
+        )).thenReturn(connector);
+
+        when(messageProcessingService.processPlatformMessage(first))
+                .thenReturn(firstDto);
+
+        when(messageProcessingService.processPlatformMessage(second))
+                .thenReturn(secondDto);
+
+        consumer.consume(
+                event(correlationId),
+                TELEGRAM_TOPIC
+        );
+
+        verify(messageProcessingService)
+                .processPlatformMessage(first);
+
+        verify(messageProcessingService)
+                .processPlatformMessage(second);
+
+        verifyNoInteractions(publisher);
+        verifyNoInteractions(conversationService);
+    }
+
+    @Test
+    void shouldPublishSynchronousHistoryResultWithSameCorrelationId() {
+        UUID correlationId = UUID.randomUUID();
+
+        PlatformMessageRequest message =
+                message("101");
+
+        MessageDto messageDto =
+                mock(MessageDto.class);
+
+        when(connector.handle(
+                any(SyncConversationHistoryCommand.class)
+        )).thenReturn(
+                new SyncConversationHistoryResult(
+                        List.of(message),
+                        true
+                )
+        );
+
+        when(connectorRegistry.getConnector(
+                ChannelType.TELEGRAM
+        )).thenReturn(connector);
+
+        when(messageProcessingService.processPlatformMessage(message))
+                .thenReturn(messageDto);
+
+        consumer.consume(
+                event(correlationId),
+                TELEGRAM_TOPIC
+        );
+
+        ArgumentCaptor<KafkaEvent> captor =
+                ArgumentCaptor.forClass(KafkaEvent.class);
+
+        verify(kafkaTemplate).send(
+                eq(KafkaTopicNames.conversationHistoryResult()),
+                eq(correlationId.toString()),
+                captor.capture()
+        );
+
+        KafkaEvent resultEvent =
+                captor.getValue();
+
+        assertEquals(
+                KafkaEventType.SYNC_CONVERSATION_HISTORY_RESULT,
+                resultEvent.eventType()
+        );
+
+        assertEquals(
+                correlationId,
+                resultEvent.correlationId()
+        );
+
+        assertEquals(
+                1,
+                resultEvent.schemaVersion()
+        );
+
+        assertNotNull(resultEvent.payload());
+
+        verify(messageProcessingService)
+                .processPlatformMessage(message);
+
+        verify(conversationService)
+                .markHistoryStartReached(
+                        ACCOUNT_ID,
+                        CONVERSATION_EXTERNAL_ID
+                );
+
+        verifyNoInteractions(publisher);
+    }
+
     private static KafkaEvent<SyncConversationHistoryKafkaCommand> event() {
+        return event(null);
+    }
+
+    private static KafkaEvent<SyncConversationHistoryKafkaCommand> event(
+            UUID correlationId
+    ) {
         return new KafkaEvent<>(
                 UUID.randomUUID(),
                 KafkaEventType.SYNC_CONVERSATION_HISTORY,
                 1,
                 Instant.now(),
-                null,
+                correlationId,
                 new SyncConversationHistoryKafkaCommand(
                         ACCOUNT_ID,
                         CONVERSATION_EXTERNAL_ID,

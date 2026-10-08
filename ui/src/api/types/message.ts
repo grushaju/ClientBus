@@ -89,28 +89,6 @@ export interface MessageAttachmentDto {
     createdAt: string
 }
 
-export interface MessageDto {
-    id: string
-    conversationId: string
-    type: MessageType
-    direction: MessageDirection
-    senderType: MessageSenderType
-    clientAccountId: string | null
-    employeeId: string | null
-    replyToMessageId: string | null
-    forwardedFromMessageId: string | null
-    externalId: string | null
-    content: string | null
-    metadata: string | null
-    sentAt: string | null
-    createdAt: string
-    processingStatus: MessageProcessingStatus
-    deliveryStatus: MessageDeliveryStatus
-    processedAt: string | null
-    deliveredAt: string | null
-    readAt: string | null
-}
-
 export interface OutboundMessageRequest {
     conversationId: string
     type: MessageType

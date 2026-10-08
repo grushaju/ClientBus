@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-10-08 01:01:00
+- Generated: 2026-10-08 17:26:20
 - Branch: `main`
-- Commit: `1bfa1bf`
+- Commit: `36a2cb6`
 
 ## Project Structure
 
@@ -110,6 +110,11 @@
 - `PlatformOutboundAttachment.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/PlatformOutboundAttachment.java`
 - `SyncConversationHistoryKafkaCommand.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/SyncConversationHistoryKafkaCommand.java`
 - `SyncRecentChatsKafkaCommand.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/SyncRecentChatsKafkaCommand.java`
+
+#### `src/main/resources`
+
+
+#### `src/test/java`
 
 ### server
 
@@ -608,5 +613,5 @@
 - Maven modules: 3
 - Java files: 282
 - UI source files: 95
-- Git commit: `1bfa1bf`
+- Git commit: `36a2cb6`
 

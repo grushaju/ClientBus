@@ -9,6 +9,7 @@ import kit.penny.clientbus.common.enums.MessageDeliveryStatus;
 import kit.penny.clientbus.common.enums.MessageDirection;
 import kit.penny.clientbus.common.enums.MessageProcessingStatus;
 import kit.penny.clientbus.common.enums.MessageSenderType;
+import kit.penny.clientbus.common.kafka.SyncConversationHistoryKafkaCommand;
 import kit.penny.clientbus.server.connector.command.SyncConversationHistoryCommand;
 import kit.penny.clientbus.server.kafka.producer.ISyncConversationHistoryCommandPublisher;
 import kit.penny.clientbus.server.mapper.MessageMapper;
@@ -21,9 +22,17 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.Duration;
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 @Service
 public class MessageService {
@@ -35,12 +44,25 @@ public class MessageService {
     private final CurrentUserService currentUserService;
     private final ISyncConversationHistoryCommandPublisher syncConversationHistoryCommandPublisher;
 
+    private static final Duration HISTORY_SYNC_TIMEOUT =
+            Duration.ofSeconds(30);
+
+    private final TransactionTemplate transactionTemplate;
+
+    private final Map<
+                UUID,
+                CompletableFuture<SyncConversationHistoryKafkaCommand.Result>
+                > historySyncRequests =
+            new ConcurrentHashMap<>();
+
     public MessageService(
             MessageRepository messageRepository,
             ConversationRepository conversationRepository,
             ConversationService conversationService,
             MessageMapper messageMapper,
-            CurrentUserService currentUserService, ISyncConversationHistoryCommandPublisher syncConversationHistoryCommandPublisher
+            CurrentUserService currentUserService,
+            ISyncConversationHistoryCommandPublisher syncConversationHistoryCommandPublisher,
+            PlatformTransactionManager transactionManager
     ) {
         this.messageRepository = messageRepository;
         this.conversationRepository = conversationRepository;
@@ -48,6 +70,14 @@ public class MessageService {
         this.messageMapper = messageMapper;
         this.currentUserService = currentUserService;
         this.syncConversationHistoryCommandPublisher = syncConversationHistoryCommandPublisher;
+        this.transactionTemplate =
+                new TransactionTemplate(transactionManager);
+    }
+
+    private record SyncConversationHistoryRequest(
+            kit.penny.clientbus.common.enums.ChannelType channelType,
+            SyncConversationHistoryCommand command
+    ) {
     }
 
     /**
@@ -1164,36 +1194,114 @@ public class MessageService {
      * <p>The request is published asynchronously through Kafka.
      */
     @Transactional
-    public void syncConversationHistory(
+    public SyncConversationHistoryKafkaCommand.Result
+    syncConversationHistory(
             UUID conversationId,
             String beforeExternalId,
             int limit
     ) {
-        ConversationEntity conversation =
-                conversationRepository.findById(conversationId)
-                        .orElseThrow(() ->
-                                new EntityNotFoundException(
-                                        "Conversation not found: " + conversationId
-                                )
-                        );
+        SyncConversationHistoryRequest request =
+                transactionTemplate.execute(status -> {
 
-        currentUserService.requireConversationAccess(conversation);
+                    ConversationEntity conversation =
+                            conversationRepository
+                                    .findById(conversationId)
+                                    .orElseThrow(() ->
+                                            new EntityNotFoundException(
+                                                    "Conversation not found: "
+                                                            + conversationId
+                                            )
+                                    );
 
-        currentUserService.requireWorkspaceAccess(
-                conversation.getWorkspace().getId()
+                    currentUserService
+                            .requireConversationAccess(
+                                    conversation
+                            );
+
+                    currentUserService
+                            .requireWorkspaceAccess(
+                                    conversation
+                                            .getWorkspace()
+                                            .getId()
+                            );
+
+                    return new SyncConversationHistoryRequest(
+                            conversation
+                                    .getChannelAccount()
+                                    .getChannel()
+                                    .getType(),
+
+                            new SyncConversationHistoryCommand(
+                                    conversation
+                                            .getChannelAccount()
+                                            .getId(),
+
+                                    conversation
+                                            .getClientAccount()
+                                            .getExternalId(),
+
+                                    beforeExternalId,
+
+                                    limit
+                            )
+                    );
+                });
+
+        UUID correlationId =
+                UUID.randomUUID();
+
+        CompletableFuture<
+                SyncConversationHistoryKafkaCommand.Result
+                > future =
+                new CompletableFuture<>();
+
+        historySyncRequests.put(
+                correlationId,
+                future
         );
 
-        syncConversationHistoryCommandPublisher.publish(
-                conversation.getChannelAccount()
-                        .getChannel()
-                        .getType(),
-                new SyncConversationHistoryCommand(
-                        conversation.getChannelAccount().getId(),
-                        conversation.getClientAccount().getExternalId(),
-                        beforeExternalId,
-                        limit
-                )
-        );
+        try {
+
+            syncConversationHistoryCommandPublisher.publish(
+                    request.channelType(),
+                    request.command(),
+                    correlationId
+            );
+
+            return future.get(
+                    HISTORY_SYNC_TIMEOUT.toMillis(),
+                    TimeUnit.MILLISECONDS
+            );
+
+        } catch (TimeoutException e) {
+
+            throw new IllegalStateException(
+                    "Timed out waiting for conversation history synchronization",
+                    e
+            );
+
+        } catch (InterruptedException e) {
+
+            Thread.currentThread().interrupt();
+
+            throw new IllegalStateException(
+                    "Interrupted while waiting for conversation history synchronization",
+                    e
+            );
+
+        } catch (Exception e) {
+
+            throw new IllegalStateException(
+                    "Failed to synchronize conversation history",
+                    e
+            );
+
+        } finally {
+
+            historySyncRequests.remove(
+                    correlationId
+            );
+        }
     }
 
     public MessageEntity getMessageEntityForProcessing(
@@ -1284,5 +1392,23 @@ public class MessageService {
         }
 
         return message.getContent();
+    }
+
+    public void completeHistorySync(
+            UUID correlationId,
+            SyncConversationHistoryKafkaCommand.Result result
+    ) {
+        CompletableFuture<
+                SyncConversationHistoryKafkaCommand.Result
+                > future =
+                historySyncRequests.get(
+                        correlationId
+                );
+
+        if (future == null) {
+            return;
+        }
+
+        future.complete(result);
     }
 }

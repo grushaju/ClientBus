@@ -15,13 +15,14 @@ public final class KafkaTopicNames {
     private static final String CHANNEL_COMMAND_PREFIX =
             PREFIX + ".channel-command.";
 
-    // NEW
     private static final String RECENT_CHATS_COMMAND_PREFIX =
             CHANNEL_COMMAND_PREFIX + "recent-chats.";
 
-    // NEW
     private static final String CONVERSATION_HISTORY_COMMAND_PREFIX =
             CHANNEL_COMMAND_PREFIX + "conversation-history.";
+
+    private static final String CONVERSATION_HISTORY_RESULT =
+            PREFIX + ".conversation-history-result";
 
     private KafkaTopicNames() {
     }
@@ -156,7 +157,6 @@ public final class KafkaTopicNames {
                 + "[^.]+$";
     }
 
-    // NEW
     public static String recentChatsCommand(
             ChannelType channelType
     ) {
@@ -170,7 +170,6 @@ public final class KafkaTopicNames {
                 + channelType.name().toLowerCase();
     }
 
-    // NEW
     public static ChannelType recentChatsCommandChannelType(
             String topic
     ) {
@@ -214,7 +213,6 @@ public final class KafkaTopicNames {
         }
     }
 
-    // NEW
     public static String recentChatsCommandPattern() {
         return "^"
                 + RECENT_CHATS_COMMAND_PREFIX
@@ -222,7 +220,6 @@ public final class KafkaTopicNames {
                 + "[^.]+$";
     }
 
-    // NEW
     public static String conversationHistoryCommand(
             ChannelType channelType
     ) {
@@ -236,7 +233,6 @@ public final class KafkaTopicNames {
                 + channelType.name().toLowerCase();
     }
 
-    // NEW
     public static ChannelType conversationHistoryCommandChannelType(
             String topic
     ) {
@@ -280,12 +276,15 @@ public final class KafkaTopicNames {
         }
     }
 
-    // NEW
     public static String conversationHistoryCommandPattern() {
         return "^"
                 + CONVERSATION_HISTORY_COMMAND_PREFIX
                 .replace(".", "\\.")
                 + "[^.]+$";
+    }
+
+    public static String conversationHistoryResult() {
+        return CONVERSATION_HISTORY_RESULT;
     }
 
     public static String dlq(

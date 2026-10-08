@@ -4,6 +4,7 @@ import jakarta.persistence.EntityNotFoundException;
 import kit.penny.clientbus.common.dto.message.CreatePlatformMessageRequest;
 import kit.penny.clientbus.common.dto.message.MessageDto;
 import kit.penny.clientbus.common.enums.*;
+import kit.penny.clientbus.common.kafka.SyncConversationHistoryKafkaCommand;
 import kit.penny.clientbus.server.connector.command.SyncConversationHistoryCommand;
 import kit.penny.clientbus.server.kafka.producer.ISyncConversationHistoryCommandPublisher;
 import kit.penny.clientbus.server.mapper.MessageMapper;
@@ -19,6 +20,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionStatus;
 
 import java.time.Instant;
 import java.util.List;
@@ -66,6 +69,12 @@ class MessageServiceTest {
     @Mock
     private ISyncConversationHistoryCommandPublisher syncConversationHistoryCommandPublisher;
 
+    @Mock
+    private PlatformTransactionManager transactionManager;
+
+    @Mock
+    private TransactionStatus transactionStatus;
+
     @BeforeEach
     void setUp() {
 
@@ -101,6 +110,7 @@ class MessageServiceTest {
         message.setProcessingStatus(
                 MessageProcessingStatus.RECEIVED
         );
+
     }
 
     private void stubMessageFound() {
@@ -2514,7 +2524,7 @@ class MessageServiceTest {
     }
 
     @Test
-    void syncConversationHistory_newestMessages_publishesCommand() {
+    void syncConversationHistory_newestMessages_returnsResult() {
 
         ChannelEntity channel =
                 new ChannelEntity(
@@ -2534,10 +2544,53 @@ class MessageServiceTest {
         when(conversationRepository.findById(conversationId))
                 .thenReturn(Optional.of(conversation));
 
-        messageService.syncConversationHistory(
-                conversationId,
-                null,
-                50
+        MessageDto firstMessage =
+                mock(MessageDto.class);
+
+        MessageDto secondMessage =
+                mock(MessageDto.class);
+
+        SyncConversationHistoryKafkaCommand.Result expectedResult =
+                new SyncConversationHistoryKafkaCommand.Result(
+                        List.of(firstMessage, secondMessage),
+                        false
+                );
+
+        doAnswer(invocation -> {
+
+            UUID correlationId =
+                    invocation.getArgument(2);
+
+            messageService.completeHistorySync(
+                    correlationId,
+                    expectedResult
+            );
+
+            return null;
+
+        }).when(syncConversationHistoryCommandPublisher)
+                .publish(
+                        eq(ChannelType.TELEGRAM),
+                        any(SyncConversationHistoryCommand.class),
+                        any(UUID.class)
+                );
+
+        SyncConversationHistoryKafkaCommand.Result result =
+                messageService.syncConversationHistory(
+                        conversationId,
+                        null,
+                        50
+                );
+
+        assertNotNull(result);
+
+        assertEquals(
+                List.of(firstMessage, secondMessage),
+                result.messages()
+        );
+
+        assertFalse(
+                result.historyStartReached()
         );
 
         verify(currentUserService)
@@ -2558,12 +2611,14 @@ class MessageServiceTest {
                                         null,
                                         50
                                 )
-                        )
+                        ),
+                        any(UUID.class)
                 );
     }
 
+
     @Test
-    void syncConversationHistory_withCursor_publishesCommandWithCursor() {
+    void syncConversationHistory_withCursor_returnsHistoryStartReached() {
 
         ChannelEntity channel =
                 new ChannelEntity(
@@ -2583,10 +2638,50 @@ class MessageServiceTest {
         when(conversationRepository.findById(conversationId))
                 .thenReturn(Optional.of(conversation));
 
-        messageService.syncConversationHistory(
-                conversationId,
-                "123456789",
-                25
+        MessageDto messageDto =
+                mock(MessageDto.class);
+
+        SyncConversationHistoryKafkaCommand.Result expectedResult =
+                new SyncConversationHistoryKafkaCommand.Result(
+                        List.of(messageDto),
+                        true
+                );
+
+        doAnswer(invocation -> {
+
+            UUID correlationId =
+                    invocation.getArgument(2);
+
+            messageService.completeHistorySync(
+                    correlationId,
+                    expectedResult
+            );
+
+            return null;
+
+        }).when(syncConversationHistoryCommandPublisher)
+                .publish(
+                        eq(ChannelType.TELEGRAM),
+                        any(SyncConversationHistoryCommand.class),
+                        any(UUID.class)
+                );
+
+        SyncConversationHistoryKafkaCommand.Result result =
+                messageService.syncConversationHistory(
+                        conversationId,
+                        "123456789",
+                        25
+                );
+
+        assertNotNull(result);
+
+        assertEquals(
+                List.of(messageDto),
+                result.messages()
+        );
+
+        assertTrue(
+                result.historyStartReached()
         );
 
         verify(syncConversationHistoryCommandPublisher)
@@ -2599,7 +2694,8 @@ class MessageServiceTest {
                                         "123456789",
                                         25
                                 )
-                        )
+                        ),
+                        any(UUID.class)
                 );
     }
 

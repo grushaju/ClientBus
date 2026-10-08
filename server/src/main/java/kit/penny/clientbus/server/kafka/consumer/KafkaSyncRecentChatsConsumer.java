@@ -8,7 +8,6 @@ import kit.penny.clientbus.common.kafka.SyncRecentChatsKafkaCommand;
 import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
 import kit.penny.clientbus.server.connector.IChannelConnector;
 import kit.penny.clientbus.server.connector.command.SyncRecentChatsCommand;
-import kit.penny.clientbus.server.kafka.producer.IPlatformConversationPublisher;
 import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
 import kit.penny.clientbus.server.service.RecentChatsSyncCoordinator;
 import kit.penny.clientbus.server.service.RecentChatsSynchronizationService;

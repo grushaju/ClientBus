@@ -94,6 +94,7 @@ function ConversationView() {
         loading: messagesLoading,
         loadingOlder: messagesLoadingOlder,
         hasMore: messagesHasMore,
+        historyStartReached,
         error: messagesError,
         reloadMessages,
         loadOlderMessages,
@@ -450,6 +451,7 @@ function ConversationView() {
                     loading={messagesLoading}
                     loadingOlder={messagesLoadingOlder}
                     hasMore={messagesHasMore}
+                    historyStartReached={historyStartReached}
                     error={messagesError}
                     onLoadOlder={loadOlderMessages}
                 />

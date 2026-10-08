@@ -173,6 +173,19 @@ public class TelegramInboundMessageProcessor {
                                     );
                                 }
 
+                                if (user.type instanceof TdApi.UserTypeBot) {
+                                    log.debug(
+                                            "Ignoring Telegram bot message: " +
+                                                    "channelAccountId={}, messageId={}, userId={}, userName={}",
+                                            channelAccountId,
+                                            message.id,
+                                            user.id,
+                                            extractUsername(user)
+                                    );
+
+                                    return CompletableFuture.completedFuture(null);
+                                }
+
                                 return resolveContent(
                                         channelAccountId,
                                         message
@@ -210,6 +223,7 @@ public class TelegramInboundMessageProcessor {
                     new InboundContent(
                             MessageType.TEXT,
                             content,
+                            null,
                             List.of()
                     )
             );
@@ -227,6 +241,7 @@ public class TelegramInboundMessageProcessor {
                             extractCaption(
                                     messagePhoto.caption
                             ),
+                            null,
                             List.of(attachment)
                     )
             );
@@ -244,24 +259,59 @@ public class TelegramInboundMessageProcessor {
                             extractCaption(
                                     messageAudio.caption
                             ),
+                            null,
                             List.of(attachment)
                     )
             );
         }
 
-        log.debug(
-                "Ignoring unsupported Telegram message content: " +
-                        "channelAccountId={}, messageId={}, contentType={}",
-                channelAccountId,
-                message.id,
+        String contentType =
                 message.content == null
                         ? "null"
                         : message.content
                         .getClass()
-                        .getSimpleName()
+                        .getSimpleName();
+
+        log.debug(
+                "Unsupported Telegram message content: " +
+                        "channelAccountId={}, messageId={}, contentType={}",
+                channelAccountId,
+                message.id,
+                contentType
         );
 
-        return CompletableFuture.completedFuture(null);
+        return CompletableFuture.completedFuture(new InboundContent(
+                MessageType.TEXT,
+                extractUnsupportedCaption(message.content),
+                "{\"unsupportedContentType\":\"" + contentType + "\"}",
+                List.of()
+        ));
+    }
+
+    private String extractUnsupportedCaption(
+            TdApi.MessageContent content
+    ) {
+        if (content instanceof TdApi.MessageVideo messageVideo) {
+            return extractCaption(messageVideo.caption);
+        }
+
+        if (content instanceof TdApi.MessageDocument messageDocument) {
+            return extractCaption(messageDocument.caption);
+        }
+
+        if (content instanceof TdApi.MessageAnimatedEmoji messageAnimatedEmoji) {
+            return messageAnimatedEmoji.emoji;
+        }
+
+        if (content instanceof TdApi.MessageAnimation messageAnimation) {
+            return extractCaption(messageAnimation.caption);
+        }
+
+        if (content instanceof TdApi.MessageContactRegistered contactRegistered) {
+            return "Теперь в TG!";
+        }
+
+        return null;
     }
 
     private PlatformMessageRequest createPlatformMessage(
@@ -308,7 +358,7 @@ public class TelegramInboundMessageProcessor {
 
                 content.text(),
 
-                null,
+                content.metadata(),
 
                 Instant.ofEpochSecond(
                         message.date
@@ -578,6 +628,7 @@ public class TelegramInboundMessageProcessor {
     private record InboundContent(
             MessageType messageType,
             String text,
+            String metadata,
             List<PlatformMessageAttachment> attachments
     ) {
     }

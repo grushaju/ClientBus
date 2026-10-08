@@ -7,6 +7,11 @@ import type {
     MessageType
 } from './types/message'
 
+export interface SyncConversationHistoryResult {
+    messages: MessageDto[]
+    historyStartReached: boolean
+}
+
 export async function getConversationMessages(
     conversationId: string,
     page = 0,
@@ -102,7 +107,7 @@ export async function syncConversationHistory(
     conversationId: string,
     beforeExternalId: string | null,
     limit = 50,
-): Promise<void> {
+): Promise<SyncConversationHistoryResult> {
     const params = new URLSearchParams()
 
     if (beforeExternalId !== null) {
@@ -117,10 +122,12 @@ export async function syncConversationHistory(
         String(limit),
     )
 
-    await apiFetch(
+    const response = await apiFetch(
         `/api/messages/conversation/${conversationId}/history/sync?${params.toString()}`,
         {
             method: 'POST',
         },
     )
+
+    return response.json()
 }

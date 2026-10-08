@@ -82,7 +82,73 @@ public class KafkaSyncConversationHistoryCommandPublisher
                         KafkaEventType.SYNC_CONVERSATION_HISTORY,
                         SCHEMA_VERSION,
                         Instant.now(),
+                        null,
+                        payload
+                );
+
+        kafkaTemplate.send(
+                KafkaTopicNames.conversationHistoryCommand(
+                        channelType
+                ),
+                command.channelAccountId().toString(),
+                event
+        );
+    }
+
+    @Override
+    public void publish(
+            ChannelType channelType,
+            SyncConversationHistoryCommand command,
+            UUID correlationId
+    ) {
+        if (channelType == null) {
+            throw new IllegalArgumentException(
+                    "channelType must not be null"
+            );
+        }
+
+        if (command == null) {
+            throw new IllegalArgumentException(
+                    "SyncConversationHistoryCommand must not be null"
+            );
+        }
+
+        if (command.channelAccountId() == null) {
+            throw new IllegalArgumentException(
+                    "channelAccountId must not be null"
+            );
+        }
+
+        if (command.conversationExternalId() == null
+                || command.conversationExternalId().isBlank()) {
+            throw new IllegalArgumentException(
+                    "conversationExternalId must not be blank"
+            );
+        }
+
+        int limit =
+                command.limit() <= 0
+                        ? DEFAULT_LIMIT
+                        : Math.min(
+                        command.limit(),
+                        MAX_LIMIT
+                );
+
+        SyncConversationHistoryKafkaCommand payload =
+                new SyncConversationHistoryKafkaCommand(
+                        command.channelAccountId(),
+                        command.conversationExternalId(),
+                        command.beforeExternalId(),
+                        limit
+                );
+
+        KafkaEvent<SyncConversationHistoryKafkaCommand> event =
+                new KafkaEvent<>(
                         UUID.randomUUID(),
+                        KafkaEventType.SYNC_CONVERSATION_HISTORY,
+                        SCHEMA_VERSION,
+                        Instant.now(),
+                        correlationId,
                         payload
                 );
 

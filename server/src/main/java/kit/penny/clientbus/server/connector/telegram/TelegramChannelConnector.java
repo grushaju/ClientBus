@@ -270,6 +270,33 @@ public class TelegramChannelConnector
                         )
                         .getObjectOrThrow();
 
+        /*
+         * TDLib may return a partial result on the first request while
+         * the chat history is still being loaded.
+         *
+         * For the initial request, retry once when fewer messages than
+         * requested were returned. A repeated request allows TDLib to
+         * return the already loaded history.
+         */
+        if (beforeMessageId == 0
+                && messages != null
+                && messages.messages != null
+                && messages.messages.length < limit) {
+
+            messages =
+                    telegramClient
+                            .send(
+                                    new TdApi.GetChatHistory(
+                                            chatId,
+                                            0,
+                                            0,
+                                            limit,
+                                            false
+                                    )
+                            )
+                            .getObjectOrThrow();
+        }
+
         if (messages == null
                 || messages.messages == null
                 || messages.messages.length == 0) {
@@ -472,6 +499,33 @@ public class TelegramChannelConnector
                             "channelAccountId={}, userId={}, chatId={}",
                     channelAccountId,
                     privateChat.userId,
+                    chatId
+            );
+
+            return null;
+        }
+
+        if (user.type instanceof TdApi.UserTypeBot) {
+
+            log.debug(
+                    "Skipping Telegram bot chat: " +
+                            "channelAccountId={}, userId={}, chatId={}",
+                    channelAccountId,
+                    user.id,
+                    chatId
+            );
+
+            return null;
+        }
+
+        if (user.type instanceof TdApi.UserTypeDeleted
+                || user.type instanceof TdApi.UserTypeUnknown) {
+
+            log.debug(
+                    "Skipping Telegram deleted or unknown chat: " +
+                            "channelAccountId={}, userId={}, chatId={}",
+                    channelAccountId,
+                    user.id,
                     chatId
             );
 

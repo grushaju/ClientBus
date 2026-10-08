@@ -285,4 +285,13 @@ public class KafkaTopicConfiguration {
 
         return topics;
     }
+
+    @Bean
+    public NewTopic conversationHistoryResultTopic() {
+        return new NewTopic(
+                KafkaTopicNames.conversationHistoryResult(),
+                PARTITIONS,
+                REPLICATION_FACTOR
+        );
+    }
 }

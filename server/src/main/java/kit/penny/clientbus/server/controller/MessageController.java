@@ -11,6 +11,7 @@ import kit.penny.clientbus.common.dto.message.MessageAttachmentDto;
 import kit.penny.clientbus.common.dto.message.MessageDto;
 import kit.penny.clientbus.common.dto.message.OutboundMessageRequest;
 import kit.penny.clientbus.common.enums.MessageAttachmentType;
+import kit.penny.clientbus.common.kafka.SyncConversationHistoryKafkaCommand;
 import kit.penny.clientbus.server.service.AttachmentContent;
 import kit.penny.clientbus.server.service.IMessageProcessingService;
 import kit.penny.clientbus.server.service.MessageAttachmentService;
@@ -100,7 +101,7 @@ public class MessageController {
 
     @PostMapping("/conversation/{conversationId}/history/sync")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<Void> syncConversationHistory(
+    public ResponseEntity<SyncConversationHistoryKafkaCommand.Result> syncConversationHistory(
             @PathVariable UUID conversationId,
             @RequestParam(required = false) String beforeExternalId,
             @RequestParam(defaultValue = "50") int limit
@@ -113,13 +114,14 @@ public class MessageController {
 
         int normalizedLimit = Math.min(limit, 100);
 
-        messageService.syncConversationHistory(
-                conversationId,
-                beforeExternalId,
-                normalizedLimit
+        SyncConversationHistoryKafkaCommand.Result result =
+                messageService.syncConversationHistory(
+                    conversationId,
+                    beforeExternalId,
+                    normalizedLimit
         );
 
-        return ResponseEntity.accepted().build();
+        return ResponseEntity.ok(result);
     }
 
     @PostMapping(

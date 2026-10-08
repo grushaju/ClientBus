@@ -5,7 +5,10 @@ import {
     useState,
 } from 'react'
 
-import { getConversationMessages } from '../../api/messageApi'
+import {
+    getConversationMessages,
+    syncConversationHistory,
+} from '../../api/messageApi'
 import type { MessageDto } from '../../api/types/message'
 
 interface UseConversationMessagesResult {
@@ -13,6 +16,7 @@ interface UseConversationMessagesResult {
     loading: boolean
     loadingOlder: boolean
     hasMore: boolean
+    historyStartReached: boolean
     error: string | null
     reloadMessages: () => Promise<void>
     loadOlderMessages: () => Promise<void>
@@ -35,11 +39,11 @@ export function useConversationMessages(
     const [hasMore, setHasMore] =
         useState(true)
 
+    const [historyStartReached, setHistoryStartReached] =
+        useState(false)
+
     const [error, setError] =
         useState<string | null>(null)
-
-    const currentPageRef =
-        useRef(0)
 
     const loadingOlderRef =
         useRef(false)
@@ -70,16 +74,16 @@ export function useConversationMessages(
             if (!conversationId) {
                 setMessages([])
                 setHasMore(false)
-                currentPageRef.current = 0
+                setHistoryStartReached(false)
                 return
             }
 
             setLoading(true)
             setError(null)
 
-            currentPageRef.current = 0
             loadingOlderRef.current = false
             setHasMore(true)
+            setHistoryStartReached(false)
 
             try {
                 const page =
@@ -89,15 +93,64 @@ export function useConversationMessages(
                         PAGE_SIZE,
                     )
 
-                setMessages(
-                    sortMessages(
-                        page.content,
-                    ),
-                )
+                const sortedMessages =
+                    sortMessages(page.content)
 
-                setHasMore(
-                    !page.last,
-                )
+                setMessages(sortedMessages)
+
+                /*
+                 * Если локальная история отсутствует,
+                 * сразу пытаемся загрузить первую страницу
+                 * истории с платформы.
+                 *
+                 * Это важно: MessageList не сможет инициировать
+                 * loadOlderMessages через scroll, если сообщений
+                 * вообще нет.
+                 */
+                if (sortedMessages.length === 0) {
+                    setLoadingOlder(true)
+
+                    try {
+                        const result =
+                            await syncConversationHistory(
+                                conversationId,
+                                null,
+                                PAGE_SIZE,
+                            )
+
+                        const syncedMessages =
+                            sortMessages(
+                                result.messages,
+                            )
+
+                        setMessages(
+                            syncedMessages,
+                        )
+
+                        setHistoryStartReached(
+                            result.historyStartReached,
+                        )
+
+                        setHasMore(
+                            !result.historyStartReached,
+                        )
+                    } finally {
+                        setLoadingOlder(false)
+                    }
+
+                    return
+                }
+
+                /*
+                 * Локальная история есть.
+                 *
+                 * page.last означает, что достигнут конец
+                 * локальной БД, но не обязательно конец истории
+                 * на платформе. Поэтому historyStartReached здесь
+                 * намеренно не устанавливаем в true.
+                 */
+                setHasMore(!page.last)
+
             } catch (err) {
                 setError(
                     err instanceof Error
@@ -107,6 +160,7 @@ export function useConversationMessages(
 
                 setMessages([])
                 setHasMore(false)
+                setHistoryStartReached(false)
             } finally {
                 setLoading(false)
             }
@@ -122,24 +176,36 @@ export function useConversationMessages(
                 return
             }
 
+            const oldestMessage =
+                messages[0]
+
+            const beforeExternalId =
+                oldestMessage?.externalId ?? null
+
+            if (
+                messages.length > 0 &&
+                !beforeExternalId
+            ) {
+                return
+            }
+
             loadingOlderRef.current = true
             setLoadingOlder(true)
 
-            const nextPage =
-                currentPageRef.current + 1
-
             try {
-                const page =
-                    await getConversationMessages(
+                const result =
+                    await syncConversationHistory(
                         conversationId,
-                        nextPage,
+                        beforeExternalId,
                         PAGE_SIZE,
                     )
 
                 const olderMessages =
                     sortMessages(
-                        page.content,
+                        result.messages,
                     )
+
+                let addedMessages = false
 
                 setMessages(
                     currentMessages => {
@@ -166,6 +232,8 @@ export function useConversationMessages(
                             return currentMessages
                         }
 
+                        addedMessages = true
+
                         return [
                             ...uniqueOlderMessages,
                             ...currentMessages,
@@ -173,11 +241,21 @@ export function useConversationMessages(
                     },
                 )
 
-                currentPageRef.current =
-                    nextPage
+                setHistoryStartReached(
+                    result.historyStartReached,
+                )
 
+                /*
+                 * Если backend не сообщил о конце истории,
+                 * но при этом не вернул ни одного нового сообщения,
+                 * дальше запрашивать бессмысленно.
+                 *
+                 * Это также защищает автоматическую догрузку
+                 * от бесконечного цикла.
+                 */
                 setHasMore(
-                    !page.last,
+                    addedMessages &&
+                    !result.historyStartReached,
                 )
             } catch (err) {
                 setError(
@@ -194,6 +272,7 @@ export function useConversationMessages(
         }, [
             conversationId,
             hasMore,
+            messages,
         ])
 
     useEffect(() => {
@@ -205,6 +284,7 @@ export function useConversationMessages(
         loading,
         loadingOlder,
         hasMore,
+        historyStartReached,
         error,
         reloadMessages,
         loadOlderMessages,
