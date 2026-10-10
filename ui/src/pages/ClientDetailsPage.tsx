@@ -1,6 +1,7 @@
 import {
     useEffect,
     useState,
+    type ChangeEvent,
 } from 'react'
 
 import {
@@ -15,6 +16,10 @@ import {
     getClientAccountsByClient,
     getClientConversations,
     updateClient,
+    clearClientAvatar,
+    getClientAvatarContent,
+    uploadClientAvatar,
+    useClientAccountAvatar,
 } from '../api/clientApi'
 
 import ClientAccountsSection from '../components/clients/ClientAccountsSection'
@@ -81,6 +86,15 @@ function ClientDetailsPage() {
         setCurrentWorkspaceId,
     } = useWorkspace()
 
+    const [avatarSrc, setAvatarSrc] =
+        useState<string | null>(null)
+
+    const [avatarBusy, setAvatarBusy] =
+        useState(false)
+
+    const [selectedAvatarAccountId, setSelectedAvatarAccountId] =
+        useState('')
+
     useEffect(() => {
         if (!clientId) {
             return
@@ -139,6 +153,45 @@ function ClientDetailsPage() {
 
         void load()
     }, [clientId])
+
+    useEffect(() => {
+        if (!clientId || !client?.avatarUrl) {
+            setAvatarSrc(null)
+            return
+        }
+
+        let active = true
+        let objectUrl: string | null = null
+
+        setAvatarSrc(null)
+
+        void getClientAvatarContent(clientId)
+            .then(blob => {
+                if (!active) {
+                    return
+                }
+
+                objectUrl = URL.createObjectURL(blob)
+                setAvatarSrc(objectUrl)
+            })
+            .catch(err => {
+                if (active) {
+                    setError(
+                        err instanceof Error
+                            ? err.message
+                            : 'Не удалось загрузить аватар',
+                    )
+                }
+            })
+
+        return () => {
+            active = false
+
+            if (objectUrl) {
+                URL.revokeObjectURL(objectUrl)
+            }
+        }
+    }, [clientId, client?.avatarUrl])
 
     const reloadConversations =
         async () => {
@@ -239,6 +292,88 @@ function ClientDetailsPage() {
             }
         }
 
+    const handleAvatarUpload = async (
+        event: ChangeEvent<HTMLInputElement>,
+    ) => {
+        const file = event.currentTarget.files?.[0]
+
+        // Позволяет повторно выбрать тот же файл.
+        event.currentTarget.value = ''
+
+        if (!clientId || !file) {
+            return
+        }
+
+        setAvatarBusy(true)
+        setError(null)
+
+        try {
+            const updated = await uploadClientAvatar(
+                clientId,
+                file,
+            )
+
+            setClient(updated)
+        } catch (err) {
+            setError(
+                err instanceof Error
+                    ? err.message
+                    : 'Не удалось загрузить аватар',
+            )
+        } finally {
+            setAvatarBusy(false)
+        }
+    }
+
+    const handleUseAccountAvatar = async () => {
+        if (!clientId || !selectedAvatarAccountId) {
+            return
+        }
+
+        setAvatarBusy(true)
+        setError(null)
+
+        try {
+            const updated = await useClientAccountAvatar(
+                clientId,
+                selectedAvatarAccountId,
+            )
+
+            setClient(updated)
+        } catch (err) {
+            setError(
+                err instanceof Error
+                    ? err.message
+                    : 'Не удалось выбрать аватар аккаунта',
+            )
+        } finally {
+            setAvatarBusy(false)
+        }
+    }
+
+    const handleClearAvatar = async () => {
+        if (!clientId || !client?.avatarUrl) {
+            return
+        }
+
+        setAvatarBusy(true)
+        setError(null)
+
+        try {
+            const updated = await clearClientAvatar(clientId)
+
+            setClient(updated)
+        } catch (err) {
+            setError(
+                err instanceof Error
+                    ? err.message
+                    : 'Не удалось удалить аватар',
+            )
+        } finally {
+            setAvatarBusy(false)
+        }
+    }
+
     if (loading) {
         return (
             <div className="clients-state">
@@ -288,9 +423,16 @@ function ClientDetailsPage() {
 
             <div className="client-details-header">
                 <div className="client-details-avatar">
-                    {getInitials(
-                        client.firstName,
-                        client.lastName,
+                    {avatarSrc ? (
+                        <img
+                            src={avatarSrc}
+                            alt={`Аватар ${client.firstName} ${client.lastName}`}
+                        />
+                    ) : (
+                        getInitials(
+                            client.firstName,
+                            client.lastName,
+                        )
                     )}
                 </div>
 
@@ -340,6 +482,64 @@ function ClientDetailsPage() {
                         Удалить
                     </button>
                 </div>
+            </div>
+
+            <div className="client-avatar-controls">
+                <label className="client-avatar-file">
+                    <span>Загрузить аватар</span>
+
+                    <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        disabled={avatarBusy}
+                        onChange={handleAvatarUpload}
+                    />
+                </label>
+
+                <select
+                    value={selectedAvatarAccountId}
+                    disabled={avatarBusy}
+                    onChange={event =>
+                        setSelectedAvatarAccountId(event.target.value)
+                    }
+                >
+                    <option value="">
+                        Выбрать аватар аккаунта…
+                    </option>
+
+                    {accounts
+                        .filter(account => Boolean(account.avatarUrl?.trim()))
+                        .map(account => (
+                            <option
+                                key={account.id}
+                                value={account.id}
+                            >
+                                {account.displayName ||
+                                    account.username ||
+                                    account.phone ||
+                                    account.externalId}
+                            </option>
+                        ))}
+                </select>
+
+                <button
+                    type="button"
+                    disabled={
+                        avatarBusy ||
+                        !selectedAvatarAccountId
+                    }
+                    onClick={handleUseAccountAvatar}
+                >
+                    Использовать аватар аккаунта
+                </button>
+
+                <button
+                    type="button"
+                    disabled={avatarBusy || !client.avatarUrl}
+                    onClick={handleClearAvatar}
+                >
+                    Удалить аватар
+                </button>
             </div>
 
             <div className="client-details-grid">

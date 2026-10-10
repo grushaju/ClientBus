@@ -193,3 +193,58 @@ export async function getClientsWithoutAccounts(): Promise<ClientDto[]> {
 
     return response.json()
 }
+
+export async function getClientAvatarContent(
+    clientId: string,
+): Promise<Blob> {
+    const response = await apiFetch(
+        `/api/clients/${clientId}/avatar/content`,
+    )
+
+    return response.blob()
+}
+
+export async function uploadClientAvatar(
+    clientId: string,
+    file: File,
+): Promise<ClientDto> {
+    const formData = new FormData()
+    formData.append('file', file)
+
+    const response = await apiFetch(
+        `/api/clients/${clientId}/avatar`,
+        {
+            method: 'PUT',
+            body: formData,
+        },
+    )
+
+    return response.json()
+}
+
+export async function useClientAccountAvatar(
+    clientId: string,
+    accountId: string,
+): Promise<ClientDto> {
+    const response = await apiFetch(
+        `/api/clients/${clientId}/avatar/from-account/${accountId}`,
+        {
+            method: 'PUT',
+        },
+    )
+
+    return response.json()
+}
+
+export async function clearClientAvatar(
+    clientId: string,
+): Promise<ClientDto> {
+    const response = await apiFetch(
+        `/api/clients/${clientId}/avatar`,
+        {
+            method: 'DELETE',
+        },
+    )
+
+    return response.json()
+}

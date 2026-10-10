@@ -17,6 +17,7 @@ export interface ClientDto {
     enabled: boolean
     createdAt: string
     updatedAt: string
+    avatarUrl: string | null
 }
 
 export interface CreateClientRequest {

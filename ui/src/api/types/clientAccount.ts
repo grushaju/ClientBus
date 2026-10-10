@@ -6,6 +6,7 @@ export interface ClientAccountDto {
     username: string | null
     phone: string | null
     displayName: string | null
+    avatarUrl: string | null
 }
 
 export interface CreateClientAccountRequest {

@@ -11,7 +11,10 @@ import kit.penny.clientbus.common.dto.client.UpdateClientRequest;
 import kit.penny.clientbus.common.dto.clientaccount.ClientAccountDto;
 import kit.penny.clientbus.common.dto.conversation.ConversationDto;
 import kit.penny.clientbus.server.service.ClientService;
+import kit.penny.clientbus.server.storage.IAttachmentStorage;
+import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaTypeFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -19,6 +22,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.http.MediaType;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.InputStream;
 import java.util.List;
 import java.util.UUID;
 
@@ -33,10 +37,14 @@ public class ClientController {
 
     private final ClientService clientService;
 
+    private final IAttachmentStorage attachmentStorage;
+
     public ClientController(
-            ClientService clientService
+            ClientService clientService,
+            IAttachmentStorage attachmentStorage
     ) {
         this.clientService = clientService;
+        this.attachmentStorage = attachmentStorage;
     }
 
     /**
@@ -312,6 +320,28 @@ public class ClientController {
         return ResponseEntity.ok(
                 clientService.getClientAccounts(clientId)
         );
+    }
+
+    @GetMapping("/{id}/avatar/content")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SUPER_ADMIN')")
+    public ResponseEntity<InputStreamResource> getClientAvatar(
+            @PathVariable UUID id
+    ) {
+        ClientDto client = clientService.getClient(id);
+        String storageKey = client.avatarUrl();
+
+        if (storageKey == null || storageKey.isBlank()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        InputStream inputStream = attachmentStorage.load(storageKey);
+
+        return ResponseEntity.ok()
+                .contentType(
+                        MediaTypeFactory.getMediaType(storageKey)
+                                .orElse(MediaType.APPLICATION_OCTET_STREAM)
+                )
+                .body(new InputStreamResource(inputStream));
     }
 
     @PutMapping(

@@ -35,6 +35,7 @@ export interface ChannelAccountDto {
     username: string | null
     phone: string | null
     displayName: string | null
+    avatarUrl: string | null
 }
 
 export interface ChannelDto {
