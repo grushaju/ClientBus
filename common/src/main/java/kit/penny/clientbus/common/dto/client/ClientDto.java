@@ -12,6 +12,29 @@ public record ClientDto(
         List<String> phoneList,
         boolean enabled,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        String avatarUrl
 ) {
+    public ClientDto(
+            UUID id,
+            UUID organizationId,
+            String firstName,
+            String lastName,
+            List<String> phoneList,
+            boolean enabled,
+            Instant createdAt,
+            Instant updatedAt
+    ) {
+        this(
+                id,
+                organizationId,
+                firstName,
+                lastName,
+                phoneList,
+                enabled,
+                createdAt,
+                updatedAt,
+                null
+        );
+    }
 }

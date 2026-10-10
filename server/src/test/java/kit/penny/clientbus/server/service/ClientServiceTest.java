@@ -16,14 +16,22 @@ import kit.penny.clientbus.server.persistence.repository.ClientRepository;
 import kit.penny.clientbus.server.persistence.repository.ConversationRepository;
 import kit.penny.clientbus.server.persistence.repository.OrganizationRepository;
 import kit.penny.clientbus.server.security.service.CurrentUserService;
+import kit.penny.clientbus.server.storage.IAttachmentStorage;
+import kit.penny.clientbus.server.storage.StoredAttachmentMetadata;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -58,6 +66,9 @@ class ClientServiceTest {
 
     @Mock
     private ConversationRepository conversationRepository;
+
+    @Mock
+    private IAttachmentStorage attachmentStorage;
 
     @InjectMocks
     private ClientService clientService;
@@ -1565,13 +1576,13 @@ class ClientServiceTest {
         assertThat(result)
                 .hasSize(1);
 
-        assertThat(result.get(0).id())
+        assertThat(result.getFirst().id())
                 .isEqualTo(testClientId);
 
-        assertThat(result.get(0).accountCount())
+        assertThat(result.getFirst().accountCount())
                 .isZero();
 
-        assertThat(result.get(0).lastContactAt())
+        assertThat(result.getFirst().lastContactAt())
                 .isNull();
 
         verify(clientRepository)
@@ -1583,5 +1594,416 @@ class ClientServiceTest {
                         employeeId,
                         List.of(testClientId)
                 );
+    }
+
+    @Test
+    void useClientAccountAvatar_success() {
+
+        String accountAvatarKey = "avatars/telegram/user-123.jpg";
+        account.setAvatarUrl(accountAvatarKey);
+
+        ClientDto expectedDto = mock(ClientDto.class);
+
+        when(clientRepository.findById(clientId))
+                .thenReturn(Optional.of(client));
+
+        when(clientAccountRepository.findById(accountId))
+                .thenReturn(Optional.of(account));
+
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
+
+        when(conversationRepository
+                .findAllByClientAccountIdAndEmployeeIdOrderByLastMessageAtDesc(
+                        accountId,
+                        employeeId
+                ))
+                .thenReturn(List.of(mock(ConversationEntity.class)));
+
+        when(clientRepository.saveAndFlush(client))
+                .thenReturn(client);
+
+        when(clientMapper.toDto(client))
+                .thenReturn(expectedDto);
+
+        ClientDto result =
+                clientService.useClientAccountAvatar(clientId, accountId);
+
+        assertSame(expectedDto, result);
+        assertEquals(accountAvatarKey, client.getAvatarUrl());
+        assertEquals(accountAvatarKey, account.getAvatarUrl());
+
+        verify(clientRepository).saveAndFlush(client);
+        verify(clientMapper).toDto(client);
+        verifyNoInteractions(attachmentStorage);
+    }
+
+    @Test
+    void useClientAccountAvatar_accountBelongsToAnotherClient() {
+
+        ClientEntity anotherClient = new ClientEntity();
+        anotherClient.setId(UUID.randomUUID());
+        anotherClient.setOrganization(organization);
+
+        account.setClient(anotherClient);
+        account.setAvatarUrl("avatars/telegram/user-123.jpg");
+
+        when(clientRepository.findById(clientId))
+                .thenReturn(Optional.of(client));
+
+        when(clientAccountRepository.findById(accountId))
+                .thenReturn(Optional.of(account));
+
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> clientService.useClientAccountAvatar(clientId, accountId)
+        );
+
+        verify(clientRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(clientMapper);
+    }
+
+    @Test
+    void useClientAccountAvatar_accountHasNoAvatar() {
+
+        client.setAvatarUrl("avatars/client/current.jpg");
+        account.setAvatarUrl(null);
+
+        when(clientRepository.findById(clientId))
+                .thenReturn(Optional.of(client));
+
+        when(clientAccountRepository.findById(accountId))
+                .thenReturn(Optional.of(account));
+
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
+
+        when(conversationRepository
+                .findAllByClientAccountIdAndEmployeeIdOrderByLastMessageAtDesc(
+                        accountId,
+                        employeeId
+                ))
+                .thenReturn(List.of(mock(ConversationEntity.class)));
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> clientService.useClientAccountAvatar(clientId, accountId)
+        );
+
+        assertEquals("avatars/client/current.jpg", client.getAvatarUrl());
+
+        verify(clientRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(clientMapper);
+    }
+
+    @Test
+    void clearClientAvatar_success() {
+
+        client.setAvatarUrl("avatars/client/current.jpg");
+
+        ClientDto expectedDto = mock(ClientDto.class);
+
+        when(clientRepository.findById(clientId))
+                .thenReturn(Optional.of(client));
+
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
+
+        when(clientRepository.saveAndFlush(client))
+                .thenReturn(client);
+
+        when(clientMapper.toDto(client))
+                .thenReturn(expectedDto);
+
+        ClientDto result = clientService.clearClientAvatar(clientId);
+
+        assertSame(expectedDto, result);
+        assertNull(client.getAvatarUrl());
+
+        verify(clientRepository).saveAndFlush(client);
+        verifyNoInteractions(attachmentStorage);
+    }
+
+    @Test
+    void uploadClientAvatar_success() throws IOException {
+
+        String storageKey = "avatars/client/" + clientId + ".jpg";
+
+        MultipartFile file = new MockMultipartFile(
+                "file",
+                "avatar.jpg",
+                "image/jpeg",
+                new byte[]{1, 2, 3}
+        );
+
+        when(clientRepository.findById(clientId))
+                .thenReturn(Optional.of(client));
+
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
+
+        when(attachmentStorage.store(
+                any(),
+                any(),
+                eq(3L),
+                eq("image/jpeg")
+        )).thenReturn(
+                new StoredAttachmentMetadata(
+                        storageKey,
+                        "avatar.jpg",
+                        "image/jpeg",
+                        3L
+                )
+        );
+
+        when(clientRepository.saveAndFlush(client))
+                .thenReturn(client);
+
+        ClientDto expectedDto = mock(ClientDto.class);
+
+        when(clientMapper.toDto(client))
+                .thenReturn(expectedDto);
+
+        ClientDto result =
+                clientService.uploadClientAvatar(clientId, file);
+
+        assertSame(expectedDto, result);
+        assertEquals(storageKey, client.getAvatarUrl());
+
+        verify(attachmentStorage).store(
+                any(),
+                eq("client-avatar-" + clientId + ".jpg"),
+                eq(3L),
+                eq("image/jpeg")
+        );
+
+        verify(clientRepository).saveAndFlush(client);
+    }
+
+    @Test
+    void uploadClientAvatar_unsupportedContentType() {
+
+        MultipartFile file = new MockMultipartFile(
+                "file",
+                "avatar.mov",
+                "image/mov",
+                new byte[]{1, 2, 3}
+        );
+
+        when(clientRepository.findById(clientId))
+                .thenReturn(Optional.of(client));
+
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> clientService.uploadClientAvatar(clientId, file)
+        );
+
+        verifyNoInteractions(attachmentStorage);
+        verify(clientRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void uploadClientAvatar_gifPreservesOriginalBytes() throws Exception {
+        byte[] gifBytes = new byte[]{
+                'G', 'I', 'F', '8', '9', 'a',
+                1, 0, 1, 0, (byte) 0x80, 0, 0,
+                0, 0, 0, (byte) 255, (byte) 255, (byte) 255,
+                '!', (byte) 0xF9, 4, 1, 0, 0, 0, 0,
+                ',', 0, 0, 0, 0, 1, 0, 1, 0,
+                0, 2, 2, 68, 1, 0, ';'
+        };
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "avatar.gif",
+                "image/gif",
+                gifBytes
+        );
+
+        String storageKey = "clients/" + clientId + "/avatar.gif";
+
+        when(attachmentStorage.store(
+                any(),
+                anyString(),
+                eq((long) gifBytes.length),
+                eq("image/gif")
+        )).thenReturn(
+                new StoredAttachmentMetadata(
+                        storageKey,
+                        "avatar.gif",
+                        "image/gif",
+                        (long) gifBytes.length
+                )
+        );
+        when(clientRepository.findById(clientId))
+                .thenReturn(Optional.of(client));
+
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
+
+        when(clientRepository.saveAndFlush(client))
+                .thenReturn(client);
+
+        when(clientMapper.toDto(client))
+                .thenAnswer(invocation -> new ClientDto(
+                        client.getId(),
+                        client.getOrganization().getId(),
+                        client.getFirstName(),
+                        client.getLastName(),
+                        client.getPhoneList(),
+                        client.isEnabled(),
+                        client.getCreatedAt(),
+                        client.getUpdatedAt(),
+                        client.getAvatarUrl()
+                ));
+        ClientDto result = clientService.uploadClientAvatar(
+                clientId,
+                file
+        );
+
+        assertEquals(storageKey, result.avatarUrl());
+        assertEquals(storageKey, client.getAvatarUrl());
+
+        ArgumentCaptor<InputStream> inputCaptor =
+                ArgumentCaptor.forClass(InputStream.class);
+
+        verify(attachmentStorage).store(
+                inputCaptor.capture(),
+                anyString(),
+                eq((long) gifBytes.length),
+                eq("image/gif")
+        );
+
+        assertArrayEquals(
+                gifBytes,
+                inputCaptor.getValue().readAllBytes()
+        );
+    }
+
+    @Test
+    void uploadClientAvatar_doesNotChangeClientAccountAvatar() throws Exception {
+        String accountAvatar = "accounts/" + accountId + "/avatar.jpg";
+        String clientAvatar = "clients/" + clientId + "/avatar.gif";
+
+        account.setAvatarUrl(accountAvatar);
+        when(clientRepository.findById(clientId))
+                .thenReturn(Optional.of(client));
+
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
+
+        when(clientRepository.saveAndFlush(client))
+                .thenReturn(client);
+
+        when(clientMapper.toDto(client))
+                .thenAnswer(invocation -> new ClientDto(
+                        client.getId(),
+                        client.getOrganization().getId(),
+                        client.getFirstName(),
+                        client.getLastName(),
+                        client.getPhoneList(),
+                        client.isEnabled(),
+                        client.getCreatedAt(),
+                        client.getUpdatedAt(),
+                        client.getAvatarUrl()
+                ));
+
+        client.setAvatarUrl(null);
+
+        byte[] gifBytes = new byte[]{
+                'G', 'I', 'F', '8', '9', 'a'
+        };
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "avatar.gif",
+                "image/gif",
+                gifBytes
+        );
+
+        when(attachmentStorage.store(
+                any(),
+                anyString(),
+                eq((long) gifBytes.length),
+                eq("image/gif")
+        )).thenReturn(
+                new StoredAttachmentMetadata(
+                        clientAvatar,
+                        "avatar.gif",
+                        "image/gif",
+                        (long) gifBytes.length
+                )
+        );
+
+        ClientDto result = clientService.uploadClientAvatar(
+                clientId,
+                file
+        );
+
+        assertEquals(clientAvatar, result.avatarUrl());
+        assertEquals(clientAvatar, client.getAvatarUrl());
+
+        assertEquals(accountAvatar, account.getAvatarUrl());
+
+        verify(clientAccountRepository, never()).saveAndFlush(account);
+    }
+
+
+    @Test
+    void useClientAccountAvatar_doesNotChangeAccountAvatar() {
+        String accountAvatar = "accounts/" + accountId + "/avatar.gif";
+        String oldClientAvatar = "clients/" + clientId + "/avatar.jpg";
+
+        account.setAvatarUrl(accountAvatar);
+        when(clientRepository.findById(clientId))
+                .thenReturn(Optional.of(client));
+
+        when(currentUserService.getCurrentOrganizationId())
+                .thenReturn(organizationId);
+        client.setAvatarUrl(oldClientAvatar);
+
+        when(conversationRepository
+                .findAllByClientAccountIdAndEmployeeIdOrderByLastMessageAtDesc(
+                        eq(accountId),
+                        eq(employeeId)
+                ))
+                .thenReturn(List.of(mock(ConversationEntity.class)));
+
+        when(clientAccountRepository.findById(accountId))
+                .thenReturn(Optional.of(account));
+
+        when(clientRepository.saveAndFlush(client))
+                .thenReturn(client);
+
+        when(clientMapper.toDto(client))
+                .thenAnswer(invocation -> new ClientDto(
+                        client.getId(),
+                        client.getOrganization().getId(),
+                        client.getFirstName(),
+                        client.getLastName(),
+                        client.getPhoneList(),
+                        client.isEnabled(),
+                        client.getCreatedAt(),
+                        client.getUpdatedAt(),
+                        client.getAvatarUrl()
+                ));
+
+        ClientDto result = clientService.useClientAccountAvatar(
+                clientId,
+                accountId
+        );
+
+        assertEquals(accountAvatar, result.avatarUrl());
+        assertEquals(accountAvatar, client.getAvatarUrl());
+
+        assertEquals(accountAvatar, account.getAvatarUrl());
+
+        verify(clientAccountRepository, never()).saveAndFlush(account);
     }
 }

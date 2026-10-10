@@ -16,6 +16,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import org.springframework.http.MediaType;
+import org.springframework.web.multipart.MultipartFile;
+
 import java.util.List;
 import java.util.UUID;
 
@@ -308,6 +311,41 @@ public class ClientController {
 
         return ResponseEntity.ok(
                 clientService.getClientAccounts(clientId)
+        );
+    }
+
+    @PutMapping(
+            value = "/{id}/avatar",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE
+    )
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SUPER_ADMIN')")
+    public ResponseEntity<ClientDto> uploadClientAvatar(
+            @PathVariable UUID id,
+            @RequestPart("file") MultipartFile file
+    ) {
+        return ResponseEntity.ok(
+                clientService.uploadClientAvatar(id, file)
+        );
+    }
+
+    @PutMapping("/{clientId}/avatar/from-account/{accountId}")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SUPER_ADMIN')")
+    public ResponseEntity<ClientDto> useClientAccountAvatar(
+            @PathVariable UUID clientId,
+            @PathVariable UUID accountId
+    ) {
+        return ResponseEntity.ok(
+                clientService.useClientAccountAvatar(clientId, accountId)
+        );
+    }
+
+    @DeleteMapping("/{id}/avatar")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SUPER_ADMIN')")
+    public ResponseEntity<ClientDto> clearClientAvatar(
+            @PathVariable UUID id
+    ) {
+        return ResponseEntity.ok(
+                clientService.clearClientAvatar(id)
         );
     }
 }

@@ -17,6 +17,7 @@ import kit.penny.clientbus.server.persistence.repository.ClientRepository;
 import kit.penny.clientbus.server.persistence.repository.ConversationRepository;
 import kit.penny.clientbus.server.persistence.repository.OrganizationRepository;
 import kit.penny.clientbus.server.security.service.CurrentUserService;
+import kit.penny.clientbus.server.storage.StoredAttachmentMetadata;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,6 +26,12 @@ import kit.penny.clientbus.server.mapper.ConversationMapper;
 import kit.penny.clientbus.common.dto.client.ClientListItemDto;
 import kit.penny.clientbus.server.persistence.repository.ClientRepository.ClientListAggregateProjection;
 
+import kit.penny.clientbus.server.storage.IAttachmentStorage;
+import kit.penny.clientbus.server.storage.StoredAttachmentMetadata;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.util.Locale;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -41,6 +48,7 @@ public class ClientService {
     private final ClientAccountMapper clientAccountMapper;
     private final CurrentUserService currentUserService;
     private final ConversationMapper conversationMapper;
+    private final IAttachmentStorage attachmentStorage;
 
     public ClientService(
             ClientRepository clientRepository,
@@ -50,7 +58,8 @@ public class ClientService {
             ClientMapper clientMapper,
             ClientAccountMapper clientAccountMapper,
             CurrentUserService currentUserService,
-            ConversationMapper conversationMapper
+            ConversationMapper conversationMapper,
+            IAttachmentStorage attachmentStorage
     ) {
         this.clientRepository = clientRepository;
         this.organizationRepository = organizationRepository;
@@ -60,6 +69,7 @@ public class ClientService {
         this.clientAccountMapper = clientAccountMapper;
         this.currentUserService = currentUserService;
         this.conversationMapper = conversationMapper;
+        this.attachmentStorage = attachmentStorage;
     }
 
     /*
@@ -832,6 +842,110 @@ public class ClientService {
                 .stream()
                 .map(conversationMapper::toDto)
                 .toList();
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * Avatar logic
+     * ---------------------------------------------------------
+     */
+
+    public ClientDto uploadClientAvatar(
+            UUID clientId,
+            MultipartFile file
+    ) {
+        ClientEntity client = getAccessibleClient(clientId);
+
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("Avatar file is empty");
+        }
+
+        String contentType = file.getContentType();
+
+        if (contentType == null
+                || !List.of(
+                "image/jpeg",
+                "image/png",
+                "image/webp",
+                "image/gif"
+        ).contains(contentType.toLowerCase(Locale.ROOT))) {
+            throw new IllegalArgumentException(
+                    "Avatar must be a JPEG, PNG, WebP or GIF image"
+            );
+        }
+
+        String extension = switch (contentType.toLowerCase(Locale.ROOT)) {
+            case "image/jpeg" -> ".jpg";
+            case "image/png" -> ".png";
+            case "image/webp" -> ".webp";
+            case "image/gif" -> ".gif";
+            default -> throw new IllegalArgumentException(
+                    "Unsupported avatar format"
+            );
+        };
+
+        try {
+            StoredAttachmentMetadata stored =
+                    attachmentStorage.store(
+                            file.getInputStream(),
+                            "client-avatar-" + client.getId() + extension,
+                            file.getSize(),
+                            contentType
+                    );
+
+            client.setAvatarUrl(stored.storageKey());
+
+            return clientMapper.toDto(
+                    clientRepository.saveAndFlush(client)
+            );
+        } catch (IOException e) {
+            throw new IllegalStateException(
+                    "Failed to read client avatar",
+                    e
+            );
+        }
+    }
+
+    public ClientDto useClientAccountAvatar(
+            UUID clientId,
+            UUID accountId
+    ) {
+        ClientEntity client = getAccessibleClient(clientId);
+
+        ClientAccountEntity account =
+                getAccessibleAccount(accountId);
+
+        if (account.getClient() == null
+                || !clientId.equals(account.getClient().getId())) {
+            throw new IllegalArgumentException(
+                    "Client account does not belong to this client"
+            );
+        }
+
+        requireAccountAccess(account);
+
+        if (account.getAvatarUrl() == null
+                || account.getAvatarUrl().isBlank()) {
+            throw new IllegalStateException(
+                    "Client account has no avatar"
+            );
+        }
+
+        client.setAvatarUrl(account.getAvatarUrl());
+
+        return clientMapper.toDto(
+                clientRepository.saveAndFlush(client)
+        );
+    }
+
+    public ClientDto clearClientAvatar(UUID clientId) {
+        ClientEntity client = getAccessibleClient(clientId);
+
+        client.setAvatarUrl(null);
+
+        return clientMapper.toDto(
+                clientRepository.saveAndFlush(client)
+        );
     }
 
     /*

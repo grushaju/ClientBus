@@ -56,6 +56,9 @@ public class ClientEntity {
     @Column(name = "updatedat")
     private Instant updatedAt;
 
+    @Column(name = "avatarurl", length = 1000)
+    private String avatarUrl;
+
     // Конструкторы
     public ClientEntity() {
     }
@@ -149,6 +152,14 @@ public class ClientEntity {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public String getAvatarUrl() {
+        return avatarUrl;
+    }
+
+    public void setAvatarUrl(String avatarUrl) {
+        this.avatarUrl = avatarUrl;
     }
 
     @Override

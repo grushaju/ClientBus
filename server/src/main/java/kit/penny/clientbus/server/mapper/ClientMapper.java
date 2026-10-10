@@ -26,7 +26,8 @@ public class ClientMapper {
                 List.copyOf(entity.getPhoneList()),
                 entity.isEnabled(),
                 entity.getCreatedAt(),
-                entity.getUpdatedAt()
+                entity.getUpdatedAt(),
+                entity.getAvatarUrl()
         );
     }
 
