@@ -23,7 +23,8 @@ public class ClientAccountMapper {
                 entity.getExternalId(),
                 entity.getUsername(),
                 entity.getPhone(),
-                entity.getDisplayName()
+                entity.getDisplayName(),
+                entity.getAvatarUrl()
         );
     }
 

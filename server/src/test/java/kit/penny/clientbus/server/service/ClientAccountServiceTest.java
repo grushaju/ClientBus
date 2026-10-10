@@ -190,7 +190,8 @@ class ClientAccountServiceTest {
                         accountId,
                         "new_user",
                         "+79991234567",
-                        "New Name"
+                        "New Name",
+                        null
                 );
 
         assertSame(existingAccount, result);
@@ -223,7 +224,8 @@ class ClientAccountServiceTest {
                         accountId,
                         "new_user",
                         "+79991234567",
-                        "New Name"
+                        "New Name",
+                        null
                 )
         );
 

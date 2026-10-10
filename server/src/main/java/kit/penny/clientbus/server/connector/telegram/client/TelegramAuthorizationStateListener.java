@@ -293,7 +293,11 @@ public class TelegramAuthorizationStateListener
                                 return;
                             }
 
-                            profileSynchronizer.updateProfile(channelAccountId, user);
+                            profileSynchronizer.updateProfile(
+                                    channelAccountId,
+                                    user,
+                                    null
+                            );
 
                         } catch (RuntimeException e) {
                             log.error(

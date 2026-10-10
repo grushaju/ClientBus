@@ -5,19 +5,18 @@ import kit.penny.clientbus.common.dto.message.PlatformMessageRequest;
 import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.common.enums.MessageAttachmentType;
 import kit.penny.clientbus.common.enums.MessageType;
+import kit.penny.clientbus.server.connector.ClientAccountProfile;
 import kit.penny.clientbus.server.connector.ConnectorSendResult;
 import kit.penny.clientbus.server.connector.IChannelConnector;
 import kit.penny.clientbus.server.connector.SyncConversationHistoryResult;
-import kit.penny.clientbus.server.connector.command.MarkMessagesReadCommand;
-import kit.penny.clientbus.server.connector.command.SendMessageCommand;
-import kit.penny.clientbus.server.connector.command.SyncAccountCommand;
-import kit.penny.clientbus.server.connector.command.SyncConversationHistoryCommand;
-import kit.penny.clientbus.server.connector.command.SyncRecentChatsCommand;
+import kit.penny.clientbus.server.connector.command.*;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientContext;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientManager;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramInboundMessageProcessor;
 import kit.penny.clientbus.server.connector.telegram.account.TelegramAccountProfileSynchronizer;
 import kit.penny.clientbus.server.service.ChannelAttachment;
+import kit.penny.clientbus.server.storage.IAttachmentStorage;
+import kit.penny.clientbus.server.storage.StoredAttachmentMetadata;
 import kit.penny.tdlib.client.TelegramClient;
 import org.drinkless.tdlib.TdApi;
 import org.slf4j.Logger;
@@ -54,9 +53,13 @@ public class TelegramChannelConnector
 
     private final TelegramAccountProfileSynchronizer profileSynchronizer;
 
+    private final IAttachmentStorage attachmentStorage;
+
     public TelegramChannelConnector(
             TelegramClientManager telegramClientManager,
-            TelegramConversationMapper telegramConversationMapper, TelegramAccountProfileSynchronizer profileSynchronizer
+            TelegramConversationMapper telegramConversationMapper,
+            TelegramAccountProfileSynchronizer profileSynchronizer,
+            IAttachmentStorage attachmentStorage
     ) {
         this.telegramClientManager =
                 telegramClientManager;
@@ -66,6 +69,9 @@ public class TelegramChannelConnector
 
         this.profileSynchronizer =
                 profileSynchronizer;
+
+        this.attachmentStorage =
+                attachmentStorage;
     }
 
     @Override
@@ -566,10 +572,168 @@ public class TelegramChannelConnector
                         .send(new TdApi.GetMe())
                         .getObjectOrThrow();
 
+        String avatarUrl = null;
+        try {
+            avatarUrl = downloadAvatar(
+                    context.telegramClient(),
+                    user
+            );
+        } catch (RuntimeException e) {
+            log.warn(
+                    "Failed to synchronize Telegram account avatar: channelAccountId={}",
+                    command.channelAccountId(),
+                    e
+            );
+        }
+
         profileSynchronizer.updateProfile(
                 command.channelAccountId(),
-                user
+                user,
+                avatarUrl
         );
+    }
+
+    @Override
+    public ClientAccountProfile handle(SyncClientAccountCommand command) {
+        if (command == null) {
+            throw new IllegalArgumentException(
+                    "SyncClientAccountCommand must not be null"
+            );
+        }
+
+        if (command.channelAccountId() == null) {
+            throw new IllegalArgumentException(
+                    "channelAccountId must not be null"
+            );
+        }
+
+        if (command.clientAccountId() == null) {
+            throw new IllegalArgumentException(
+                    "clientAccountId must not be null"
+            );
+        }
+
+        if (command.externalId() == null
+                || command.externalId().isBlank()) {
+            throw new IllegalArgumentException(
+                    "externalId must not be blank"
+            );
+        }
+
+        long userId;
+        try {
+            userId = Long.parseLong(command.externalId());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                    "Invalid Telegram user id: " + command.externalId(),
+                    e
+            );
+        }
+
+        TelegramClientContext context =
+                telegramClientManager.require(command.channelAccountId());
+
+        TelegramClient telegramClient = context.telegramClient();
+
+        TdApi.User user =
+                telegramClient
+                        .send(new TdApi.GetUser(userId))
+                        .getObjectOrThrow();
+
+        if (user == null) {
+            throw new IllegalStateException(
+                    "Telegram user not found: " + command.externalId()
+            );
+        }
+
+        String avatarUrl = downloadAvatar(telegramClient, user);
+
+        String username =
+                user.usernames != null
+                        && user.usernames.activeUsernames != null
+                        && user.usernames.activeUsernames.length > 0
+                        ? user.usernames.activeUsernames[0]
+                        : null;
+
+        return new ClientAccountProfile(
+                username,
+                user.phoneNumber,
+                buildDisplayName(user.firstName, user.lastName),
+                avatarUrl
+        );
+    }
+
+    private String downloadAvatar(
+            TelegramClient telegramClient,
+            TdApi.User user
+    ) {
+        if (user.profilePhoto == null || user.profilePhoto.big == null) {
+            return null;
+        }
+
+        TdApi.File downloaded =
+                telegramClient
+                        .send(
+                                new TdApi.DownloadFile(
+                                        user.profilePhoto.big.id,
+                                        32,
+                                        0,
+                                        0,
+                                        true
+                                )
+                        )
+                        .getObjectOrThrow();
+
+        if (downloaded == null
+                || downloaded.local == null
+                || downloaded.local.path == null
+                || downloaded.local.path.isBlank()) {
+            throw new IllegalStateException(
+                    "Telegram avatar was downloaded without local path: "
+                            + user.id
+            );
+        }
+
+        Path path = Path.of(downloaded.local.path);
+
+        try {
+            long size = Files.size(path);
+
+            try (var inputStream = Files.newInputStream(path)) {
+                StoredAttachmentMetadata stored =
+                        attachmentStorage.store(
+                                inputStream,
+                                "telegram-avatar-" + user.id + ".jpg",
+                                size,
+                                "image/jpeg"
+                        );
+
+                return stored.storageKey();
+            }
+        } catch (IOException e) {
+            throw new IllegalStateException(
+                    "Failed to read downloaded Telegram avatar: " + path,
+                    e
+            );
+        }
+    }
+
+    private String buildDisplayName(
+            String firstName,
+            String lastName
+    ) {
+        String first = firstName == null ? "" : firstName.trim();
+        String last = lastName == null ? "" : lastName.trim();
+
+        if (first.isEmpty()) {
+            return last.isEmpty() ? null : last;
+        }
+
+        if (last.isEmpty()) {
+            return first;
+        }
+
+        return first + " " + last;
     }
 
     private int normalizeHistoryLimit(

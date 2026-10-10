@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-10-10 11:12:15
+- Generated: 2026-10-10 16:46:15
 - Branch: `main`
-- Commit: `ef9e648`
+- Commit: `ab402d4`
 
 ## Project Structure
 
@@ -143,6 +143,7 @@
 - `ChannelEvent.java` — `server/src/main/java/kit/penny/clientbus/server/connector/ChannelEvent.java`
 - `ChannelEventHandler.java` — `server/src/main/java/kit/penny/clientbus/server/connector/ChannelEventHandler.java`
 - `ChannelSynchronizationListener.java` — `server/src/main/java/kit/penny/clientbus/server/connector/ChannelSynchronizationListener.java`
+- `ClientAccountProfile.java` — `server/src/main/java/kit/penny/clientbus/server/connector/ClientAccountProfile.java`
 - `ConnectorSendResult.java` — `server/src/main/java/kit/penny/clientbus/server/connector/ConnectorSendResult.java`
 - `IChannelAccountLifecycle.java` — `server/src/main/java/kit/penny/clientbus/server/connector/IChannelAccountLifecycle.java`
 - `IChannelConnector.java` — `server/src/main/java/kit/penny/clientbus/server/connector/IChannelConnector.java`
@@ -612,7 +613,7 @@
 ## Summary
 
 - Maven modules: 3
-- Java files: 288
+- Java files: 289
 - UI source files: 95
-- Git commit: `ef9e648`
+- Git commit: `ab402d4`
 

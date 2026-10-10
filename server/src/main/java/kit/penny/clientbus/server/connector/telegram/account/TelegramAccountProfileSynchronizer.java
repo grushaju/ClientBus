@@ -19,7 +19,11 @@ public class TelegramAccountProfileSynchronizer {
         this.channelAccountRepository = channelAccountRepository;
     }
 
-    public void updateProfile(UUID channelAccountId, TdApi.User user) {
+    public void updateProfile(
+            UUID channelAccountId,
+            TdApi.User user,
+            String avatarUrl
+            ) {
         if (channelAccountId == null) {
             throw new IllegalArgumentException(
                     "channelAccountId must not be null"
@@ -53,6 +57,9 @@ public class TelegramAccountProfileSynchronizer {
         account.setDisplayName(
                 buildDisplayName(user.firstName, user.lastName)
         );
+        if (avatarUrl != null && !avatarUrl.isBlank()) {
+            account.setAvatarUrl(avatarUrl);
+        }
 
         channelAccountRepository.save(account);
     }

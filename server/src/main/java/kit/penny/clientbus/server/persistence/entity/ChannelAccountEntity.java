@@ -51,6 +51,12 @@ public class ChannelAccountEntity {
     )
     private String displayName;
 
+    @Column(
+            name = "avatarurl",
+            length = 1000
+    )
+    private String avatarUrl;
+
     public ChannelAccountEntity() {
     }
 
@@ -114,5 +120,13 @@ public class ChannelAccountEntity {
 
     public void setDisplayName(String displayName) {
         this.displayName = displayName;
+    }
+
+    public String getAvatarUrl() {
+        return avatarUrl;
+    }
+
+    public void setAvatarUrl(String avatarUrl) {
+        this.avatarUrl = avatarUrl;
     }
 }

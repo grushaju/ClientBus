@@ -153,7 +153,8 @@ public class ClientAccountService {
                     entity,
                     username,
                     phone,
-                    displayName
+                    displayName,
+                    null
             );
 
             return entity;
@@ -522,7 +523,8 @@ public class ClientAccountService {
             UUID id,
             String username,
             String phone,
-            String displayName
+            String displayName,
+            String avatarUrl
     ) {
         if (id == null) {
             throw new IllegalArgumentException(
@@ -542,7 +544,8 @@ public class ClientAccountService {
                 entity,
                 username,
                 phone,
-                displayName
+                displayName,
+                avatarUrl
         );
 
         return entity;
@@ -552,7 +555,8 @@ public class ClientAccountService {
             ClientAccountEntity entity,
             String username,
             String phone,
-            String displayName
+            String displayName,
+            String avatarUrl
     ) {
         if (username != null && !username.isBlank()) {
             entity.setUsername(username);
@@ -564,6 +568,10 @@ public class ClientAccountService {
 
         if (displayName != null && !displayName.isBlank()) {
             entity.setDisplayName(displayName);
+        }
+
+        if (avatarUrl != null && !avatarUrl.isBlank()) {
+            entity.setAvatarUrl(avatarUrl);
         }
     }
 

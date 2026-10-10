@@ -12,6 +12,7 @@ import kit.penny.clientbus.server.connector.telegram.client.TelegramInboundMessa
 import kit.penny.clientbus.server.service.ChannelAttachment;
 import kit.penny.clientbus.server.connector.SyncConversationHistoryResult;
 import kit.penny.clientbus.server.connector.command.SyncConversationHistoryCommand;
+import kit.penny.clientbus.server.storage.IAttachmentStorage;
 import org.springframework.context.ConfigurableApplicationContext;
 
 import java.util.concurrent.CompletableFuture;
@@ -63,6 +64,9 @@ class TelegramChannelConnectorTest {
     @Mock
     private TelegramAccountProfileSynchronizer profileSynchronizer;
 
+    @Mock
+    private IAttachmentStorage attachmentStorage;
+
     private TelegramChannelConnector connector;
 
     @BeforeEach
@@ -70,7 +74,8 @@ class TelegramChannelConnectorTest {
         connector = new TelegramChannelConnector(
                 telegramClientManager,
                 telegramConversationMapper,
-                profileSynchronizer
+                profileSynchronizer,
+                attachmentStorage
         );
 
     }
