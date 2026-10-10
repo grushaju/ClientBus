@@ -345,7 +345,8 @@ class RecentChatsSynchronizationServiceTest {
                 eq(externalId),
                 isNull(),
                 isNull(),
-                eq("Client " + externalId)
+                eq("Client " + externalId),
+                null
         )).thenReturn(
                 clientAccount(state)
         );

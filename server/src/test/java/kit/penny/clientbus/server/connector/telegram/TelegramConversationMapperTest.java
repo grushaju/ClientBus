@@ -32,7 +32,10 @@ class TelegramConversationMapperTest {
         TdApi.User user = user(200L, "John", "Doe");
 
         PlatformConversationRequest result =
-                mapper.map(ACCOUNT_ID, chat, user);
+                mapper.map(ACCOUNT_ID,
+                        chat,
+                        user,
+                        null);
 
         assertEquals(ACCOUNT_ID, result.channelAccountId());
         assertEquals("200", result.clientExternalId());
@@ -53,7 +56,12 @@ class TelegramConversationMapperTest {
         TdApi.User user = user(200L, " John ", " Doe ");
 
         PlatformConversationRequest result =
-                mapper.map(ACCOUNT_ID, chat, user);
+                mapper.map(
+                        ACCOUNT_ID,
+                        chat,
+                        user,
+                        null
+                );
 
         assertEquals("John Doe", result.clientDisplayName());
     }
@@ -64,7 +72,16 @@ class TelegramConversationMapperTest {
         chat.lastMessage = null;
 
         PlatformConversationRequest result =
-                mapper.map(ACCOUNT_ID, chat, user(200L, "John", ""));
+                mapper.map(
+                        ACCOUNT_ID,
+                        chat,
+                        user(
+                                200L,
+                                "John",
+                                ""
+                        ),
+                        null
+                );
 
         assertNull(result.lastMessageAt());
         assertNull(result.lastMessagePreview());
@@ -76,7 +93,15 @@ class TelegramConversationMapperTest {
         chat.unreadCount = -1;
 
         PlatformConversationRequest result =
-                mapper.map(ACCOUNT_ID, chat, user(200L, "John", ""));
+                mapper.map(
+                        ACCOUNT_ID,
+                        chat,
+                        user(
+                                200L,
+                                "John",
+                                ""
+                        ),
+                        null);
 
         assertEquals(0, result.unreadCount());
     }
@@ -102,7 +127,16 @@ class TelegramConversationMapperTest {
         chat.lastMessage = message;
 
         PlatformConversationRequest result =
-                mapper.map(ACCOUNT_ID, chat, user(200L, "John", ""));
+                mapper.map(
+                        ACCOUNT_ID,
+                        chat,
+                        user(
+                                200L,
+                                "John",
+                                ""
+                        ),
+                        null
+                );
 
         assertEquals("Photo caption", result.lastMessagePreview());
     }
@@ -111,7 +145,15 @@ class TelegramConversationMapperTest {
     void shouldRejectNullAccountId() {
         assertThrows(
                 IllegalArgumentException.class,
-                () -> mapper.map(null, new TdApi.Chat(), user(200L, "John", ""))
+                () -> mapper.map(
+                        null,
+                        new TdApi.Chat(),
+                        user(
+                                200L,
+                                "John",
+                                ""
+                        ),
+                        null)
         );
     }
 
@@ -119,7 +161,16 @@ class TelegramConversationMapperTest {
     void shouldRejectNullChat() {
         assertThrows(
                 IllegalArgumentException.class,
-                () -> mapper.map(ACCOUNT_ID, null, user(200L, "John", ""))
+                () -> mapper.map(
+                        ACCOUNT_ID,
+                        null,
+                        user(
+                                200L,
+                                "John",
+                                ""
+                        ),
+                        null
+                )
         );
     }
 
@@ -127,7 +178,12 @@ class TelegramConversationMapperTest {
     void shouldRejectNullUser() {
         assertThrows(
                 IllegalArgumentException.class,
-                () -> mapper.map(ACCOUNT_ID, new TdApi.Chat(), null)
+                () -> mapper.map(
+                        ACCOUNT_ID,
+                        new TdApi.Chat(),
+                        null,
+                        null
+                )
         );
     }
 

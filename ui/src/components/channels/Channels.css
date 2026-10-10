@@ -335,6 +335,19 @@
     color: #6b7280;
 }
 
+.channel-details-account-profile {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.channel-details-account-info {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
 /* Delete dialog */
 
 .channel-delete-content {

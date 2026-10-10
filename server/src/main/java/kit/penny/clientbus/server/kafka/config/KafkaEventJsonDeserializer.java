@@ -147,11 +147,6 @@ public class KafkaEventJsonDeserializer
                             SyncConversationHistoryKafkaCommand.Result.class
                     );
 
-            case SYNC_ACCOUNT ->
-                    objectMapper.convertValue(
-                            payload,
-                            SyncAccountKafkaCommand.class
-                    );
         };
     }
 

@@ -265,7 +265,8 @@ class MessageProcessingServiceTest {
                 "client-123",
                 "username",
                 "+79990000000",
-                "Test Client"
+                "Test Client",
+                null
         )).thenReturn(
                 clientAccount
         );
@@ -311,7 +312,8 @@ class MessageProcessingServiceTest {
                         "client-123",
                         "username",
                         "+79990000000",
-                        "Test Client"
+                        "Test Client",
+                        null
                 );
 
         verify(conversationService)
@@ -421,7 +423,8 @@ class MessageProcessingServiceTest {
                 "client-123",
                 "username",
                 null,
-                "Test Client"
+                "Test Client",
+                null
         )).thenReturn(
                 clientAccount
         );
@@ -544,7 +547,8 @@ class MessageProcessingServiceTest {
                 "client-123",
                 "username",
                 "+79990000000",
-                "Test Client"
+                "Test Client",
+                null
         )).thenReturn(
                 clientAccount
         );

@@ -10,6 +10,7 @@ import {
     getClientAccountsByClient,
     getClients,
     unassignClientAccount,
+    getClientAvatarContent,
 } from '../../api/clientApi'
 
 import type {
@@ -32,6 +33,9 @@ import { useAuth } from '../../auth/AuthContext'
 import PlatformIcon from '../common/platform/PlatformIcon'
 import PlatformName from '../common/platform/PlatformName'
 import ClientAccountPicker from '../clients/ClientAccountPicker'
+import {
+    ChannelAccountAvatar,
+} from '../channels/ChannelAccountAvatar'
 
 interface Props {
     conversation: ConversationDto
@@ -52,6 +56,9 @@ function ConversationClientPanel({
 
     const [client, setClient] =
         useState<ClientDto | null>(null)
+
+    const [clientAvatarSrc, setClientAvatarSrc] =
+        useState<string | null>(null)
 
     const [clientAccounts, setClientAccounts] =
         useState<ClientAccountSummary[]>([])
@@ -97,9 +104,11 @@ function ConversationClientPanel({
 
     useEffect(() => {
         let cancelled = false
+        let avatarObjectUrl: string | null = null
 
         async function loadClient() {
             setShowOtherAccounts(false)
+            setClientAvatarSrc(null)
 
             if (!clientAccount?.clientId) {
                 setClient(null)
@@ -121,13 +130,31 @@ function ConversationClientPanel({
                         clientAccount.clientId,
                     )
 
+                let avatarSrc: string | null = null
+
+                if (result.avatarUrl) {
+                    try {
+                        const blob = await getClientAvatarContent(
+                            result.id,
+                        )
+
+                        avatarSrc = URL.createObjectURL(blob)
+                        avatarObjectUrl = avatarSrc
+                    } catch {
+                        // Если аватар недоступен, покажем первую букву имени.
+                    }
+                }
                 if (!cancelled) {
                     setClient(result)
+                    setClientAvatarSrc(avatarSrc)
                     setClientAccounts(accounts)
                 }
             } catch (err) {
                 if (!cancelled) {
                     setClient(null)
+                    if (avatarObjectUrl) {
+                        URL.revokeObjectURL(avatarObjectUrl)
+                    }
                     setClientAccounts([])
 
                     setError(
@@ -147,6 +174,9 @@ function ConversationClientPanel({
 
         return () => {
             cancelled = true
+            if (avatarObjectUrl) {
+                URL.revokeObjectURL(avatarObjectUrl)
+            }
         }
     }, [
         clientAccount?.clientId,
@@ -413,10 +443,16 @@ function ConversationClientPanel({
                     <>
                         <div className="conversation-client-card">
                             <div className="conversation-client-avatar">
-                                {(clientName ||
-                                    accountName)
-                                    .charAt(0)
-                                    .toUpperCase()}
+                                {clientAvatarSrc ? (
+                                    <img
+                                        src={clientAvatarSrc}
+                                        alt=""
+                                    />
+                                ) : (
+                                    (clientName || accountName)
+                                        .charAt(0)
+                                        .toUpperCase()
+                                )}
                             </div>
 
                             <div className="conversation-client-card-info">
@@ -820,6 +856,12 @@ function ConversationClientPanel({
                     </div>
 
                     <div className="conversation-client-channel">
+                        <ChannelAccountAvatar
+                            channelId={channel.id}
+                            avatarUrl={channel.account?.avatarUrl ?? null}
+                            displayName={channel.account?.displayName ?? null}
+                        />
+
                         <PlatformIcon
                             type={channel.type}
                             size={18}
@@ -835,9 +877,11 @@ function ConversationClientPanel({
                                     type={channel.type}
                                 />
                             </span>
+
                             <strong>
                                 👤 @{channel.account?.username}
                             </strong>
+
                             <strong>
                                 ☎ {channel.account?.phone}
                             </strong>

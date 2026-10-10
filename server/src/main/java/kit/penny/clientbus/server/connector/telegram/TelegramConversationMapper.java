@@ -13,7 +13,8 @@ public class TelegramConversationMapper {
     public PlatformConversationRequest map(
             UUID channelAccountId,
             TdApi.Chat chat,
-            TdApi.User user
+            TdApi.User user,
+            String avatarUrl
     ) {
 
         if (channelAccountId == null) {
@@ -49,7 +50,8 @@ public class TelegramConversationMapper {
                 extractLastMessagePreview(
                         chat.lastMessage
                 ),
-                Math.max(0, chat.unreadCount)
+                Math.max(0, chat.unreadCount),
+                avatarUrl
         );
     }
 

@@ -51,6 +51,10 @@ import {
     getChannelTypeLabel,
 } from '../components/channels/channelLabels'
 
+import {
+    ChannelAccountAvatar,
+} from '../components/channels/ChannelAccountAvatar'
+
 import PlatformIcon
     from '../components/common/platform/PlatformIcon'
 
@@ -470,36 +474,31 @@ function ChannelsPage() {
 
                                     {channel.account ? (
                                         <div className="channel-card-account-info">
-                                            {channel.account.displayName && (
-                                                <div className="channel-card-account-name">
-                                                    {
-                                                        channel
-                                                            .account
-                                                            .displayName
-                                                    }
-                                                </div>
-                                            )}
+                                            <ChannelAccountAvatar
+                                                channelId={channel.id}
+                                                avatarUrl={channel.account.avatarUrl}
+                                                displayName={channel.account.displayName}
+                                            />
 
-                                            {channel.account.username && (
-                                                <div className="channel-card-account-username">
-                                                    @
-                                                    {
-                                                        channel
-                                                            .account
-                                                            .username
-                                                    }
-                                                </div>
-                                            )}
+                                            <div className="channel-card-account-details">
+                                                {channel.account.displayName && (
+                                                    <div className="channel-card-account-name">
+                                                        {channel.account.displayName}
+                                                    </div>
+                                                )}
 
-                                            {channel.account.phone && (
-                                                <div className="channel-card-account-phone">
-                                                    {
-                                                        channel
-                                                            .account
-                                                            .phone
-                                                    }
-                                                </div>
-                                            )}
+                                                {channel.account.username && (
+                                                    <div className="channel-card-account-username">
+                                                        @{channel.account.username}
+                                                    </div>
+                                                )}
+
+                                                {channel.account.phone && (
+                                                    <div className="channel-card-account-phone">
+                                                        {channel.account.phone}
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     ) : (
                                         <div className="channel-card-account-empty">

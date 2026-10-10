@@ -29,9 +29,6 @@ public interface IChannelConnector {
             SyncConversationHistoryCommand command
     );
 
-    void handle(
-            SyncAccountCommand command
-    );
 
     ClientAccountProfile handle(
             SyncClientAccountCommand command

@@ -64,7 +64,8 @@ class ClientAccountServiceTest {
                         externalId,
                         username,
                         phone,
-                        displayName
+                        displayName,
+                        null
                 );
 
         assertNotNull(result);
@@ -137,7 +138,8 @@ class ClientAccountServiceTest {
                         externalId,
                         newUsername,
                         newPhone,
-                        newDisplayName
+                        newDisplayName,
+                        null
                 );
 
         assertSame(existingAccount, result);

@@ -7,6 +7,10 @@ import {
     getChannelTypeLabel,
 } from './channelLabels'
 
+import {
+    ChannelAccountAvatar,
+} from './ChannelAccountAvatar'
+
 import PlatformIcon from '../common/platform/PlatformIcon'
 
 interface ChannelDetailsDialogProps {
@@ -129,51 +133,46 @@ export function ChannelDetailsDialog({
                         </div>
 
                         {account ? (
+
                             <div className="channel-details-account">
-                                {accountName && (
-                                    <div className="channel-details-account-name">
-                                        {accountName}
+                                <div className="channel-details-account-profile">
+                                    <ChannelAccountAvatar
+                                        channelId={channel.id}
+                                        avatarUrl={account.avatarUrl}
+                                        displayName={account.displayName}
+                                    />
+
+                                    <div className="channel-details-account-info">
+                                        {accountName && (
+                                            <div className="channel-details-account-name">
+                                                {accountName}
+                                            </div>
+                                        )}
+
+                                        {account.username &&
+                                            accountName !== `@${account.username}` && (
+                                                <div className="channel-details-account-row">
+                                                    <span>Username</span>
+                                                    <strong>@{account.username}</strong>
+                                                </div>
+                                            )}
+
+                                        {account.phone && (
+                                            <div className="channel-details-account-row">
+                                                <span>Телефон</span>
+                                                <strong>{account.phone}</strong>
+                                            </div>
+                                        )}
+
+                                        {!accountName && !account.phone && (
+                                            <div className="channel-details-account-empty">
+                                                Аккаунт подключён
+                                            </div>
+                                        )}
                                     </div>
-                                )}
-
-                                {account.username &&
-                                    accountName !==
-                                    `@${account.username}` && (
-                                        <div className="channel-details-account-row">
-                                            <span>
-                                                Username
-                                            </span>
-
-                                            <strong>
-                                                @
-                                                {
-                                                    account.username
-                                                }
-                                            </strong>
-                                        </div>
-                                    )}
-
-                                {account.phone && (
-                                    <div className="channel-details-account-row">
-                                        <span>
-                                            Телефон
-                                        </span>
-
-                                        <strong>
-                                            {
-                                                account.phone
-                                            }
-                                        </strong>
-                                    </div>
-                                )}
-
-                                {!accountName &&
-                                    !account.phone && (
-                                        <div className="channel-details-account-empty">
-                                            Аккаунт подключён
-                                        </div>
-                                    )}
+                                </div>
                             </div>
+
                         ) : (
                             <div className="channel-details-account-empty">
                                 Аккаунт не подключён

@@ -59,5 +59,6 @@ export interface ChannelSummary {
         username: string | null
         phone: string | null
         displayName: string | null
+        avatarUrl: string | null
     } | null
 }

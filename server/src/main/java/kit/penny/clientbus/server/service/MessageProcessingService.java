@@ -96,7 +96,8 @@ public class MessageProcessingService
                         request.clientExternalId(),
                         request.clientUsername(),
                         request.clientPhone(),
-                        request.clientDisplayName()
+                        request.clientDisplayName(),
+                        null
                 );
 
         ConversationEntity conversation =
@@ -197,7 +198,8 @@ public class MessageProcessingService
                         request.clientExternalId(),
                         request.clientUsername(),
                         request.clientPhone(),
-                        request.clientDisplayName()
+                        request.clientDisplayName(),
+                        request.avatarUrl()
                 );
 
         ConversationEntity conversation =

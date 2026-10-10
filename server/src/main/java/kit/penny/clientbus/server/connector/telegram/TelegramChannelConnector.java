@@ -174,6 +174,11 @@ public class TelegramChannelConnector
         TelegramClient telegramClient =
                 context.telegramClient();
 
+        synchronizeChannelAccountProfile(
+                telegramClient,
+                command.channelAccountId()
+        );
+
         TdApi.Chats chats =
                 telegramClient
                         .send(
@@ -543,51 +548,12 @@ public class TelegramChannelConnector
             return null;
         }
 
+        String avatarUrl =
+                tryDownloadAvatar(telegramClient, user);
+
         return telegramConversationMapper.map(
                 channelAccountId,
                 chat,
-                user
-        );
-    }
-
-    @Override
-    public void handle(SyncAccountCommand command) {
-        if (command == null) {
-            throw new IllegalArgumentException(
-                    "SyncAccountCommand must not be null"
-            );
-        }
-
-        if (command.channelAccountId() == null) {
-            throw new IllegalArgumentException(
-                    "channelAccountId must not be null"
-            );
-        }
-
-        TelegramClientContext context =
-                telegramClientManager.require(command.channelAccountId());
-
-        TdApi.User user =
-                context.telegramClient()
-                        .send(new TdApi.GetMe())
-                        .getObjectOrThrow();
-
-        String avatarUrl = null;
-        try {
-            avatarUrl = downloadAvatar(
-                    context.telegramClient(),
-                    user
-            );
-        } catch (RuntimeException e) {
-            log.warn(
-                    "Failed to synchronize Telegram account avatar: channelAccountId={}",
-                    command.channelAccountId(),
-                    e
-            );
-        }
-
-        profileSynchronizer.updateProfile(
-                command.channelAccountId(),
                 user,
                 avatarUrl
         );
@@ -646,7 +612,7 @@ public class TelegramChannelConnector
             );
         }
 
-        String avatarUrl = downloadAvatar(telegramClient, user);
+        String avatarUrl = tryDownloadAvatar(telegramClient, user);
 
         String username =
                 user.usernames != null
@@ -661,6 +627,63 @@ public class TelegramChannelConnector
                 buildDisplayName(user.firstName, user.lastName),
                 avatarUrl
         );
+    }
+
+
+    /* PRIVATE HANDLERS */
+
+    private void synchronizeChannelAccountProfile(
+            TelegramClient telegramClient,
+            UUID channelAccountId
+    ) {
+        try {
+            TdApi.User user =
+                    telegramClient
+                            .send(new TdApi.GetMe())
+                            .getObjectOrThrow();
+
+            if (user == null) {
+                log.warn(
+                        "Telegram GetMe returned no user: channelAccountId={}",
+                        channelAccountId
+                );
+                return;
+            }
+
+            String avatarUrl =
+                    downloadAvatar(telegramClient, user);
+
+            profileSynchronizer.updateProfile(
+                    channelAccountId,
+                    user,
+                    avatarUrl
+            );
+
+        } catch (RuntimeException e) {
+            // Ошибка обновления профиля не должна блокировать загрузку чатов.
+            log.warn(
+                    "Failed to synchronize Telegram account profile: " +
+                            "channelAccountId={}",
+                    channelAccountId,
+                    e
+            );
+        }
+    }
+
+    private String tryDownloadAvatar(
+            TelegramClient telegramClient,
+            TdApi.User user
+    ) {
+        try {
+            return downloadAvatar(telegramClient, user);
+        } catch (RuntimeException e) {
+            log.warn(
+                    "Failed to download Telegram avatar: userId={}",
+                    user.id,
+                    e
+            );
+            return null;
+        }
     }
 
     private String downloadAvatar(

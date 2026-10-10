@@ -126,7 +126,8 @@ public class ClientAccountService {
             String externalId,
             String username,
             String phone,
-            String displayName
+            String displayName,
+            String avatarUrl
     ) {
         if (channelType == null) {
             throw new IllegalArgumentException(
@@ -154,7 +155,7 @@ public class ClientAccountService {
                     username,
                     phone,
                     displayName,
-                    null
+                    avatarUrl
             );
 
             return entity;

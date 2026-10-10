@@ -170,6 +170,13 @@
 
     font-size: var(--ui-font-size-xl);
     font-weight: var(--ui-font-weight-semibold);
+    overflow: hidden;
+}
+
+.conversation-client-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
 }
 
 .conversation-client-card-info {

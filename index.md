@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-10-10 22:03:50
+- Generated: 2026-10-11 00:12:17
 - Branch: `main`
-- Commit: `6aac7da`
+- Commit: `2e2549a`
 
 ## Project Structure
 
@@ -108,7 +108,6 @@
 - `OutboundMessageKafkaCommand.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/OutboundMessageKafkaCommand.java`
 - `PlatformMessageKafkaEvent.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/PlatformMessageKafkaEvent.java`
 - `PlatformOutboundAttachment.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/PlatformOutboundAttachment.java`
-- `SyncAccountKafkaCommand.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/SyncAccountKafkaCommand.java`
 - `SyncConversationHistoryKafkaCommand.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/SyncConversationHistoryKafkaCommand.java`
 - `SyncRecentChatsKafkaCommand.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/SyncRecentChatsKafkaCommand.java`
 
@@ -157,7 +156,6 @@
 - `ChannelConnectorCommand.java` — `server/src/main/java/kit/penny/clientbus/server/connector/command/ChannelConnectorCommand.java`
 - `MarkMessagesReadCommand.java` — `server/src/main/java/kit/penny/clientbus/server/connector/command/MarkMessagesReadCommand.java`
 - `SendMessageCommand.java` — `server/src/main/java/kit/penny/clientbus/server/connector/command/SendMessageCommand.java`
-- `SyncAccountCommand.java` — `server/src/main/java/kit/penny/clientbus/server/connector/command/SyncAccountCommand.java`
 - `SyncClientAccountCommand.java` — `server/src/main/java/kit/penny/clientbus/server/connector/command/SyncClientAccountCommand.java`
 - `SyncConversationHistoryCommand.java` — `server/src/main/java/kit/penny/clientbus/server/connector/command/SyncConversationHistoryCommand.java`
 - `SyncRecentChatsCommand.java` — `server/src/main/java/kit/penny/clientbus/server/connector/command/SyncRecentChatsCommand.java`
@@ -239,7 +237,6 @@
 - `KafkaPlatformConversationConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaPlatformConversationConsumer.java`
 - `KafkaPlatformEventConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaPlatformEventConsumer.java`
 - `KafkaPlatformMessageConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaPlatformMessageConsumer.java`
-- `KafkaSyncAccountConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaSyncAccountConsumer.java`
 - `KafkaSyncConversationHistoryConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaSyncConversationHistoryConsumer.java`
 - `KafkaSyncRecentChatsConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaSyncRecentChatsConsumer.java`
 
@@ -443,7 +440,6 @@
 - `KafkaOutboundMessageConsumerTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaOutboundMessageConsumerTest.java`
 - `KafkaOutboundMessageFailureIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaOutboundMessageFailureIntegrationTest.java`
 - `KafkaPlatformEventConsumerTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaPlatformEventConsumerTest.java`
-- `KafkaSyncAccountConsumerTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaSyncAccountConsumerTest.java`
 - `KafkaSyncConversationHistoryConsumerTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaSyncConversationHistoryConsumerTest.java`
 - `KafkaSyncRecentChatsConsumerTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaSyncRecentChatsConsumerTest.java`
 
@@ -525,6 +521,7 @@
 - `ui/src/auth/authStorage.ts`
 - `ui/src/auth/types.ts`
 - `ui/src/auth/userRole.ts`
+- `ui/src/components/channels/ChannelAccountAvatar.tsx`
 - `ui/src/components/channels/ChannelConnectionDialog.tsx`
 - `ui/src/components/channels/ChannelDetailsDialog.tsx`
 - `ui/src/components/channels/channelLabels.ts`
@@ -613,7 +610,7 @@
 ## Summary
 
 - Maven modules: 3
-- Java files: 289
-- UI source files: 95
-- Git commit: `6aac7da`
+- Java files: 285
+- UI source files: 96
+- Git commit: `2e2549a`
 

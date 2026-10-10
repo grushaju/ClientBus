@@ -10,7 +10,10 @@ import kit.penny.clientbus.common.dto.channel.UpdateChannelAccountRequest;
 import kit.penny.clientbus.common.dto.channel.UpdateChannelRequest;
 import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.server.service.ChannelService;
+import kit.penny.clientbus.server.storage.IAttachmentStorage;
+import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -26,10 +29,13 @@ public class ChannelController {
 
     private final ChannelService channelService;
 
+    private final IAttachmentStorage attachmentStorage;
+
     public ChannelController(
-            ChannelService channelService
+            ChannelService channelService, IAttachmentStorage attachmentStorage
     ) {
         this.channelService = channelService;
+        this.attachmentStorage = attachmentStorage;
     }
 
     // =========================================================
@@ -152,6 +158,31 @@ public class ChannelController {
                         request
                 )
         );
+    }
+
+    @GetMapping("/{channelId}/account/avatar")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<InputStreamResource> getChannelAccountAvatar(
+            @PathVariable UUID channelId
+    ) {
+        ChannelAccountDto account =
+                channelService.getChannelAccount(channelId);
+
+        String storageKey = account.avatarUrl();
+
+        if (storageKey == null
+                || storageKey.isBlank()
+                || !attachmentStorage.exists(storageKey)) {
+            return ResponseEntity.notFound().build();
+        }
+
+        return ResponseEntity.ok()
+                .contentType(MediaType.IMAGE_JPEG)
+                .body(
+                        new InputStreamResource(
+                                attachmentStorage.load(storageKey)
+                        )
+                );
     }
 
 }

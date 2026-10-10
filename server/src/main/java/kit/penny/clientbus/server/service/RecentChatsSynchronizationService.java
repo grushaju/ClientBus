@@ -75,7 +75,8 @@ public class RecentChatsSynchronizationService {
                             conversation.clientExternalId(),
                             conversation.clientUsername(),
                             conversation.clientPhone(),
-                            conversation.clientDisplayName()
+                            conversation.clientDisplayName(),
+                            conversation.avatarUrl()
                     );
 
             platformConversationPublisher.publish(

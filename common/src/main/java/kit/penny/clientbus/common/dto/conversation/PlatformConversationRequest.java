@@ -24,9 +24,34 @@ public record PlatformConversationRequest(
 
         String lastMessagePreview,
 
-        int unreadCount
+        int unreadCount,
+
+        String avatarUrl
 
 ) {
+
+    public PlatformConversationRequest(
+            UUID channelAccountId,
+            String clientExternalId,
+            String clientUsername,
+            String clientPhone,
+            String clientDisplayName,
+            Instant lastMessageAt,
+            String lastMessagePreview,
+            int unreadCount
+    ) {
+        this(
+                channelAccountId,
+                clientExternalId,
+                clientUsername,
+                clientPhone,
+                clientDisplayName,
+                lastMessageAt,
+                lastMessagePreview,
+                unreadCount,
+                null
+        );
+    }
 
     public PlatformConversationRequest {
 
