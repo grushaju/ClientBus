@@ -24,6 +24,9 @@ public final class KafkaTopicNames {
     private static final String CONVERSATION_HISTORY_RESULT =
             PREFIX + ".conversation-history-result";
 
+    private static final String ACCOUNT_COMMAND_PREFIX =
+            CHANNEL_COMMAND_PREFIX + "account.";
+
     private KafkaTopicNames() {
     }
 
@@ -297,5 +300,68 @@ public final class KafkaTopicNames {
         }
 
         return topic + ".dlq";
+    }
+
+    public static String accountCommand(
+            ChannelType channelType
+    ) {
+        if (channelType == null) {
+            throw new IllegalArgumentException(
+                    "ChannelType must not be null"
+            );
+        }
+
+        return ACCOUNT_COMMAND_PREFIX
+                + channelType.name().toLowerCase();
+    }
+
+    public static ChannelType accountCommandChannelType(
+            String topic
+    ) {
+        if (topic == null || topic.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Topic must not be blank"
+            );
+        }
+
+        if (!topic.startsWith(
+                ACCOUNT_COMMAND_PREFIX
+        )) {
+            throw new IllegalArgumentException(
+                    "Not an account command topic: "
+                            + topic
+            );
+        }
+
+        String channelTypeName =
+                topic.substring(
+                        ACCOUNT_COMMAND_PREFIX.length()
+                );
+
+        if (channelTypeName.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Account command topic does not contain channel type: "
+                            + topic
+            );
+        }
+
+        try {
+            return ChannelType.valueOf(
+                    channelTypeName.toUpperCase()
+            );
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(
+                    "Unknown channel type in account command topic: "
+                            + topic,
+                    e
+            );
+        }
+    }
+
+    public static String accountCommandPattern() {
+        return "^"
+                + ACCOUNT_COMMAND_PREFIX
+                .replace(".", "\\.")
+                + "[^.]+$";
     }
 }

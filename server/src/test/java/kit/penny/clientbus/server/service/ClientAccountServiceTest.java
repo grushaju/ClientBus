@@ -164,4 +164,73 @@ class ClientAccountServiceTest {
         verify(clientAccountRepository, never())
                 .save(any(ClientAccountEntity.class));
     }
+
+    @Test
+    void updateExistingProfile_shouldUpdateProfileWithoutChangingState() {
+
+        UUID accountId = UUID.randomUUID();
+
+        ClientAccountEntity existingAccount =
+                new ClientAccountEntity();
+
+        existingAccount.setId(accountId);
+        existingAccount.setChannelType(ChannelType.TELEGRAM);
+        existingAccount.setExternalId("123456789");
+        existingAccount.setUsername("old_user");
+        existingAccount.setPhone("+79990000000");
+        existingAccount.setDisplayName("Old Name");
+        existingAccount.setState(ClientAccountState.ARCHIVE);
+
+        when(
+                clientAccountRepository.findById(accountId)
+        ).thenReturn(Optional.of(existingAccount));
+
+        ClientAccountEntity result =
+                clientAccountService.updateExistingProfile(
+                        accountId,
+                        "new_user",
+                        "+79991234567",
+                        "New Name"
+                );
+
+        assertSame(existingAccount, result);
+        assertEquals(accountId, result.getId());
+        assertEquals("123456789", result.getExternalId());
+        assertEquals("new_user", result.getUsername());
+        assertEquals("+79991234567", result.getPhone());
+        assertEquals("New Name", result.getDisplayName());
+        assertEquals(ClientAccountState.ARCHIVE, result.getState());
+
+        verify(clientAccountRepository, never())
+                .save(any(ClientAccountEntity.class));
+
+        verify(clientAccountRepository, never())
+                .saveAndFlush(any(ClientAccountEntity.class));
+    }
+
+    @Test
+    void updateExistingProfile_shouldNotCreateMissingAccount() {
+
+        UUID accountId = UUID.randomUUID();
+
+        when(
+                clientAccountRepository.findById(accountId)
+        ).thenReturn(Optional.empty());
+
+        assertThrows(
+                jakarta.persistence.EntityNotFoundException.class,
+                () -> clientAccountService.updateExistingProfile(
+                        accountId,
+                        "new_user",
+                        "+79991234567",
+                        "New Name"
+                )
+        );
+
+        verify(clientAccountRepository, never())
+                .save(any(ClientAccountEntity.class));
+
+        verify(clientAccountRepository, never())
+                .saveAndFlush(any(ClientAccountEntity.class));
+    }
 }

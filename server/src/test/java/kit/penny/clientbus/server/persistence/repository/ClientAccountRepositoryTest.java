@@ -1,16 +1,17 @@
 package kit.penny.clientbus.server.persistence.repository;
 
 import kit.penny.clientbus.common.enums.ChannelType;
+import kit.penny.clientbus.common.enums.ClientAccountState;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.integration.AbstractIntegrationTest;
-import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
-import kit.penny.clientbus.server.persistence.entity.ClientEntity;
-import kit.penny.clientbus.server.persistence.entity.OrganizationEntity;
-import kit.penny.clientbus.server.persistence.entity.WorkspaceEntity;
-import kit.penny.clientbus.server.persistence.repository.ClientAccountRepository;
-import kit.penny.clientbus.server.persistence.repository.ClientRepository;
-import kit.penny.clientbus.server.persistence.repository.OrganizationRepository;
-import kit.penny.clientbus.server.persistence.repository.WorkspaceRepository;
+import kit.penny.clientbus.server.persistence.entity.*;
+import kit.penny.clientbus.common.enums.ClientAccountState;
+import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
+import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
+import kit.penny.clientbus.server.persistence.entity.ConversationEntity;
+import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
+import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
+import kit.penny.clientbus.server.persistence.repository.ConversationRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,6 +39,15 @@ class ClientAccountRepositoryTest
 
     @Autowired
     private OrganizationRepository organizationRepository;
+
+    @Autowired
+    private ChannelRepository channelRepository;
+
+    @Autowired
+    private ChannelAccountRepository channelAccountRepository;
+
+    @Autowired
+    private ConversationRepository conversationRepository;
 
     private WorkspaceEntity workspace;
 
@@ -297,5 +307,96 @@ class ClientAccountRepositoryTest
 
         assertThat(result)
                 .isEmpty();
+    }
+
+    @Test
+    void findAllForSyncByChannelAccountId_shouldReturnOnlyActiveAndArchivedAccounts() {
+
+        ChannelEntity channel =
+                channelRepository.save(
+                        TestDataFactory.channel(workspace)
+                );
+
+        ChannelAccountEntity channelAccount =
+                channelAccountRepository.save(
+                        TestDataFactory.channelAccount(channel)
+                );
+
+        ClientAccountEntity active =
+                TestDataFactory.clientAccount(
+                        client,
+                        ChannelType.TELEGRAM,
+                        "sync-active"
+                );
+
+        active.setState(ClientAccountState.ACTIVE);
+
+        ClientAccountEntity archived =
+                TestDataFactory.clientAccount(
+                        client,
+                        ChannelType.TELEGRAM,
+                        "sync-archived"
+                );
+
+        archived.setState(ClientAccountState.ARCHIVE);
+
+        ClientAccountEntity ignored =
+                TestDataFactory.clientAccount(
+                        client,
+                        ChannelType.TELEGRAM,
+                        "sync-ignored"
+                );
+
+        ignored.setState(ClientAccountState.IGNORED);
+
+        ClientAccountEntity blocked =
+                TestDataFactory.clientAccount(
+                        client,
+                        ChannelType.TELEGRAM,
+                        "sync-blocked"
+                );
+
+        blocked.setState(ClientAccountState.BLOCKED);
+
+        repository.saveAll(
+                List.of(active, archived, ignored, blocked)
+        );
+
+        conversationRepository.saveAll(
+                List.of(
+                        TestDataFactory.conversation(
+                                workspace,
+                                channelAccount,
+                                active
+                        ),
+                        TestDataFactory.conversation(
+                                workspace,
+                                channelAccount,
+                                archived
+                        ),
+                        TestDataFactory.conversation(
+                                workspace,
+                                channelAccount,
+                                ignored
+                        ),
+                        TestDataFactory.conversation(
+                                workspace,
+                                channelAccount,
+                                blocked
+                        )
+                )
+        );
+
+        List<ClientAccountEntity> result =
+                repository.findAllForSyncByChannelAccountId(
+                        channelAccount.getId()
+                );
+
+        assertThat(result)
+                .extracting(ClientAccountEntity::getId)
+                .containsExactlyInAnyOrder(
+                        active.getId(),
+                        archived.getId()
+                );
     }
 }

@@ -149,17 +149,12 @@ public class ClientAccountService {
         if (existing.isPresent()) {
             ClientAccountEntity entity = existing.get();
 
-            if (username != null && !username.isBlank()) {
-                entity.setUsername(username);
-            }
-
-            if (phone != null && !phone.isBlank()) {
-                entity.setPhone(phone);
-            }
-
-            if (displayName != null && !displayName.isBlank()) {
-                entity.setDisplayName(displayName);
-            }
+            updateProfileFields(
+                    entity,
+                    username,
+                    phone,
+                    displayName
+            );
 
             return entity;
         }
@@ -514,6 +509,62 @@ public class ClientAccountService {
                         );
 
         clientAccountRepository.delete(entity);
+    }
+
+    /**
+     * Обновляет профиль существующего ClientAccount.
+     *
+     * Новые аккаунты не создаются.
+     * Состояние аккаунта и Client не изменяются.
+     */
+    @Transactional
+    public ClientAccountEntity updateExistingProfile(
+            UUID id,
+            String username,
+            String phone,
+            String displayName
+    ) {
+        if (id == null) {
+            throw new IllegalArgumentException(
+                    "ClientAccount id must not be null"
+            );
+        }
+
+        ClientAccountEntity entity =
+                clientAccountRepository.findById(id)
+                        .orElseThrow(() ->
+                                new EntityNotFoundException(
+                                        "Account not found: " + id
+                                )
+                        );
+
+        updateProfileFields(
+                entity,
+                username,
+                phone,
+                displayName
+        );
+
+        return entity;
+    }
+
+    private void updateProfileFields(
+            ClientAccountEntity entity,
+            String username,
+            String phone,
+            String displayName
+    ) {
+        if (username != null && !username.isBlank()) {
+            entity.setUsername(username);
+        }
+
+        if (phone != null && !phone.isBlank()) {
+            entity.setPhone(phone);
+        }
+
+        if (displayName != null && !displayName.isBlank()) {
+            entity.setDisplayName(displayName);
+        }
     }
 
     private ClientEntity getClient(UUID clientId) {

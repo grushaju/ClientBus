@@ -167,9 +167,9 @@ spring:
 
       use-test-dc: false
       use-file-database: false
-      use-chat-info-database: false
-      use-message-database: false
-      use-secret-chats: false
+      use-chat-info-database: true
+      use-message-database: true
+      use-secret-chats: true
 
       system-language-code: en
       device-model: ClientBus

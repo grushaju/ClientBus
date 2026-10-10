@@ -1,6 +1,7 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
 import kit.penny.clientbus.server.connector.IChannelListener;
+import kit.penny.clientbus.server.connector.telegram.account.TelegramAccountProfileSynchronizer;
 import kit.penny.clientbus.server.connector.telegram.config.TelegramClientConfiguration;
 import kit.penny.clientbus.server.kafka.producer.IPlatformMessagePublisher;
 import kit.penny.clientbus.server.kafka.producer.KafkaPlatformMessagePublisher;
@@ -69,6 +70,8 @@ public class TelegramContextFactory {
 
     private final List<IChannelListener> channelListeners;
 
+    private final TelegramAccountProfileSynchronizer profileSynchronizer;
+
     public TelegramContextFactory(
             TelegramProperties globalProperties,
             ChannelAccountRepository channelAccountRepository,
@@ -78,7 +81,9 @@ public class TelegramContextFactory {
             MessageRepository messageRepository,
             IAttachmentStorage attachmentStorage,
             IPlatformMessagePublisher platformMessagePublisher,
+            TelegramAccountProfileSynchronizer profileSynchronizer,
             List<IChannelListener> channelListeners
+
     ) {
         this.globalProperties =
                 globalProperties;
@@ -104,8 +109,12 @@ public class TelegramContextFactory {
         this.platformMessagePublisher =
                 platformMessagePublisher;
 
+        this.profileSynchronizer =
+                profileSynchronizer;
+
         this.channelListeners =
                 channelListeners;
+
     }
 
     public TelegramClientContext create(
@@ -362,7 +371,7 @@ public class TelegramContextFactory {
                 channelId,
                 channelAccountId,
                 channelRepository,
-                channelAccountRepository,
+                profileSynchronizer,
                 properties,
                 authorizationManager,
                 telegramClientProvider,

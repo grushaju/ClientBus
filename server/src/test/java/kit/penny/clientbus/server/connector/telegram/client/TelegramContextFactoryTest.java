@@ -1,5 +1,6 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
+import kit.penny.clientbus.server.connector.telegram.account.TelegramAccountProfileSynchronizer;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.kafka.producer.IPlatformMessagePublisher;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
@@ -71,6 +72,8 @@ class TelegramContextFactoryTest {
                 Mockito.mock(IAttachmentStorage.class);
         IPlatformMessagePublisher platformMessagePublisher =
                 Mockito.mock(IPlatformMessagePublisher.class);
+        TelegramAccountProfileSynchronizer profileSynchronizer =
+                Mockito.mock(TelegramAccountProfileSynchronizer.class);
 
         TelegramContextFactory factory =
                 new TelegramContextFactory(
@@ -82,6 +85,7 @@ class TelegramContextFactoryTest {
                         messageRepository,
                         attachmentStorage,
                         platformMessagePublisher,
+                        profileSynchronizer,
                         List.of()
                 );
 
@@ -229,9 +233,10 @@ class TelegramContextFactoryTest {
                 Mockito.mock(MessageRepository.class);
         IAttachmentStorage attachmentStorage =
                 Mockito.mock(IAttachmentStorage.class);
-
         IPlatformMessagePublisher platformMessagePublisher =
                 Mockito.mock(IPlatformMessagePublisher.class);
+        TelegramAccountProfileSynchronizer profileSynchronizer =
+                Mockito.mock(TelegramAccountProfileSynchronizer.class);
 
         TelegramContextFactory factory =
                 new TelegramContextFactory(
@@ -243,6 +248,7 @@ class TelegramContextFactoryTest {
                         messageRepository,
                         attachmentStorage,
                         platformMessagePublisher,
+                        profileSynchronizer,
                         List.of()
                 );
 

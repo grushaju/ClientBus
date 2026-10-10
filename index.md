@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-10-08 17:26:20
+- Generated: 2026-10-10 11:12:15
 - Branch: `main`
-- Commit: `36a2cb6`
+- Commit: `ef9e648`
 
 ## Project Structure
 
@@ -108,13 +108,9 @@
 - `OutboundMessageKafkaCommand.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/OutboundMessageKafkaCommand.java`
 - `PlatformMessageKafkaEvent.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/PlatformMessageKafkaEvent.java`
 - `PlatformOutboundAttachment.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/PlatformOutboundAttachment.java`
+- `SyncAccountKafkaCommand.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/SyncAccountKafkaCommand.java`
 - `SyncConversationHistoryKafkaCommand.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/SyncConversationHistoryKafkaCommand.java`
 - `SyncRecentChatsKafkaCommand.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/SyncRecentChatsKafkaCommand.java`
-
-#### `src/main/resources`
-
-
-#### `src/test/java`
 
 ### server
 
@@ -161,6 +157,7 @@
 - `MarkMessagesReadCommand.java` — `server/src/main/java/kit/penny/clientbus/server/connector/command/MarkMessagesReadCommand.java`
 - `SendMessageCommand.java` — `server/src/main/java/kit/penny/clientbus/server/connector/command/SendMessageCommand.java`
 - `SyncAccountCommand.java` — `server/src/main/java/kit/penny/clientbus/server/connector/command/SyncAccountCommand.java`
+- `SyncClientAccountCommand.java` — `server/src/main/java/kit/penny/clientbus/server/connector/command/SyncClientAccountCommand.java`
 - `SyncConversationHistoryCommand.java` — `server/src/main/java/kit/penny/clientbus/server/connector/command/SyncConversationHistoryCommand.java`
 - `SyncRecentChatsCommand.java` — `server/src/main/java/kit/penny/clientbus/server/connector/command/SyncRecentChatsCommand.java`
 
@@ -171,6 +168,7 @@
 
 ##### `kit.penny.clientbus.server.connector.telegram.account`
 
+- `TelegramAccountProfileSynchronizer.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/account/TelegramAccountProfileSynchronizer.java`
 - `TelegramChannelAccountService.java` — `server/src/main/java/kit/penny/clientbus/server/connector/telegram/account/TelegramChannelAccountService.java`
 
 ##### `kit.penny.clientbus.server.connector.telegram.authorization`
@@ -240,6 +238,7 @@
 - `KafkaPlatformConversationConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaPlatformConversationConsumer.java`
 - `KafkaPlatformEventConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaPlatformEventConsumer.java`
 - `KafkaPlatformMessageConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaPlatformMessageConsumer.java`
+- `KafkaSyncAccountConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaSyncAccountConsumer.java`
 - `KafkaSyncConversationHistoryConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaSyncConversationHistoryConsumer.java`
 - `KafkaSyncRecentChatsConsumer.java` — `server/src/main/java/kit/penny/clientbus/server/kafka/consumer/KafkaSyncRecentChatsConsumer.java`
 
@@ -443,6 +442,7 @@
 - `KafkaOutboundMessageConsumerTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaOutboundMessageConsumerTest.java`
 - `KafkaOutboundMessageFailureIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaOutboundMessageFailureIntegrationTest.java`
 - `KafkaPlatformEventConsumerTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaPlatformEventConsumerTest.java`
+- `KafkaSyncAccountConsumerTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaSyncAccountConsumerTest.java`
 - `KafkaSyncConversationHistoryConsumerTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaSyncConversationHistoryConsumerTest.java`
 - `KafkaSyncRecentChatsConsumerTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/consumer/KafkaSyncRecentChatsConsumerTest.java`
 
@@ -452,6 +452,7 @@
 - `KafkaOutboundMessagePublisherTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/producer/KafkaOutboundMessagePublisherTest.java`
 - `KafkaPlatformEventPublisherIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/producer/KafkaPlatformEventPublisherIntegrationTest.java`
 - `KafkaPlatformEventPublisherTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/producer/KafkaPlatformEventPublisherTest.java`
+- `KafkaSyncConversationHistoryCommandPublisherTest.java` — `server/src/test/java/kit/penny/clientbus/server/kafka/producer/KafkaSyncConversationHistoryCommandPublisherTest.java`
 
 ##### `kit.penny.clientbus.server.mapper`
 
@@ -611,7 +612,7 @@
 ## Summary
 
 - Maven modules: 3
-- Java files: 282
+- Java files: 288
 - UI source files: 95
-- Git commit: `36a2cb6`
+- Git commit: `ef9e648`
 

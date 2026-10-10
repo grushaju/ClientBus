@@ -16,6 +16,7 @@ import kit.penny.clientbus.server.connector.command.SyncRecentChatsCommand;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientContext;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientManager;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramInboundMessageProcessor;
+import kit.penny.clientbus.server.connector.telegram.account.TelegramAccountProfileSynchronizer;
 import kit.penny.clientbus.server.service.ChannelAttachment;
 import kit.penny.tdlib.client.TelegramClient;
 import org.drinkless.tdlib.TdApi;
@@ -51,9 +52,11 @@ public class TelegramChannelConnector
 
     private final TelegramConversationMapper telegramConversationMapper;
 
+    private final TelegramAccountProfileSynchronizer profileSynchronizer;
+
     public TelegramChannelConnector(
             TelegramClientManager telegramClientManager,
-            TelegramConversationMapper telegramConversationMapper
+            TelegramConversationMapper telegramConversationMapper, TelegramAccountProfileSynchronizer profileSynchronizer
     ) {
         this.telegramClientManager =
                 telegramClientManager;
@@ -61,6 +64,8 @@ public class TelegramChannelConnector
         this.telegramConversationMapper =
                 telegramConversationMapper;
 
+        this.profileSynchronizer =
+                profileSynchronizer;
     }
 
     @Override
@@ -540,11 +545,30 @@ public class TelegramChannelConnector
     }
 
     @Override
-    public void handle(
-            SyncAccountCommand command
-    ) {
-        throw new UnsupportedOperationException(
-                "Account synchronization is not implemented yet"
+    public void handle(SyncAccountCommand command) {
+        if (command == null) {
+            throw new IllegalArgumentException(
+                    "SyncAccountCommand must not be null"
+            );
+        }
+
+        if (command.channelAccountId() == null) {
+            throw new IllegalArgumentException(
+                    "channelAccountId must not be null"
+            );
+        }
+
+        TelegramClientContext context =
+                telegramClientManager.require(command.channelAccountId());
+
+        TdApi.User user =
+                context.telegramClient()
+                        .send(new TdApi.GetMe())
+                        .getObjectOrThrow();
+
+        profileSynchronizer.updateProfile(
+                command.channelAccountId(),
+                user
         );
     }
 

@@ -4,9 +4,9 @@ import kit.penny.clientbus.common.enums.ChannelConnectionStatus;
 import kit.penny.clientbus.server.connector.AbstractEventDispatcher;
 import kit.penny.clientbus.server.connector.ChannelEvent;
 import kit.penny.clientbus.server.connector.IChannelListener;
+import kit.penny.clientbus.server.connector.telegram.account.TelegramAccountProfileSynchronizer;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
-import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
 import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
 import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.properties.TelegramProperties;
@@ -36,7 +36,7 @@ public class TelegramAuthorizationStateListener
     private final TelegramProperties properties;
     private final TelegramAuthorizationManager authorizationManager;
     private final ObjectProvider<TelegramClient> telegramClientProvider;
-    private final ChannelAccountRepository channelAccountRepository;
+    private final TelegramAccountProfileSynchronizer profileSynchronizer;
 
     private volatile UpdateAuthorizationState authorizationStateHandler;
 
@@ -44,7 +44,7 @@ public class TelegramAuthorizationStateListener
             UUID channelId,
             UUID channelAccountId,
             ChannelRepository channelRepository,
-            ChannelAccountRepository channelAccountRepository,
+            TelegramAccountProfileSynchronizer profileSynchronizer,
             TelegramProperties properties,
             TelegramAuthorizationManager authorizationManager,
             ObjectProvider<TelegramClient> telegramClientProvider,
@@ -55,7 +55,7 @@ public class TelegramAuthorizationStateListener
         this.channelId = channelId;
         this.channelAccountId = channelAccountId;
         this.channelRepository = channelRepository;
-        this.channelAccountRepository = channelAccountRepository;
+        this.profileSynchronizer = profileSynchronizer;
         this.properties = properties;
         this.authorizationManager = authorizationManager;
         this.telegramClientProvider = telegramClientProvider;
@@ -293,7 +293,7 @@ public class TelegramAuthorizationStateListener
                                 return;
                             }
 
-                            updateChannelAccount(user);
+                            profileSynchronizer.updateProfile(channelAccountId, user);
 
                         } catch (RuntimeException e) {
                             log.error(
@@ -320,94 +320,5 @@ public class TelegramAuthorizationStateListener
                     e
             );
         }
-    }
-
-    private void updateChannelAccount(TdApi.User user) {
-        try {
-            ChannelEntity channel =
-                    channelRepository.findById(channelId)
-                            .orElse(null);
-
-            if (channel == null) {
-                log.warn(
-                        "Telegram channel not found while updating account: " +
-                                "channelId={}",
-                        channelId
-                );
-                return;
-            }
-
-            ChannelAccountEntity account =
-                    channel.getAccount();
-
-            if (account == null) {
-                log.warn(
-                        "Telegram channel account not found: channelId={}",
-                        channelId
-                );
-                return;
-            }
-
-            account.setExternalId(
-                    Long.toString(user.id)
-            );
-
-            account.setUsername(
-                    user.usernames != null
-                            && user.usernames.activeUsernames != null
-                            && user.usernames.activeUsernames.length > 0
-                            ? user.usernames.activeUsernames[0]
-                            : null
-            );
-
-            account.setPhone(user.phoneNumber);
-
-            account.setDisplayName(
-                    buildDisplayName(
-                            user.firstName,
-                            user.lastName
-                    )
-            );
-
-            channelAccountRepository.save(account);
-
-            log.debug(
-                    "Telegram account data saved: " +
-                            "channelAccountId={}, externalId={}, " +
-                            "username={}, displayName={}",
-                    account.getId(),
-                    account.getExternalId(),
-                    account.getUsername(),
-                    account.getDisplayName()
-            );
-
-        } catch (RuntimeException e) {
-            log.error(
-                    "Failed to update Telegram account data: channelId={}",
-                    channelId,
-                    e
-            );
-        }
-    }
-
-    private String buildDisplayName(
-            String firstName,
-            String lastName
-    ) {
-        String first =
-                firstName == null ? "" : firstName.trim();
-
-        String last =
-                lastName == null ? "" : lastName.trim();
-
-        if (first.isEmpty()) {
-            return last.isEmpty() ? null : last;
-        }
-
-        if (last.isEmpty()) {
-            return first;
-        }
-
-        return first + " " + last;
     }
 }

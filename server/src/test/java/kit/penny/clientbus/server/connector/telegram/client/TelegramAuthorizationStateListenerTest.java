@@ -3,6 +3,7 @@ package kit.penny.clientbus.server.connector.telegram.client;
 import kit.penny.clientbus.common.enums.ChannelConnectionStatus;
 import kit.penny.clientbus.server.connector.ChannelEvent;
 import kit.penny.clientbus.server.connector.IChannelListener;
+import kit.penny.clientbus.server.connector.telegram.account.TelegramAccountProfileSynchronizer;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
@@ -33,7 +34,7 @@ class TelegramAuthorizationStateListenerTest {
     private UUID channelId;
 
     private ChannelRepository channelRepository;
-    private ChannelAccountRepository channelAccountRepository;
+    private TelegramAccountProfileSynchronizer profileSynchronizer;
     private TelegramProperties properties;
     private TelegramAuthorizationManager authorizationManager;
     private ObjectProvider<TelegramClient> telegramClientProvider;
@@ -53,8 +54,8 @@ class TelegramAuthorizationStateListenerTest {
         channelRepository =
                 mock(ChannelRepository.class);
 
-        channelAccountRepository =
-                mock(ChannelAccountRepository.class);
+        profileSynchronizer =
+                mock(TelegramAccountProfileSynchronizer.class);
 
         properties =
                 mock(TelegramProperties.class);
@@ -95,7 +96,7 @@ class TelegramAuthorizationStateListenerTest {
                         channelId,
                         account.getId(),
                         channelRepository,
-                        channelAccountRepository,
+                        profileSynchronizer,
                         properties,
                         authorizationManager,
                         telegramClientProvider,
@@ -391,7 +392,7 @@ class TelegramAuthorizationStateListenerTest {
                 channelId,
                 channelAccountId,
                 channelRepository,
-                channelAccountRepository,
+                profileSynchronizer,
                 properties,
                 authorizationManager,
                 telegramClientProvider,

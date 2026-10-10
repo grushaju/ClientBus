@@ -244,4 +244,26 @@ public interface ClientAccountRepository
             @Param("organizationId") UUID organizationId,
             @Param("employeeId") UUID employeeId
     );
+
+    /**
+     * Аккаунты клиентов, связанные с указанным ChannelAccount
+     * через Conversation и доступные для синхронизации.
+     *
+     * DISTINCT исключает дубликаты аккаунтов.
+     * Состояния IGNORED и BLOCKED не синхронизируются.
+     */
+    @Query("""
+        SELECT DISTINCT a
+        FROM ClientAccountEntity a
+        JOIN ConversationEntity c
+          ON c.clientAccount.id = a.id
+        WHERE c.channelAccount.id = :channelAccountId
+          AND a.state IN (
+              kit.penny.clientbus.common.enums.ClientAccountState.ACTIVE,
+              kit.penny.clientbus.common.enums.ClientAccountState.ARCHIVE
+          )
+        """)
+    List<ClientAccountEntity> findAllForSyncByChannelAccountId(
+            @Param("channelAccountId") UUID channelAccountId
+    );
 }

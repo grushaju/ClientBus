@@ -5,6 +5,7 @@ import kit.penny.clientbus.common.enums.MessageAttachmentType;
 import kit.penny.clientbus.common.enums.MessageType;
 import kit.penny.clientbus.server.connector.ConnectorSendResult;
 import kit.penny.clientbus.server.connector.command.SendMessageCommand;
+import kit.penny.clientbus.server.connector.telegram.account.TelegramAccountProfileSynchronizer;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientContext;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientManager;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramInboundMessageProcessor;
@@ -59,13 +60,17 @@ class TelegramChannelConnectorTest {
     @Mock
     private TelegramInboundMessageProcessor telegramInboundMessageProcessor;
 
+    @Mock
+    private TelegramAccountProfileSynchronizer profileSynchronizer;
+
     private TelegramChannelConnector connector;
 
     @BeforeEach
     void setUp() {
         connector = new TelegramChannelConnector(
                 telegramClientManager,
-                telegramConversationMapper
+                telegramConversationMapper,
+                profileSynchronizer
         );
 
     }
