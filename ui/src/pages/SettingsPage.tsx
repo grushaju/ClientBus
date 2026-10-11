@@ -1,5 +1,6 @@
 import {
     useEffect,
+    useRef,
     useState,
 } from 'react'
 
@@ -7,6 +8,9 @@ import {
     changeCurrentPassword,
     updateCurrentCredentials,
     updateCurrentEmployee,
+    getCurrentEmployeeAvatarContent,
+    uploadCurrentEmployeeAvatar,
+    clearCurrentEmployeeAvatar,
 } from '../api/employeeApi'
 
 import {
@@ -102,6 +106,18 @@ function SettingsPage() {
         null,
     )
 
+    const [avatarSrc, setAvatarSrc] =
+        useState<string | null>(null)
+
+    const [avatarBusy, setAvatarBusy] =
+        useState(false)
+
+    const [avatarVersion, setAvatarVersion] =
+        useState(0)
+
+    const avatarInputRef =
+        useRef<HTMLInputElement>(null)
+
     useEffect(() => {
         if (!currentEmployee) {
             return
@@ -140,6 +156,44 @@ function SettingsPage() {
         )
     }, [
         currentOrganization,
+    ])
+
+    useEffect(() => {
+        if (!currentEmployee?.avatarUrl) {
+            setAvatarSrc(null)
+            return
+        }
+
+        let active = true
+        let objectUrl: string | null = null
+
+        setAvatarSrc(null)
+
+        void getCurrentEmployeeAvatarContent()
+            .then(blob => {
+                if (!active) {
+                    return
+                }
+
+                objectUrl = URL.createObjectURL(blob)
+                setAvatarSrc(objectUrl)
+            })
+            .catch(() => {
+                if (active) {
+                    setAvatarSrc(null)
+                }
+            })
+
+        return () => {
+            active = false
+
+            if (objectUrl) {
+                URL.revokeObjectURL(objectUrl)
+            }
+        }
+    }, [
+        currentEmployee?.avatarUrl,
+        avatarVersion,
     ])
 
     if (!currentEmployee) {
@@ -332,6 +386,52 @@ function SettingsPage() {
         }
     }
 
+    async function handleAvatarUpload(file: File) {
+        clearMessages()
+        setAvatarBusy(true)
+
+        try {
+            await uploadCurrentEmployeeAvatar(file)
+            await refreshCurrentUser()
+
+            setAvatarVersion(version => version + 1)
+            setSuccess('Аватар обновлён.')
+        } catch (err) {
+            setError(
+                err instanceof Error
+                    ? err.message
+                    : 'Не удалось загрузить аватар.',
+            )
+        } finally {
+            setAvatarBusy(false)
+
+            if (avatarInputRef.current) {
+                avatarInputRef.current.value = ''
+            }
+        }
+    }
+
+    async function handleAvatarDelete() {
+        clearMessages()
+        setAvatarBusy(true)
+
+        try {
+            await clearCurrentEmployeeAvatar()
+            await refreshCurrentUser()
+
+            setAvatarSrc(null)
+            setSuccess('Аватар удалён.')
+        } catch (err) {
+            setError(
+                err instanceof Error
+                    ? err.message
+                    : 'Не удалось удалить аватар.',
+            )
+        } finally {
+            setAvatarBusy(false)
+        }
+    }
+
     return (
         <div className="settings-page">
             <div className="settings-header">
@@ -419,6 +519,69 @@ function SettingsPage() {
                                         Основные данные
                                         вашей учётной записи.
                                     </p>
+                                </div>
+
+                                <div className="settings-avatar">
+                                    <div className="settings-avatar-preview">
+                                        {avatarSrc ? (
+                                            <img
+                                                src={avatarSrc}
+                                                alt="Аватар сотрудника"
+                                            />
+                                        ) : (
+                                            <span>
+                {(
+                    `${employee.firstName?.[0] ?? ''}` +
+                    `${employee.lastName?.[0] ?? ''}`
+                ).toUpperCase() || '?'}
+            </span>
+                                        )}
+                                    </div>
+
+                                    <div className="settings-avatar-controls">
+                                        <strong>Аватар профиля</strong>
+
+                                        <p>
+                                            Изображение, которое представляет вашу учётную запись.
+                                        </p>
+
+                                        <div className="settings-avatar-actions">
+                                            <input
+                                                ref={avatarInputRef}
+                                                type="file"
+                                                accept="image/*"
+                                                hidden
+                                                disabled={avatarBusy || saving}
+                                                onChange={event => {
+                                                    const file = event.target.files?.[0]
+
+                                                    if (file) {
+                                                        void handleAvatarUpload(file)
+                                                    }
+                                                }}
+                                            />
+
+                                            <button
+                                                type="button"
+                                                className="settings-button settings-button-primary"
+                                                disabled={avatarBusy || saving}
+                                                onClick={() => avatarInputRef.current?.click()}
+                                            >
+                                                {avatarBusy ? 'Обработка…' : 'Выбрать изображение'}
+                                            </button>
+
+                                            {employee.avatarUrl && (
+                                                <button
+                                                    type="button"
+                                                    className="settings-button settings-button-secondary"
+                                                    disabled={avatarBusy || saving}
+                                                    onClick={() => void handleAvatarDelete()}
+                                                >
+                                                    Удалить аватар
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
 
                                 <div className="settings-fields">

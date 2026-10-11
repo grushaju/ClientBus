@@ -152,6 +152,28 @@ public class EmployeeController {
         );
     }
 
+    @GetMapping("/{id}/avatar/content")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<InputStreamResource> getEmployeeAvatar(
+            @PathVariable UUID id
+    ) {
+        EmployeeDto employee = employeeService.getEmployee(id);
+        String storageKey = employee.avatarUrl();
+
+        if (storageKey == null || storageKey.isBlank()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        InputStream inputStream = attachmentStorage.load(storageKey);
+
+        return ResponseEntity.ok()
+                .contentType(
+                        MediaTypeFactory.getMediaType(storageKey)
+                                .orElse(MediaType.APPLICATION_OCTET_STREAM)
+                )
+                .body(new InputStreamResource(inputStream));
+    }
+
     /*
      * =========================
      * ADMIN

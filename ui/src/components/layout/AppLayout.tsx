@@ -12,6 +12,8 @@ import {
 
 import Sidebar from './Sidebar'
 
+import EmployeeAvatar from '../employees/EmployeeAvatar'
+
 interface AppLayoutProps {
     children: ReactNode
 }
@@ -113,15 +115,28 @@ function AppLayout({
                     </div>
 
                     <div className="app-user">
-                        <span className="app-user-name">
-                            {displayName}
-                        </span>
-
-                        {roleLabel && (
-                            <span className="app-user-role">
-                                {roleLabel}
-                            </span>
+                        {currentEmployee && (
+                            <EmployeeAvatar
+                                employeeId={currentEmployee.id}
+                                avatarUrl={currentEmployee.avatarUrl ?? null}
+                                firstName={currentEmployee.firstName}
+                                lastName={currentEmployee.lastName}
+                                username={currentEmployee.username}
+                                size={36}
+                            />
                         )}
+
+                        <div className="app-user-info">
+                            <span className="app-user-name">
+                                {displayName}
+                            </span>
+
+                            {roleLabel && (
+                                <span className="app-user-role">
+                                    {roleLabel}
+                                </span>
+                            )}
+                        </div>
                     </div>
                 </header>
 

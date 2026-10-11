@@ -19,6 +19,9 @@ import type {
     WorkspaceDto,
 } from '../../auth/types'
 
+import EmployeeAvatar
+    from './EmployeeAvatar'
+
 interface EmployeeDetailsDialogProps {
     employee: EmployeeDto
     workspaceIds: string[]
@@ -303,16 +306,20 @@ export default function EmployeeDetailsDialog({
         >
             <div className="employee-modal">
                 <div className="employee-modal-header">
-                    <div>
-                        <h2>
-                            {getEmployeeName(
-                                employee,
-                            )}
-                        </h2>
+                    <div className="employee-modal-identity">
+                        <EmployeeAvatar
+                            employeeId={employee.id}
+                            avatarUrl={employee.avatarUrl ?? null}
+                            firstName={employee.firstName}
+                            lastName={employee.lastName}
+                            username={employee.username}
+                            size={52}
+                        />
 
-                        <p>
-                            {employee.email}
-                        </p>
+                        <div className="employee-modal-identity-info">
+                            <h2>{getEmployeeName(employee)}</h2>
+                            <p>{employee.email}</p>
+                        </div>
                     </div>
 
                     <button
@@ -332,7 +339,7 @@ export default function EmployeeDetailsDialog({
                         </div>
 
                         <div className="employee-details-fields">
-                            <label className="employee-details-field">
+                        <label className="employee-details-field">
                                 <span>
                                     Имя
                                 </span>

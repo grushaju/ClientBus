@@ -137,31 +137,27 @@
 
 .employee-card {
     width: 100%;
-
     display: grid;
-
-    grid-template-columns:
-        minmax(220px, 1.4fr)
-        auto
-        minmax(260px, 1fr);
-
+    grid-template-columns: 48px minmax(220px, 1.4fr) auto minmax(260px, 1fr);
     align-items: center;
-
     gap: 16px;
-
     padding: 14px 16px;
-
     border: 1px solid #e5e7eb;
     border-radius: 8px;
-
     background: #ffffff;
     color: inherit;
-
     text-align: left;
-
     cursor: pointer;
-
     box-sizing: border-box;
+}
+
+.employee-card-avatar {
+    grid-column: 1;
+}
+
+.employee-card-identity {
+    grid-column: 2;
+    min-width: 0;
 }
 
 .employee-card:hover {
@@ -179,9 +175,6 @@
             0 0 0 3px rgba(17, 24, 39, 0.08);
 }
 
-.employee-card-identity {
-    min-width: 0;
-}
 
 .employee-card-identity h2 {
     margin: 0;
@@ -313,19 +306,12 @@
     }
 
     .employee-card {
-        grid-template-columns:
-            minmax(180px, 1fr)
-            auto;
-
+        grid-template-columns: 48px minmax(0, 1fr) auto;
         align-items: start;
     }
 
     .employee-card-workspaces {
-        grid-column: 1 / -1;
-
-        padding-top: 10px;
-
-        border-top: 1px solid #f3f4f6;
+        grid-column: 2 / -1;
     }
 }
 

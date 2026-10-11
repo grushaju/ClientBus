@@ -10,6 +10,7 @@ export interface EmployeeDto {
     phone: string
     role: UserRole
     enabled: boolean
+    avatarUrl: string | null
     createdAt: string
     updatedAt: string
 }
@@ -23,6 +24,7 @@ export interface WorkspaceDto {
     id: string
     organizationId: string
     name: string
+    avatarUrl: string | null
     createdAt: string
     updatedAt: string
 }

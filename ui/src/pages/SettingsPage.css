@@ -267,6 +267,59 @@
     color: var(--ui-color-success);
 }
 
+/* =========================================================
+   AVATAR
+   ========================================================= */
+
+.settings-avatar {
+     display: flex;
+     align-items: center;
+     gap: 20px;
+
+     padding: 22px 0;
+
+     border-bottom: 1px solid var(--ui-color-border-light);
+ }
+
+.settings-avatar-preview {
+    width: 96px;
+    height: 96px;
+    border-radius: 8px;
+    overflow: hidden;
+    flex-shrink: 0;
+    border: 3px solid  var(--ui-color-border-light);
+}
+
+.settings-avatar-preview img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.settings-avatar-controls {
+    min-width: 0;
+}
+
+.settings-avatar-controls > strong {
+    color: var(--ui-color-text);
+    font-size: var(--ui-font-size-md);
+}
+
+.settings-avatar-controls > p {
+    margin: 5px 0 12px;
+
+    color: var(--ui-color-text-muted);
+    font-size: var(--ui-font-size-sm);
+    line-height: 1.5;
+}
+
+.settings-avatar-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
 
 /* =========================================================
    ACTIONS
@@ -315,6 +368,16 @@
     opacity: 0.6;
 }
 
+.settings-button-secondary {
+    border: 1px solid var(--ui-color-border);
+    background: var(--ui-color-background);
+    color: var(--ui-color-text-secondary);
+}
+
+.settings-button-secondary:hover:not(:disabled) {
+    background: var(--ui-color-background-muted);
+    border-color: var(--ui-color-border-focus);
+}
 
 /* =========================================================
    LOADING
@@ -426,12 +489,23 @@
         padding-top: 18px;
     }
 
-    .settings-actions {
-        margin-top: 18px;
-        padding-top: 18px;
-    }
-
     .settings-button {
         width: 100%;
+    }
+
+    .settings-avatar {
+        align-items: flex-start;
+        gap: 14px;
+    }
+
+    .settings-avatar-preview {
+        width: 64px;
+        height: 64px;
+        font-size: 20px;
+    }
+
+    .settings-avatar-actions {
+        flex-direction: column;
+        align-items: stretch;
     }
 }

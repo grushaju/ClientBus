@@ -27,6 +27,8 @@ import EmployeeCreateDialog
 import EmployeeDetailsDialog
     from '../components/employees/EmployeeDetailsDialog'
 
+import EmployeeAvatar from '../components/employees/EmployeeAvatar'
+
 interface EmployeeRow {
     employee: EmployeeDto
     workspaceIds: string[]
@@ -381,6 +383,15 @@ function EmployeesPage() {
                                     )
                                 }
                             >
+                                <EmployeeAvatar
+                                    employeeId={row.employee.id}
+                                    avatarUrl={row.employee.avatarUrl ?? null}
+                                    firstName={row.employee.firstName}
+                                    lastName={row.employee.lastName}
+                                    username={row.employee.username}
+                                    size={48}
+                                    className="employee-card-avatar"
+                                />
                                 <div className="employee-card-identity">
                                     <h2>
                                         {getEmployeeName(

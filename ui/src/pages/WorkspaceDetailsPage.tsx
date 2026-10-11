@@ -64,6 +64,14 @@ import {
     getChannelTypeLabel,
 } from '../components/channels/channelLabels'
 
+import EmployeeAvatar
+    from '../components/employees/EmployeeAvatar'
+
+import {
+    ChannelAccountAvatar,
+} from '../components/channels/ChannelAccountAvatar'
+import PlatformIcon from "../components/common/platform/PlatformIcon";
+
 function getEmployeeName(
     employee: EmployeeDto,
 ): string {
@@ -516,28 +524,27 @@ function WorkspaceDetailsPage() {
                                     }
                                     className="workspace-employee-row"
                                 >
-                                    <div>
-                                        <strong>
-                                            {getEmployeeName(
-                                                employee,
-                                            )}
-                                        </strong>
+                                    <div className="workspace-employee-identity">
+                                        <EmployeeAvatar
+                                            employeeId={employee.id}
+                                            username={getEmployeeName(employee)}
+                                            avatarUrl={employee.avatarUrl ?? null}
+                                            size={40}
+                                        />
 
-                                        <span>
-                                            {
-                                                employee.email
-                                            }
-                                        </span>
+                                        <div className="workspace-employee-info">
+                                            <strong>
+                                                {getEmployeeName(employee)}
+                                            </strong>
+
+                                            <span>{employee.email}</span>
+                                        </div>
                                     </div>
 
                                     <button
                                         type="button"
                                         className="workspace-button workspace-button-danger"
-                                        onClick={() =>
-                                            handleRemoveEmployee(
-                                                employee,
-                                            )
-                                        }
+                                        onClick={() => handleRemoveEmployee(employee)}
                                     >
                                         Удалить
                                     </button>
@@ -585,35 +592,37 @@ function WorkspaceDetailsPage() {
                                     }
                                     className="workspace-channel-row"
                                 >
-                                    <div>
-                                        <strong>
-                                            {
-                                                channel.name
-                                            }
-                                        </strong>
+                                    <div className="workspace-channel-identity">
+                                        <PlatformIcon
+                                            type={channel.type}
+                                            size={18}
+                                        />
 
-                                        <span>
-                                            {
-                                                getChannelTypeLabel(
-                                                    channel.type,
-                                                )
+                                        <ChannelAccountAvatar
+                                            channelId={channel.id}
+                                            avatarUrl={channel.account?.avatarUrl ?? null}
+                                            displayName={
+                                                channel.account?.displayName || channel.name
                                             }
-                                        </span>
+                                        />
+
+                                        <div className="workspace-channel-info">
+                                            <strong>{channel.name}</strong>
+
+                                            <span>
+                                                {getChannelTypeLabel(channel.type)}
+                                            </span>
+                                        </div>
                                     </div>
 
                                     <span
                                         className={
-                                            channel.status ===
-                                            'CONNECTED'
+                                            channel.status === 'CONNECTED'
                                                 ? 'workspace-channel-status workspace-channel-status-connected'
                                                 : 'workspace-channel-status workspace-channel-status-disabled'
                                         }
                                     >
-                                        {
-                                            getChannelStatusLabel(
-                                                channel.status,
-                                            )
-                                        }
+                                        {getChannelStatusLabel(channel.status)}
                                     </span>
                                 </div>
                             ),

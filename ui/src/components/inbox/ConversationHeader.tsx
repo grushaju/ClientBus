@@ -1,4 +1,8 @@
-import { useState } from 'react'
+import {
+    useEffect,
+    useRef,
+    useState,
+} from 'react'
 
 import type { EmployeeDto } from '../../auth/types'
 import type {
@@ -9,6 +13,7 @@ import type {
 
 import ClientAccountAvatar from '../clients/ClientAccountAvatar'
 import PlatformIcon from '../common/platform/PlatformIcon'
+import EmployeeAvatar from '../employees/EmployeeAvatar'
 
 interface ConversationHeaderProps {
     conversation: ConversationDto
@@ -41,6 +46,32 @@ function ConversationHeader({
                             }: ConversationHeaderProps) {
     const [isUpdating, setIsUpdating] =
         useState(false)
+
+    const [isAssignmentOpen, setIsAssignmentOpen] =
+        useState(false)
+
+    const assignmentRef = useRef<HTMLDivElement>(null)
+
+    useEffect(() => {
+        if (!isAssignmentOpen) {
+            return
+        }
+
+        function handleOutsideClick(event: MouseEvent) {
+            if (
+                assignmentRef.current &&
+                !assignmentRef.current.contains(event.target as Node)
+            ) {
+                setIsAssignmentOpen(false)
+            }
+        }
+
+        document.addEventListener('mousedown', handleOutsideClick)
+
+        return () => {
+            document.removeEventListener('mousedown', handleOutsideClick)
+        }
+    }, [isAssignmentOpen])
 
     const clientName =
         clientAccount?.displayName ||
@@ -206,41 +237,102 @@ function ConversationHeader({
                                 Ответственный
                             </label>
 
-                            <select
-                                id="conversation-assignment"
-                                className="ui-select-header conversation-assignment-select"
-                                value={
-                                    conversation.assignedEmployeeId ??
-                                    ''
-                                }
-                                onChange={event =>
-                                    void handleAssignmentChange(
-                                        event.target.value,
-                                    )
-                                }
-                                disabled={isUpdating}
+                            <div
+                                className="employee-assignment-picker"
+                                ref={assignmentRef}
                             >
-                                <option value="">
-                                    Не назначен
-                                </option>
+                                <button
+                                    type="button"
+                                    className="employee-assignment-trigger"
+                                    aria-haspopup="listbox"
+                                    aria-expanded={isAssignmentOpen}
+                                    onClick={() =>
+                                        setIsAssignmentOpen(open => !open)
+                                    }
+                                    disabled={isUpdating}
+                                >
+                                    {assignedEmployee ? (
+                                        <>
+                                            <EmployeeAvatar
+                                                employeeId={assignedEmployee.id}
+                                                avatarUrl={assignedEmployee.avatarUrl ?? null}
+                                                username={assignedEmployeeName ?? 'Сотрудник'}
+                                                size={28}
+                                            />
 
-                                {employees.map(
-                                    employee => {
-                                        const name =
-                                            `${employee.firstName} ${employee.lastName}`.trim()
+                                            <span className="employee-assignment-name">
+                                                {assignedEmployeeName}
+                                            </span>
+                                        </>
+                                    ) : (
+                                        <span className="employee-assignment-name">
+                                            Не назначен
+                                        </span>
+                                    )}
 
-                                        return (
-                                            <option
-                                                key={employee.id}
-                                                value={employee.id}
-                                            >
-                                                {name ||
-                                                    employee.username}
-                                            </option>
-                                        )
-                                    },
+                                    <span className="employee-assignment-arrow">▾</span>
+                                </button>
+
+                                {isAssignmentOpen && (
+                                    <div
+                                        className="employee-assignment-menu"
+                                        role="listbox"
+                                        aria-label="Ответственный сотрудник"
+                                    >
+                                        <button
+                                            type="button"
+                                            className="employee-assignment-option"
+                                            role="option"
+                                            aria-selected={!conversation.assignedEmployeeId}
+                                            onClick={() => {
+                                                setIsAssignmentOpen(false)
+                                                void handleAssignmentChange('')
+                                            }}
+                                            disabled={isUpdating}
+                                        >
+                                            Не назначен
+                                        </button>
+
+                                        {employees.map(employee => {
+                                            const name =
+                                                `${employee.firstName} ${employee.lastName}`.trim()
+                                                || employee.username
+                                                || employee.email
+
+                                            const selected =
+                                                employee.id === conversation.assignedEmployeeId
+
+                                            return (
+                                                <button
+                                                    key={employee.id}
+                                                    type="button"
+                                                    className={`employee-assignment-option ${
+                                                        selected ? 'selected' : ''
+                                                    }`}
+                                                    role="option"
+                                                    aria-selected={selected}
+                                                    onClick={() => {
+                                                        setIsAssignmentOpen(false)
+                                                        void handleAssignmentChange(employee.id)
+                                                    }}
+                                                    disabled={isUpdating}
+                                                >
+                                                    <EmployeeAvatar
+                                                        employeeId={employee.id}
+                                                        avatarUrl={employee.avatarUrl ?? null}
+                                                        username={name}
+                                                        size={28}
+                                                    />
+
+                                                    <span className="employee-assignment-name">
+                                                        {name}
+                                                    </span>
+                                                </button>
+                                            )
+                                        })}
+                                    </div>
                                 )}
-                            </select>
+                            </div>
                         </div>
                     )}
 

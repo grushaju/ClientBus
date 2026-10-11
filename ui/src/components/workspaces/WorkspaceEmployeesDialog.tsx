@@ -19,6 +19,7 @@ import {
 import type {
     EmployeeDto,
 } from '../../auth/types'
+import EmployeeAvatar from "../employees/EmployeeAvatar";
 
 interface WorkspaceEmployeesDialogProps {
     open: boolean
@@ -341,6 +342,13 @@ export function WorkspaceEmployeesDialog({
                                                 disabled={
                                                     saving
                                                 }
+                                            />
+
+                                            <EmployeeAvatar
+                                                employeeId={employee.id}
+                                                username={getEmployeeName(employee)}
+                                                avatarUrl={employee.avatarUrl ?? null}
+                                                size={36}
                                             />
 
                                             <span>

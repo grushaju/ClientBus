@@ -436,6 +436,66 @@
     color: var(--ui-color-text-muted);
 }
 
+/* =========================================================
+  EMPLOYEE IDENTITY
+  ========================================================= */
+
+   .workspace-employee-identity {
+       min-width: 0;
+
+       display: flex;
+       align-items: center;
+       gap: 12px;
+   }
+
+.workspace-employee-info {
+    min-width: 0;
+}
+
+/* =========================================================
+   CHANNEL IDENTITY
+   ========================================================= */
+
+.workspace-channel-identity {
+    min-width: 0;
+
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.workspace-channel-info {
+    min-width: 0;
+}
+
+.workspace-channel-identity .channel-card-account-avatar {
+    width: 40px;
+    height: 40px;
+    flex: 0 0 40px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    overflow: hidden;
+
+    border-radius: 50%;
+
+    background: var(--ui-color-background-subtle);
+    color: var(--ui-color-text-muted);
+
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.workspace-channel-identity .channel-card-account-avatar img {
+    display: block;
+
+    width: 100%;
+    height: 100%;
+
+    object-fit: cover;
+}
 
 /* =========================================================
    RESPONSIVE

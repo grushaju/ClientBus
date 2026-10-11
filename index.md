@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-10-11 14:18:09
+- Generated: 2026-10-11 16:34:54
 - Branch: `main`
-- Commit: `a4a0630`
+- Commit: `6bbee7b`
 
 ## Project Structure
 
@@ -542,6 +542,7 @@
 - `ui/src/components/common/platform/platform.ts`
 - `ui/src/components/common/platform/PlatformIcon.tsx`
 - `ui/src/components/common/platform/PlatformName.tsx`
+- `ui/src/components/employees/EmployeeAvatar.tsx`
 - `ui/src/components/employees/EmployeeCreateDialog.tsx`
 - `ui/src/components/employees/EmployeeDetailsDialog.tsx`
 - `ui/src/components/employees/Employees.css`
@@ -613,6 +614,6 @@
 
 - Maven modules: 3
 - Java files: 285
-- UI source files: 98
-- Git commit: `a4a0630`
+- UI source files: 99
+- Git commit: `6bbee7b`
 

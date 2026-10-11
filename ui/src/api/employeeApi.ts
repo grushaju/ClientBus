@@ -108,6 +108,44 @@ export async function getCurrentEmployeeWorkspaces(): Promise<
     return response.json()
 }
 
+
+export async function getCurrentEmployeeAvatarContent(): Promise<Blob> {
+    const response = await apiFetch(
+        '/api/employees/me/avatar/content',
+    )
+
+    return response.blob()
+}
+
+export async function uploadCurrentEmployeeAvatar(
+    file: File,
+): Promise<EmployeeDto> {
+    const formData = new FormData()
+    formData.append('file', file)
+
+    const response = await apiFetch(
+        '/api/employees/me/avatar',
+        {
+            method: 'PUT',
+            body: formData,
+        },
+    )
+
+    return response.json()
+}
+
+export async function clearCurrentEmployeeAvatar(): Promise<EmployeeDto> {
+    const response = await apiFetch(
+        '/api/employees/me/avatar',
+        {
+            method: 'DELETE',
+        },
+    )
+
+    return response.json()
+}
+
+
 /*
  * =========================
  * ADMIN
@@ -282,4 +320,14 @@ export async function getEmployeeWorkspaces(
     )
 
     return response.json()
+}
+
+export async function getEmployeeAvatarContent(
+    employeeId: string,
+): Promise<Blob> {
+    const response = await apiFetch(
+        `/api/employees/${employeeId}/avatar/content`,
+    )
+
+    return response.blob()
 }
