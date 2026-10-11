@@ -24,7 +24,8 @@ public class EmployeeMapper {
                 user.getRole(),
                 user.isEnabled(),
                 employee.getCreatedAt(),
-                employee.getUpdatedAt()
+                employee.getUpdatedAt(),
+                employee.getAvatarUrl()
         );
     }
 }

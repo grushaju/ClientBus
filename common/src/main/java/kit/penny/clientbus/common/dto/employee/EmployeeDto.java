@@ -16,6 +16,26 @@ public record EmployeeDto(
         UserRole role,
         boolean enabled,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        String avatarUrl
 ) {
+    public EmployeeDto(
+            UUID id,
+            UUID organizationId,
+            String username,
+            String email,
+            String firstName,
+            String lastName,
+            String phone,
+            UserRole role,
+            boolean enabled,
+            Instant createdAt,
+            Instant updatedAt
+    ) {
+        this(
+                id, organizationId, username, email,
+                firstName, lastName, phone, role, enabled,
+                createdAt, updatedAt, null
+        );
+    }
 }

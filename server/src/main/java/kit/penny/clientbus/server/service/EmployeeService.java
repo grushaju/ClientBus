@@ -16,6 +16,13 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import kit.penny.clientbus.server.storage.IAttachmentStorage;
+import kit.penny.clientbus.server.storage.StoredAttachmentMetadata;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.util.List;
+import java.util.Locale;
 
 import java.util.List;
 import java.util.UUID;
@@ -30,6 +37,7 @@ public class EmployeeService {
     private final EmployeeMapper employeeMapper;
     private final PasswordEncoder passwordEncoder;
     private final CurrentUserService currentUserService;
+    private final IAttachmentStorage attachmentStorage;
 
     public EmployeeService(
             EmployeeRepository employeeRepository,
@@ -37,7 +45,8 @@ public class EmployeeService {
             OrganizationRepository organizationRepository,
             EmployeeMapper employeeMapper,
             PasswordEncoder passwordEncoder,
-            CurrentUserService currentUserService
+            CurrentUserService currentUserService,
+            IAttachmentStorage attachmentStorage
     ) {
         this.employeeRepository = employeeRepository;
         this.userRepository = userRepository;
@@ -46,6 +55,7 @@ public class EmployeeService {
         this.employeeMapper = employeeMapper;
         this.passwordEncoder = passwordEncoder;
         this.currentUserService = currentUserService;
+        this.attachmentStorage = attachmentStorage;
     }
 
     /**
@@ -421,6 +431,72 @@ public class EmployeeService {
 
         employeeRepository.delete(employee);
         userRepository.delete(user);
+    }
+
+    public EmployeeDto uploadCurrentEmployeeAvatar(MultipartFile file) {
+        EmployeeEntity employee = currentUserService.getCurrentEmployee();
+
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("Avatar file is empty");
+        }
+
+        String contentType = file.getContentType();
+        if (contentType == null) {
+            throw new IllegalArgumentException("Avatar content type is missing");
+        }
+
+        contentType = contentType.toLowerCase(Locale.ROOT);
+
+        String extension = switch (contentType) {
+            case "image/jpeg" -> ".jpg";
+            case "image/png" -> ".png";
+            case "image/webp" -> ".webp";
+            case "image/gif" -> ".gif";
+            default -> throw new IllegalArgumentException(
+                    "Avatar must be a JPEG, PNG, WebP or GIF image"
+            );
+        };
+
+        try {
+            StoredAttachmentMetadata stored = attachmentStorage.store(
+                    file.getInputStream(),
+                    "employee-avatar-" + employee.getId() + extension,
+                    file.getSize(),
+                    contentType
+            );
+
+            String previousKey = employee.getAvatarUrl();
+            employee.setAvatarUrl(stored.storageKey());
+
+            EmployeeDto result = employeeMapper.toDto(
+                    employeeRepository.saveAndFlush(employee)
+            );
+
+            if (previousKey != null && !previousKey.isBlank()
+                    && !previousKey.equals(stored.storageKey())) {
+                attachmentStorage.delete(previousKey);
+            }
+
+            return result;
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to read employee avatar", e);
+        }
+    }
+
+    public EmployeeDto clearCurrentEmployeeAvatar() {
+        EmployeeEntity employee = currentUserService.getCurrentEmployee();
+        String previousKey = employee.getAvatarUrl();
+
+        employee.setAvatarUrl(null);
+        EmployeeDto result = employeeMapper.toDto(
+                employeeRepository.saveAndFlush(employee)
+        );
+
+        if (previousKey != null && !previousKey.isBlank()) {
+            attachmentStorage.delete(previousKey);
+        }
+
+        return result;
     }
 
     private void updateProfile(

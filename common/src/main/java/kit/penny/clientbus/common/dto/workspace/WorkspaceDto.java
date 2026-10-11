@@ -8,6 +8,16 @@ public record WorkspaceDto(
         UUID organizationId,
         String name,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        String avatarUrl
 ) {
+    public WorkspaceDto(
+            UUID id,
+            UUID organizationId,
+            String name,
+            Instant createdAt,
+            Instant updatedAt
+    ) {
+        this(id, organizationId, name, createdAt, updatedAt, null);
+    }
 }

@@ -76,6 +76,9 @@ public class EmployeeEntity {
     @Column(name = "updatedat")
     private Instant updatedAt;
 
+    @Column(name = "avatarurl", length = 1000)
+    private String avatarUrl;
+
     public EmployeeEntity() {
     }
 
@@ -157,5 +160,13 @@ public class EmployeeEntity {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public String getAvatarUrl() {
+        return avatarUrl;
+    }
+
+    public void setAvatarUrl(String avatarUrl) {
+        this.avatarUrl = avatarUrl;
     }
 }

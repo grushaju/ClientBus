@@ -10,10 +10,15 @@ import kit.penny.clientbus.server.persistence.entity.WorkspaceEntity;
 import kit.penny.clientbus.server.persistence.repository.OrganizationRepository;
 import kit.penny.clientbus.server.persistence.repository.WorkspaceRepository;
 import kit.penny.clientbus.server.security.service.CurrentUserService;
+import kit.penny.clientbus.server.storage.IAttachmentStorage;
+import kit.penny.clientbus.server.storage.StoredAttachmentMetadata;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 @Service
@@ -24,17 +29,19 @@ public class WorkspaceService {
     private final OrganizationRepository organizationRepository;
     private final WorkspaceMapper workspaceMapper;
     private final CurrentUserService currentUserService;
+    private final IAttachmentStorage attachmentStorage;
 
     public WorkspaceService(
             WorkspaceRepository workspaceRepository,
             OrganizationRepository organizationRepository,
             WorkspaceMapper workspaceMapper,
-            CurrentUserService currentUserService
+            CurrentUserService currentUserService, IAttachmentStorage attachmentStorage
     ) {
         this.workspaceRepository = workspaceRepository;
         this.organizationRepository = organizationRepository;
         this.workspaceMapper = workspaceMapper;
         this.currentUserService = currentUserService;
+        this.attachmentStorage = attachmentStorage;
     }
 
     /**
@@ -235,6 +242,110 @@ public class WorkspaceService {
         currentUserService.requireWorkspaceAccess(id);
 
         workspaceRepository.delete(entity);
+    }
+
+    /**
+     * SUPER_ADMIN ONLY.
+     * Загружает или заменяет аватар рабочего пространства.
+     */
+    public WorkspaceDto uploadWorkspaceAvatar(
+            UUID workspaceId,
+            MultipartFile file
+    ) {
+        currentUserService.requireSuperAdmin();
+
+        WorkspaceEntity entity =
+                getWorkspaceEntity(workspaceId);
+
+        currentUserService.requireWorkspaceAccess(workspaceId);
+
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Avatar file is empty"
+            );
+        }
+
+        String contentType = file.getContentType();
+
+        if (contentType == null) {
+            throw new IllegalArgumentException(
+                    "Avatar content type is missing"
+            );
+        }
+
+        contentType = contentType.toLowerCase(Locale.ROOT);
+
+        String extension = switch (contentType) {
+            case "image/jpeg" -> ".jpg";
+            case "image/png" -> ".png";
+            case "image/webp" -> ".webp";
+            case "image/gif" -> ".gif";
+            default -> throw new IllegalArgumentException(
+                    "Avatar must be a JPEG, PNG, WebP or GIF image"
+            );
+        };
+
+        try {
+            StoredAttachmentMetadata stored =
+                    attachmentStorage.store(
+                            file.getInputStream(),
+                            "workspace-avatar-" + workspaceId + extension,
+                            file.getSize(),
+                            contentType
+                    );
+
+            String previousKey = entity.getAvatarUrl();
+
+            entity.setAvatarUrl(stored.storageKey());
+
+            WorkspaceDto result =
+                    workspaceMapper.toDto(
+                            workspaceRepository.saveAndFlush(entity)
+                    );
+
+            if (previousKey != null
+                    && !previousKey.isBlank()
+                    && !previousKey.equals(stored.storageKey())) {
+                attachmentStorage.delete(previousKey);
+            }
+
+            return result;
+        } catch (IOException e) {
+            throw new IllegalStateException(
+                    "Failed to read workspace avatar",
+                    e
+            );
+        }
+    }
+
+    /**
+     * SUPER_ADMIN ONLY.
+     * Удаляет аватар рабочего пространства.
+     */
+    public WorkspaceDto clearWorkspaceAvatar(
+            UUID workspaceId
+    ) {
+        currentUserService.requireSuperAdmin();
+
+        WorkspaceEntity entity =
+                getWorkspaceEntity(workspaceId);
+
+        currentUserService.requireWorkspaceAccess(workspaceId);
+
+        String previousKey = entity.getAvatarUrl();
+
+        entity.setAvatarUrl(null);
+
+        WorkspaceDto result =
+                workspaceMapper.toDto(
+                        workspaceRepository.saveAndFlush(entity)
+                );
+
+        if (previousKey != null && !previousKey.isBlank()) {
+            attachmentStorage.delete(previousKey);
+        }
+
+        return result;
     }
 
     private WorkspaceEntity getWorkspaceEntity(

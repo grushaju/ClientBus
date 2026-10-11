@@ -52,6 +52,9 @@ public class WorkspaceEntity {
     @Column(name = "updatedat")
     private Instant updatedAt;
 
+    @Column(name = "avatarurl", length = 1000)
+    private String avatarUrl;
+
     public WorkspaceEntity() {
     }
 
@@ -103,6 +106,14 @@ public class WorkspaceEntity {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public String getAvatarUrl() {
+        return avatarUrl;
+    }
+
+    public void setAvatarUrl(String avatarUrl) {
+        this.avatarUrl = avatarUrl;
     }
 
     @Override

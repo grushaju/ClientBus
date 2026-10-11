@@ -23,7 +23,8 @@ public class WorkspaceMapper {
                 entity.getOrganization().getId(),
                 entity.getName(),
                 entity.getCreatedAt(),
-                entity.getUpdatedAt()
+                entity.getUpdatedAt(),
+                entity.getAvatarUrl()
         );
     }
 

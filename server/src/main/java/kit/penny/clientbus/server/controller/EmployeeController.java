@@ -6,11 +6,17 @@ import jakarta.validation.Valid;
 import kit.penny.clientbus.common.dto.employee.*;
 import kit.penny.clientbus.server.service.EmployeeService;
 import kit.penny.clientbus.server.service.EmployeeWorkspaceService;
+import kit.penny.clientbus.server.storage.IAttachmentStorage;
+import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.MediaTypeFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.InputStream;
 import java.util.List;
 import java.util.UUID;
 
@@ -25,14 +31,16 @@ public class EmployeeController {
 
     private final EmployeeService employeeService;
     private final EmployeeWorkspaceService employeeWorkspaceService;
+    private final IAttachmentStorage attachmentStorage;
 
     public EmployeeController(
             EmployeeService employeeService,
-            EmployeeWorkspaceService employeeWorkspaceService
+            EmployeeWorkspaceService employeeWorkspaceService,
+            IAttachmentStorage attachmentStorage
     ) {
         this.employeeService = employeeService;
-        this.employeeWorkspaceService =
-                employeeWorkspaceService;
+        this.employeeWorkspaceService = employeeWorkspaceService;
+        this.attachmentStorage = attachmentStorage;
     }
 
     /*
@@ -47,6 +55,47 @@ public class EmployeeController {
 
         return ResponseEntity.ok(
                 employeeService.getCurrentEmployee()
+        );
+    }
+
+    @GetMapping("/me/avatar/content")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<InputStreamResource> getCurrentEmployeeAvatar() {
+        EmployeeDto employee = employeeService.getCurrentEmployee();
+        String storageKey = employee.avatarUrl();
+
+        if (storageKey == null || storageKey.isBlank()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        InputStream inputStream = attachmentStorage.load(storageKey);
+
+        return ResponseEntity.ok()
+                .contentType(
+                        MediaTypeFactory.getMediaType(storageKey)
+                                .orElse(MediaType.APPLICATION_OCTET_STREAM)
+                )
+                .body(new InputStreamResource(inputStream));
+    }
+
+    @PutMapping(
+            value = "/me/avatar",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE
+    )
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<EmployeeDto> uploadCurrentEmployeeAvatar(
+            @RequestPart("file") MultipartFile file
+    ) {
+        return ResponseEntity.ok(
+                employeeService.uploadCurrentEmployeeAvatar(file)
+        );
+    }
+
+    @DeleteMapping("/me/avatar")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<EmployeeDto> clearCurrentEmployeeAvatar() {
+        return ResponseEntity.ok(
+                employeeService.clearCurrentEmployeeAvatar()
         );
     }
 
