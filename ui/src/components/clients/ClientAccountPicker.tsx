@@ -11,6 +11,8 @@ import type {
     ClientAccountDto,
 } from '../../api/types/clientAccount'
 
+import ClientAccountAvatar from './ClientAccountAvatar'
+
 interface ClientAccountPickerProps {
     open: boolean
     onClose: () => void
@@ -201,6 +203,12 @@ function ClientAccountPicker({
                                             )
                                         }
                                     >
+                                        <ClientAccountAvatar
+                                            accountId={account.id}
+                                            avatarUrl={account.avatarUrl}
+                                            displayName={getAccountTitle(account)}
+                                            size={40}
+                                        />
                                         <div className="client-account-picker-main">
                                             <strong>
                                                 {

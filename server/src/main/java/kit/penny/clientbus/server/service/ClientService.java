@@ -387,7 +387,8 @@ public class ClientService {
                             client.getPhoneList(),
                             accountCount,
                             lastContactAt,
-                            client.isEnabled()
+                            client.isEnabled(),
+                            client.getAvatarUrl()
                     );
                 })
                 .sorted(

@@ -67,3 +67,14 @@ export async function updateClientAccount(
 
     return response.json()
 }
+
+
+export async function getClientAccountAvatarContent(
+    accountId: string,
+): Promise<Blob> {
+    const response = await apiFetch(
+        `/api/clientaccounts/${accountId}/avatar/content`,
+    )
+
+    return response.blob()
+}

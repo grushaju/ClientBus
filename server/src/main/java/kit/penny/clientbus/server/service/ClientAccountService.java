@@ -170,6 +170,7 @@ public class ClientAccountService {
         entity.setUsername(username);
         entity.setPhone(phone);
         entity.setDisplayName(displayName);
+        entity.setAvatarUrl(avatarUrl);
 
         entity.setState(ClientAccountState.ACTIVE);
 

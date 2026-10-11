@@ -6,6 +6,7 @@ import type {
 
 import PlatformIcon from '../common/platform/PlatformIcon'
 import PlatformName from '../common/platform/PlatformName'
+import ClientAccountAvatar from '../clients/ClientAccountAvatar'
 
 export type ConversationListTab =
     | 'mine'
@@ -72,6 +73,13 @@ function ConversationListItemComponent({
                 </div>
 
                 <div className="conversation-list-item-platform">
+                    <ClientAccountAvatar
+                        accountId={clientAccount?.id ?? ''}
+                        avatarUrl={clientAccount?.avatarUrl ?? null}
+                        displayName={clientName}
+                        size={28}
+                    />
+
                     <PlatformIcon
                         type={platform}
                         size={16}

@@ -100,7 +100,7 @@ export function CreateWorkspaceDialog({
             <div className="workspace-modal">
                 <div className="workspace-modal-header">
                     <h2>
-                        Добавить Workspace
+                        Добавить Рабочее пространство
                     </h2>
 
                     <button

@@ -37,6 +37,8 @@ import {
     ChannelAccountAvatar,
 } from '../channels/ChannelAccountAvatar'
 
+import ClientAccountAvatar from '../clients/ClientAccountAvatar'
+
 interface Props {
     conversation: ConversationDto
     clientAccount: ClientAccountSummary | null
@@ -708,14 +710,21 @@ function ConversationClientPanel({
                     </div>
 
                     <div className="conversation-client-account-card">
-                        <div className="conversation-client-account-icon">
-                            <PlatformIcon
-                                type={
-                                    currentAccount.channelType
-                                }
-                                size={18}
-                            />
-                        </div>
+                        <ClientAccountAvatar
+                            accountId={currentAccount.id}
+                            avatarUrl={currentAccount.avatarUrl}
+                            displayName={
+                                currentAccount.displayName ||
+                                currentAccount.username ||
+                                currentAccount.phone
+                            }
+                            size={36}
+                        />
+
+                        <PlatformIcon
+                            type={currentAccount.channelType}
+                            size={18}
+                        />
 
                         <div className="conversation-client-account-info">
                             <strong>
@@ -802,14 +811,21 @@ function ConversationClientPanel({
                                             key={account.id}
                                             className="conversation-client-account-card"
                                         >
-                                        <div className="conversation-client-account-icon">
-                                                <PlatformIcon
-                                                    type={
-                                                        account.channelType
-                                                    }
-                                                    size={18}
-                                                />
-                                            </div>
+                                            <ClientAccountAvatar
+                                                accountId={account.id}
+                                                avatarUrl={account.avatarUrl}
+                                                displayName={
+                                                    account.displayName ||
+                                                    account.username ||
+                                                    account.phone
+                                                }
+                                                size={36}
+                                            />
+
+                                            <PlatformIcon
+                                                type={account.channelType}
+                                                size={18}
+                                            />
 
                                             <div className="conversation-client-account-info">
                                                 <strong>

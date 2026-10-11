@@ -65,7 +65,7 @@ class ClientAccountServiceTest {
                         username,
                         phone,
                         displayName,
-                        null
+                        "avatars/telegram/test-user.jpg"
                 );
 
         assertNotNull(result);
@@ -94,6 +94,11 @@ class ClientAccountServiceTest {
                 ClientAccountState.ACTIVE,
                 result.getState()
         );
+        assertEquals(
+                "avatars/telegram/test-user.jpg",
+                result.getAvatarUrl()
+        );
+
         assertNull(result.getClient());
 
         verify(clientAccountRepository)

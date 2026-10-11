@@ -6,6 +6,7 @@ export interface ClientListItemDto {
     accountCount: number
     lastContactAt: string | null
     enabled: boolean
+    avatarUrl: string | null
 }
 
 export interface ClientDto {

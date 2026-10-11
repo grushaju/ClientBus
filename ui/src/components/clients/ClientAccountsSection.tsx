@@ -1,16 +1,22 @@
-import { useState } from 'react'
+import {  useEffect, useState } from 'react'
 
 import {
     assignClientAccount,
     reassignClientAccount,
     unassignClientAccount,
+    getClientAvatarContent,
 } from '../../api/clientApi'
+
+import {
+    getClientAccountAvatarContent,
+} from '../../api/clientAccountApi'
 
 import type { ClientAccountDto } from '../../api/types/clientAccount'
 import type { ClientListItemDto } from '../../api/types/client'
 
 import ClientAccountPicker from './ClientAccountPicker'
 import ClientReassignDialog from './ClientReassignDialog'
+import ClientAccountAvatar from './ClientAccountAvatar'
 
 import PlatformIcon from '../common/platform/PlatformIcon'
 import {
@@ -46,6 +52,69 @@ function ClientAccountsSection({
 
     const [error, setError] =
         useState<string | null>(null)
+
+    const [accountAvatarUrl, setAccountAvatarUrl] =
+        useState<string | null>(null)
+
+    const [targetAvatarUrl, setTargetAvatarUrl] =
+        useState<string | null>(null)
+
+    useEffect(() => {
+        let cancelled = false
+        let loadedAccountUrl: string | null = null
+        let loadedTargetUrl: string | null = null
+
+        setAccountAvatarUrl(null)
+        setTargetAvatarUrl(null)
+
+        if (!reassignAccount || !reassignTarget) {
+            return
+        }
+
+        async function loadAvatar(
+            loader: () => Promise<Blob>,
+            setUrl: (url: string | null) => void,
+            saveUrl: (url: string | null) => void,
+        ) {
+            try {
+                const blob = await loader()
+
+                if (cancelled || blob.size === 0) {
+                    return
+                }
+
+                const url = URL.createObjectURL(blob)
+                saveUrl(url)
+                setUrl(url)
+            } catch {
+                // Аватар необязателен: при ошибке останется плейсхолдер.
+            }
+        }
+
+        void loadAvatar(
+            () => getClientAccountAvatarContent(reassignAccount.id),
+            setAccountAvatarUrl,
+            url => { loadedAccountUrl = url },
+        )
+
+        void loadAvatar(
+            () => getClientAvatarContent(reassignTarget.id),
+            setTargetAvatarUrl,
+            url => { loadedTargetUrl = url },
+        )
+
+        return () => {
+            cancelled = true
+
+            if (loadedAccountUrl) {
+                URL.revokeObjectURL(loadedAccountUrl)
+            }
+
+            if (loadedTargetUrl) {
+                URL.revokeObjectURL(loadedTargetUrl)
+            }
+        }
+    }, [reassignAccount, reassignTarget])
 
     async function handleAssign(
         account: ClientAccountDto,
@@ -213,16 +282,21 @@ function ClientAccountsSection({
                                         className="client-account-item"
                                     >
                                         <div className="client-account-item-main">
-                                            <div className="client-account-platform-icon">
-                                                <PlatformIcon
-                                                    type={
-                                                        account.channelType
-                                                    }
-                                                    size={
-                                                        22
-                                                    }
-                                                />
-                                            </div>
+                                            <ClientAccountAvatar
+                                                accountId={account.id}
+                                                avatarUrl={account.avatarUrl}
+                                                displayName={
+                                                    account.displayName ||
+                                                    account.username ||
+                                                    account.phone
+                                                }
+                                                size={40}
+                                            />
+
+                                            <PlatformIcon
+                                                type={account.channelType}
+                                                size={18}
+                                            />
 
                                             <div className="client-account-item-content">
                                                 <div className="client-account-item-title">
@@ -411,47 +485,77 @@ function ClientAccountsSection({
 
                             <div className="client-modal-body">
                                 <div className="client-reassign-confirm">
-                                    <div>
+                                    <div className="client-reassign-person">
+                                        <div className="client-reassign-account-avatar">
+                                            {accountAvatarUrl ? (
+                                                <img src={accountAvatarUrl} alt=""/>
+                                            ) : (
+                                                <span aria-hidden="true">👤</span>
+                                            )}
+                                        </div>
+
+                                        <div className="client-reassign-platform-icon">
+                                            <PlatformIcon
+                                                type={reassignAccount.channelType}
+                                                size={20}
+                                            />
+                                        </div>
+
                                         <span className="client-reassign-confirm-label">
-                                            Аккаунт
+                                            Исходный аккаунт
                                         </span>
 
-                                        <strong>
-                                            {
-                                                getAccountTitle(
-                                                    reassignAccount,
-                                                )
-                                            }
+                                        <strong className="client-reassign-person-name">
+                                            {getAccountTitle(reassignAccount)}
                                         </strong>
+
+                                        {reassignAccount.username && (
+                                            <span className="client-reassign-person-meta">
+                                                @{reassignAccount.username}
+                                            </span>
+                                            )}
+
+                                        {reassignAccount.phone && (
+                                            <span className="client-reassign-person-meta">
+                                                {reassignAccount.phone}
+                                            </span>
+                                        )}
                                     </div>
 
-                                    <div className="client-reassign-confirm-arrow">
-                                        ↓
+                                    <div
+                                        className="client-reassign-confirm-arrow"
+                                        aria-hidden="true"
+                                    >
+                                        →
                                     </div>
 
-                                    <div>
+                                    <div className="client-reassign-person">
+                                        <div className="client-reassign-client-avatar">
+                                            {targetAvatarUrl ? (
+                                                <img src={targetAvatarUrl} alt=""/>
+                                            ) : (
+                                                <span aria-hidden="true">👤</span>
+                                            )}
+                                        </div>
+
                                         <span className="client-reassign-confirm-label">
                                             Новый клиент
                                         </span>
 
-                                        <strong>
-                                            {
-                                                getClientTitle(
-                                                    reassignTarget,
-                                                )
-                                            }
+                                        <strong className="client-reassign-person-name">
+                                            {getClientTitle(reassignTarget)}
                                         </strong>
 
-                                        {reassignTarget
-                                                .phoneList
-                                                .length >
-                                            0 && (
-                                                <span>
-                                                {reassignTarget.phoneList.join(
-                                                    ', ',
-                                                )}
-                                            </span>
-                                            )}
+                                        {reassignTarget.phoneList
+                                            .filter(phone => phone.trim())
+                                            .map((phone, index) => (
+                                                <span
+                                                    className="client-reassign-person-meta"
+                                                    key={`${phone}-${index}`}
+                                                >
+                                                    {phone}
+                                                </span>
+                                            ))}
                                     </div>
                                 </div>
                             </div>

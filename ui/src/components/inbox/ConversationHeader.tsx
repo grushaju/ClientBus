@@ -7,6 +7,7 @@ import type {
     ConversationDto,
 } from '../../api/types/conversation'
 
+import ClientAccountAvatar from '../clients/ClientAccountAvatar'
 import PlatformIcon from '../common/platform/PlatformIcon'
 
 interface ConversationHeaderProps {
@@ -120,11 +121,12 @@ function ConversationHeader({
         <header className="conversation-header">
             <div className="conversation-header-main">
                 <div className="conversation-header-client">
-                    <div className="conversation-header-avatar">
-                        {clientName
-                            .charAt(0)
-                            .toUpperCase()}
-                    </div>
+                    <ClientAccountAvatar
+                        accountId={clientAccount?.id ?? ''}
+                        avatarUrl={clientAccount?.avatarUrl ?? null}
+                        displayName={clientName}
+                        size={40}
+                    />
 
                     <div className="conversation-header-info">
                         <h2 className="conversation-header-client-name">

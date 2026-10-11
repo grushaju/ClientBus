@@ -12,6 +12,12 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import kit.penny.clientbus.server.storage.IAttachmentStorage;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.MediaType;
+import org.springframework.http.MediaTypeFactory;
+
+import java.io.InputStream;
 
 import java.util.List;
 import java.util.UUID;
@@ -27,10 +33,13 @@ public class ClientAccountController {
 
     private final ClientAccountService clientAccountService;
 
+    private final IAttachmentStorage attachmentStorage;
+
     public ClientAccountController(
-            ClientAccountService clientAccountService
+            ClientAccountService clientAccountService, IAttachmentStorage attachmentStorage
     ) {
         this.clientAccountService = clientAccountService;
+        this.attachmentStorage = attachmentStorage;
     }
 
     /**
@@ -96,6 +105,33 @@ public class ClientAccountController {
         return ResponseEntity.ok(
                 clientAccountService.getClientAccount(id)
         );
+    }
+
+
+    @GetMapping("/{id}/avatar/content")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SUPER_ADMIN')")
+    public ResponseEntity<InputStreamResource> getClientAccountAvatar(
+            @PathVariable UUID id
+    ) {
+        ClientAccountDto account =
+                clientAccountService.getClientAccount(id);
+
+        String storageKey = account.avatarUrl();
+
+        if (storageKey == null
+                || storageKey.isBlank()
+                || !attachmentStorage.exists(storageKey)) {
+            return ResponseEntity.notFound().build();
+        }
+
+        InputStream inputStream = attachmentStorage.load(storageKey);
+
+        return ResponseEntity.ok()
+                .contentType(
+                        MediaTypeFactory.getMediaType(storageKey)
+                                .orElse(MediaType.APPLICATION_OCTET_STREAM)
+                )
+                .body(new InputStreamResource(inputStream));
     }
 
     /**

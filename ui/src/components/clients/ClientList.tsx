@@ -1,3 +1,5 @@
+import ClientAvatar from './ClientAvatar'
+
 import type {
     ClientListItemDto,
 } from '../../api/types/client'
@@ -27,12 +29,14 @@ function ClientList({
                         )
                     }
                 >
-                    <div className="client-list-avatar">
-                        {getInitials(
-                            client.firstName,
-                            client.lastName,
-                        )}
-                    </div>
+                    <ClientAvatar
+                        clientId={client.id}
+                        avatarUrl={client.avatarUrl}
+                        firstName={client.firstName}
+                        lastName={client.lastName}
+                        size={40}
+                        className="client-list-avatar"
+                    />
 
                     <div className="client-list-main">
                         <div className="client-list-name">

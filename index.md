@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-10-11 00:12:17
+- Generated: 2026-10-11 03:05:34
 - Branch: `main`
-- Commit: `2e2549a`
+- Commit: `318d3e0`
 
 ## Project Structure
 
@@ -531,8 +531,10 @@
 - `ui/src/components/channels/DeleteChannelDialog.tsx`
 - `ui/src/components/channels/EditChannelDialog.tsx`
 - `ui/src/components/channels/TelegramConnectionFlow.tsx`
+- `ui/src/components/clients/ClientAccountAvatar.tsx`
 - `ui/src/components/clients/ClientAccountPicker.tsx`
 - `ui/src/components/clients/ClientAccountsSection.tsx`
+- `ui/src/components/clients/ClientAvatar.tsx`
 - `ui/src/components/clients/ClientCreateForm.tsx`
 - `ui/src/components/clients/ClientList.tsx`
 - `ui/src/components/clients/ClientReassignDialog.tsx`
@@ -611,6 +613,6 @@
 
 - Maven modules: 3
 - Java files: 285
-- UI source files: 96
-- Git commit: `2e2549a`
+- UI source files: 98
+- Git commit: `318d3e0`
 

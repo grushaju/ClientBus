@@ -2,6 +2,14 @@
    CLIENT DETAILS PAGE
    ========================================================= */
 
+.client-details-page {
+    width: 100%;
+    max-width: 1180px;
+
+    margin: 0 auto;
+    padding: 28px 30px 40px;
+}
+
 .client-conversation-list {
     display: flex;
     flex-direction: column;
@@ -108,9 +116,8 @@
     opacity: 0.6;
 }
 
-.client-avatar-file input {
-    max-width: 220px;
-    margin-left: 8px;
+.client-avatar-file input[type="file"] {
+    display: none;
 }
 
 .client-avatar-controls select {

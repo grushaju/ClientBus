@@ -23,6 +23,7 @@ import {
 } from '../api/clientApi'
 
 import ClientAccountsSection from '../components/clients/ClientAccountsSection'
+import ClientAvatar from '../components/clients/ClientAvatar'
 
 import type {
     ClientDto,
@@ -422,19 +423,14 @@ function ClientDetailsPage() {
             )}
 
             <div className="client-details-header">
-                <div className="client-details-avatar">
-                    {avatarSrc ? (
-                        <img
-                            src={avatarSrc}
-                            alt={`Аватар ${client.firstName} ${client.lastName}`}
-                        />
-                    ) : (
-                        getInitials(
-                            client.firstName,
-                            client.lastName,
-                        )
-                    )}
-                </div>
+                <ClientAvatar
+                    clientId={client.id}
+                    avatarUrl={client.avatarUrl}
+                    firstName={client.firstName}
+                    lastName={client.lastName}
+                    size={52}
+                    className="client-details-avatar"
+                />
 
                 <div className="client-details-title">
                     <div className="client-details-title-row">

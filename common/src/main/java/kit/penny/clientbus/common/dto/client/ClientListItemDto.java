@@ -11,6 +11,7 @@ public record ClientListItemDto(
         List<String> phoneList,
         long accountCount,
         Instant lastContactAt,
-        boolean enabled
+        boolean enabled,
+        String avatarUrl
 ) {
 }
