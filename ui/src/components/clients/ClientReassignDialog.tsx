@@ -6,6 +6,8 @@ import type { ClientListItemDto } from '../../api/types/client'
 
 import type { ClientAccountDto } from '../../api/types/clientAccount'
 
+import ClientAvatar from './ClientAvatar'
+
 interface ClientReassignDialogProps {
     open: boolean
     account: ClientAccountDto | null
@@ -178,14 +180,24 @@ function ClientReassignDialog({
                                     disabled={busy}
                                     onClick={() => onSelect(client)}
                                 >
-                                    <div className="client-account-picker-main">
-                                        <strong>
-                                            {getClientTitle(client)}
-                                        </strong>
+                                    <div className="client-reassign-picker-client">
+                                        <ClientAvatar
+                                            clientId={client.id}
+                                            avatarUrl={client.avatarUrl}
+                                            firstName={client.firstName}
+                                            lastName={client.lastName}
+                                            size={40}
+                                        />
 
-                                        <span>
-                                            аккаунтов: {client.accountCount}
-                                        </span>
+                                        <div className="client-account-picker-main">
+                                            <strong>
+                                                {getClientTitle(client)}
+                                            </strong>
+
+                                            <span>
+                                                аккаунтов: {client.accountCount}
+                                            </span>
+                                        </div>
                                     </div>
 
                                     <div className="client-account-picker-meta">

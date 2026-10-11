@@ -69,9 +69,7 @@
 
     font-size: 17px;
     font-weight: var(--ui-font-weight-semibold);
-}
 
-.client-details-avatar {
     overflow: hidden;
 }
 
@@ -80,6 +78,87 @@
     height: 100%;
     display: block;
     object-fit: cover;
+}
+
+
+.client-avatar-account-picker {
+    position: relative;
+    min-width: 240px;
+    max-width: 100%;
+}
+
+.client-avatar-account-trigger {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start !important;
+    gap: var(--ui-space-2);
+    text-align: left;
+}
+
+.client-avatar-account-trigger:disabled {
+    cursor: default;
+    opacity: 0.6;
+}
+
+.client-avatar-account-name {
+    min-width: 0;
+    overflow: hidden;
+    flex: 1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.client-avatar-account-placeholder {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.client-avatar-account-arrow {
+    margin-left: auto;
+}
+
+.client-avatar-account-options {
+    position: absolute;
+    z-index: 20;
+    top: calc(100% + 4px);
+    left: 0;
+    width: max-content;
+    min-width: 100%;
+    max-width: min(360px, 85vw);
+    max-height: 280px;
+    overflow-y: auto;
+    padding: 4px;
+    border: 1px solid var(--ui-color-border);
+    border-radius: var(--ui-radius-md);
+    background: var(--ui-color-background);
+    box-shadow: var(--ui-shadow-card);
+}
+
+.client-avatar-account-option {
+    width: 100%;
+    display: flex !important;
+    align-items: center;
+    justify-content: flex-start !important;
+    gap: var(--ui-space-2);
+    padding: 8px 10px !important;
+    border: 0 !important;
+    border-radius: var(--ui-radius-md) !important;
+    text-align: left;
+}
+
+.client-avatar-account-option:hover,
+.client-avatar-account-option[aria-selected="true"] {
+    background: var(--ui-color-background-muted);
+}
+
+.client-avatar-account-empty {
+    padding: 10px;
+    color: var(--ui-color-text-muted);
+    font-size: var(--ui-font-size-sm);
 }
 
 .client-avatar-controls {

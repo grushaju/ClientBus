@@ -24,6 +24,7 @@ import {
 
 import ClientAccountsSection from '../components/clients/ClientAccountsSection'
 import ClientAvatar from '../components/clients/ClientAvatar'
+import ClientAccountAvatar from '../components/clients/ClientAccountAvatar'
 
 import type {
     ClientDto,
@@ -95,6 +96,23 @@ function ClientDetailsPage() {
 
     const [selectedAvatarAccountId, setSelectedAvatarAccountId] =
         useState('')
+
+    const [avatarAccountDropdownOpen, setAvatarAccountDropdownOpen] =
+        useState(false)
+
+    const avatarAccounts = accounts.filter(
+        account => Boolean(account.avatarUrl?.trim()),
+    )
+
+    const selectedAvatarAccount = avatarAccounts.find(
+        account => account.id === selectedAvatarAccountId,
+    )
+
+    const getAvatarAccountName = (account: ClientAccountDto) =>
+        account.displayName ||
+        account.username ||
+        account.phone ||
+        account.externalId
 
     useEffect(() => {
         if (!clientId) {
@@ -492,31 +510,85 @@ function ClientDetailsPage() {
                     />
                 </label>
 
-                <select
-                    value={selectedAvatarAccountId}
-                    disabled={avatarBusy}
-                    onChange={event =>
-                        setSelectedAvatarAccountId(event.target.value)
-                    }
-                >
-                    <option value="">
-                        Выбрать аватар аккаунта…
-                    </option>
 
-                    {accounts
-                        .filter(account => Boolean(account.avatarUrl?.trim()))
-                        .map(account => (
-                            <option
-                                key={account.id}
-                                value={account.id}
-                            >
-                                {account.displayName ||
-                                    account.username ||
-                                    account.phone ||
-                                    account.externalId}
-                            </option>
-                        ))}
-                </select>
+                <div className="client-avatar-account-picker">
+                    <button
+                        type="button"
+                        className="client-avatar-account-trigger"
+                        aria-haspopup="listbox"
+                        aria-expanded={avatarAccountDropdownOpen}
+                        disabled={avatarBusy}
+                        onClick={() =>
+                            setAvatarAccountDropdownOpen(value => !value)
+                        }
+                        onKeyDown={event => {
+                            if (event.key === 'Escape') {
+                                setAvatarAccountDropdownOpen(false)
+                            }
+                        }}
+                    >
+                        {selectedAvatarAccount ? (
+                            <>
+                                <ClientAccountAvatar
+                                    accountId={selectedAvatarAccount.id}
+                                    avatarUrl={selectedAvatarAccount.avatarUrl}
+                                    displayName={getAvatarAccountName(selectedAvatarAccount)}
+                                    size={28}
+                                />
+                                <span className="client-avatar-account-name">
+                    {getAvatarAccountName(selectedAvatarAccount)}
+                </span>
+                            </>
+                        ) : (
+                            <span className="client-avatar-account-placeholder">
+                Выбрать аватар аккаунта…
+            </span>
+                        )}
+                        <span className="client-avatar-account-arrow">▾</span>
+                    </button>
+
+                    {avatarAccountDropdownOpen && (
+                        <div
+                            className="client-avatar-account-options"
+                            role="listbox"
+                            aria-label="Аккаунт для аватара"
+                        >
+                            {avatarAccounts.length === 0 ? (
+                                <div className="client-avatar-account-empty">
+                                    Нет аккаунтов с аватаром
+                                </div>
+                            ) : (
+                                avatarAccounts.map(account => (
+                                    <button
+                                        key={account.id}
+                                        type="button"
+                                        role="option"
+                                        aria-selected={
+                                            account.id === selectedAvatarAccountId
+                                        }
+                                        className="client-avatar-account-option"
+                                        disabled={avatarBusy}
+                                        onClick={() => {
+                                            setSelectedAvatarAccountId(account.id)
+                                            setAvatarAccountDropdownOpen(false)
+                                        }}
+                                    >
+                                        <ClientAccountAvatar
+                                            accountId={account.id}
+                                            avatarUrl={account.avatarUrl}
+                                            displayName={getAvatarAccountName(account)}
+                                            size={32}
+                                        />
+                                        <span className="client-avatar-account-name">
+                            {getAvatarAccountName(account)}
+                        </span>
+                                    </button>
+                                ))
+                            )}
+                        </div>
+                    )}
+                </div>
+
 
                 <button
                     type="button"

@@ -288,6 +288,8 @@
     overflow: hidden;
     flex-shrink: 0;
     border: 3px solid  var(--ui-color-border-light);
+    align-content: center;
+    text-align: center;
 }
 
 .settings-avatar-preview img {
