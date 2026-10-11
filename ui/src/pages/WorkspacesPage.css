@@ -144,6 +144,23 @@
     background: var(--ui-color-background);
 }
 
+.workspace-card-identity {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.workspace-card-title {
+    min-width: 0;
+}
+
+.workspace-card-title h2 {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
 .workspace-card-header {
     display: flex;
     align-items: flex-start;

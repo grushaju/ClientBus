@@ -30,6 +30,8 @@ import {
     getWorkspaceConversations,
 } from '../api/conversationApi'
 
+import WorkspaceAvatar from '../components/workspaces/WorkspaceAvatar'
+
 import type {
     EmployeeDto,
     WorkspaceDto,
@@ -390,13 +392,19 @@ function WorkspaceDetailsPage() {
                         ← Рабочие пространства
                     </Link>
 
-                    <h1>
-                        {workspace.name}
-                    </h1>
+                    <div className="workspace-details-title-row">
+                        <WorkspaceAvatar
+                            workspaceId={workspace.id}
+                            avatarUrl={workspace.avatarUrl}
+                            name={workspace.name}
+                            size={64}
+                        />
 
-                    <p>
-                        Рабочее пространство
-                    </p>
+                        <div>
+                            <h1>{workspace.name}</h1>
+                            <p>Рабочее пространство</p>
+                        </div>
+                    </div>
                 </div>
 
                 <div className="workspace-details-actions">

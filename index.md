@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-10-11 16:34:54
+- Generated: 2026-10-11 17:38:17
 - Branch: `main`
-- Commit: `6bbee7b`
+- Commit: `8343505`
 
 ## Project Structure
 
@@ -570,6 +570,7 @@
 - `ui/src/components/workspaces/CreateWorkspaceDialog.tsx`
 - `ui/src/components/workspaces/DeleteWorkspaceDialog.tsx`
 - `ui/src/components/workspaces/EditWorkspaceDialog.tsx`
+- `ui/src/components/workspaces/WorkspaceAvatar.tsx`
 - `ui/src/components/workspaces/WorkspaceEmployeesDialog.tsx`
 - `ui/src/components/workspaces/Workspaces.css`
 - `ui/src/index.css`
@@ -614,6 +615,6 @@
 
 - Maven modules: 3
 - Java files: 285
-- UI source files: 99
-- Git commit: `6bbee7b`
+- UI source files: 100
+- Git commit: `8343505`
 

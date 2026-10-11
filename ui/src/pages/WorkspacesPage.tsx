@@ -48,6 +48,8 @@ import {
     DeleteWorkspaceDialog,
 } from '../components/workspaces/DeleteWorkspaceDialog'
 
+import WorkspaceAvatar from '../components/workspaces/WorkspaceAvatar'
+
 interface WorkspaceStats {
     employees: number
     channels: number
@@ -237,15 +239,19 @@ function WorkspacesPage() {
         addWorkspace(workspace)
     }
 
-    function handleUpdated(
-        workspace: WorkspaceDto,
-    ) {
+    function handleUpdated(workspace: WorkspaceDto) {
         setWorkspaces(current =>
             current.map(item =>
                 item.id === workspace.id
                     ? workspace
                     : item,
             ),
+        )
+
+        setEditWorkspace(current =>
+            current?.id === workspace.id
+                ? workspace
+                : current,
         )
 
         updateWorkspace(workspace)
@@ -360,17 +366,19 @@ function WorkspacesPage() {
                                     className="workspace-card"
                                 >
                                     <div className="workspace-card-header">
-                                        <div>
-                                            <h2>
-                                                {
-                                                    workspace.name
-                                                }
-                                            </h2>
+                                        <div className="workspace-card-identity">
+                                            <WorkspaceAvatar
+                                                workspaceId={workspace.id}
+                                                avatarUrl={workspace.avatarUrl}
+                                                name={workspace.name}
+                                                size={48}
+                                            />
 
-                                            <span>
-                                                Рабочее
-                                                пространство
-                                            </span>
+                                            <div className="workspace-card-title">
+                                                <h2>{workspace.name}</h2>
+
+                                                <span>Рабочее пространство</span>
+                                            </div>
                                         </div>
 
                                         <span className="workspace-card-status">

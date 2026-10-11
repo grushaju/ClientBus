@@ -1,15 +1,19 @@
 import {
     useEffect,
     useState,
+    useRef,
 } from 'react'
 
 import {
+    clearWorkspaceAvatar,
+    uploadWorkspaceAvatar,
     updateWorkspace,
 } from '../../api/workspaceApi'
 
 import type {
     WorkspaceDto,
 } from '../../auth/types'
+import WorkspaceAvatar from "./WorkspaceAvatar";
 
 interface EditWorkspaceDialogProps {
     open: boolean
@@ -34,6 +38,8 @@ export function EditWorkspaceDialog({
 
     const [error, setError] =
         useState<string | null>(null)
+
+    const avatarInputRef = useRef<HTMLInputElement>(null)
 
     useEffect(() => {
         if (open) {
@@ -85,6 +91,63 @@ export function EditWorkspaceDialog({
         }
     }
 
+    async function handleAvatarSelected(
+        event: React.ChangeEvent<HTMLInputElement>,
+    ) {
+        const file = event.target.files?.[0]
+        event.target.value = ''
+
+        if (!file) {
+            return
+        }
+
+        if (!file.type.startsWith('image/')) {
+            setError('Выберите файл изображения.')
+            return
+        }
+
+        setSaving(true)
+        setError(null)
+
+        try {
+            const updated = await uploadWorkspaceAvatar(
+                workspace.id,
+                file,
+            )
+
+            onUpdated(updated)
+        } catch (err) {
+            setError(
+                err instanceof Error
+                    ? err.message
+                    : 'Не удалось загрузить аватар рабочего пространства',
+            )
+        } finally {
+            setSaving(false)
+        }
+    }
+
+    async function handleAvatarClear() {
+        setSaving(true)
+        setError(null)
+
+        try {
+            const updated = await clearWorkspaceAvatar(
+                workspace.id,
+            )
+
+            onUpdated(updated)
+        } catch (err) {
+            setError(
+                err instanceof Error
+                    ? err.message
+                    : 'Не удалось удалить аватар рабочего пространства',
+            )
+        } finally {
+            setSaving(false)
+        }
+    }
+
     if (!open) {
         return null
     }
@@ -121,6 +184,55 @@ export function EditWorkspaceDialog({
                         handleSubmit
                     }
                 >
+                    <div className="workspace-avatar-editor">
+                        <WorkspaceAvatar
+                            workspaceId={workspace.id}
+                            avatarUrl={workspace.avatarUrl}
+                            name={workspace.name}
+                            size={80}
+                        />
+
+                        <div className="workspace-avatar-editor-controls">
+                            <strong>Аватар рабочего пространства</strong>
+
+                            <p>
+                                Изображение, которое будет отображаться рядом
+                                с названием пространства.
+                            </p>
+
+                            <input
+                                ref={avatarInputRef}
+                                type="file"
+                                accept="image/*"
+                                hidden
+                                disabled={saving}
+                                onChange={handleAvatarSelected}
+                            />
+
+                            <div className="workspace-avatar-editor-actions">
+                                <button
+                                    type="button"
+                                    className="ui-button ui-button-secondary"
+                                    disabled={saving}
+                                    onClick={() => avatarInputRef.current?.click()}
+                                >
+                                    {saving ? 'Сохранение…' : 'Выбрать изображение'}
+                                </button>
+
+                                {workspace.avatarUrl && (
+                                    <button
+                                        type="button"
+                                        className="ui-button ui-button-secondary"
+                                        disabled={saving}
+                                        onClick={handleAvatarClear}
+                                    >
+                                        Удалить аватар
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
                     <label>
                         <span>
                             Название

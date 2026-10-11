@@ -2,6 +2,8 @@ import type {
     ReactNode,
 } from 'react'
 
+import { useState } from 'react'
+
 import {
     useAuth,
 } from '../../auth/AuthContext'
@@ -13,6 +15,8 @@ import {
 import Sidebar from './Sidebar'
 
 import EmployeeAvatar from '../employees/EmployeeAvatar'
+
+import WorkspaceAvatar from '../workspaces/WorkspaceAvatar'
 
 interface AppLayoutProps {
     children: ReactNode
@@ -54,6 +58,9 @@ function AppLayout({
                 ? 'Сотрудник'
                 : ''
 
+    const [workspaceMenuOpen, setWorkspaceMenuOpen]
+        = useState(false)
+
     return (
         <div className="app-layout">
             <Sidebar />
@@ -71,47 +78,59 @@ function AppLayout({
                             }
                         </span>
 
-                        <select
-                            className="ui-select-header"
-                            value={
-                                currentWorkspace?.id ??
-                                ''
-                            }
-                            onChange={event =>
-                                setCurrentWorkspaceId(
-                                    event.target.value,
-                                )
-                            }
-                            disabled={
-                                workspaces.length ===
-                                0
-                            }
-                        >
-                            {workspaces.length ===
-                            0 ? (
-                                <option value="">
-                                    Нет доступных
-                                    Workspace
-                                </option>
-                            ) : (
-                                workspaces.map(
-                                    workspace => (
-                                        <option
-                                            key={
-                                                workspace.id
+                        <div className="workspace-switcher">
+                            <button
+                                type="button"
+                                className="workspace-switcher-trigger"
+                                onClick={() => setWorkspaceMenuOpen(open => !open)}
+                                disabled={workspaces.length === 0}
+                                aria-expanded={workspaceMenuOpen}
+                            >
+                                {currentWorkspace && (
+                                    <WorkspaceAvatar
+                                        workspaceId={currentWorkspace.id}
+                                        avatarUrl={currentWorkspace.avatarUrl}
+                                        name={currentWorkspace.name}
+                                        size={28}
+                                    />
+                                )}
+
+                                <span>
+                                    {currentWorkspace?.name ?? 'Нет доступных Workspace'}
+                                </span>
+
+                                <span className="workspace-switcher-chevron">▾</span>
+                            </button>
+
+                            {workspaceMenuOpen && workspaces.length > 0 && (
+                                <div className="workspace-switcher-menu">
+                                    {workspaces.map(workspace => (
+                                        <button
+                                            type="button"
+                                            key={workspace.id}
+                                            className={
+                                                workspace.id === currentWorkspace?.id
+                                                    ? 'workspace-switcher-option active'
+                                                    : 'workspace-switcher-option'
                                             }
-                                            value={
-                                                workspace.id
-                                            }
+                                            onClick={() => {
+                                                setCurrentWorkspaceId(workspace.id)
+                                                setWorkspaceMenuOpen(false)
+                                            }}
                                         >
-                                            {
-                                                workspace.name
-                                            }
-                                        </option>
-                                    ),
-                                )
+                                            <WorkspaceAvatar
+                                                workspaceId={workspace.id}
+                                                avatarUrl={workspace.avatarUrl}
+                                                name={workspace.name}
+                                                size={32}
+                                            />
+
+                                            <span>{workspace.name}</span>
+                                        </button>
+                                    ))}
+                                </div>
                             )}
-                        </select>
+                        </div>
                     </div>
 
                     <div className="app-user">
