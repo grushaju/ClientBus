@@ -9,6 +9,7 @@ import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
 import kit.penny.clientbus.server.connector.ConnectorSendResult;
 import kit.penny.clientbus.server.connector.IChannelConnector;
 import kit.penny.clientbus.server.connector.command.SendMessageCommand;
+import kit.penny.clientbus.server.exception.ChannelUnavailableException;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.integration.AbstractIntegrationTest;
 import kit.penny.clientbus.server.kafka.config.KafkaEventJsonDeserializer;
@@ -27,6 +28,7 @@ import kit.penny.clientbus.server.persistence.repository.ConversationRepository;
 import kit.penny.clientbus.server.persistence.repository.MessageRepository;
 import kit.penny.clientbus.server.persistence.repository.OrganizationRepository;
 import kit.penny.clientbus.server.persistence.repository.WorkspaceRepository;
+import kit.penny.clientbus.server.service.ChannelAvailabilityService;
 import kit.penny.clientbus.server.service.MessageService;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.NewTopic;
@@ -48,6 +50,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import java.time.Duration;
 import java.util.*;
@@ -123,6 +126,9 @@ class KafkaOutboundMessageFailureIntegrationTest
 
     @MockitoBean
     private IChannelConnector channelConnector;
+
+    @MockitoSpyBean
+    private ChannelAvailabilityService channelAvailabilityService;
 
     @DynamicPropertySource
     static void kafkaProperties(
@@ -430,6 +436,120 @@ class KafkaOutboundMessageFailureIntegrationTest
         );
     }
 
+    @Test
+    void channelUnavailableOnce_retrySucceedsAndSendsMessage()
+            throws Exception {
+
+        QueuedOutboundMessage queuedMessage =
+                createQueuedOutboundMessage();
+
+        UUID messageId =
+                queuedMessage.messageId();
+
+        UUID channelAccountId =
+                queuedMessage.channelAccountId();
+
+        String clientExternalId =
+                queuedMessage.clientExternalId();
+
+        doThrow(
+                new ChannelUnavailableException(
+                        "Simulated temporary channel outage"
+                )
+        )
+                .doCallRealMethod()
+                .when(channelAvailabilityService)
+                .requireConnected(channelAccountId);
+
+        when(
+                channelConnector.handle(
+                        (SendMessageCommand) any()
+                )
+        ).thenReturn(
+                new ConnectorSendResult(
+                        EXTERNAL_MESSAGE_ID
+                )
+        );
+
+        KafkaEvent<OutboundMessageKafkaCommand> event =
+                createOutboundEvent(
+                        messageId,
+                        channelAccountId,
+                        clientExternalId
+                );
+
+        kafkaTemplate
+                .send(
+                        TOPIC,
+                        channelAccountId.toString(),
+                        event
+                )
+                .get(10, TimeUnit.SECONDS);
+
+        verify(
+                channelAvailabilityService,
+                timeout(15_000).times(2)
+        ).requireConnected(channelAccountId);
+
+        verify(
+                channelConnector,
+                timeout(15_000).times(1)
+        ).handle((SendMessageCommand) any());
+
+        verify(
+                channelConnectorRegistry,
+                timeout(15_000).times(1)
+        ).getConnector(ChannelType.TELEGRAM);
+
+        Awaitility.await()
+                .atMost(15, TimeUnit.SECONDS)
+                .untilAsserted(() -> {
+                    entityManager.clear();
+
+                    MessageEntity message =
+                            messageRepository
+                                    .findById(messageId)
+                                    .orElseThrow();
+
+                    assertEquals(
+                            EXTERNAL_MESSAGE_ID,
+                            message.getExternalId()
+                    );
+
+                    assertEquals(
+                            MessageProcessingStatus.PROCESSING,
+                            message.getProcessingStatus()
+                    );
+
+                    assertEquals(
+                            MessageDeliveryStatus.PENDING,
+                            message.getDeliveryStatus()
+                    );
+                });
+
+        messageService.markSent(
+                messageId,
+                EXTERNAL_MESSAGE_ID
+        );
+
+        MessageEntity sentMessage =
+                awaitMessageStatus(
+                        messageId,
+                        MessageDeliveryStatus.SENT
+                );
+
+        assertEquals(
+                MessageProcessingStatus.PROCESSED,
+                sentMessage.getProcessingStatus()
+        );
+    }
+
+
+    /*
+    * HELPERS
+    */
+
+
     private void startOutboundConsumer() {
         MessageListenerContainer container =
                 kafkaListenerEndpointRegistry
@@ -675,7 +795,7 @@ class KafkaOutboundMessageFailureIntegrationTest
                 topics.add(
                         new NewTopic(
                                 DLQ_TOPIC,
-                                1,
+                                3,
                                 (short) 1
                         )
                 );

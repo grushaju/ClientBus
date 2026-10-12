@@ -9,6 +9,7 @@ import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
 import kit.penny.clientbus.server.connector.ConnectorSendResult;
 import kit.penny.clientbus.server.connector.IChannelConnector;
 import kit.penny.clientbus.server.connector.command.SendMessageCommand;
+import kit.penny.clientbus.server.exception.ChannelUnavailableException;
 import kit.penny.clientbus.server.mapper.OutboundMessageKafkaCommandMapper;
 import kit.penny.clientbus.server.service.ChannelAvailabilityService;
 import kit.penny.clientbus.server.service.MessageService;
@@ -192,6 +193,70 @@ class KafkaOutboundMessageConsumerTest {
         )
                 .releaseOutboundDeliveryClaim(
                         any()
+                );
+    }
+
+    @Test
+    void shouldReleaseClaimAndSkipConnectorWhenChannelIsUnavailable() {
+
+        OutboundMessageKafkaCommand kafkaCommand =
+                validCommand();
+
+        KafkaEvent<OutboundMessageKafkaCommand> event =
+                outboundEvent(kafkaCommand);
+
+        ChannelUnavailableException exception =
+                new ChannelUnavailableException(
+                        "Channel is not connected"
+                );
+
+        when(messageService.claimOutboundDelivery(
+                kafkaCommand.messageId()
+        ))
+                .thenReturn(true);
+
+        doThrow(exception)
+                .when(channelAvailabilityService)
+                .requireConnected(
+                        kafkaCommand.channelAccountId()
+                );
+
+        assertThatThrownBy(() ->
+                consumer.consume(
+                        event,
+                        "clientbus.outbound.telegram"
+                )
+        )
+                .isSameAs(exception);
+
+        verify(messageService)
+                .claimOutboundDelivery(
+                        kafkaCommand.messageId()
+                );
+
+        verify(channelAvailabilityService)
+                .requireConnected(
+                        kafkaCommand.channelAccountId()
+                );
+
+        verify(messageService)
+                .releaseOutboundDeliveryClaim(
+                        kafkaCommand.messageId()
+                );
+
+        verifyNoInteractions(
+                channelConnectorRegistry,
+                commandMapper,
+                connector
+        );
+
+        verify(
+                messageService,
+                never()
+        )
+                .registerExternalId(
+                        any(),
+                        anyString()
                 );
     }
 
