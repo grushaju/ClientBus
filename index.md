@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-10-12 17:33:06
+- Generated: 2026-10-12 23:27:56
 - Branch: `main`
-- Commit: `8e238f1`
+- Commit: `a620fca`
 
 ## Project Structure
 
@@ -110,11 +110,6 @@
 - `PlatformOutboundAttachment.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/PlatformOutboundAttachment.java`
 - `SyncConversationHistoryKafkaCommand.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/SyncConversationHistoryKafkaCommand.java`
 - `SyncRecentChatsKafkaCommand.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/SyncRecentChatsKafkaCommand.java`
-
-#### `src/main/resources`
-
-
-#### `src/test/java`
 
 ### server
 
@@ -491,6 +486,7 @@
 - `MessageProcessingServiceIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/MessageProcessingServiceIntegrationTest.java`
 - `MessageProcessingServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/MessageProcessingServiceTest.java`
 - `MessageServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/MessageServiceTest.java`
+- `OutboundMessageTransactionServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/OutboundMessageTransactionServiceTest.java`
 - `RecentChatsSynchronizationServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/RecentChatsSynchronizationServiceTest.java`
 - `RecentChatsSyncRunConcurrencyIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/RecentChatsSyncRunConcurrencyIntegrationTest.java`
 - `RecentChatsSyncRunServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/RecentChatsSyncRunServiceTest.java`
@@ -622,7 +618,7 @@
 ## Summary
 
 - Maven modules: 3
-- Java files: 288
+- Java files: 289
 - UI source files: 100
-- Git commit: `8e238f1`
+- Git commit: `a620fca`
 

@@ -63,19 +63,24 @@ public class OutboundMessageTransactionService {
                         )
                 );
 
+        UUID messageId = message.id();
+
         try {
             /*
              * RECEIVED -> PROCESSING
              */
             message =
                     messageService.startProcessing(
-                            message.id()
+                            messageId
                     );
 
             ConversationEntity conversation =
                     conversationService.findEntityForProcessing(
                             request.conversationId()
                     );
+
+            conversationService
+                    .requireExternalOperationsAvailable(conversation);
 
             ChannelAccountEntity channelAccount =
                     conversation.getChannelAccount();
@@ -100,7 +105,7 @@ public class OutboundMessageTransactionService {
 
             MessageEntity messageEntity =
                     messageService.getMessageEntityForProcessing(
-                            message.id()
+                            messageId
                     );
 
             for (AttachmentContent attachment :
@@ -115,7 +120,7 @@ public class OutboundMessageTransactionService {
             List<MessageAttachmentEntity> messageAttachments =
                     messageAttachmentService
                             .getAttachmentsForProcessing(
-                                    message.id()
+                                    messageId
                             );
 
             List<PlatformOutboundAttachment> outboundAttachments =
@@ -133,7 +138,7 @@ public class OutboundMessageTransactionService {
 
             OutboundMessageKafkaCommand command =
                     new OutboundMessageKafkaCommand(
-                            message.id(),
+                            messageId,
                             channelAccount.getId(),
                             conversation.getClientAccount()
                                     .getExternalId(),
@@ -150,7 +155,7 @@ public class OutboundMessageTransactionService {
              */
             message =
                     messageService.markQueued(
-                            message.id()
+                            messageId
                     );
 
             return new OutboundMessageTransactionResult(
@@ -162,7 +167,7 @@ public class OutboundMessageTransactionService {
         } catch (RuntimeException e) {
             try {
                 messageService.markProcessingFailed(
-                        message.id()
+                        messageId
                 );
             } catch (RuntimeException ignored) {
                 // Preserve original exception.
