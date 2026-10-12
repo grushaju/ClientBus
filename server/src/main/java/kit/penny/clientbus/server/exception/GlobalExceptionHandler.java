@@ -52,6 +52,21 @@ public class GlobalExceptionHandler {
                 );
     }
 
+    @ExceptionHandler(ChannelUnavailableException.class)
+    public ResponseEntity<ErrorResponse> handleChannelUnavailableException(
+            ChannelUnavailableException exception
+    ) {
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(
+                        new ErrorResponse(
+                                "CHANNEL_UNAVAILABLE",
+                                exception.getMessage()
+                        )
+                );
+    }
+
+
     public record ErrorResponse(
             String code,
             String message

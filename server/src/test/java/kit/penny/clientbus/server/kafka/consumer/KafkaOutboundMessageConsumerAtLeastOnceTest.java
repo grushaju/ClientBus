@@ -10,6 +10,7 @@ import kit.penny.clientbus.server.connector.ConnectorSendResult;
 import kit.penny.clientbus.server.connector.IChannelConnector;
 import kit.penny.clientbus.server.connector.command.SendMessageCommand;
 import kit.penny.clientbus.server.mapper.OutboundMessageKafkaCommandMapper;
+import kit.penny.clientbus.server.service.ChannelAvailabilityService;
 import kit.penny.clientbus.server.service.MessageService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -60,6 +61,9 @@ class KafkaOutboundMessageConsumerAtLeastOnceTest {
     @Mock
     private IChannelConnector channelConnector;
 
+    @Mock
+    private ChannelAvailabilityService channelAvailabilityService;
+
     private KafkaOutboundMessageConsumer consumer;
 
     @BeforeEach
@@ -69,7 +73,8 @@ class KafkaOutboundMessageConsumerAtLeastOnceTest {
                 new KafkaOutboundMessageConsumer(
                         channelConnectorRegistry,
                         commandMapper,
-                        messageService
+                        messageService,
+                        channelAvailabilityService
                 );
     }
 

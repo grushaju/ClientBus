@@ -12,9 +12,7 @@ import kit.penny.clientbus.server.connector.SyncConversationHistoryResult;
 import kit.penny.clientbus.server.connector.command.SyncConversationHistoryCommand;
 import kit.penny.clientbus.server.kafka.producer.IPlatformMessagePublisher;
 import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
-import kit.penny.clientbus.server.service.ConversationService;
-import kit.penny.clientbus.server.service.IMessageProcessingService;
-import kit.penny.clientbus.server.service.MessageService;
+import kit.penny.clientbus.server.service.*;
 import kit.penny.clientbus.common.dto.message.MessageDto;
 import kit.penny.clientbus.common.kafka.SyncConversationHistoryKafkaCommand;
 import kit.penny.clientbus.server.service.IMessageProcessingService;
@@ -81,6 +79,9 @@ class KafkaSyncConversationHistoryConsumerTest {
     @Mock
     private MessageService messageService;
 
+    @Mock
+    private ChannelAvailabilityService channelAvailabilityService;
+
     private KafkaSyncConversationHistoryConsumer consumer;
 
     @BeforeEach
@@ -91,7 +92,8 @@ class KafkaSyncConversationHistoryConsumerTest {
                 conversationService,
                 messageProcessingService,
                 messageService,
-                kafkaTemplate
+                kafkaTemplate,
+                channelAvailabilityService
         );
 
     }

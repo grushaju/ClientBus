@@ -8,8 +8,10 @@ import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
 import kit.penny.clientbus.server.connector.ConnectorSendResult;
 import kit.penny.clientbus.server.connector.IChannelConnector;
 import kit.penny.clientbus.server.connector.command.SendMessageCommand;
+import kit.penny.clientbus.server.exception.ChannelUnavailableException;
 import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
 import kit.penny.clientbus.server.mapper.OutboundMessageKafkaCommandMapper;
+import kit.penny.clientbus.server.service.ChannelAvailabilityService;
 import kit.penny.clientbus.server.service.MessageService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,15 +33,18 @@ public class KafkaOutboundMessageConsumer {
     private final ChannelConnectorRegistry channelConnectorRegistry;
     private final OutboundMessageKafkaCommandMapper commandMapper;
     private final MessageService messageService;
+    private final ChannelAvailabilityService channelAvailabilityService;
 
     public KafkaOutboundMessageConsumer(
             ChannelConnectorRegistry channelConnectorRegistry,
             OutboundMessageKafkaCommandMapper commandMapper,
-            MessageService messageService
+            MessageService messageService,
+            ChannelAvailabilityService channelAvailabilityService
     ) {
         this.channelConnectorRegistry = channelConnectorRegistry;
         this.commandMapper = commandMapper;
         this.messageService = messageService;
+        this.channelAvailabilityService = channelAvailabilityService;
     }
 
     @KafkaListener(
@@ -106,6 +111,26 @@ public class KafkaOutboundMessageConsumer {
             );
 
             return;
+        }
+
+        try {
+            channelAvailabilityService.requireConnected(
+                    kafkaCommand.channelAccountId()
+            );
+        } catch (ChannelUnavailableException e) {
+
+            messageService.releaseOutboundDeliveryClaim(
+                    messageId
+            );
+
+            log.warn(
+                    "Skipping outbound connector call because channel is unavailable: " +
+                            "messageId={}, channelAccountId={}",
+                    messageId,
+                    kafkaCommand.channelAccountId()
+            );
+
+            throw e;
         }
 
         IChannelConnector connector;

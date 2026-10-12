@@ -8,6 +8,7 @@ import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
 import kit.penny.clientbus.server.connector.IChannelConnector;
 import kit.penny.clientbus.server.connector.command.MarkMessagesReadCommand;
 import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
+import kit.penny.clientbus.server.service.ChannelAvailabilityService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -26,11 +27,16 @@ public class KafkaChannelReadConsumer {
     private final ChannelConnectorRegistry
             channelConnectorRegistry;
 
+    private final ChannelAvailabilityService channelAvailabilityService;
+
     public KafkaChannelReadConsumer(
-            ChannelConnectorRegistry channelConnectorRegistry
+            ChannelConnectorRegistry channelConnectorRegistry,
+            ChannelAvailabilityService channelAvailabilityService
     ) {
         this.channelConnectorRegistry =
                 channelConnectorRegistry;
+        this.channelAvailabilityService =
+                channelAvailabilityService;
     }
 
     @KafkaListener(
@@ -63,6 +69,10 @@ public class KafkaChannelReadConsumer {
                 channelType,
                 kafkaCommand.recipientExternalId(),
                 kafkaCommand.lastReadExternalId()
+        );
+
+        channelAvailabilityService.requireConnected(
+                kafkaCommand.channelAccountId()
         );
 
         IChannelConnector connector =

@@ -4,10 +4,12 @@ import jakarta.persistence.EntityNotFoundException;
 import kit.penny.clientbus.common.dto.conversation.ConversationDto;
 import kit.penny.clientbus.common.dto.conversation.CreateConversationRequest;
 import kit.penny.clientbus.common.dto.conversation.CreateOutboundConversationRequest;
+import kit.penny.clientbus.common.enums.ChannelConnectionStatus;
 import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.common.enums.ClientAccountState;
 import kit.penny.clientbus.common.enums.MessageDirection;
 import kit.penny.clientbus.common.kafka.ChannelReadKafkaCommand;
+import kit.penny.clientbus.server.exception.ChannelUnavailableException;
 import kit.penny.clientbus.server.kafka.producer.IChannelReadPublisher;
 import kit.penny.clientbus.server.mapper.ConversationMapper;
 import kit.penny.clientbus.server.persistence.entity.*;
@@ -861,27 +863,28 @@ public class ConversationService {
                 && lastInboundMessage.getExternalId() != null
                 && !lastInboundMessage.getExternalId().isBlank()) {
 
+
             ChannelAccountEntity channelAccount =
                     conversation.getChannelAccount();
 
-            ChannelType channelType =
-                    channelAccount
-                            .getChannel()
-                            .getType();
+            if (channelAccount.getChannel().getStatus()
+                    == ChannelConnectionStatus.CONNECTED) {
 
-            channelReadPublisher.publish(
-                    channelType,
-                    new ChannelReadKafkaCommand(
-                            channelAccount.getId(),
-                            conversation
-                                    .getClientAccount()
-                                    .getExternalId(),
-                            lastInboundMessage
-                                    .getExternalId()
-                    )
-            );
+                ChannelType channelType =
+                        channelAccount.getChannel().getType();
+
+                channelReadPublisher.publish(
+                        channelType,
+                        new ChannelReadKafkaCommand(
+                                channelAccount.getId(),
+                                conversation.getClientAccount().getExternalId(),
+                                lastInboundMessage.getExternalId()
+                        )
+                );
+            }
 
             conversation.setUnreadCount(0);
+
         }
 
         return conversationMapper.toDto(
@@ -1062,6 +1065,23 @@ public class ConversationService {
 
         return conversation;
     }
+
+    public void requireExternalOperationsAvailable(
+            ConversationEntity conversation
+    ) {
+        if (conversation == null
+                || conversation.getChannelAccount() == null
+                || conversation.getChannelAccount().getChannel() == null
+                || conversation.getChannelAccount()
+                .getChannel().getStatus()
+                != ChannelConnectionStatus.CONNECTED) {
+
+            throw new ChannelUnavailableException(
+                    "External operations are unavailable for this conversation"
+            );
+        }
+    }
+
 
     private void requireConversationAccess(
             ConversationEntity conversation

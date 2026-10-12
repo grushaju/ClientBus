@@ -29,6 +29,10 @@ spring:
       table-name: system.SPRING_SESSION
 
   kafka:
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
+
     consumer:
       outbound-group-id: clientbus.outbound.processor
       platform-events-group-id: clientbus.platform-events.processor
@@ -36,6 +40,7 @@ spring:
       platform-conversation-group-id: clientbus.platform-conversations.processor
       channel-read-group-id: clientbus.channel-read.processor
       connector-command-group-id: clientbus.connector-commands.processor
+      history-sync-result-group-id: clientbus.history-sync-results.processor
 
 logging:
   level:

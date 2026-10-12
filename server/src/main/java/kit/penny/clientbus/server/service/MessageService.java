@@ -288,6 +288,10 @@ public class MessageService {
             );
         }
 
+        conversationService.requireExternalOperationsAvailable(
+                conversation
+        );
+
         MessageEntity message =
                 new MessageEntity(
                         conversation,
@@ -397,6 +401,10 @@ public class MessageService {
                     "Source Message must not be null"
             );
         }
+
+        conversationService.requireExternalOperationsAvailable(
+                targetConversation
+        );
 
         MessageEntity message =
                 new MessageEntity(
@@ -1224,6 +1232,11 @@ public class MessageService {
                                             .getWorkspace()
                                             .getId()
                             );
+
+
+                    conversationService.requireExternalOperationsAvailable(
+                            conversation
+                    );
 
                     return new SyncConversationHistoryRequest(
                             conversation

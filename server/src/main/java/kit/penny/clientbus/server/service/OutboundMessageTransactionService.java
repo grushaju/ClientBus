@@ -292,6 +292,10 @@ public class OutboundMessageTransactionService {
                     conversation.getClientAccount()
                             .getExternalId();
 
+            conversationService.requireExternalOperationsAvailable(
+                    conversation
+            );
+
             /*
              * PROCESSED + FAILED
              *          ->

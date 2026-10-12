@@ -1,12 +1,7 @@
 package kit.penny.clientbus.server.kafka.producer;
 
 import jakarta.persistence.EntityManager;
-import kit.penny.clientbus.common.enums.ChannelType;
-import kit.penny.clientbus.common.enums.MessageDeliveryStatus;
-import kit.penny.clientbus.common.enums.MessageDirection;
-import kit.penny.clientbus.common.enums.MessageProcessingStatus;
-import kit.penny.clientbus.common.enums.MessageSenderType;
-import kit.penny.clientbus.common.enums.MessageType;
+import kit.penny.clientbus.common.enums.*;
 import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
 import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
 import kit.penny.clientbus.server.connector.ConnectorSendResult;
@@ -201,6 +196,9 @@ class KafkaOutboundMessagePublisherIntegrationTest
                                 "Test Telegram Channel"
                         )
                 );
+
+        channel.setStatus(ChannelConnectionStatus.CONNECTED);
+        channel = channelRepository.saveAndFlush(channel);
 
         ChannelAccountEntity channelAccount =
                 channelAccountRepository.saveAndFlush(

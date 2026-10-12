@@ -1456,6 +1456,9 @@ class MessageProcessingServiceIntegrationTest
                         )
                 );
 
+        channel.setStatus(ChannelConnectionStatus.CONNECTED);
+        channel = channelRepository.saveAndFlush(channel);
+
         ChannelAccountEntity channelAccount =
                 channelAccountRepository.saveAndFlush(
                         TestDataFactory.channelAccount(
@@ -1563,6 +1566,9 @@ class MessageProcessingServiceIntegrationTest
                                 "Telegram outbound"
                         )
                 );
+
+        channel.setStatus(ChannelConnectionStatus.CONNECTED);
+        channel = channelRepository.saveAndFlush(channel);
 
         ChannelAccountEntity channelAccount =
                 channelAccountRepository.saveAndFlush(

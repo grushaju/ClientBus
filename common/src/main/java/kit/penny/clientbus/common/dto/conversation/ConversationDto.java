@@ -1,5 +1,7 @@
 package kit.penny.clientbus.common.dto.conversation;
 
+import kit.penny.clientbus.common.enums.ChannelConnectionStatus;
+
 import java.time.Instant;
 import java.util.UUID;
 
@@ -24,6 +26,10 @@ public record ConversationDto(
 
         Instant updatedAt,
 
-        boolean historyStartReached
+        boolean historyStartReached,
+
+        ChannelConnectionStatus channelStatus,
+
+        boolean externalOperationsAvailable
 ) {
 }

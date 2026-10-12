@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-10-11 17:38:17
+- Generated: 2026-10-12 17:33:06
 - Branch: `main`
-- Commit: `8343505`
+- Commit: `8e238f1`
 
 ## Project Structure
 
@@ -111,6 +111,11 @@
 - `SyncConversationHistoryKafkaCommand.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/SyncConversationHistoryKafkaCommand.java`
 - `SyncRecentChatsKafkaCommand.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/SyncRecentChatsKafkaCommand.java`
 
+#### `src/main/resources`
+
+
+#### `src/test/java`
+
 ### server
 
 #### `src/main/java`
@@ -216,6 +221,7 @@
 
 ##### `kit.penny.clientbus.server.exception`
 
+- `ChannelUnavailableException.java` — `server/src/main/java/kit/penny/clientbus/server/exception/ChannelUnavailableException.java`
 - `GlobalExceptionHandler.java` — `server/src/main/java/kit/penny/clientbus/server/exception/GlobalExceptionHandler.java`
 - `InvalidCurrentPasswordException.java` — `server/src/main/java/kit/penny/clientbus/server/exception/InvalidCurrentPasswordException.java`
 
@@ -328,6 +334,7 @@
 - `AttachmentContent.java` — `server/src/main/java/kit/penny/clientbus/server/service/AttachmentContent.java`
 - `AuthService.java` — `server/src/main/java/kit/penny/clientbus/server/service/AuthService.java`
 - `ChannelAttachment.java` — `server/src/main/java/kit/penny/clientbus/server/service/ChannelAttachment.java`
+- `ChannelAvailabilityService.java` — `server/src/main/java/kit/penny/clientbus/server/service/ChannelAvailabilityService.java`
 - `ChannelService.java` — `server/src/main/java/kit/penny/clientbus/server/service/ChannelService.java`
 - `ClientAccountService.java` — `server/src/main/java/kit/penny/clientbus/server/service/ClientAccountService.java`
 - `ClientService.java` — `server/src/main/java/kit/penny/clientbus/server/service/ClientService.java`
@@ -453,6 +460,7 @@
 
 ##### `kit.penny.clientbus.server.mapper`
 
+- `ConversationMapperTest.java` — `server/src/test/java/kit/penny/clientbus/server/mapper/ConversationMapperTest.java`
 - `OutboundMessageKafkaCommandMapperTest.java` — `server/src/test/java/kit/penny/clientbus/server/mapper/OutboundMessageKafkaCommandMapperTest.java`
 
 ##### `kit.penny.clientbus.server.persistence.repository`
@@ -614,7 +622,7 @@
 ## Summary
 
 - Maven modules: 3
-- Java files: 285
+- Java files: 288
 - UI source files: 100
-- Git commit: `8343505`
+- Git commit: `8e238f1`
 

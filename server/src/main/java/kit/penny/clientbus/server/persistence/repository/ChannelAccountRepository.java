@@ -42,4 +42,9 @@ public interface ChannelAccountRepository
             @Param("channelAccountId")
             UUID channelAccountId
     );
+
+    Optional<ChannelAccountEntity> findByIdAndChannel_Status(
+            UUID id,
+            ChannelConnectionStatus status
+    );
 }

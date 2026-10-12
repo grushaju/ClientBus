@@ -1564,6 +1564,63 @@ class MessageProcessingServiceTest {
                 .markProcessingFailed(messageId);
     }
 
+    @Test
+    void processOutbound_channelUnavailable_doesNotPublishToKafka() {
+        OutboundMessageRequest request =
+                new OutboundMessageRequest(
+                        conversationId,
+                        MessageType.TEXT,
+                        "Hello",
+                        null,
+                        null
+                );
+
+        when(outboundMessageTransactionService.prepare(
+                eq(request),
+                eq(List.of())
+        )).thenThrow(
+                new IllegalStateException("channel unavailable")
+        );
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageProcessingService.processOutbound(
+                        request,
+                        List.of()
+                )
+        );
+
+        verify(outboundMessageTransactionService)
+                .prepare(eq(request), eq(List.of()));
+
+        verify(outboundMessagePublisher, never())
+                .publish(any(), any());
+    }
+
+    @Test
+    void retryOutbound_channelUnavailable_doesNotPublishToKafka() {
+        UUID messageId = UUID.randomUUID();
+
+        when(outboundMessageTransactionService.prepareRetry(messageId))
+                .thenThrow(
+                        new IllegalStateException("channel unavailable")
+                );
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageProcessingService.retryOutbound(messageId)
+        );
+
+        verify(outboundMessageTransactionService)
+                .prepareRetry(messageId);
+
+        verify(outboundMessagePublisher, never())
+                .publish(any(), any());
+
+        verify(messageService, never())
+                .markDeliveryFailed(messageId);
+    }
+
     private OutboundMessageTransactionService.OutboundMessageTransactionResult
     transactionResult(
             MessageDto message

@@ -12,6 +12,7 @@ import kit.penny.clientbus.server.connector.SyncConversationHistoryResult;
 import kit.penny.clientbus.server.connector.command.SyncConversationHistoryCommand;
 import kit.penny.clientbus.server.kafka.producer.IPlatformMessagePublisher;
 import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
+import kit.penny.clientbus.server.service.ChannelAvailabilityService;
 import kit.penny.clientbus.server.service.ConversationService;
 import kit.penny.clientbus.server.service.IMessageProcessingService;
 import kit.penny.clientbus.server.service.MessageService;
@@ -43,13 +44,16 @@ public class KafkaSyncConversationHistoryConsumer {
 
     private final KafkaTemplate<String, Object> kafkaTemplate;
 
+    private final ChannelAvailabilityService channelAvailabilityService;
+
     public KafkaSyncConversationHistoryConsumer(
             ChannelConnectorRegistry channelConnectorRegistry,
             IPlatformMessagePublisher platformMessagePublisher,
             ConversationService conversationService,
             IMessageProcessingService messageProcessingService,
             MessageService messageService,
-            KafkaTemplate<String, Object> kafkaTemplate
+            KafkaTemplate<String, Object> kafkaTemplate,
+            ChannelAvailabilityService channelAvailabilityService
     ) {
         this.channelConnectorRegistry =
                 channelConnectorRegistry;
@@ -68,6 +72,9 @@ public class KafkaSyncConversationHistoryConsumer {
 
         this.kafkaTemplate =
                 kafkaTemplate;
+
+        this.channelAvailabilityService =
+                channelAvailabilityService;
     }
 
     @KafkaListener(
@@ -116,6 +123,10 @@ public class KafkaSyncConversationHistoryConsumer {
                         payload.beforeExternalId(),
                         payload.limit()
                 );
+
+        channelAvailabilityService.requireConnected(
+                payload.channelAccountId()
+        );
 
         IChannelConnector connector =
                 channelConnectorRegistry.getConnector(

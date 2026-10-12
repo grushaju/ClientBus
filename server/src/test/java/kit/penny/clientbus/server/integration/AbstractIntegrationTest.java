@@ -2,6 +2,7 @@ package kit.penny.clientbus.server.integration;
 
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.Network;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.kafka.KafkaContainer;
 
@@ -27,7 +28,9 @@ public abstract class AbstractIntegrationTest {
             new KafkaContainer("apache/kafka-native:3.8.0")
                     .withCreateContainerCmdModifier(cmd ->
                             cmd.withName("clientbus-kafka-test")
-                    );
+                    )
+                    .withNetwork(Network.SHARED)
+                    .withListener("kafka:39092");
 
     static {
         postgres.start();

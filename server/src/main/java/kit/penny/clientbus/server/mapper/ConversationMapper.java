@@ -1,6 +1,8 @@
+
 package kit.penny.clientbus.server.mapper;
 
 import kit.penny.clientbus.common.dto.conversation.ConversationDto;
+import kit.penny.clientbus.common.enums.ChannelConnectionStatus;
 import kit.penny.clientbus.server.persistence.entity.ConversationEntity;
 import org.springframework.stereotype.Component;
 
@@ -14,6 +16,11 @@ public class ConversationMapper {
         if (entity == null) {
             return null;
         }
+
+        ChannelConnectionStatus channelStatus = entity
+                .getChannelAccount()
+                .getChannel()
+                .getStatus();
 
         return new ConversationDto(
                 entity.getId(),
@@ -38,7 +45,11 @@ public class ConversationMapper {
 
                 entity.getUpdatedAt(),
 
-                entity.isHistoryStartReached()
+                entity.isHistoryStartReached(),
+
+                channelStatus,
+
+                channelStatus == ChannelConnectionStatus.CONNECTED
         );
     }
 }
