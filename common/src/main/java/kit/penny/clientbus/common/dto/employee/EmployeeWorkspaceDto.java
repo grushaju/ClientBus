@@ -4,6 +4,7 @@ import java.util.UUID;
 
 public record EmployeeWorkspaceDto(
         UUID employeeId,
-        UUID workspaceId
+        UUID workspaceId,
+        boolean isSupervisor
 ) {
 }

@@ -7,6 +7,7 @@ import java.util.UUID;
 public record AssignEmployeeWorkspaceRequest(
 
         @NotNull
-        UUID workspaceId
+        UUID workspaceId,
+        boolean isSupervisor
 ) {
 }

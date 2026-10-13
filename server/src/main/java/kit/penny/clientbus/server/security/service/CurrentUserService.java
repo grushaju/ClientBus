@@ -5,6 +5,7 @@ import kit.penny.clientbus.server.persistence.entity.EmployeeEntity;
 import kit.penny.clientbus.server.persistence.repository.EmployeeRepository;
 import kit.penny.clientbus.server.persistence.repository.EmployeeWorkspaceRepository;
 import kit.penny.clientbus.server.persistence.repository.WorkspaceRepository;
+import kit.penny.clientbus.server.persistence.entity.EmployeeWorkspaceEntity;
 import kit.penny.clientbus.server.security.UserPrincipal;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
@@ -221,7 +222,10 @@ public class CurrentUserService {
                 conversation.getWorkspace().getId()
         );
 
-        if (isSuperAdmin()) {
+        UUID workspaceId =
+                conversation.getWorkspace().getId();
+
+        if (isSuperAdmin() || isSupervisor(workspaceId)) {
             return;
         }
 
@@ -248,5 +252,21 @@ public class CurrentUserService {
                 && authentication.isAuthenticated()
                 && authentication.getPrincipal()
                 instanceof UserPrincipal;
+    }
+
+    public boolean isSupervisor(UUID workspaceId) {
+        if (!isEmployee()) {
+            return false;
+        }
+
+        UUID employeeId = getCurrentEmployeeId();
+
+        return employeeWorkspaceRepository
+                .findByEmployeeIdAndWorkspaceId(
+                        employeeId,
+                        workspaceId
+                )
+                .map(EmployeeWorkspaceEntity::isSupervisor)
+                .orElse(false);
     }
 }

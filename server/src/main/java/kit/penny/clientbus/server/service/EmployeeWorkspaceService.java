@@ -48,7 +48,8 @@ public class EmployeeWorkspaceService {
      */
     public EmployeeWorkspaceDto assignWorkspace(
             UUID employeeId,
-            UUID workspaceId
+            UUID workspaceId,
+            boolean isSupervisor
     ) {
 
         currentUserService.requireSuperAdmin();
@@ -80,6 +81,7 @@ public class EmployeeWorkspaceService {
                         employee,
                         workspace
                 );
+        entity.setSupervisor(isSupervisor);
 
         EmployeeWorkspaceEntity saved =
                 employeeWorkspaceRepository.saveAndFlush(
@@ -88,7 +90,8 @@ public class EmployeeWorkspaceService {
 
         return new EmployeeWorkspaceDto(
                 saved.getEmployee().getId(),
-                saved.getWorkspace().getId()
+                saved.getWorkspace().getId(),
+                saved.isSupervisor()
         );
     }
 
@@ -196,6 +199,51 @@ public class EmployeeWorkspaceService {
                 );
     }
 
+
+/**
+ * SUPER_ADMIN ONLY.
+ */
+    @Transactional
+    public EmployeeWorkspaceDto setSupervisor(
+            UUID employeeId,
+            UUID workspaceId,
+            boolean supervisor
+    ) {
+        currentUserService.requireSuperAdmin();
+
+        EmployeeEntity employee =
+                getEmployee(employeeId);
+
+        WorkspaceEntity workspace =
+                getWorkspace(workspaceId);
+
+        requireSameCurrentOrganization(
+                employee,
+                workspace
+        );
+
+        EmployeeWorkspaceEntity saved =
+                employeeWorkspaceRepository
+                        .findByEmployeeIdAndWorkspaceId(
+                                employeeId,
+                                workspaceId
+                        )
+                        .orElseThrow(() ->
+                                new EntityNotFoundException(
+                                        "Employee workspace access not found"
+                                )
+                        );
+
+        saved.setSupervisor(supervisor);
+        saved = employeeWorkspaceRepository.save(saved);
+
+        return new EmployeeWorkspaceDto(
+                saved.getEmployee().getId(),
+                saved.getWorkspace().getId(),
+                saved.isSupervisor()
+        );
+    }
+
     private List<EmployeeWorkspaceDto>
     getEmployeeWorkspacesInternal(
             UUID employeeId
@@ -207,7 +255,8 @@ public class EmployeeWorkspaceService {
                 .map(entity ->
                         new EmployeeWorkspaceDto(
                                 entity.getEmployee().getId(),
-                                entity.getWorkspace().getId()
+                                entity.getWorkspace().getId(),
+                                entity.isSupervisor()
                         )
                 )
                 .toList();

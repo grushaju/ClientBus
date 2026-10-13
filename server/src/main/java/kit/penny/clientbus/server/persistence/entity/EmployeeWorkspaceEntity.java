@@ -44,6 +44,13 @@ public class EmployeeWorkspaceEntity {
     )
     private WorkspaceEntity workspace;
 
+    @Column(
+            name = "issupervisor",
+            nullable = false,
+            columnDefinition = "boolean default false"
+    )
+    private boolean isSupervisor = false;
+
     public EmployeeWorkspaceEntity() {
     }
 
@@ -78,4 +85,13 @@ public class EmployeeWorkspaceEntity {
     public void setWorkspace(WorkspaceEntity workspace) {
         this.workspace = workspace;
     }
+
+    public boolean isSupervisor() {
+        return isSupervisor;
+    }
+
+    public void setSupervisor(boolean supervisor) {
+        isSupervisor = supervisor;
+    }
+
 }

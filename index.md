@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-10-13 18:03:40
+- Generated: 2026-10-13 23:34:25
 - Branch: `main`
-- Commit: `622fc58`
+- Commit: `e7ef7b3`
 
 ## Project Structure
 
@@ -69,6 +69,7 @@
 - `EmployeeWorkspaceDto.java` — `common/src/main/java/kit/penny/clientbus/common/dto/employee/EmployeeWorkspaceDto.java`
 - `ResetEmployeePasswordRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/employee/ResetEmployeePasswordRequest.java`
 - `SetEmployeeEnabledRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/employee/SetEmployeeEnabledRequest.java`
+- `SetEmployeeWorkspaceSupervisorRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/employee/SetEmployeeWorkspaceSupervisorRequest.java`
 - `UpdateEmployeeCredentialsRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/employee/UpdateEmployeeCredentialsRequest.java`
 - `UpdateEmployeeRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/employee/UpdateEmployeeRequest.java`
 
@@ -120,11 +121,6 @@
 - `PlatformOutboundAttachment.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/PlatformOutboundAttachment.java`
 - `SyncConversationHistoryKafkaCommand.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/SyncConversationHistoryKafkaCommand.java`
 - `SyncRecentChatsKafkaCommand.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/SyncRecentChatsKafkaCommand.java`
-
-#### `src/main/resources`
-
-
-#### `src/test/java`
 
 ### server
 
@@ -436,6 +432,7 @@
 ##### `kit.penny.clientbus.server.controller`
 
 - `ConversationControllerTest.java` — `server/src/test/java/kit/penny/clientbus/server/controller/ConversationControllerTest.java`
+- `EmployeeControllerTest.java` — `server/src/test/java/kit/penny/clientbus/server/controller/EmployeeControllerTest.java`
 - `MessageControllerTest.java` — `server/src/test/java/kit/penny/clientbus/server/controller/MessageControllerTest.java`
 
 ##### `kit.penny.clientbus.server.fixture`
@@ -487,6 +484,7 @@
 - `ChannelRepositoryTest.java` — `server/src/test/java/kit/penny/clientbus/server/persistence/repository/ChannelRepositoryTest.java`
 - `ClientAccountRepositoryTest.java` — `server/src/test/java/kit/penny/clientbus/server/persistence/repository/ClientAccountRepositoryTest.java`
 - `ClientRepositoryTest.java` — `server/src/test/java/kit/penny/clientbus/server/persistence/repository/ClientRepositoryTest.java`
+- `ConversationGroupMembershipRepositoryTest.java` — `server/src/test/java/kit/penny/clientbus/server/persistence/repository/ConversationGroupMembershipRepositoryTest.java`
 - `MessageRepositoryIdempotencyTest.java` — `server/src/test/java/kit/penny/clientbus/server/persistence/repository/MessageRepositoryIdempotencyTest.java`
 
 ##### `kit.penny.clientbus.server.security.jwt`
@@ -506,6 +504,7 @@
 - `ClientServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/ClientServiceTest.java`
 - `ConversationGroupServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/ConversationGroupServiceTest.java`
 - `ConversationServiceOrderingTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/ConversationServiceOrderingTest.java`
+- `EmployeeWorkspaceServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/EmployeeWorkspaceServiceTest.java`
 - `MessageAttachmentServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/MessageAttachmentServiceTest.java`
 - `MessageProcessingServiceIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/MessageProcessingServiceIntegrationTest.java`
 - `MessageProcessingServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/MessageProcessingServiceTest.java`
@@ -642,7 +641,7 @@
 ## Summary
 
 - Maven modules: 3
-- Java files: 308
+- Java files: 312
 - UI source files: 100
-- Git commit: `622fc58`
+- Git commit: `e7ef7b3`
 

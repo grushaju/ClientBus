@@ -443,6 +443,60 @@ public class ConversationService {
     }
 
     @Transactional(readOnly = true)
+    public List<ConversationDto> getWorkspaceOtherEmployeeConversations(
+            UUID workspaceId,
+            UUID employeeId
+    ) {
+        currentUserService.requireWorkspaceAccess(workspaceId);
+
+        if (!currentUserService.isSupervisor(workspaceId)) {
+            throw new AccessDeniedException(
+                    "Workspace supervisor role required"
+            );
+        }
+
+        if (employeeId != null) {
+            if (!employeeWorkspaceRepository
+                    .existsByEmployeeIdAndWorkspaceId(
+                            employeeId,
+                            workspaceId
+                    )) {
+                throw new EntityNotFoundException(
+                        "Employee not found in workspace: " + employeeId
+                );
+            }
+
+            if (employeeId.equals(
+                    currentUserService.getCurrentEmployeeId())) {
+                throw new IllegalArgumentException(
+                        "Use the personal conversations view for yourself"
+                );
+            }
+
+            return conversationRepository
+                    .findAllByWorkspaceIdAndAssignedEmployeeIdAndEmployeeAccessOrderByLastMessageAtDesc(
+                            workspaceId,
+                            employeeId
+                    )
+                    .stream()
+                    .map(conversationMapper::toDto)
+                    .toList();
+        }
+
+        return conversationRepository
+                .findAllByWorkspaceIdOrderByLastMessageAtDesc(workspaceId)
+                .stream()
+                .filter(conversation ->
+                        conversation.getAssignedEmployee() != null
+                                && !conversation.getAssignedEmployee()
+                                .getId()
+                                .equals(currentUserService.getCurrentEmployeeId())
+                )
+                .map(conversationMapper::toDto)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public List<ConversationDto> getClientAccountConversations(
             UUID clientAccountId
     ) {

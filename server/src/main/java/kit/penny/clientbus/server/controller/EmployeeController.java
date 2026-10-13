@@ -327,7 +327,8 @@ public class EmployeeController {
                         employeeWorkspaceService
                                 .assignWorkspace(
                                         id,
-                                        request.workspaceId()
+                                        request.workspaceId(),
+                                        request.isSupervisor()
                                 )
                 );
     }
@@ -370,4 +371,21 @@ public class EmployeeController {
 
         return ResponseEntity.noContent().build();
     }
+
+    @PatchMapping("/{id}/workspaces/{workspaceId}/supervisor")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    public ResponseEntity<EmployeeWorkspaceDto> setSupervisor(
+            @PathVariable UUID id,
+            @PathVariable UUID workspaceId,
+            @Valid @RequestBody SetEmployeeWorkspaceSupervisorRequest request
+    ) {
+        return ResponseEntity.ok(
+                employeeWorkspaceService.setSupervisor(
+                        id,
+                        workspaceId,
+                        request.isSupervisor()
+                )
+        );
+    }
+
 }

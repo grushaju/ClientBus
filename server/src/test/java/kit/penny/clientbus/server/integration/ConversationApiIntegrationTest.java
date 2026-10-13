@@ -33,6 +33,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
 
+import kit.penny.clientbus.server.persistence.entity.ConversationGroupEntity;
+import kit.penny.clientbus.server.persistence.entity.ConversationGroupMembershipEntity;
+import kit.penny.clientbus.server.persistence.repository.ConversationGroupRepository;
+import kit.penny.clientbus.server.persistence.repository.ConversationGroupMembershipRepository;
+
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -76,6 +82,12 @@ class ConversationApiIntegrationTest
 
     @Autowired
     private ConversationRepository conversationRepository;
+
+    @Autowired
+    private ConversationGroupRepository groupRepository;
+
+    @Autowired
+    private ConversationGroupMembershipRepository membershipRepository;
 
     @Test
     void getConversation_returnsConversationFromDatabase() throws Exception {
@@ -161,6 +173,179 @@ class ConversationApiIntegrationTest
                 .andExpect(status().isOk())
                 .andExpect(
                         jsonPath("$.id")
+                                .value(conversation.getId().toString())
+                );
+    }
+
+    @Test
+    void groupApiHidesConversationAfterReassignmentButPreservesMembership()
+            throws Exception {
+
+        OrganizationEntity organization =
+                organizationRepository.saveAndFlush(
+                        TestDataFactory.organization()
+                );
+
+        WorkspaceEntity workspace =
+                workspaceRepository.saveAndFlush(
+                        TestDataFactory.workspace(organization)
+                );
+
+        UserEntity ownerUser = TestDataFactory.user(
+                "group_owner",
+                "group_owner@example.com",
+                "hash"
+        );
+
+        ownerUser = userRepository.saveAndFlush(ownerUser);
+
+        EmployeeEntity owner = employeeRepository.saveAndFlush(
+                new EmployeeEntity(
+                        organization,
+                        ownerUser,
+                        "Group",
+                        "Owner",
+                        null
+                )
+        );
+
+        UserEntity otherUser = TestDataFactory.user(
+                "group_other",
+                "group_other@example.com",
+                "hash"
+        );
+
+        otherUser = userRepository.saveAndFlush(otherUser);
+
+        EmployeeEntity otherEmployee = employeeRepository.saveAndFlush(
+                new EmployeeEntity(
+                        organization,
+                        otherUser,
+                        "Other",
+                        "Employee",
+                        null
+                )
+        );
+
+        employeeWorkspaceRepository.saveAndFlush(
+                new EmployeeWorkspaceEntity(owner, workspace)
+        );
+
+        employeeWorkspaceRepository.saveAndFlush(
+                new EmployeeWorkspaceEntity(otherEmployee, workspace)
+        );
+
+        ChannelEntity channel = channelRepository.saveAndFlush(
+                TestDataFactory.channel(workspace)
+        );
+
+        ChannelAccountEntity channelAccount =
+                channelAccountRepository.saveAndFlush(
+                        TestDataFactory.channelAccount(channel)
+                );
+
+        ClientAccountEntity clientAccount =
+                clientAccountRepository.saveAndFlush(
+                        TestDataFactory.clientAccount(
+                                null,
+                                channel.getType(),
+                                "client-" + UUID.randomUUID()
+                        )
+                );
+
+        ConversationEntity conversation =
+                TestDataFactory.conversation(
+                        workspace,
+                        channelAccount,
+                        clientAccount
+                );
+
+        conversation.setAssignedEmployee(owner);
+
+        conversation = conversationRepository.saveAndFlush(conversation);
+
+        ConversationGroupEntity group = new ConversationGroupEntity();
+        group.setWorkspace(workspace);
+        group.setOwnerEmployee(owner);
+        group.setName("Follow up");
+
+        group = groupRepository.saveAndFlush(group);
+
+        ConversationGroupMembershipEntity membership =
+                new ConversationGroupMembershipEntity();
+
+        membership.setGroup(group);
+        membership.setConversation(conversation);
+
+        membershipRepository.saveAndFlush(membership);
+
+        String ownerToken = jwtService.generateToken(ownerUser);
+
+        String groupConversationsUrl =
+                "/api/conversations/workspace/"
+                        + workspace.getId()
+                        + "/groups/"
+                        + group.getId()
+                        + "/conversations";
+
+        // Диалог назначен владельцу группы — API его возвращает.
+        mockMvc.perform(
+                        get(groupConversationsUrl)
+                                .header(
+                                        "Authorization",
+                                        "Bearer " + ownerToken
+                                )
+                                .contentType(MediaType.APPLICATION_JSON)
+                )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(
+                        jsonPath("$[0].id")
+                                .value(conversation.getId().toString())
+                );
+
+        // Переназначаем диалог другому сотруднику.
+        conversation.setAssignedEmployee(otherEmployee);
+        conversationRepository.saveAndFlush(conversation);
+
+        // Старый владелец больше не видит диалог в своей группе.
+        mockMvc.perform(
+                        get(groupConversationsUrl)
+                                .header(
+                                        "Authorization",
+                                        "Bearer " + ownerToken
+                                )
+                                .contentType(MediaType.APPLICATION_JSON)
+                )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+
+        // Переназначение не удаляет membership.
+        assertTrue(
+                membershipRepository
+                        .findByGroupIdAndConversationId(
+                                group.getId(),
+                                conversation.getId()
+                        )
+                        .isPresent()
+        );
+
+        // Возвращаем назначение владельцу — диалог снова доступен.
+        conversation.setAssignedEmployee(owner);
+        conversationRepository.saveAndFlush(conversation);
+
+        mockMvc.perform(
+                        get(groupConversationsUrl)
+                                .header(
+                                        "Authorization",
+                                        "Bearer " + ownerToken
+                                )
+                                .contentType(MediaType.APPLICATION_JSON)
+                )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(
+                        jsonPath("$[0].id")
                                 .value(conversation.getId().toString())
                 );
     }

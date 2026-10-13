@@ -142,6 +142,22 @@ public class ConversationController {
         );
     }
 
+    @GetMapping("/workspace/{workspaceId}/other-employees")
+    @PreAuthorize("hasRole('EMPLOYEE')")
+    public ResponseEntity<List<ConversationDto>>
+    getWorkspaceOtherEmployeeConversations(
+            @PathVariable UUID workspaceId,
+            @RequestParam(required = false) UUID employeeId
+    ) {
+        return ResponseEntity.ok(
+                conversationService
+                        .getWorkspaceOtherEmployeeConversations(
+                                workspaceId,
+                                employeeId
+                        )
+        );
+    }
+
 
     /**
      * Все Conversation ClientAccount.
