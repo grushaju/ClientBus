@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-10-13 15:37:17
+- Generated: 2026-10-13 18:03:40
 - Branch: `main`
-- Commit: `c48b80a`
+- Commit: `622fc58`
 
 ## Project Structure
 
@@ -45,10 +45,20 @@
 
 ##### `kit.penny.clientbus.common.dto.conversation`
 
+- `ConversationClientLinkFilter.java` — `common/src/main/java/kit/penny/clientbus/common/dto/conversation/ConversationClientLinkFilter.java`
 - `ConversationDto.java` — `common/src/main/java/kit/penny/clientbus/common/dto/conversation/ConversationDto.java`
+- `ConversationGroupDto.java` — `common/src/main/java/kit/penny/clientbus/common/dto/conversation/ConversationGroupDto.java`
+- `ConversationGroupMembershipRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/conversation/ConversationGroupMembershipRequest.java`
+- `ConversationSearchRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/conversation/ConversationSearchRequest.java`
+- `ConversationSearchResponse.java` — `common/src/main/java/kit/penny/clientbus/common/dto/conversation/ConversationSearchResponse.java`
+- `ConversationSort.java` — `common/src/main/java/kit/penny/clientbus/common/dto/conversation/ConversationSort.java`
+- `ConversationUnreadFilter.java` — `common/src/main/java/kit/penny/clientbus/common/dto/conversation/ConversationUnreadFilter.java`
+- `ConversationView.java` — `common/src/main/java/kit/penny/clientbus/common/dto/conversation/ConversationView.java`
+- `CreateConversationGroupRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/conversation/CreateConversationGroupRequest.java`
 - `CreateConversationRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/conversation/CreateConversationRequest.java`
 - `CreateOutboundConversationRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/conversation/CreateOutboundConversationRequest.java`
 - `PlatformConversationRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/conversation/PlatformConversationRequest.java`
+- `RenameConversationGroupRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/conversation/RenameConversationGroupRequest.java`
 
 ##### `kit.penny.clientbus.common.dto.employee`
 
@@ -287,12 +297,15 @@
 - `ClientAccountEntity.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/entity/ClientAccountEntity.java`
 - `ClientEntity.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/entity/ClientEntity.java`
 - `ConversationEntity.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/entity/ConversationEntity.java`
+- `ConversationGroupEntity.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/entity/ConversationGroupEntity.java`
+- `ConversationGroupMembershipEntity.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/entity/ConversationGroupMembershipEntity.java`
 - `EmployeeEntity.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/entity/EmployeeEntity.java`
 - `EmployeeWorkspaceEntity.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/entity/EmployeeWorkspaceEntity.java`
 - `MessageAttachmentEntity.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/entity/MessageAttachmentEntity.java`
 - `MessageEntity.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/entity/MessageEntity.java`
 - `OrganizationEntity.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/entity/OrganizationEntity.java`
 - `RecentChatsSyncRunEntity.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/entity/RecentChatsSyncRunEntity.java`
+- `SavedConversationFilterEntity.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/entity/SavedConversationFilterEntity.java`
 - `UserEntity.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/entity/UserEntity.java`
 - `WorkspaceEntity.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/entity/WorkspaceEntity.java`
 
@@ -302,6 +315,9 @@
 - `ChannelRepository.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/repository/ChannelRepository.java`
 - `ClientAccountRepository.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/repository/ClientAccountRepository.java`
 - `ClientRepository.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/repository/ClientRepository.java`
+- `ConversationGroupMembershipRepository.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/repository/ConversationGroupMembershipRepository.java`
+- `ConversationGroupRepository.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/repository/ConversationGroupRepository.java`
+- `ConversationInboxRepository.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/repository/ConversationInboxRepository.java`
 - `ConversationRepository.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/repository/ConversationRepository.java`
 - `EmployeeRepository.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/repository/EmployeeRepository.java`
 - `EmployeeWorkspaceRepository.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/repository/EmployeeWorkspaceRepository.java`
@@ -309,6 +325,7 @@
 - `MessageRepository.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/repository/MessageRepository.java`
 - `OrganizationRepository.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/repository/OrganizationRepository.java`
 - `RecentChatsSyncRunRepository.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/repository/RecentChatsSyncRunRepository.java`
+- `SavedConversationFilterRepository.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/repository/SavedConversationFilterRepository.java`
 - `UserRepository.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/repository/UserRepository.java`
 - `WorkspaceRepository.java` — `server/src/main/java/kit/penny/clientbus/server/persistence/repository/WorkspaceRepository.java`
 
@@ -338,6 +355,7 @@
 - `ChannelService.java` — `server/src/main/java/kit/penny/clientbus/server/service/ChannelService.java`
 - `ClientAccountService.java` — `server/src/main/java/kit/penny/clientbus/server/service/ClientAccountService.java`
 - `ClientService.java` — `server/src/main/java/kit/penny/clientbus/server/service/ClientService.java`
+- `ConversationGroupService.java` — `server/src/main/java/kit/penny/clientbus/server/service/ConversationGroupService.java`
 - `ConversationService.java` — `server/src/main/java/kit/penny/clientbus/server/service/ConversationService.java`
 - `EmployeeService.java` — `server/src/main/java/kit/penny/clientbus/server/service/EmployeeService.java`
 - `EmployeeWorkspaceService.java` — `server/src/main/java/kit/penny/clientbus/server/service/EmployeeWorkspaceService.java`
@@ -486,6 +504,7 @@
 - `ChannelServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/ChannelServiceTest.java`
 - `ClientAccountServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/ClientAccountServiceTest.java`
 - `ClientServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/ClientServiceTest.java`
+- `ConversationGroupServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/ConversationGroupServiceTest.java`
 - `ConversationServiceOrderingTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/ConversationServiceOrderingTest.java`
 - `MessageAttachmentServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/MessageAttachmentServiceTest.java`
 - `MessageProcessingServiceIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/MessageProcessingServiceIntegrationTest.java`
@@ -623,7 +642,7 @@
 ## Summary
 
 - Maven modules: 3
-- Java files: 289
+- Java files: 308
 - UI source files: 100
-- Git commit: `c48b80a`
+- Git commit: `622fc58`
 

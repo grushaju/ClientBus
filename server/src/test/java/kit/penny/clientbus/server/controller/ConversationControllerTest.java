@@ -1,7 +1,14 @@
 package kit.penny.clientbus.server.controller;
 
 import kit.penny.clientbus.common.dto.conversation.ConversationDto;
+import kit.penny.clientbus.server.service.ConversationGroupService;
 import kit.penny.clientbus.server.service.ConversationService;
+
+import kit.penny.clientbus.common.dto.conversation.ConversationGroupDto;
+import kit.penny.clientbus.common.dto.conversation.ConversationGroupMembershipRequest;
+import kit.penny.clientbus.common.dto.conversation.CreateConversationGroupRequest;
+import kit.penny.clientbus.common.dto.conversation.RenameConversationGroupRequest;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -22,6 +29,9 @@ class ConversationControllerTest {
     private ConversationService conversationService;
 
     @Mock
+    private ConversationGroupService conversationGroupService;
+
+    @Mock
     private ConversationDto conversationDto;
 
     private ConversationController controller;
@@ -34,7 +44,8 @@ class ConversationControllerTest {
     @BeforeEach
     void setUp() {
         controller = new ConversationController(
-                conversationService
+                conversationService,
+                conversationGroupService
         );
 
         conversationId = UUID.randomUUID();
@@ -186,4 +197,143 @@ class ConversationControllerTest {
         verify(conversationService)
                 .markAsRead(conversationId);
     }
+
+
+    @Test
+    void getGroups_returnsGroups() {
+        ConversationGroupDto group = new ConversationGroupDto(
+                UUID.randomUUID(),
+                workspaceId,
+                UUID.randomUUID(),
+                "Важные клиенты",
+                null,
+                null
+        );
+        List<ConversationGroupDto> groups = List.of(group);
+
+        when(conversationGroupService.getGroups(workspaceId))
+                .thenReturn(groups);
+
+        ResponseEntity<List<ConversationGroupDto>> response =
+                controller.getGroups(workspaceId);
+
+        assertEquals(200, response.getStatusCode().value());
+        assertSame(groups, response.getBody());
+
+        verify(conversationGroupService).getGroups(workspaceId);
+    }
+
+    @Test
+    void createGroup_returnsCreatedGroup() {
+        CreateConversationGroupRequest request =
+                new CreateConversationGroupRequest("Важные клиенты");
+
+        ConversationGroupDto group = new ConversationGroupDto(
+                UUID.randomUUID(),
+                workspaceId,
+                UUID.randomUUID(),
+                "Важные клиенты",
+                null,
+                null
+        );
+
+        when(conversationGroupService.createGroup(
+                workspaceId,
+                request.name()
+        )).thenReturn(group);
+
+        ResponseEntity<ConversationGroupDto> response =
+                controller.createGroup(workspaceId, request);
+
+        assertEquals(201, response.getStatusCode().value());
+        assertSame(group, response.getBody());
+
+        verify(conversationGroupService)
+                .createGroup(workspaceId, request.name());
+    }
+
+    @Test
+    void renameGroup_returnsUpdatedGroup() {
+        UUID groupId = UUID.randomUUID();
+        RenameConversationGroupRequest request =
+                new RenameConversationGroupRequest("VIP");
+
+        ConversationGroupDto group = new ConversationGroupDto(
+                groupId,
+                workspaceId,
+                UUID.randomUUID(),
+                "VIP",
+                null,
+                null
+        );
+
+        when(conversationGroupService.renameGroup(
+                workspaceId,
+                groupId,
+                request.name()
+        )).thenReturn(group);
+
+        ResponseEntity<ConversationGroupDto> response =
+                controller.renameGroup(workspaceId, groupId, request);
+
+        assertEquals(200, response.getStatusCode().value());
+        assertSame(group, response.getBody());
+
+        verify(conversationGroupService)
+                .renameGroup(workspaceId, groupId, request.name());
+    }
+
+    @Test
+    void deleteGroup_returnsNoContent() {
+        UUID groupId = UUID.randomUUID();
+
+        ResponseEntity<Void> response =
+                controller.deleteGroup(workspaceId, groupId);
+
+        assertEquals(204, response.getStatusCode().value());
+        verify(conversationGroupService).deleteGroup(workspaceId, groupId);
+    }
+
+    @Test
+    void addConversationToGroup_returnsNoContent() {
+        UUID groupId = UUID.randomUUID();
+        ConversationGroupMembershipRequest request =
+                new ConversationGroupMembershipRequest(conversationId);
+
+        ResponseEntity<Void> response =
+                controller.addConversationToGroup(
+                        workspaceId,
+                        groupId,
+                        request
+                );
+
+        assertEquals(204, response.getStatusCode().value());
+
+        verify(conversationGroupService).addConversation(
+                workspaceId,
+                groupId,
+                conversationId
+        );
+    }
+
+    @Test
+    void removeConversationFromGroup_returnsNoContent() {
+        UUID groupId = UUID.randomUUID();
+
+        ResponseEntity<Void> response =
+                controller.removeConversationFromGroup(
+                        workspaceId,
+                        groupId,
+                        conversationId
+                );
+
+        assertEquals(204, response.getStatusCode().value());
+
+        verify(conversationGroupService).removeConversation(
+                workspaceId,
+                groupId,
+                conversationId
+        );
+    }
+
 }

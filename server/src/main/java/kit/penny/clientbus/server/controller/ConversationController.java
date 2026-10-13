@@ -7,6 +7,11 @@ import kit.penny.clientbus.common.dto.conversation.ConversationDto;
 import kit.penny.clientbus.common.dto.conversation.CreateConversationRequest;
 import kit.penny.clientbus.common.dto.conversation.CreateOutboundConversationRequest;
 import kit.penny.clientbus.server.service.ConversationService;
+import kit.penny.clientbus.common.dto.conversation.ConversationGroupDto;
+import kit.penny.clientbus.common.dto.conversation.CreateConversationGroupRequest;
+import kit.penny.clientbus.common.dto.conversation.RenameConversationGroupRequest;
+import kit.penny.clientbus.common.dto.conversation.ConversationGroupMembershipRequest;
+import kit.penny.clientbus.server.service.ConversationGroupService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -25,12 +30,15 @@ import java.util.UUID;
 public class ConversationController {
 
     private final ConversationService conversationService;
+    private final ConversationGroupService conversationGroupService;
 
     public ConversationController(
-            ConversationService conversationService
+            ConversationService conversationService, ConversationGroupService conversationGroupService
     ) {
         this.conversationService =
                 conversationService;
+        this.conversationGroupService =
+                conversationGroupService;
     }
 
     /**
@@ -358,4 +366,129 @@ public class ConversationController {
                 )
         );
     }
+
+    /** ========================================
+     * CONVERSATION GROUPS
+     ** ========================================/
+
+
+    /**
+     * Получить личные группы текущего сотрудника.
+     */
+    @GetMapping("/workspace/{workspaceId}/groups")
+    @PreAuthorize("hasRole('EMPLOYEE')")
+    public ResponseEntity<List<ConversationGroupDto>> getGroups(
+            @PathVariable UUID workspaceId
+    ) {
+        return ResponseEntity.ok(
+                conversationGroupService.getGroups(workspaceId)
+        );
+    }
+
+    /**
+     * Создать личную группу.
+     */
+    @PostMapping("/workspace/{workspaceId}/groups")
+    @PreAuthorize("hasRole('EMPLOYEE')")
+    public ResponseEntity<ConversationGroupDto> createGroup(
+            @PathVariable UUID workspaceId,
+            @Valid @RequestBody CreateConversationGroupRequest request
+    ) {
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(
+                        conversationGroupService.createGroup(
+                                workspaceId,
+                                request.name()
+                        )
+                );
+    }
+
+    /**
+     * Переименовать личную группу.
+     */
+    @PutMapping("/workspace/{workspaceId}/groups/{groupId}")
+    @PreAuthorize("hasRole('EMPLOYEE')")
+    public ResponseEntity<ConversationGroupDto> renameGroup(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID groupId,
+            @Valid @RequestBody RenameConversationGroupRequest request
+    ) {
+        return ResponseEntity.ok(
+                conversationGroupService.renameGroup(
+                        workspaceId,
+                        groupId,
+                        request.name()
+                )
+        );
+    }
+
+    /**
+     * Удалить личную группу.
+     */
+    @DeleteMapping("/workspace/{workspaceId}/groups/{groupId}")
+    @PreAuthorize("hasRole('EMPLOYEE')")
+    public ResponseEntity<Void> deleteGroup(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID groupId
+    ) {
+        conversationGroupService.deleteGroup(workspaceId, groupId);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Добавить свой диалог в личную группу.
+     */
+    @PostMapping("/workspace/{workspaceId}/groups/{groupId}/members")
+    @PreAuthorize("hasRole('EMPLOYEE')")
+    public ResponseEntity<Void> addConversationToGroup(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID groupId,
+            @Valid @RequestBody ConversationGroupMembershipRequest request
+    ) {
+        conversationGroupService.addConversation(
+                workspaceId,
+                groupId,
+                request.conversationId()
+        );
+
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Удалить диалог из личной группы.
+     * Сам диалог и его сообщения сохраняются.
+     */
+    @DeleteMapping(
+            "/workspace/{workspaceId}/groups/{groupId}/members/{conversationId}"
+    )
+    @PreAuthorize("hasRole('EMPLOYEE')")
+    public ResponseEntity<Void> removeConversationFromGroup(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID groupId,
+            @PathVariable UUID conversationId
+    ) {
+        conversationGroupService.removeConversation(
+                workspaceId,
+                groupId,
+                conversationId
+        );
+
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/workspace/{workspaceId}/groups/{groupId}/conversations")
+    @PreAuthorize("hasRole('EMPLOYEE')")
+    public ResponseEntity<List<ConversationDto>> getGroupConversations(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID groupId
+    ) {
+        return ResponseEntity.ok(
+                conversationGroupService.getGroupConversations(
+                        workspaceId,
+                        groupId
+                )
+        );
+    }
+
 }
