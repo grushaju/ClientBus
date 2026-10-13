@@ -82,6 +82,10 @@ public class OutboundMessageTransactionService {
             conversationService
                     .requireExternalOperationsAvailable(conversation);
 
+            conversationService.requireExternalOperationsAvailable(
+                    conversation
+            );
+
             ChannelAccountEntity channelAccount =
                     conversation.getChannelAccount();
 

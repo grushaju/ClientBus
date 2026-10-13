@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ClientBus — Диалоги: интерактивный макет</title>
+<style>
+:root{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;color:#202938;background:#f4f6f8;font-synthesis:none}
+*{box-sizing:border-box}body{margin:0}.app{max-width:1500px;margin:24px auto;padding:0 16px}
+.top{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #dce2e8;border-radius:14px;padding:16px;margin-bottom:12px}
+h1,h2,h3,p{margin:0}h1{font-size:20px}.muted{color:#697586;font-size:12px}.grow{flex:1}
+button,input,select{font:inherit}button{border:1px solid #d1d9e2;background:white;color:#243041;border-radius:8px;padding:8px 11px;cursor:pointer}button:hover{background:#f0f4f8}button.primary{background:#2563eb;border-color:#2563eb;color:white}button.active{background:#e8efff;border-color:#8caeff;color:#1748b5}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.layout{display:grid;grid-template-columns:190px 285px minmax(260px,1fr) 215px;min-height:650px;background:#fff;border:1px solid #dce2e8;border-radius:14px;overflow:hidden}
+.panel{padding:13px;border-right:1px solid #e1e6eb;min-width:0}.panel:last-child{border-right:0}.section{margin-bottom:20px}.section h3{font-size:11px;letter-spacing:.06em;color:#697586;margin:0 0 9px}
+.navitem{display:flex;align-items:center;gap:8px;width:100%;text-align:left;border:0;margin:2px 0}.navitem.active{background:#edf2f7;color:#1f2937}.navitem .count{margin-left:auto}.saved-filter{font-size:13px;display:block;width:100%;text-align:left;margin:4px 0}.search{width:100%;padding:9px;border:1px solid #d4dce5;border-radius:8px;margin:8px 0}
+.chatrow{padding:10px;border-radius:10px;margin:4px 0;cursor:pointer;border:1px solid transparent}.chatrow:hover,.chatrow.selected{background:#f0f4f8;border-color:#dce5ef}.chathead{display:flex;gap:8px;align-items:flex-start}.avatar{width:36px;height:36px;flex:none;border-radius:50%;background:#e5eaf1;display:grid;place-items:center;font-weight:650;font-size:12px}.chatname{font-size:13px;font-weight:650}.handle,.preview{font-size:12px;color:#687486;margin-top:3px}.preview{line-height:1.4}.time{font-size:10px;color:#697586;white-space:nowrap;margin-left:auto}.badges{display:flex;gap:4px;flex-wrap:wrap;margin-top:7px}.badge{font-size:10px;padding:3px 6px;border-radius:999px;background:#eef1f5;color:#475467;display:inline-block}.badge.good{background:#e1f5e9;color:#17663b}.badge.unread{background:#dbeafe;color:#1d4ed8}.chatbar{display:flex;align-items:center;gap:10px;padding:13px;border-bottom:1px solid #e1e6eb}.chatbar h2{font-size:15px}.conversation{display:flex;flex-direction:column;min-width:0}.messages{flex:1;padding:18px;display:flex;flex-direction:column;gap:18px;background:#fff}.day{text-align:center;color:#7b8492;font-size:11px}.bubble{max-width:82%;padding:11px 12px;border-radius:12px;background:#f0f2f5;font-size:13px;line-height:1.5}.bubble.mine{background:#e5efff;align-self:flex-end}.bubble small{display:block;color:#697586;font-size:10px;margin-top:5px}.composer{margin:12px;border:1px solid #dce2e8;border-radius:10px;padding:10px;color:#7b8492;font-size:13px}.composerfoot{display:flex;gap:10px;align-items:center;border-top:1px solid #e8ecf0;margin-top:10px;padding-top:8px}.detail h2{font-size:15px;margin-bottom:15px}.detailgroup{padding:13px 0;border-top:1px solid #e2e7ed}.detailgroup h3{font-size:10px;color:#697586;letter-spacing:.05em;margin-bottom:8px}.detailgroup p{font-size:13px;margin:5px 0}.detail button{width:100%;margin-top:7px}.view{display:none}.view.active{display:block}.filter-card,.save-card{max-width:780px;margin:0 auto;background:#fff;border:1px solid #dce2e8;border-radius:14px;overflow:hidden}.cardhead{padding:17px;background:#f8fafc;border-bottom:1px solid #e1e6eb;display:flex;align-items:center;gap:12px}.cardbody{padding:20px}.field{padding:15px 0;border-bottom:1px solid #e8ecf0}.field:last-child{border-bottom:0}.field h3{font-size:14px;margin-bottom:7px}.field p{font-size:12px;color:#697586;margin-bottom:9px}.options{display:flex;gap:8px;flex-wrap:wrap}.choice{display:flex;align-items:center;gap:7px;border:1px solid #d6dde6;padding:8px 10px;border-radius:9px;font-size:13px;cursor:pointer}.choice input{accent-color:#2563eb}.choice.selected{background:#eef4ff;border-color:#9bb8fa}.account{display:flex;align-items:center;gap:9px;padding:8px 2px;font-size:13px}.account small{display:block;color:#697586;margin-top:3px}.account input{accent-color:#2563eb}.field select,.field input[type=text],.fullinput{padding:9px;border:1px solid #d1d9e2;border-radius:8px;width:100%;background:#fff}.cardfoot{display:flex;gap:8px;align-items:center;padding:14px 20px;border-top:1px solid #e1e6eb}.summary{padding:12px;background:#f8fafc;border-radius:9px;font-size:12px;line-height:1.8;margin-top:14px}.hidden{display:none!important}.notice{font-size:12px;color:#697586;margin:12px 0}.system-note{font-size:11px;color:#697586;margin-top:8px}
+@media(max-width:1100px){.layout{grid-template-columns:170px 255px minmax(250px,1fr)}.detail{display:none}.layout.showdetail{grid-template-columns:160px 230px minmax(240px,1fr) 205px}.layout.showdetail .detail{display:block}}
+@media(max-width:760px){.app{margin:10px auto;padding:0 8px}.layout,.layout.showdetail{grid-template-columns:1fr}.panel{border-right:0;border-bottom:1px solid #e1e6eb}.sidebar{display:none}.listpanel{max-height:360px;overflow:auto}.detail{display:block!important}.conversation{min-height:520px}.top{flex-wrap:wrap}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top"><div style="font-size:26px">▤</div><div><h1>ClientBus · Диалоги</h1><div class="muted">Рабочее пространство · Beauty Studio · Концептуальный прототип</div></div><div class="grow"></div><span class="badge">UI draft</span></header>
+  <nav class="tabs">
+    <button class="active" data-screen="inbox">1. Основной экран</button>
+    <button data-screen="filters">2. Фильтры</button>
+    <button data-screen="save">3. Сохранение фильтра</button>
+  </nav>
+
+  <section class="view active" id="screen-inbox">
+    <div class="layout showdetail" id="inbox-layout">
+      <aside class="panel sidebar">
+        <div class="section"><h3>ПРЕДСТАВЛЕНИЯ</h3>
+          <button class="navitem active" data-view="Мои диалоги">♙ Мои диалоги</button>
+          <button class="navitem" data-view="Свободные">▣ Свободные <span class="count badge">4</span></button>
+          <button class="navitem" data-view="Мои группы">♧ Мои группы</button>
+        </div>
+        <div class="section"><h3>МОИ ФИЛЬТРЫ <button style="padding:1px 6px;float:right" id="plus-filter">+</button></h3>
+          <button class="saved-filter" data-saved="Telegram без клиента">▣ Telegram без клиента</button>
+          <button class="saved-filter" data-saved="Давно не было сообщений">▣ Давно не было сообщений</button>
+        </div>
+        <div class="section"><h3>СИСТЕМНЫЕ ФИЛЬТРЫ</h3>
+          <button class="saved-filter" data-saved="Аккаунты без клиента">Аккаунты без клиента</button>
+          <button class="saved-filter" data-saved="Непрочитанные за неделю">Непрочитанные за неделю</button>
+          <div class="system-note">Управляет администратор</div>
+        </div>
+      </aside>
+      <aside class="panel listpanel">
+        <div style="display:flex;align-items:center;gap:8px"><h2 id="current-view" style="font-size:16px">Мои диалоги</h2><div class="grow"></div><button id="open-filters">☷ Фильтры</button></div>
+        <input class="search" id="search" placeholder="Поиск по диалогам…">
+        <div style="font-size:11px;color:#697586;margin-bottom:8px">Сортировка: <select id="quick-sort" style="border:0;color:#344054"><option>Сначала новые сообщения</option><option>Сначала старые сообщения</option><option>Сначала давно без активности</option></select></div>
+        <div id="chat-list">
+          <div class="chatrow selected" data-chat="anna" data-search="анна смирнова anna_example telegram здравствуйте запись" data-client="Без клиента" data-channel="Telegram">
+            <div class="chathead"><div class="avatar">АС</div><div style="flex:1;min-width:0"><div style="display:flex;gap:4px"><div class="chatname">Анна Смирнова</div><div class="time">12:42</div></div><div class="handle">@anna_example</div><div class="preview">Здравствуйте! Подскажите по записи</div><div class="badges"><span class="badge">Telegram</span><span class="badge">Без клиента</span><span class="badge unread">2</span></div></div></div>
+          </div>
+          <div class="chatrow" data-chat="maria" data-search="мария maria.beauty instagram спасибо отлично" data-client="Клиент есть" data-channel="Instagram">
+            <div class="chathead"><div class="avatar">М</div><div style="flex:1;min-width:0"><div style="display:flex;gap:4px"><div class="chatname">Мария</div><div class="time">12:18</div></div><div class="handle">@maria.beauty</div><div class="preview">Спасибо, всё отлично!</div><div class="badges"><span class="badge">Instagram</span><span class="badge good">Клиент есть</span></div></div></div>
+          </div>
+          <div class="chatrow" data-chat="olga" data-search="ольга whatsapp телефон перенести встречу" data-client="Без клиента" data-channel="WhatsApp">
+            <div class="chathead"><div class="avatar">О</div><div style="flex:1;min-width:0"><div style="display:flex;gap:4px"><div class="chatname">Ольга</div><div class="time">Вчера</div></div><div class="handle">+7 *** ***-21</div><div class="preview">Можно перенести встречу?</div><div class="badges"><span class="badge">WhatsApp</span><span class="badge">Без клиента</span><span class="badge unread">1</span></div></div></div>
+          </div>
+          <div class="chatrow" data-chat="elena" data-search="елена elena_k telegram фотографии" data-client="Клиент есть" data-channel="Telegram">
+            <div class="chathead"><div class="avatar">Е</div><div style="flex:1;min-width:0"><div style="display:flex;gap:4px"><div class="chatname">Елена</div><div class="time">Пн</div></div><div class="handle">@elena_k</div><div class="preview">Отправила фотографии</div><div class="badges"><span class="badge">Telegram</span><span class="badge good">Клиент есть</span></div></div></div>
+          </div>
+        </div>
+        <div class="notice">Показаны демонстрационные данные.</div>
+      </aside>
+      <main class="conversation">
+        <div class="chatbar"><div class="avatar" id="active-avatar">АС</div><div class="grow"><h2 id="active-name">Анна Смирнова</h2><div class="muted" id="active-handle">Telegram · @anna_example</div></div><button id="toggle-details">▤ Детали</button></div>
+        <div class="messages" id="messages"><div class="day">Сегодня</div><div class="bubble">Здравствуйте! Подскажите, пожалуйста, по записи.<small>12:40</small></div><div class="bubble mine">Здравствуйте! Конечно, помогу. На какой день хотите записаться?<small>12:41 · Отправлено</small></div><div class="bubble">Можно узнать, какие есть свободные окна?<small>12:42</small></div></div>
+        <div class="composer"><div contenteditable="true" id="draft" style="outline:none;min-height:22px">Написать сообщение…</div><div class="composerfoot"><span>＋</span><span>☺</span><div class="grow"></div><button class="primary" id="demo-send">➤ Отправить</button></div></div>
+      </main>
+      <aside class="panel detail" id="detail-panel">
+        <div style="display:flex;align-items:center"><h2>Детали</h2><div class="grow"></div><button id="close-details" style="padding:4px 7px">×</button></div>
+        <div class="detailgroup"><h3>СВЯЗЬ С КЛИЕНТОМ</h3><span class="badge" id="detail-client-badge">Без клиента</span><p id="detail-client-name" class="muted">Client не связан</p><button id="link-client">＋ Связать с клиентом</button></div>
+        <div class="detailgroup"><h3>КЛИЕНТСКИЙ АККАУНТ</h3><p id="detail-account">@anna_example</p><p class="muted" id="detail-channel">Telegram</p></div>
+        <div class="detailgroup"><h3>ПОДКЛЮЧЕНИЕ</h3><p id="detail-connection">◉ Telegram Bot</p><p class="muted">Подключение канала</p></div>
+        <div class="detailgroup"><h3>ОТВЕТСТВЕННЫЙ</h3><p id="detail-owner">Не назначен</p><button id="take-chat">Взять себе</button></div>
+      </aside>
+    </div>
+    <p class="notice">Прототип демонстрирует компоновку и локальные UI-состояния. Отправка сообщений, связь с Client и назначение сотрудника не подключены к backend.</p>
+  </section>
+
+  <section class="view" id="screen-filters">
+    <div class="filter-card">
+      <div class="cardhead"><div class="grow"><h2>Фильтры диалогов</h2><p class="muted" style="margin-top:4px">Представление: <span id="filter-view-name">Мои диалоги</span></p></div><button data-screen="inbox">Закрыть ×</button></div>
+      <div class="cardbody">
+        <div class="field"><h3>Канал</h3><p>Можно выбрать несколько каналов.</p><div class="options" id="channels">
+          <label class="choice selected"><input type="checkbox" value="Telegram" checked> Telegram</label>
+          <label class="choice selected"><input type="checkbox" value="Instagram" checked> Instagram</label>
+          <label class="choice"><input type="checkbox" value="WhatsApp"> WhatsApp</label>
+          <label class="choice"><input type="checkbox" value="Другие каналы"> Другие каналы</label>
+        </div></div>
+        <div class="field"><h3>Связь с клиентом</h3><div class="options" id="client-options">
+          <label class="choice"><input type="radio" name="client" value="Любая"> Любая</label>
+          <label class="choice"><input type="radio" name="client" value="Клиент есть"> Клиент есть</label>
+          <label class="choice selected"><input type="radio" name="client" value="Без клиента" checked> Без клиента</label>
+        </div></div>
+        <div class="field"><h3>Клиентские аккаунты</h3><p>Независимый поиск по имени, username или телефону. Выбор нескольких аккаунтов — показать диалоги любого из выбранных аккаунтов.</p><input class="fullinput" id="account-search" type="text" placeholder="Поиск клиентских аккаунтов…">
+          <div id="account-options">
+            <label class="account"><input type="checkbox" value="@anna_example" checked><span>Анна Смирнова<small>@anna_example · Telegram</small></span></label>
+            <label class="account"><input type="checkbox" value="@anna.beauty"><span>Анна · Beauty<small>@anna.beauty · Instagram</small></span></label>
+            <label class="account"><input type="checkbox" value="+7 *** ***-21" checked><span>WhatsApp контакт<small>+7 *** ***-21 · WhatsApp</small></span></label>
+          </div>
+        </div>
+        <div class="field"><h3>Прочтение сообщений</h3><div class="options" id="read-options">
+          <label class="choice selected"><input type="radio" name="read" value="Есть непрочитанные" checked> Есть непрочитанные</label>
+          <label class="choice"><input type="radio" name="read" value="Только прочитанные"> Только прочитанные</label>
+        </div><p style="margin-top:8px">Применимо, если модель поддерживает состояние прочтения.</p></div>
+        <div class="field"><h3>Активность</h3><select id="period"><option>Сегодня</option><option selected>Последние 7 дней</option><option>Последние 30 дней</option><option>Произвольный период</option></select><div id="custom-period" class="options hidden" style="margin-top:10px"><label>От <input type="date" id="date-from"></label><label>До <input type="date" id="date-to"></label></div></div>
+        <div class="field"><h3>Сортировка</h3><select id="sort"><option value="Сначала новые сообщения">Сначала новые сообщения</option><option value="Сначала старые сообщения">Сначала старые сообщения</option><option value="Сначала давно без активности">Сначала давно без активности</option></select></div>
+        <div class="summary" id="filter-summary">Условия фильтра появятся здесь.</div>
+      </div>
+      <div class="cardfoot"><button id="reset-filters">Сбросить</button><div class="grow"></div><button data-screen="inbox">Отмена</button><button class="primary" id="apply-filters">✓ Применить</button></div>
+    </div>
+  </section>
+
+  <section class="view" id="screen-save">
+    <div class="save-card">
+      <div class="cardhead"><div class="grow"><h2>Сохранить фильтр</h2><p class="muted" style="margin-top:4px">Сохраняются условия, а не снимок списка диалогов.</p></div><button data-screen="inbox">Закрыть ×</button></div>
+      <div class="cardbody" id="save-form">
+        <div class="field" style="padding-top:0"><h3>Название фильтра</h3><input class="fullinput" id="filter-name" type="text" value="Telegram без клиента" placeholder="Например, Telegram без клиента"><p style="margin-top:7px">Личный фильтр будет доступен в блоке «Мои фильтры».</p></div>
+        <div class="field"><h3>Что сохраняется</h3><p>• Каналы, связь с клиентом и выбранные клиентские аккаунты</p><p>• Состояние прочтения и период активности</p><p>• Сортировка</p></div>
+        <div class="field"><h3>Права и актуальность</h3><p>Личный фильтр может изменять его владелец. Системные фильтры создаёт и редактирует администратор. При открытии условия применяются к актуальным данным; фильтр не расширяет доступ к диалогам.</p></div>
+        <div class="summary" id="save-preview"></div>
+      </div>
+      <div class="cardfoot" id="save-actions"><button data-screen="filters">Назад к условиям</button><div class="grow"></div><button class="primary" id="save-filter">▣ Сохранить</button></div>
+      <div class="cardbody hidden" id="save-success"><h2>✓ Фильтр добавлен в прототип</h2><p class="notice">Это локальная демонстрация. Для реального сохранения потребуется API.</p><button class="primary" data-screen="inbox">Вернуться к диалогам</button></div>
+    </div>
+  </section>
+</div>
+<script>
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+let currentView='Мои диалоги', activeChat='anna', detailsOpen=true, savedFilters=[];
+const chats={
+ anna:{name:'Анна Смирнова',initials:'АС',handle:'@anna_example',channel:'Telegram',client:'Без клиента',owner:'Не назначен',connection:'Telegram Bot',messages:[['in','Здравствуйте! Подскажите, пожалуйста, по записи.','12:40'],['out','Здравствуйте! Конечно, помогу. На какой день хотите записаться?','12:41'],['in','Можно узнать, какие есть свободные окна?','12:42']]},
+ maria:{name:'Мария',initials:'М',handle:'@maria.beauty',channel:'Instagram',client:'Клиент есть',owner:'Павел',connection:'Instagram',messages:[['in','Спасибо, всё отлично!','12:18']]},
+ olga:{name:'Ольга',initials:'О',handle:'+7 *** ***-21',channel:'WhatsApp',client:'Без клиента',owner:'Павел',connection:'WhatsApp Business',messages:[['in','Можно перенести встречу?','Вчера']]},
+ elena:{name:'Елена',initials:'Е',handle:'@elena_k',channel:'Telegram',client:'Клиент есть',owner:'Павел',connection:'Telegram Bot',messages:[['in','Отправила фотографии','Пн']]}
+};
+function showScreen(name){$$('.view').forEach(x=>x.classList.toggle('active',x.id==='screen-'+name));$$('[data-screen]').forEach(b=>b.classList.toggle('active',b.dataset.screen===name));if(name==='save')updateSavePreview();if(name==='filters')updateSummary();window.scrollTo({top:0,behavior:'smooth'})}
+$$('[data-screen]').forEach(b=>b.addEventListener('click',()=>showScreen(b.dataset.screen)));
+$$('.tabs button').forEach(b=>b.addEventListener('click',()=>showScreen(b.dataset.screen)));
+function renderChat(id){activeChat=id;const c=chats[id];$('#active-name').textContent=c.name;$('#active-avatar').textContent=c.initials;$('#active-handle').textContent=c.channel+' · '+c.handle;$('#detail-client-badge').textContent=c.client;$('#detail-client-badge').className='badge'+(c.client==='Клиент есть'?' good':'');$('#detail-client-name').textContent=c.client==='Клиент есть'?'Связанный профиль клиента':'Client не связан';$('#link-client').textContent=c.client==='Клиент есть'?'Открыть клиента':'＋ Связать с клиентом';$('#detail-account').textContent=c.handle;$('#detail-channel').textContent=c.channel;$('#detail-connection').textContent='◉ '+c.connection;$('#detail-owner').textContent=c.owner;$('#take-chat').textContent=c.owner==='Не назначен'?'Взять себе':'Изменить ответственного';$('#messages').innerHTML='<div class="day">Сегодня</div>'+c.messages.map(m=>`<div class="bubble ${m[0]==='out'?'mine':''}">${m[1]}<small>${m[2]}</small></div>`).join('');$$('.chatrow').forEach(r=>r.classList.toggle('selected',r.dataset.chat===id))}
+$$('.chatrow').forEach(r=>r.addEventListener('click',()=>renderChat(r.dataset.chat)));
+$('#search').addEventListener('input',e=>$$('.chatrow').forEach(r=>r.classList.toggle('hidden',!r.dataset.search.includes(e.target.value.toLowerCase()))));
+$$('[data-view]').forEach(b=>b.addEventListener('click',()=>{currentView=b.dataset.view;$('#current-view').textContent=currentView;$('#filter-view-name').textContent=currentView;$$('[data-view]').forEach(x=>x.classList.toggle('active',x===b))}));
+function toggleDetails(open){detailsOpen=open;$('#detail-panel').classList.toggle('hidden',!open);$('#inbox-layout').classList.toggle('showdetail',open);$('#toggle-details').classList.toggle('active',open)}
+$('#toggle-details').addEventListener('click',()=>toggleDetails(!detailsOpen));$('#close-details').addEventListener('click',()=>toggleDetails(false));
+$('#take-chat').addEventListener('click',()=>{if(chats[activeChat].owner==='Не назначен'){chats[activeChat].owner='Вы';$('#detail-owner').textContent='Вы';$('#take-chat').textContent='Изменить ответственного';alert('Демонстрация: назначение изменено только в прототипе.')}else alert('Изменение ответственного в этом прототипе не подключено к backend.')});
+$('#link-client').addEventListener('click',()=>alert('Демонстрация: действие связи с клиентом не подключено к backend.'));
+$('#demo-send').addEventListener('click',()=>alert('Отправка сообщения не подключена к backend.'));
+$('#open-filters').addEventListener('click',()=>showScreen('filters'));$('#plus-filter').addEventListener('click',()=>showScreen('save'));
+$$('[data-saved]').forEach(b=>b.addEventListener('click',()=>{const name=b.dataset.saved;$('#filter-name').value=name;showScreen('inbox');if(name==='Аккаунты без клиента'){$('input[name="client"][value="Без клиента"]').checked=true;refreshChoiceStyles()}if(name==='Непрочитанные за неделю'){$('#period').value='Последние 7 дней';$('input[name="read"][value="Есть непрочитанные"]').checked=true;refreshChoiceStyles()}if(name==='Telegram без клиента'){$('#channels input').forEach(i=>i.checked=i.value==='Telegram');$('input[name="client"][value="Без клиента"]').checked=true;refreshChoiceStyles()}}));
+function checkedValues(sel){return $$(sel+':checked').map(i=>i.value)}
+function updateSummary(){const ch=checkedValues('#channels input').join(', ')||'Все каналы';const cl=$('input[name="client"]:checked')?.value||'Любая';const ac=checkedValues('#account-options input').join(', ')||'Все аккаунты';const read=$('input[name="read"]:checked')?.value||'Любое';$('#filter-summary').innerHTML='<b>Предпросмотр условий</b><br>Каналы: '+ch+'<br>Связь: '+cl+'<br>Аккаунты: '+ac+'<br>Прочтение: '+read+'<br>Активность: '+$('#period').value+'<br>Сортировка: '+$('#sort').value}
+function updateSavePreview(){const name=$('#filter-name').value||'Название фильтра';$('#save-preview').innerHTML='<b>▣ '+escapeHtml(name)+'</b> <span class="badge">Личный</span><br>'+escapeHtml($('#filter-summary').textContent.replace('Предпросмотр условий','Текущая конфигурация'))}
+function escapeHtml(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function refreshChoiceStyles(){$$('.choice').forEach(l=>{const i=l.querySelector('input');l.classList.toggle('selected',!!i?.checked)})}
+$$('#channels input, #client-options input, #read-options input').forEach(i=>i.addEventListener('change',()=>{refreshChoiceStyles();updateSummary()}));
+$('#account-options').addEventListener('change',updateSummary);$('#period').addEventListener('change',()=>{$('#custom-period').classList.toggle('hidden',$('#period').value!=='Произвольный период');updateSummary()});$('#sort').addEventListener('change',updateSummary);
+$('#account-search').addEventListener('input',e=>$$('#account-options .account').forEach(l=>l.classList.toggle('hidden',!l.textContent.toLowerCase().includes(e.target.value.toLowerCase()))));
+$('#reset-filters').addEventListener('click',()=>{$$('#channels input').forEach(i=>i.checked=false);$('input[name="client"][value="Любая"]').checked=true;$$('#account-options input').forEach(i=>i.checked=false);$('input[name="read"][value="Есть непрочитанные"]').checked=true;$('#period').value='Последние 7 дней';$('#sort').selectedIndex=0;refreshChoiceStyles();updateSummary()});
+$('#apply-filters').addEventListener('click',()=>{const channels=checkedValues('#channels input'), client=$('input[name="client"]:checked').value, accounts=checkedValues('#account-options input');$$('.chatrow').forEach(r=>{let ok=(!channels.length||channels.includes(r.dataset.channel))&&(client==='Любая'||client===r.dataset.client);if(accounts.length){const c=chats[r.dataset.chat];ok=ok&&accounts.includes(c.handle)}r.classList.toggle('hidden',!ok)});showScreen('inbox')});
+$('#filter-name').addEventListener('input',updateSavePreview);
+$('#save-filter').addEventListener('click',()=>{const name=$('#filter-name').value.trim();if(!name){alert('Введите название фильтра.');return}if(!savedFilters.includes(name))savedFilters.push(name);const b=document.createElement('button');b.className='saved-filter';b.textContent='▣ '+name;b.addEventListener('click',()=>{showScreen('filters')});const section=$$('.sidebar .section')[1];section.appendChild(b);$('#save-form').classList.add('hidden');$('#save-actions').classList.add('hidden');$('#save-success').classList.remove('hidden')});
+$('#quick-sort').addEventListener('change',()=>{const list=$('#chat-list');[...list.children].reverse().forEach(n=>list.appendChild(n))});
+updateSummary();updateSavePreview();renderChat('anna');
+</script>
+</body>
+</html>

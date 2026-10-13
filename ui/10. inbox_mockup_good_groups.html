@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ClientBus — Inbox mockup</title>
+<style>
+:root {
+  --bg:#f5f7fb; --panel:#fff; --line:#e4e8f0; --text:#202638; --muted:#748096;
+  --primary:#5267d8; --primary-soft:#eef0ff; --green:#16865d; --green-soft:#e7f7ef;
+  --orange:#a96512; --orange-soft:#fff4e4; --danger:#c04444; --hover:#f6f7fb;
+  --shadow:0 8px 24px rgba(24,35,70,.08);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+button,input,select,textarea{font:inherit}
+button{cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid #9aa8ff;outline-offset:2px}
+.app{height:100vh;min-height:650px;display:flex;flex-direction:column;overflow:hidden}
+.topbar{height:58px;flex-shrink:0;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:18px;padding:0 18px}
+.brand{font-weight:800;font-size:17px;letter-spacing:-.4px;white-space:nowrap}.brand span{color:var(--primary)}
+.top-sep{height:24px;width:1px;background:var(--line)}
+.workspace{border:1px solid var(--line);background:#fff;border-radius:9px;padding:8px 11px;color:var(--text);min-width:210px}
+.top-spacer{flex:1}.demo-tag{font-size:11px;color:#7b5d20;background:#fff5d9;padding:5px 8px;border-radius:6px}
+.profile{display:flex;align-items:center;gap:9px;font-weight:600}.avatar{width:34px;height:34px;border-radius:50%;background:#dfe5ff;color:#4c5bc1;display:grid;place-items:center;font-weight:800;flex-shrink:0}
+.workspace-note{color:var(--muted);font-size:12px}
+.layout{display:grid;grid-template-columns:218px 305px minmax(320px,1fr);flex:1;min-height:0;position:relative}
+.sidebar{background:#fbfcfe;border-right:1px solid var(--line);overflow:auto;padding:15px 11px}
+.nav-label{font-size:10px;letter-spacing:1px;font-weight:800;color:#98a1b2;padding:12px 10px 7px}
+.nav-item{display:flex;align-items:center;gap:9px;padding:10px;border-radius:8px;margin:2px 0;color:#465066;cursor:pointer;user-select:none}
+.nav-item:hover{background:#f0f2f8}.nav-item.active{background:var(--primary-soft);color:#394dc2;font-weight:700}
+.nav-icon{width:20px;text-align:center;font-size:16px}.nav-count{margin-left:auto;background:#edf0f6;color:#647087;padding:2px 7px;border-radius:12px;font-size:11px}
+.nav-count.unread{background:#e7ebff;color:#4255cb}
+.sidebar-divider{height:1px;background:var(--line);margin:13px 5px}
+.section-head{display:flex;align-items:center;justify-content:space-between;padding:8px 9px 5px;font-size:10px;letter-spacing:.8px;font-weight:800;color:#929bad}
+.tiny-button{border:0;background:transparent;color:#65718a;border-radius:6px;width:25px;height:25px;font-size:18px}.tiny-button:hover{background:#e9edf5}
+.saved-filter{display:flex;gap:8px;align-items:center;padding:8px 9px;border-radius:7px;color:#536078;cursor:pointer;font-size:12px}
+.saved-filter:hover{background:#f0f2f8}.saved-filter.active{background:#e9edff;color:#3e52c4;font-weight:700}
+.filter-dot{width:7px;height:7px;border-radius:50%;background:#98a4bb;flex-shrink:0}.filter-dot.system{background:#d49a36}
+.admin-note{margin:5px 9px 7px;color:#9aa2b1;font-size:10px}
+.list-pane{background:#fff;border-right:1px solid var(--line);display:flex;flex-direction:column;min-width:0;min-height:0}
+.list-header{padding:17px 15px 12px;border-bottom:1px solid var(--line)}
+.list-title-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+h1{font-size:18px;margin:0;font-weight:760;letter-spacing:-.4px}h2{font-size:14px;margin:0;font-weight:750}
+.subline{font-size:11px;color:var(--muted);margin-top:4px}
+.primary-btn,.secondary-btn,.danger-btn{border:0;border-radius:7px;padding:8px 10px;font-weight:650;font-size:12px}
+.primary-btn{background:var(--primary);color:white}.primary-btn:hover{background:#4257c8}
+.secondary-btn{background:#f0f2f7;color:#48536a}.secondary-btn:hover{background:#e6e9f1}
+.danger-btn{background:#fff0f0;color:var(--danger)}
+.icon-btn{border:1px solid var(--line);background:white;border-radius:7px;width:33px;height:33px;color:#626e85}
+.search-wrap{display:flex;gap:7px;margin-top:13px}
+.search{width:100%;min-width:0;border:1px solid var(--line);border-radius:8px;padding:9px 10px;background:#fff}
+.search::placeholder{color:#a0a8b7}
+.filters-row{display:flex;align-items:center;gap:7px;margin-top:9px}
+.filter-toggle{border:1px solid var(--line);border-radius:7px;background:white;padding:7px 9px;color:#5e6980;font-size:12px}
+.sort-select{flex:1;min-width:0;border:1px solid var(--line);border-radius:7px;padding:7px 8px;color:#5e6980;background:white;font-size:11px}
+.filter-panel{margin-top:10px;padding:11px;background:#f8f9fc;border:1px solid var(--line);border-radius:9px;display:none}
+.filter-panel.open{display:block}
+.filter-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.filter-field label{display:block;font-size:10px;color:#7e899e;margin-bottom:4px}
+.filter-field select,.filter-field input{width:100%;border:1px solid var(--line);border-radius:6px;padding:7px;background:white;font-size:11px}
+.filter-actions{display:flex;justify-content:space-between;gap:6px;margin-top:10px}
+.list-scroll{overflow:auto;min-height:0;flex:1}
+.list-summary{padding:10px 15px 6px;color:#9aa2b1;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase}
+.conversation{display:flex;gap:10px;padding:12px 13px;border-bottom:1px solid #f0f2f6;cursor:pointer;position:relative}
+.conversation:hover{background:#fafbfe}.conversation.active{background:#f0f2ff;border-left:3px solid var(--primary);padding-left:10px}
+.conversation .avatar{width:38px;height:38px;font-size:12px}
+.conversation-main{min-width:0;flex:1}
+.conversation-top{display:flex;align-items:center;gap:5px}
+.conversation-name{font-weight:730;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;font-size:12px}
+.time{font-size:10px;color:#9aa2b1;white-space:nowrap}
+.channel{display:inline-flex;align-items:center;gap:4px;font-size:10px;color:#7a8599;margin-top:3px}
+.channel-mark{width:14px;height:14px;border-radius:4px;background:#e9efff;color:#4563c9;display:inline-grid;place-items:center;font-size:9px;font-weight:800}
+.preview{font-size:11px;color:#7b8699;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:5px}
+.conversation-bottom{display:flex;align-items:center;gap:5px;margin-top:7px;flex-wrap:wrap}
+.status-pill{border-radius:5px;padding:2px 5px;font-size:9px;background:#edf8f2;color:#16865d}
+.status-pill.no-client{background:#fff3df;color:#a96512}
+.unread{margin-left:auto;min-width:18px;height:18px;border-radius:10px;background:var(--primary);color:white;font-size:10px;display:grid;place-items:center;padding:0 5px}
+.more{border:0;background:transparent;color:#9aa2b1;border-radius:5px;font-size:17px;padding:0 4px}.more:hover{background:#e7eaf3;color:#4e5b73}
+.thread-pane{min-width:0;display:flex;flex-direction:column;background:#f8f9fc;min-height:0}
+.thread-header{height:67px;flex-shrink:0;background:#fff;border-bottom:1px solid var(--line);padding:11px 17px;display:flex;align-items:center;gap:10px}
+.thread-header .avatar{width:38px;height:38px}
+.thread-person{min-width:0;flex:1}.thread-person strong{display:block;font-size:13px}.thread-person small{display:block;color:var(--muted);font-size:11px;margin-top:2px}
+.thread-actions{display:flex;gap:7px;align-items:center}
+.detail-toggle{border:1px solid #d7ddf5;background:#f5f6ff;color:#4c5fca;border-radius:7px;padding:8px 10px;font-size:12px;font-weight:700}
+.thread-body{flex:1;overflow:auto;padding:20px max(16px,4vw);display:flex;flex-direction:column;gap:13px}
+.day-divider{text-align:center;color:#9aa2b1;font-size:10px;margin:3px 0 6px}
+.message{max-width:min(78%,560px);padding:10px 12px;border-radius:12px;background:white;border:1px solid #e8ebf2;box-shadow:0 1px 2px rgba(20,30,60,.025);font-size:12px;line-height:1.55;align-self:flex-start}
+.message.mine{align-self:flex-end;background:#e9edff;border-color:#e0e5ff;border-bottom-right-radius:4px}
+.message.theirs{border-bottom-left-radius:4px}
+.message-meta{font-size:9px;color:#8c96a8;text-align:right;margin-top:5px}
+.attachment{margin-top:7px;background:#f5f6fa;border:1px solid #e8ebf2;border-radius:7px;padding:8px;color:#5f6b82;font-size:11px}
+.thread-footer{background:white;border-top:1px solid var(--line);padding:12px 16px}
+.composer{display:flex;gap:9px;align-items:flex-end}
+.composer textarea{resize:none;min-height:43px;max-height:100px;flex:1;border:1px solid var(--line);border-radius:9px;padding:11px;outline:none}
+.composer-tools{display:flex;gap:5px;margin-bottom:3px}.composer-tools button{border:0;background:transparent;color:#7b8699;font-size:17px}
+.send{width:42px;height:42px;border:0;border-radius:9px;background:var(--primary);color:white;font-size:17px}
+.footer-note{font-size:10px;color:#a0a8b7;margin-top:6px}
+.details-pane{width:285px;flex-shrink:0;background:#fff;border-left:1px solid var(--line);display:flex;flex-direction:column;overflow:auto}
+.details-pane[hidden]{display:none}
+.detail-head{display:flex;align-items:center;justify-content:space-between;padding:17px 15px;border-bottom:1px solid var(--line)}
+.detail-section{padding:15px;border-bottom:1px solid #eef0f5}
+.detail-label{font-size:10px;color:#909bad;font-weight:800;letter-spacing:.8px;text-transform:uppercase;margin-bottom:10px}
+.client-card{display:flex;gap:10px;align-items:center}.client-card .avatar{width:42px;height:42px}
+.client-card strong{display:block;font-size:12px}.client-card small{color:var(--muted);font-size:11px}
+.detail-row{display:flex;justify-content:space-between;gap:10px;margin:10px 0;font-size:11px}.detail-row span:first-child{color:#8a95a8}.detail-row span:last-child{text-align:right;font-weight:600}
+.owner-select{width:100%;padding:8px;border:1px solid var(--line);border-radius:7px;background:white;font-size:11px}
+.menu-pop{position:fixed;z-index:20;min-width:190px;padding:5px;background:white;border:1px solid var(--line);border-radius:9px;box-shadow:var(--shadow);display:none}
+.menu-pop.open{display:block}
+.menu-item{width:100%;text-align:left;border:0;background:transparent;padding:9px;border-radius:6px;color:#465168;font-size:12px}
+.menu-item:hover{background:#f1f3f9}.menu-item.danger{color:var(--danger)}
+.overlay{position:fixed;inset:0;background:rgba(22,30,55,.25);display:none;align-items:center;justify-content:center;z-index:30;padding:16px}
+.overlay.open{display:flex}
+.modal{background:white;border-radius:13px;width:min(440px,100%);padding:19px;box-shadow:0 18px 55px rgba(20,30,60,.2)}
+.modal h2{font-size:16px;margin-bottom:6px}.modal p{color:var(--muted);font-size:12px;margin:0 0 15px}
+.modal label{display:block;font-size:11px;color:#69758b;margin:12px 0 5px}
+.modal input,.modal textarea{width:100%;border:1px solid var(--line);border-radius:7px;padding:10px}
+.modal textarea{min-height:65px;resize:vertical}
+.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.group-choice{display:flex;align-items:center;gap:9px;padding:9px 5px;font-size:12px}.group-choice input{width:auto}
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#242b3d;color:white;padding:10px 15px;border-radius:8px;box-shadow:var(--shadow);z-index:60;font-size:12px;display:none;max-width:90vw}
+.toast.show{display:block}
+.empty-state{padding:30px 18px;text-align:center;color:#8b95a8;font-size:12px}
+.mobile-back{display:none}
+@media(max-width:1100px){
+ .layout{grid-template-columns:190px 270px minmax(300px,1fr)}
+ .details-pane{position:absolute;right:0;top:0;bottom:0;z-index:10;box-shadow:var(--shadow)}
+ .thread-body{padding-left:18px;padding-right:18px}
+}
+@media(max-width:760px){
+ .app{height:100dvh;min-height:0}.topbar{height:54px;padding:0 10px;gap:9px}.brand{font-size:15px}.workspace{min-width:0;max-width:155px;font-size:11px;padding:7px}.demo-tag,.top-sep,.profile span{display:none}
+ .layout{display:block;position:relative;overflow:hidden}
+ .sidebar,.list-pane,.thread-pane{position:absolute;inset:0;width:100%;height:100%;transition:transform .2s ease}
+ .sidebar{z-index:3;transform:translateX(-100%)}.list-pane{z-index:2;transform:translateX(0)}.thread-pane{z-index:4;transform:translateX(100%)}
+ .layout.show-sidebar .sidebar{transform:translateX(0)}.layout.show-sidebar .list-pane{transform:translateX(100%)}
+ .layout.show-thread .thread-pane{transform:translateX(0)}.layout.show-thread .list-pane{transform:translateX(-100%)}
+ .mobile-back{display:inline-block;border:0;background:transparent;color:#5e6b84;font-size:18px;padding:4px}
+ .thread-header{padding:9px 10px}.thread-actions .secondary-btn{display:none}.thread-body{padding:14px 12px}.message{max-width:88%}
+ .details-pane{width:min(310px,90vw);z-index:15}.list-header{padding:14px 12px}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">Client<span>Bus</span></div><div class="top-sep"></div>
+    <select class="workspace" id="workspace" aria-label="Рабочее пространство">
+      <option value="beauty">Beauty Studio</option><option value="north">North Clinic</option>
+    </select>
+    <span class="workspace-note">Inbox</span><div class="top-spacer"></div>
+    <span class="demo-tag">ИНТЕРАКТИВНЫЙ МАКЕТ · ДЕМО-ДАННЫЕ</span>
+    <div class="profile"><div class="avatar">АП</div><span>Анна Петрова</span></div>
+  </header>
+
+  <main class="layout" id="layout">
+    <aside class="sidebar">
+      <div class="nav-label">ДИАЛОГИ</div>
+      <div class="nav-item active" data-view="mine"><span class="nav-icon">▤</span>Мои диалоги <span class="nav-count">12</span></div>
+      <div class="nav-item" data-view="free"><span class="nav-icon">◉</span>Свободные <span class="nav-count unread">4</span></div>
+      <div class="nav-item" data-view="groups"><span class="nav-icon">▦</span>Мои группы</div>
+      <div class="sidebar-divider"></div>
+      <div class="section-head"><span>МОИ ГРУППЫ</span><button class="tiny-button" id="createGroupTop" title="Создать группу">+</button></div>
+      <div id="groupNav">
+        <div class="nav-item" data-group="priority"><span class="nav-icon">◇</span>Важные клиенты <span class="nav-count">3</span><button class="tiny-button group-more" data-menu-group="priority" aria-label="Меню группы">⋯</button></div>
+        <div class="nav-item" data-group="followup"><span class="nav-icon">◷</span>Ждут ответа <span class="nav-count">2</span><button class="tiny-button group-more" data-menu-group="followup" aria-label="Меню группы">⋯</button></div>
+        <div class="nav-item" data-group="vip"><span class="nav-icon">✦</span>VIP <span class="nav-count">4</span><button class="tiny-button group-more" data-menu-group="vip" aria-label="Меню группы">⋯</button></div>
+      </div>
+      <div class="sidebar-divider"></div>
+      <div class="section-head"><span>МОИ ФИЛЬТРЫ</span><button class="tiny-button" id="saveFilterTop" title="Сохранить фильтр">+</button></div>
+      <div id="personalFilters">
+        <div class="saved-filter" data-filter="telegram"><span class="filter-dot"></span>Telegram без клиента</div>
+        <div class="saved-filter" data-filter="inactive"><span class="filter-dot"></span>Давно не было сообщений</div>
+      </div>
+      <div class="section-head" style="margin-top:7px"><span>СИСТЕМНЫЕ ФИЛЬТРЫ</span></div>
+      <div id="systemFilters">
+        <div class="saved-filter" data-filter="orphan"><span class="filter-dot system"></span>Аккаунты без клиента</div>
+        <div class="saved-filter" data-filter="unread"><span class="filter-dot system"></span>Непрочитанные за неделю</div>
+      </div>
+      <div class="admin-note">Управляет администратор</div>
+      <div class="sidebar-divider"></div>
+      <div class="nav-item" id="openAllFilters"><span class="nav-icon">⚙</span>Настроить фильтры</div>
+    </aside>
+
+    <section class="list-pane">
+      <div class="list-header">
+        <div class="list-title-row"><div><h1 id="listTitle">Мои диалоги</h1><div class="subline" id="listSubtitle">Диалоги, назначенные вам</div></div><button class="icon-btn" id="listMenu" title="Действия со списком">⋯</button></div>
+        <div id="activeGroupBar" style="display:none;margin-top:10px"><span class="status-pill">Личная группа</span> <span id="activeGroupName" style="font-weight:700;font-size:12px"></span></div>
+        <div class="search-wrap"><input class="search" id="search" placeholder="Поиск по имени, username, сообщению…" aria-label="Поиск диалогов"><button class="icon-btn" id="clearSearch" title="Очистить поиск">×</button></div>
+        <div class="filters-row"><button class="filter-toggle" id="toggleFilters">☷ Фильтры <span id="filterCount"></span></button><select class="sort-select" id="sort"><option value="new">Сначала новые сообщения</option><option value="old">Сначала старые сообщения</option><option value="inactive">Давно без активности</option></select></div>
+        <div class="filter-panel" id="filterPanel">
+          <div class="filter-grid">
+            <div class="filter-field"><label for="channelFilter">Канал</label><select id="channelFilter"><option value="">Все каналы</option><option>Telegram</option><option>Instagram</option><option>WhatsApp</option><option>Другие каналы</option></select></div>
+            <div class="filter-field"><label for="clientFilter">Связь с клиентом</label><select id="clientFilter"><option value="">Любой статус</option><option value="yes">Клиент есть</option><option value="no">Без клиента</option></select></div>
+            <div class="filter-field"><label for="readFilter">Прочтение</label><select id="readFilter"><option value="">Все</option><option value="unread">Есть непрочитанные</option><option value="read">Только прочитанные</option></select></div>
+            <div class="filter-field"><label for="activityFilter">Активность</label><select id="activityFilter"><option value="">Любой период</option><option value="today">Сегодня</option><option value="7">Последние 7 дней</option><option value="30">Последние 30 дней</option></select></div>
+          </div>
+          <div class="filter-actions"><button class="secondary-btn" id="resetFilters">Сбросить</button><button class="secondary-btn" id="saveFilter">Сохранить фильтр</button><button class="primary-btn" id="applyFilters">Применить</button></div>
+        </div>
+      </div>
+      <div class="list-scroll" id="conversationList"></div>
+    </section>
+
+    <section class="thread-pane" id="threadPane">
+      <header class="thread-header">
+        <button class="mobile-back" id="backToList" aria-label="Назад к списку">‹</button>
+        <div class="avatar" id="threadAvatar">МС</div>
+        <div class="thread-person"><strong id="threadName">Мария Смирнова</strong><small id="threadSubtitle">Telegram · @maria_s · Клиент есть</small></div>
+        <div class="thread-actions"><button class="secondary-btn" id="takeConversation" style="display:none">Забрать себе</button><button class="detail-toggle" id="toggleDetails" aria-expanded="true">Скрыть детали</button><button class="icon-btn" id="threadMore" title="Действия с диалогом">⋯</button></div>
+      </header>
+      <div class="thread-body" id="threadBody">
+        <div class="day-divider">Сегодня</div>
+        <div class="message theirs">Здравствуйте! Хотела уточнить, есть ли свободное время на этой неделе?<div class="message-meta">10:42</div></div>
+        <div class="message mine">Здравствуйте, Мария! Да, могу предложить четверг в 15:30 или пятницу в 12:00.<div class="message-meta">10:44 · ✓✓</div></div>
+        <div class="message theirs">Четверг в 15:30 отлично подойдёт, спасибо!<div class="message-meta">10:46</div></div>
+        <div class="message mine">Записала вас на четверг, 15:30. Если планы изменятся — напишите сюда.<div class="message-meta">10:47 · ✓✓</div></div>
+      </div>
+      <footer class="thread-footer">
+        <div class="composer"><div class="composer-tools"><button title="Прикрепить файл">＋</button></div><textarea id="messageInput" rows="1" placeholder="Напишите сообщение…"></textarea><button class="send" id="sendMessage" title="Отправить">➤</button></div>
+        <div class="footer-note">Демо: сообщение добавляется только в этот макет, отправки в канал нет.</div>
+      </footer>
+    </section>
+
+    <aside class="details-pane" id="detailsPane">
+      <div class="detail-head"><h2>Детали диалога</h2><button class="tiny-button" id="closeDetails" aria-label="Скрыть детали">×</button></div>
+      <div class="detail-section">
+        <div class="detail-label">Клиент</div>
+        <div class="client-card"><div class="avatar" id="clientAvatar">МС</div><div><strong id="clientName">Мария Смирнова</strong><small id="clientStatus">Клиент есть</small></div></div>
+        <div class="detail-row"><span>Телефон</span><span id="clientPhone">+7 900 123-45-67</span></div>
+        <div class="detail-row"><span>Карточка клиента</span><span style="color:#4f62d2;cursor:pointer" id="clientCardLink">Открыть ↗</span></div>
+      </div>
+      <div class="detail-section">
+        <div class="detail-label">Клиентский аккаунт</div>
+        <div class="detail-row"><span>Имя в канале</span><span id="accountName">@maria_s</span></div>
+        <div class="detail-row"><span>Канал</span><span id="detailChannel">Telegram</span></div>
+        <div class="detail-row"><span>Подключение</span><span id="connectionStatus">Активно</span></div>
+      </div>
+      <div class="detail-section">
+        <div class="detail-label">Ответственный</div>
+        <div class="detail-row"><span>Сотрудник</span><span id="assignedEmployee">Анна Петрова</span></div>
+        <select class="owner-select" id="ownerSelect" aria-label="Назначенный сотрудник"><option>Анна Петрова</option><option>Игорь Смирнов</option><option>Не назначен</option></select>
+        <div class="footer-note">Изменение ответственного в этом макете локальное.</div>
+      </div>
+      <div class="detail-section">
+        <div class="detail-label">Служебная информация</div>
+        <div class="detail-row"><span>ID диалога</span><span id="detailId">CB-10482</span></div>
+        <div class="detail-row"><span>Создан</span><span>12 окт. 2026</span></div>
+        <div class="detail-row"><span>Последняя активность</span><span id="lastActivity">10:47 сегодня</span></div>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<div class="menu-pop" id="conversationMenu">
+  <button class="menu-item" data-action="groups">Добавить в группу</button>
+  <button class="menu-item" data-action="remove-group" id="removeFromGroup">Убрать из текущей группы</button>
+  <button class="menu-item" data-action="open">Открыть переписку</button>
+  <button class="menu-item" data-action="take" id="menuTake">Забрать диалог себе</button>
+</div>
+<div class="menu-pop" id="groupMenu">
+  <button class="menu-item" data-action="rename-group">Переименовать группу</button>
+  <button class="menu-item" data-action="delete-group">Удалить группу</button>
+</div>
+<div class="menu-pop" id="listMenuPop">
+  <button class="menu-item" data-action="create-group">Создать группу</button>
+  <button class="menu-item" data-action="save-filter">Сохранить текущий фильтр</button>
+</div>
+
+<div class="overlay" id="modalOverlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <h2 id="modalTitle">Создать группу</h2><p id="modalDescription">Личная подборка диалогов в текущем рабочем пространстве.</p>
+    <div id="modalContent"><label for="modalName">Название</label><input id="modalName" maxlength="60" placeholder="Например, Клиенты на этой неделе"></div>
+    <div class="modal-actions"><button class="secondary-btn" id="modalCancel">Отмена</button><button class="primary-btn" id="modalConfirm">Создать</button></div>
+  </div>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const layout = $('layout');
+  const demoConversations = [
+    {id:'CB-10482',name:'Мария Смирнова',initials:'МС',handle:'@maria_s',channel:'Telegram',time:'10:47',minutes:1,preview:'Четверг в 15:30 отлично подойдёт, спасибо!',client:true,unread:0,assigned:'Анна Петрова',phone:'+7 900 123-45-67',color:'#dfe5ff',messages:[['in','Здравствуйте! Хотела уточнить, есть ли свободное время на этой неделе?','10:42'],['out','Здравствуйте, Мария! Да, могу предложить четверг в 15:30 или пятницу в 12:00.','10:44'],['in','Четверг в 15:30 отлично подойдёт, спасибо!','10:46'],['out','Записала вас на четверг, 15:30. Если планы изменятся — напишите сюда.','10:47']]},
+    {id:'CB-10479',name:'Александр Волков',initials:'АВ',handle:'@alex_volkov',channel:'WhatsApp',time:'10:31',minutes:17,preview:'Можно узнать стоимость консультации?',client:true,unread:2,assigned:'Анна Петрова',phone:'+7 901 222-10-10',color:'#d9f5e5',messages:[['in','Добрый день! Можно узнать стоимость консультации?','10:29'],['out','Здравствуйте! Конечно, сейчас отправлю информацию.','10:31']]},
+    {id:'CB-10471',name:'Beauty by Kate',initials:'BK',handle:'@beauty_kate',channel:'Instagram',time:'09:56',minutes:52,preview:'Спасибо за ответ, подумаю и вернусь.',client:false,unread:1,assigned:'Анна Петрова',phone:'—',color:'#ffe8dc',messages:[['in','Здравствуйте, подскажите, какие процедуры доступны?','09:50'],['out','Добрый день! Сейчас расскажу подробнее.','09:53'],['in','Спасибо за ответ, подумаю и вернусь.','09:56']]},
+    {id:'CB-10465',name:'Елена Кузнецова',initials:'ЕК',handle:'@elena_k',channel:'Telegram',time:'Вчера',minutes:1400,preview:'Хорошо, до встречи!',client:true,unread:0,assigned:'Анна Петрова',phone:'+7 903 333-11-20',color:'#f3e1ff',messages:[['in','Получила подтверждение записи.','18:15'],['out','Отлично, будем ждать вас!','18:17'],['in','Хорошо, до встречи!','18:18']]},
+    {id:'CB-10461',name:'Ольга М.',initials:'ОМ',handle:'@olga_m',channel:'WhatsApp',time:'Вчера',minutes:1600,preview:'Подскажите, пожалуйста, адрес.',client:false,unread:0,assigned:'Анна Петрова',phone:'—',color:'#fbe6c8',messages:[['in','Подскажите, пожалуйста, адрес.','17:32']]},
+    {id:'CB-10450',name:'Дмитрий Орлов',initials:'ДО',handle:'@d_orlov',channel:'Telegram',time:'Пн',minutes:4500,preview:'Спасибо, всё понятно.',client:true,unread:0,assigned:'Анна Петрова',phone:'+7 905 444-21-10',color:'#d9ecf8',messages:[['out','Отправил вам подробности.','12:11'],['in','Спасибо, всё понятно.','12:15']]},
+    {id:'CB-10444',name:'Nina Studio',initials:'NS',handle:'@nina_studio',channel:'Другие каналы',time:'Пн',minutes:5000,preview:'Есть ли окно на следующей неделе?',client:false,unread:3,assigned:'Анна Петрова',phone:'—',color:'#f4dfea',messages:[['in','Есть ли окно на следующей неделе?','11:20']]}
+  ];
+  let conversations = demoConversations.map(c => ({...c, messages:c.messages.map(m=>[...m])}));
+  let groups = [
+    {id:'priority',name:'Важные клиенты',ids:['CB-10482','CB-10479','CB-10465']},
+    {id:'followup',name:'Ждут ответа',ids:['CB-10471','CB-10461']},
+    {id:'vip',name:'VIP',ids:['CB-10482','CB-10465','CB-10450','CB-10444']}
+  ];
+  let personalFilters = [{id:'telegram',name:'Telegram без клиента',type:'personal',criteria:{channel:'Telegram',client:'no'}},{id:'inactive',name:'Давно не было сообщений',type:'personal',criteria:{activity:'30',sort:'inactive'}}];
+  let systemFilters = [{id:'orphan',name:'Аккаунты без клиента',type:'system',criteria:{client:'no'}},{id:'unread',name:'Непрочитанные за неделю',type:'system',criteria:{read:'unread',activity:'7'}}];
+  let currentView='mine', activeGroupId=null, selectedId='CB-10482', currentGroupMenuId=null, menuConversationId=null;
+  let currentCriteria={channel:'',client:'',read:'',activity:''}, activeFilterId=null, modalMode='create-group', modalPayload=null, toastTimer;
+  const getConversation=id=>conversations.find(c=>c.id===id);
+  const getSelected=()=>getConversation(selectedId);
+  const getGroup=id=>groups.find(g=>g.id===id);
+  const channelGlyph = c => ({Telegram:'➤',Instagram:'◎',WhatsApp:'◔','Другие каналы':'↗'}[c]||'•');
+  function notify(message){$('toast').textContent=message;$('toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('show'),2400)}
+  function hideMenus(){document.querySelectorAll('.menu-pop').forEach(m=>m.classList.remove('open'))}
+  function showMenu(id, x, y){hideMenus();const el=$(id);el.style.left=Math.min(x,innerWidth-210)+'px';el.style.top=Math.min(y,innerHeight-180)+'px';el.classList.add('open')}
+  function setView(view){currentView=view;activeGroupId=null;activeFilterId=null;document.querySelectorAll('.nav-item[data-view]').forEach(el=>el.classList.toggle('active',el.dataset.view===view));document.querySelectorAll('.saved-filter').forEach(el=>el.classList.remove('active'));renderList();if(innerWidth<=760)layout.classList.remove('show-sidebar')}
+  function renderGroups(){const holder=$('groupNav');holder.innerHTML='';groups.forEach(g=>{const item=document.createElement('div');item.className='nav-item'+(activeGroupId===g.id?' active':'');item.dataset.group=g.id;item.innerHTML=`<span class="nav-icon">▦</span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(g.name)}</span><span class="nav-count">${g.ids.length}</span><button class="tiny-button group-more" data-menu-group="${g.id}" aria-label="Меню группы">⋯</button>`;item.addEventListener('click',e=>{if(e.target.closest('.group-more'))return;currentView='groups';activeGroupId=g.id;activeFilterId=null;document.querySelectorAll('.nav-item[data-view]').forEach(n=>n.classList.toggle('active',n.dataset.view==='groups'));renderList();if(innerWidth<=760)layout.classList.remove('show-sidebar')});holder.appendChild(item)})}
+  function renderFilters(){const render=(arr,holder)=>{holder.innerHTML='';arr.forEach(f=>{const el=document.createElement('div');el.className='saved-filter'+(activeFilterId===f.id?' active':'');el.dataset.filter=f.id;el.innerHTML=`<span class="filter-dot ${f.type==='system'?'system':''}"></span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.name)}</span>`;el.addEventListener('click',()=>applySavedFilter(f));holder.appendChild(el)})};render(personalFilters,$('personalFilters'));render(systemFilters,$('systemFilters'))}
+  function getVisibleConversations(){let arr=[...conversations];if(currentView==='free')arr=arr.filter(c=>c.assigned==='Не назначен');else if(currentView==='mine')arr=arr.filter(c=>c.assigned==='Анна Петрова');if(activeGroupId){const g=getGroup(activeGroupId);arr=arr.filter(c=>g&&g.ids.includes(c.id)&&c.assigned==='Анна Петрова')}const q=$('search').value.trim().toLowerCase();if(q)arr=arr.filter(c=>[c.name,c.handle,c.preview,c.channel].some(v=>v.toLowerCase().includes(q)));arr=arr.filter(c=>matchesCriteria(c,currentCriteria));const sort=$('sort').value;if(sort==='new')arr.sort((a,b)=>a.minutes-b.minutes);if(sort==='old')arr.sort((a,b)=>b.minutes-a.minutes);if(sort==='inactive')arr.sort((a,b)=>b.minutes-a.minutes);return arr}
+  function matchesCriteria(c,crit){if(crit.channel&&crit.channel!=='Другие каналы'&&c.channel!==crit.channel)return false;if(crit.channel==='Другие каналы'&&!['Другие каналы'].includes(c.channel))return false;if(crit.client==='yes'&&!c.client)return false;if(crit.client==='no'&&c.client)return false;if(crit.read==='unread'&&!c.unread)return false;if(crit.read==='read'&&c.unread)return false;if(crit.activity==='today'&&c.minutes>1440)return false;if(crit.activity==='7'&&c.minutes>10080)return false;if(crit.activity==='30'&&c.minutes>43200)return false;return true}
+  function renderList(){renderGroups();renderFilters();const title=currentView==='mine'?'Мои диалоги':currentView==='free'?'Свободные':activeGroupId?'Моя группа':'Мои диалоги';$('listTitle').textContent=activeFilterId?[...personalFilters,...systemFilters].find(f=>f.id===activeFilterId)?.name||title:title;$('listSubtitle').textContent=activeGroupId?'Ручная подборка назначенных вам диалогов':currentView==='free'?'Диалоги без назначенного сотрудника':currentView==='groups'?'Выберите группу слева или создайте новую':'Диалоги, назначенные вам';$('activeGroupBar').style.display=activeGroupId?'block':'none';$('activeGroupName').textContent=activeGroupId?getGroup(activeGroupId)?.name||'':'';const arr=getVisibleConversations();const holder=$('conversationList');holder.innerHTML='';const summary=document.createElement('div');summary.className='list-summary';summary.textContent=`${arr.length} диалог${arr.length===1?'':'а'}`;holder.appendChild(summary);if(!arr.length){holder.insertAdjacentHTML('beforeend','<div class="empty-state">Нет диалогов по выбранным условиям.<br>Измените поиск или фильтры.</div>');return}arr.forEach(c=>{const el=document.createElement('div');el.className='conversation'+(c.id===selectedId?' active':'');el.dataset.id=c.id;el.innerHTML=`<div class="avatar" style="background:${c.color}">${esc(c.initials)}</div><div class="conversation-main"><div class="conversation-top"><span class="conversation-name">${esc(c.name)}</span><span class="time">${esc(c.time)}</span><button class="more" title="Действия с диалогом" aria-label="Действия с диалогом">⋯</button></div><div class="channel"><span class="channel-mark">${channelGlyph(c.channel)}</span>${esc(c.channel)} · ${esc(c.handle)}</div><div class="preview">${esc(c.preview)}</div><div class="conversation-bottom"><span class="status-pill ${c.client?'':'no-client'}">${c.client?'Клиент есть':'Без клиента'}</span>${c.unread?`<span class="unread">${c.unread}</span>`:''}</div></div>`;el.addEventListener('click',e=>{if(e.target.closest('.more')){e.stopPropagation();menuConversationId=c.id;const r=e.target.getBoundingClientRect();showMenu('conversationMenu',r.right-185,r.bottom+4);$('removeFromGroup').style.display=activeGroupId?'block':'none';$('menuTake').style.display=c.assigned==='Не назначен'?'block':'none';return}selectConversation(c.id);if(innerWidth<=760)layout.classList.add('show-thread')});holder.appendChild(el)})}
+  function selectConversation(id){selectedId=id;const c=getSelected();if(!c)return;$('threadAvatar').textContent=c.initials;$('threadAvatar').style.background=c.color;$('threadName').textContent=c.name;$('threadSubtitle').textContent=`${c.channel} · ${c.handle} · ${c.client?'Клиент есть':'Без клиента'}`;$('clientAvatar').textContent=c.initials;$('clientAvatar').style.background=c.color;$('clientName').textContent=c.client?c.name:'Клиент не связан';$('clientStatus').textContent=c.client?'Клиент есть':'Без клиента';$('clientPhone').textContent=c.phone;$('accountName').textContent=c.handle;$('detailChannel').textContent=c.channel;$('assignedEmployee').textContent=c.assigned;$('ownerSelect').value=c.assigned;$('detailId').textContent=c.id;$('connectionStatus').textContent='Активно';$('lastActivity').textContent=c.time==='Вчера'?'Вчера':c.time+' сегодня';$('takeConversation').style.display=c.assigned==='Не назначен'?'inline-block':'none';renderThread(c);renderList()}
+  function renderThread(c){const body=$('threadBody');body.innerHTML='<div class="day-divider">История переписки · демонстрационные сообщения</div>';c.messages.forEach(m=>{const el=document.createElement('div');el.className='message '+(m[0]==='out'?'mine':'theirs');el.textContent=m[1];const meta=document.createElement('div');meta.className='message-meta';meta.textContent=m[2]+(m[0]==='out'?' · ✓✓':'');el.appendChild(meta);body.appendChild(el)});body.scrollTop=body.scrollHeight}
+  function applySavedFilter(f){activeFilterId=f.id;activeGroupId=null;currentCriteria={channel:'',client:'',read:'',activity:'',...(f.criteria||{})};$('channelFilter').value=currentCriteria.channel||'';$('clientFilter').value=currentCriteria.client||'';$('readFilter').value=currentCriteria.read||'';$('activityFilter').value=currentCriteria.activity||'';if(currentCriteria.sort)$('sort').value=currentCriteria.sort;$('filterPanel').classList.add('open');renderList();notify(`Применён фильтр «${f.name}»`)}
+  function openModal(mode,payload={}){modalMode=mode;modalPayload=payload;$('modalOverlay').classList.add('open');$('modalContent').innerHTML='';if(mode==='create-group'||mode==='rename-group'||mode==='save-filter'){const label=mode==='save-filter'?'Название фильтра':'Название группы';$('modalTitle').textContent=mode==='create-group'?'Создать группу':mode==='rename-group'?'Переименовать группу':'Сохранить фильтр';$('modalDescription').textContent=mode==='save-filter'?'Сохранится набор условий, а не текущий список диалогов.':'Группа — личная ручная подборка в текущем рабочем пространстве.';$('modalContent').innerHTML=`<label for="modalName">${label}</label><input id="modalName" maxlength="60" placeholder="${mode==='save-filter'?'Например, Instagram без клиента':'Например, Клиенты на этой неделе'}">`;$('modalConfirm').textContent=mode==='rename-group'?'Сохранить':mode==='save-filter'?'Сохранить фильтр':'Создать';if(mode==='rename-group')$('modalName').value=getGroup(payload.groupId)?.name||'';if(mode==='save-filter')$('modalName').value='';}else if(mode==='add-to-group'){const c=getConversation(payload.conversationId);$('modalTitle').textContent='Добавить в группу';$('modalDescription').textContent=c?.assigned==='Не назначен'?'Сначала заберите диалог себе.':'Можно выбрать несколько своих групп. Диалог и переписка не копируются.';let html='';groups.forEach(g=>html+=`<label class="group-choice"><input type="checkbox" value="${g.id}" ${g.ids.includes(payload.conversationId)?'checked':''}> ${esc(g.name)}</label>`);html+=`<button class="secondary-btn" id="createGroupInline" type="button">＋ Создать группу</button>`;$('modalContent').innerHTML=html;$('modalConfirm').textContent='Сохранить';$('modalConfirm').disabled=c?.assigned==='Не назначен';setTimeout(()=>{const b=$('createGroupInline');if(b)b.onclick=()=>{const checked=[...$('modalContent').querySelectorAll('input:checked')].map(i=>i.value);openModal('create-group',{returnToAdd:true,conversationId:payload.conversationId,checked})}},0)}else if(mode==='delete-group'){$('modalTitle').textContent='Удалить группу?';$('modalDescription').textContent='Удалится только группа и её связи с диалогами. Сами диалоги и сообщения останутся.';$('modalContent').innerHTML=`<div style="padding:9px;background:#fff4f4;color:#9c4242;border-radius:7px;font-size:12px">${esc(getGroup(payload.groupId)?.name||'')}</div>`;$('modalConfirm').textContent='Удалить';}else if(mode==='confirm-remove'){$('modalTitle').textContent='Убрать диалог из группы?';$('modalDescription').textContent='Диалог останется в Inbox. Будет удалена только связь с текущей группой.';$('modalContent').innerHTML='';$('modalConfirm').textContent='Убрать';}else if(mode==='take'){$('modalTitle').textContent='Забрать диалог себе?';$('modalDescription').textContent='В демо диалог будет назначен Анне Петровой и появится в «Мои диалоги». В реальной системе это требует серверной операции назначения.';$('modalContent').innerHTML='';$('modalConfirm').textContent='Забрать';}else if(mode==='all-filters'){$('modalTitle').textContent='Фильтры диалогов';$('modalDescription').textContent='Демо-форма сохранения условий. Реальные сохранённые фильтры должны быть привязаны к Workspace и проверяться сервером.';$('modalContent').innerHTML='<div class="filter-grid"><div class="filter-field"><label>Канал</label><select id="modalChannel"><option value="">Все каналы</option><option>Telegram</option><option>Instagram</option><option>WhatsApp</option><option>Другие каналы</option></select></div><div class="filter-field"><label>Связь с клиентом</label><select id="modalClient"><option value="">Любой статус</option><option value="yes">Клиент есть</option><option value="no">Без клиента</option></select></div></div>';$('modalConfirm').textContent='Применить';} }
+  function closeModal(){$('modalOverlay').classList.remove('open');$('modalConfirm').disabled=false}
+  function confirmModal(){const name=($('modalName')?.value||'').trim();if(['create-group','rename-group','save-filter'].includes(modalMode)&&!name){notify('Введите название');return}if(modalMode==='create-group'){const g={id:'g'+Date.now(),name,ids:[]};groups.push(g);renderGroups();if(modalPayload?.returnToAdd){const checked=modalPayload.checked||[];checked.push(g.id);const conv=modalPayload.conversationId;groups.forEach(gr=>{if(checked.includes(gr.id)&&getConversation(conv)?.assigned==='Анна Петрова'&&!gr.ids.includes(conv))gr.ids.push(conv)});closeModal();openModal('add-to-group',{conversationId:conv});notify('Группа создана');return}activeGroupId=g.id;currentView='groups';renderList();notify('Группа создана');}
+    else if(modalMode==='rename-group'){const g=getGroup(modalPayload.groupId);if(g)g.name=name;renderList();notify('Название группы обновлено')}
+    else if(modalMode==='delete-group'){groups=groups.filter(g=>g.id!==modalPayload.groupId);if(activeGroupId===modalPayload.groupId)activeGroupId=null;renderList();notify('Группа удалена; диалоги сохранены')}
+    else if(modalMode==='save-filter'){const f={id:'f'+Date.now(),name,type:'personal',criteria:{...currentCriteria,sort:$('sort').value}};personalFilters.push(f);renderFilters();notify('Личный фильтр сохранён')}
+    else if(modalMode==='add-to-group'){const c=getConversation(modalPayload.conversationId);if(c?.assigned!=='Анна Петрова'){notify('Сначала заберите диалог себе');closeModal();return}const checked=[...$('modalContent').querySelectorAll('input:checked')].map(i=>i.value);groups.forEach(g=>{if(checked.includes(g.id)){if(!g.ids.includes(c.id))g.ids.push(c.id)}else g.ids=g.ids.filter(id=>id!==c.id)});renderList();notify('Состав групп обновлён')}
+    else if(modalMode==='confirm-remove'){const g=getGroup(modalPayload.groupId);if(g)g.ids=g.ids.filter(id=>id!==modalPayload.conversationId);renderList();notify('Диалог убран из группы')}
+    else if(modalMode==='take'){const c=getConversation(modalPayload.conversationId);if(c){c.assigned='Анна Петрова';currentView='mine';activeGroupId=null;renderList();selectConversation(c.id);notify('Диалог назначен вам')}}
+    else if(modalMode==='all-filters'){currentCriteria={...currentCriteria,channel:$('modalChannel').value,client:$('modalClient').value};$('channelFilter').value=currentCriteria.channel;$('clientFilter').value=currentCriteria.client;renderList()}
+    closeModal(); }
+  function esc(s){return String(s??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]))}
+  function toggleDetails(){const pane=$('detailsPane');const show=pane.hidden;pane.hidden=!show;$('toggleDetails').textContent=show?'Скрыть детали':'Показать детали';$('toggleDetails').setAttribute('aria-expanded',String(show))}
+  document.querySelectorAll('.nav-item[data-view]').forEach(el=>el.addEventListener('click',()=>setView(el.dataset.view)));
+  $('createGroupTop').onclick=()=>openModal('create-group');$('saveFilterTop').onclick=()=>openModal('save-filter');
+  $('search').addEventListener('input',renderList);$('clearSearch').onclick=()=>{$('search').value='';renderList()};
+  $('toggleFilters').onclick=()=>$('filterPanel').classList.toggle('open');
+  $('applyFilters').onclick=()=>{currentCriteria={channel:$('channelFilter').value,client:$('clientFilter').value,read:$('readFilter').value,activity:$('activityFilter').value};activeFilterId=null;renderList();const n=Object.values(currentCriteria).filter(Boolean).length;$('filterCount').textContent=n?`(${n})`:'';notify('Фильтры применены')};
+  $('resetFilters').onclick=()=>{currentCriteria={channel:'',client:'',read:'',activity:''};['channelFilter','clientFilter','readFilter','activityFilter'].forEach(id=>$(id).value='');$('filterCount').textContent='';activeFilterId=null;renderList();notify('Фильтры сброшены')};
+  $('sort').onchange=renderList;$('saveFilter').onclick=()=>openModal('save-filter');
+  $('openAllFilters').onclick=()=>openModal('all-filters');
+  $('modalCancel').onclick=closeModal;$('modalConfirm').onclick=confirmModal;$('modalOverlay').addEventListener('click',e=>{if(e.target===$('modalOverlay'))closeModal()});
+  $('toggleDetails').onclick=toggleDetails;$('closeDetails').onclick=toggleDetails;
+  $('threadMore').onclick=e=>{const r=e.currentTarget.getBoundingClientRect();menuConversationId=selectedId;showMenu('conversationMenu',r.right-190,r.bottom+4);$('removeFromGroup').style.display=activeGroupId?'block':'none';$('menuTake').style.display=getSelected()?.assigned==='Не назначен'?'block':'none'};
+  $('listMenu').onclick=e=>{const r=e.currentTarget.getBoundingClientRect();showMenu('listMenuPop',r.right-190,r.bottom+4)};
+  document.addEventListener('click',e=>{const gm=e.target.closest('[data-menu-group]');if(gm){e.stopPropagation();currentGroupMenuId=gm.dataset.menuGroup;const r=gm.getBoundingClientRect();showMenu('groupMenu',r.right-190,r.bottom+3);return}if(!e.target.closest('.menu-pop')&&!e.target.closest('#listMenu')&&!e.target.closest('.more'))hideMenus()});
+  $('conversationMenu').addEventListener('click',e=>{const b=e.target.closest('[data-action]');if(!b)return;hideMenus();const action=b.dataset.action;if(action==='groups'){const c=getConversation(menuConversationId);if(c?.assigned!=='Анна Петрова'){notify('Сначала заберите диалог себе');return}openModal('add-to-group',{conversationId:menuConversationId})}if(action==='remove-group'&&activeGroupId)openModal('confirm-remove',{groupId:activeGroupId,conversationId:menuConversationId});if(action==='open'){selectConversation(menuConversationId);if(innerWidth<=760)layout.classList.add('show-thread')}if(action==='take')openModal('take',{conversationId:menuConversationId})});
+  $('groupMenu').addEventListener('click',e=>{const b=e.target.closest('[data-action]');if(!b)return;hideMenus();if(b.dataset.action==='rename-group')openModal('rename-group',{groupId:currentGroupMenuId});if(b.dataset.action==='delete-group')openModal('delete-group',{groupId:currentGroupMenuId})});
+  $('listMenuPop').addEventListener('click',e=>{const b=e.target.closest('[data-action]');if(!b)return;hideMenus();if(b.dataset.action==='create-group')openModal('create-group');if(b.dataset.action==='save-filter')openModal('save-filter')});
+  $('takeConversation').onclick=()=>openModal('take',{conversationId:selectedId});
+  $('ownerSelect').onchange=()=>{const c=getSelected();c.assigned=$('ownerSelect').value;$('assignedEmployee').textContent=c.assigned;renderList();notify('Ответственный изменён локально')};
+  $('sendMessage').onclick=sendMessage;$('messageInput').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}});
+  function sendMessage(){const input=$('messageInput'),text=input.value.trim();if(!text)return;const c=getSelected();const now=new Date();const stamp=now.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});c.messages.push(['out',text,stamp]);c.preview=text;c.time=stamp;c.minutes=0;input.value='';renderThread(c);renderList();notify('Добавлено в демо-переписку; сообщение не отправлено')}
+  $('backToList').onclick=()=>layout.classList.remove('show-thread');
+  $('workspace').onchange=()=>{const other=$('workspace').value==='north';if(other){groups=[{id:'north-leads',name:'Новые заявки',ids:['CB-10479','CB-10471']}];personalFilters=[{id:'north-no-client',name:'Без клиента',type:'personal',criteria:{client:'no'}}];systemFilters=[{id:'north-unread',name:'Непрочитанные',type:'system',criteria:{read:'unread'}}];conversations.forEach(c=>{c.assigned=c.id==='CB-10479'||c.id==='CB-10471'?'Анна Петрова':'Не назначен'})}else{groups=[{id:'priority',name:'Важные клиенты',ids:['CB-10482','CB-10479','CB-10465']},{id:'followup',name:'Ждут ответа',ids:['CB-10471','CB-10461']},{id:'vip',name:'VIP',ids:['CB-10482','CB-10465','CB-10450','CB-10444']}];personalFilters=[{id:'telegram',name:'Telegram без клиента',type:'personal',criteria:{channel:'Telegram',client:'no'}},{id:'inactive',name:'Давно не было сообщений',type:'personal',criteria:{activity:'30',sort:'inactive'}}];systemFilters=[{id:'orphan',name:'Аккаунты без клиента',type:'system',criteria:{client:'no'}},{id:'unread',name:'Непрочитанные за неделю',type:'system',criteria:{read:'unread',activity:'7'}}];conversations.forEach(c=>c.assigned='Анна Петрова')}activeGroupId=null;activeFilterId=null;currentView='mine';currentCriteria={channel:'',client:'',read:'',activity:''};renderList();selectConversation(selectedId);notify('Рабочее пространство переключено: демо-данные')};
+  $('clientCardLink').onclick=()=>notify('Карточка клиента — демонстрационная ссылка');
+  renderList();selectConversation(selectedId);
+})();
+</script>
+</body>
+</html>
