@@ -2,6 +2,8 @@ import { apiFetch } from './apiClient'
 
 import type {
     ConversationDto,
+    ConversationSearchRequest,
+    ConversationSearchResponse,
     CreateOutboundConversationRequest,
 } from './types/conversation'
 
@@ -131,6 +133,21 @@ export async function markConversationAsRead(
         {
             method: 'POST'
         }
+    )
+
+    return response.json()
+}
+
+export async function searchInbox(
+    workspaceId: string,
+    request: ConversationSearchRequest,
+): Promise<ConversationSearchResponse> {
+    const response = await apiFetch(
+        `/api/conversations/workspace/${workspaceId}/search`,
+        {
+            method: 'POST',
+            body: JSON.stringify(request),
+        },
     )
 
     return response.json()

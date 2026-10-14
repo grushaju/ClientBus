@@ -6,9 +6,7 @@ import {
 } from 'react-router-dom'
 
 import {
-    getUnassignedConversations,
-    getWorkspaceConversations,
-    getWorkspaceEmployeeConversations,
+    searchInbox,
 } from '../../api/conversationApi'
 
 import { getClientAccountsByIds } from '../../api/clientAccountApi'
@@ -153,28 +151,37 @@ function ConversationList() {
             setError(null)
 
             try {
-                let conversations:
-                    ConversationDto[]
 
-                if (isSuperAdmin) {
-                    conversations =
-                        await getWorkspaceConversations(
-                            workspaceId,
-                        )
-                } else if (
-                    tab === 'unassigned'
-                ) {
-                    conversations =
-                        await getUnassignedConversations(
-                            workspaceId,
-                        )
-                } else {
-                    conversations =
-                        await getWorkspaceEmployeeConversations(
-                            workspaceId,
-                            employeeId!,
-                        )
+                const conversations: ConversationDto[] = []
+
+                const view =
+                    isSuperAdmin
+                        ? 'ALL'
+                        : tab === 'unassigned'
+                            ? 'UNASSIGNED'
+                            : 'MINE'
+
+                let page = 0
+                let hasNext = true
+
+                while (hasNext) {
+                    const result = await searchInbox(
+                        workspaceId,
+                        {
+                            view,
+                            page,
+                            size: 10,
+                        },
+                    )
+
+                    conversations.push(
+                        ...result.content,
+                    )
+
+                    hasNext = result.hasNext
+                    page = result.page + 1
                 }
+
 
                 const workspaceChannels =
                     await getWorkspaceChannels(

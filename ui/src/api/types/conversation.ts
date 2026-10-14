@@ -62,3 +62,49 @@ export interface ChannelSummary {
         avatarUrl: string | null
     } | null
 }
+
+
+export type ConversationView =
+    | 'MINE'
+    | 'UNASSIGNED'
+    | 'GROUP'
+    | 'ALL'
+
+export type ConversationClientLinkFilter =
+    | 'ANY'
+    | 'WITH_CLIENT'
+    | 'WITHOUT_CLIENT'
+
+export type ConversationUnreadFilter =
+    | 'ANY'
+    | 'HAS_UNREAD'
+    | 'READ_ONLY'
+
+export type ConversationSort =
+    | 'LAST_MESSAGE_DESC'
+    | 'LAST_MESSAGE_ASC'
+    | 'OLDEST_ACTIVITY_FIRST'
+
+export interface ConversationSearchRequest {
+    view: ConversationView
+    groupId?: string | null
+    search?: string | null
+    channelAccountIds?: string[]
+    clientAccountIds?: string[]
+    clientLink?: ConversationClientLinkFilter | null
+    unread?: ConversationUnreadFilter | null
+    activityFrom?: string | null
+    activityTo?: string | null
+    sort?: ConversationSort | null
+    page?: number | null
+    size?: number | null
+}
+
+export interface ConversationSearchResponse {
+    content: ConversationDto[]
+    page: number
+    size: number
+    totalElements: number
+    totalPages: number
+    hasNext: boolean
+}
