@@ -246,6 +246,9 @@ class TelegramOutboundMessageFlowIntegrationTest
                         )
                 );
 
+        channel.setStatus(ChannelConnectionStatus.CONNECTED);
+        channel = channelRepository.saveAndFlush(channel);
+
         ChannelAccountEntity channelAccount =
                 channelAccountRepository.saveAndFlush(
                         TestDataFactory.channelAccount(
@@ -553,6 +556,9 @@ class TelegramOutboundMessageFlowIntegrationTest
                         )
                 );
 
+        channel.setStatus(ChannelConnectionStatus.CONNECTED);
+        channel = channelRepository.saveAndFlush(channel);
+
         ChannelAccountEntity channelAccount =
                 channelAccountRepository.saveAndFlush(
                         TestDataFactory.channelAccount(
@@ -803,6 +809,9 @@ class TelegramOutboundMessageFlowIntegrationTest
                                 "Telegram image outbound E2E"
                         )
                 );
+
+        channel.setStatus(ChannelConnectionStatus.CONNECTED);
+        channel = channelRepository.saveAndFlush(channel);
 
         ChannelAccountEntity channelAccount =
                 channelAccountRepository.saveAndFlush(
@@ -1091,6 +1100,9 @@ class TelegramOutboundMessageFlowIntegrationTest
                                 "Telegram image failure E2E"
                         )
                 );
+
+        channel.setStatus(ChannelConnectionStatus.CONNECTED);
+        channel = channelRepository.saveAndFlush(channel);
 
         ChannelAccountEntity channelAccount =
                 channelAccountRepository.saveAndFlush(
@@ -1436,6 +1448,9 @@ class TelegramOutboundMessageFlowIntegrationTest
                                 "Telegram image retry E2E"
                         )
                 );
+
+        channel.setStatus(ChannelConnectionStatus.CONNECTED);
+        channel = channelRepository.saveAndFlush(channel);
 
         ChannelAccountEntity channelAccount =
                 channelAccountRepository.saveAndFlush(

@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-10-13 23:34:25
+- Generated: 2026-10-14 14:56:17
 - Branch: `main`
-- Commit: `e7ef7b3`
+- Commit: `72aea0f`
 
 ## Project Structure
 
@@ -444,6 +444,7 @@
 - `AbstractIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/integration/AbstractIntegrationTest.java`
 - `ChannelServiceIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/integration/ChannelServiceIntegrationTest.java`
 - `ConversationApiIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/integration/ConversationApiIntegrationTest.java`
+- `EmployeeWorkspaceApiIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/integration/EmployeeWorkspaceApiIntegrationTest.java`
 - `MessageInboundFlowIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/integration/MessageInboundFlowIntegrationTest.java`
 - `OutboundMessageAsyncFlowIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/integration/OutboundMessageAsyncFlowIntegrationTest.java`
 - `OutboundMessageKafkaFailureIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/integration/OutboundMessageKafkaFailureIntegrationTest.java`
@@ -641,7 +642,7 @@
 ## Summary
 
 - Maven modules: 3
-- Java files: 312
+- Java files: 313
 - UI source files: 100
-- Git commit: `e7ef7b3`
+- Git commit: `72aea0f`
 

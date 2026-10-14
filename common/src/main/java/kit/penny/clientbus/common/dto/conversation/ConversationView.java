@@ -18,5 +18,11 @@ public enum ConversationView {
     /**
      * Диалоги из личной группы текущего сотрудника.
      */
-    GROUP
+    GROUP,
+
+    /**
+     * Все диалоги Workspace.
+     * Доступно супервизору Workspace и SUPER_ADMIN.
+     */
+    ALL
 }

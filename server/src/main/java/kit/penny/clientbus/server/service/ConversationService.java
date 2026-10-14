@@ -1,9 +1,7 @@
 package kit.penny.clientbus.server.service;
 
 import jakarta.persistence.EntityNotFoundException;
-import kit.penny.clientbus.common.dto.conversation.ConversationDto;
-import kit.penny.clientbus.common.dto.conversation.CreateConversationRequest;
-import kit.penny.clientbus.common.dto.conversation.CreateOutboundConversationRequest;
+import kit.penny.clientbus.common.dto.conversation.*;
 import kit.penny.clientbus.common.enums.ChannelConnectionStatus;
 import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.common.enums.ClientAccountState;
@@ -21,8 +19,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional
@@ -38,6 +36,8 @@ public class ConversationService {
     private final CurrentUserService currentUserService;
     private final MessageRepository messageRepository;
     private final IChannelReadPublisher channelReadPublisher;
+    private final ConversationGroupRepository conversationGroupRepository;
+    private final ConversationGroupMembershipRepository conversationGroupMembershipRepository;
 
     public ConversationService(
             ConversationRepository conversationRepository,
@@ -48,7 +48,10 @@ public class ConversationService {
             EmployeeWorkspaceRepository employeeWorkspaceRepository,
             ConversationMapper conversationMapper,
             CurrentUserService currentUserService,
-            MessageRepository messageRepository, IChannelReadPublisher channelReadPublisher
+            MessageRepository messageRepository,
+            IChannelReadPublisher channelReadPublisher,
+            ConversationGroupRepository conversationGroupRepository,
+            ConversationGroupMembershipRepository conversationGroupMembershipRepository
     ) {
         this.conversationRepository = conversationRepository;
         this.workspaceRepository = workspaceRepository;
@@ -60,6 +63,8 @@ public class ConversationService {
         this.currentUserService = currentUserService;
         this.messageRepository = messageRepository;
         this.channelReadPublisher = channelReadPublisher;
+        this.conversationGroupRepository = conversationGroupRepository;
+        this.conversationGroupMembershipRepository = conversationGroupMembershipRepository;
     }
 
     /**
@@ -581,6 +586,287 @@ public class ConversationService {
                 .map(conversationMapper::toDto)
                 .toList();
     }
+
+
+    @Transactional(readOnly = true)
+    public ConversationSearchResponse searchInbox(
+            UUID workspaceId,
+            ConversationSearchRequest request
+    ) {
+        currentUserService.requireWorkspaceAccess(workspaceId);
+
+        if (request == null) {
+            throw new IllegalArgumentException("Search request is required");
+        }
+
+        boolean superAdmin = currentUserService.isSuperAdmin();
+        boolean supervisor = !superAdmin
+                && currentUserService.isSupervisor(workspaceId);
+
+        ConversationView view = request.view() == null
+                ? ConversationView.MINE
+                : request.view();
+
+        UUID employeeId = null;
+
+        if (!superAdmin) {
+            employeeId = currentUserService.getCurrentEmployeeId();
+        }
+
+        // Проверяем права на представление до получения данных.
+        switch (view) {
+            case MINE -> {
+                if (superAdmin) {
+                    throw new AccessDeniedException(
+                            "SUPER_ADMIN cannot use MINE view"
+                    );
+                }
+            }
+            case GROUP -> {
+                if (superAdmin) {
+                    throw new AccessDeniedException(
+                            "SUPER_ADMIN cannot use GROUP view"
+                    );
+                }
+                if (request.groupId() == null) {
+                    throw new IllegalArgumentException(
+                            "groupId is required for GROUP view"
+                    );
+                }
+                boolean ownsGroup =
+                        conversationGroupRepository
+                                .findByIdAndWorkspaceIdAndOwnerEmployeeId(
+                                        request.groupId(),
+                                        workspaceId,
+                                        employeeId
+                                )
+                                .isPresent();
+
+                if (!ownsGroup) {
+                    throw new AccessDeniedException(
+                            "Group does not belong to the current employee"
+                    );
+                }
+            }
+            case ALL -> {
+                if (!superAdmin && !supervisor) {
+                    throw new AccessDeniedException(
+                            "ALL view requires supervisor or SUPER_ADMIN role"
+                    );
+                }
+            }
+            case UNASSIGNED -> {
+                // Доступно сотруднику, супервизору и SUPER_ADMIN.
+            }
+        }
+
+        /*
+         * Получаем только ID диалогов, доступных через личную группу.
+         * Репозиторий дополнительно проверяет владельца группы,
+         * Workspace и текущее назначение диалога.
+         */
+        Set<UUID> groupConversationIds = Set.of();
+
+        if (view == ConversationView.GROUP) {
+            groupConversationIds =
+                    conversationGroupMembershipRepository
+                            .findAccessibleMemberships(
+                                    request.groupId(),
+                                    workspaceId,
+                                    employeeId
+                            )
+                            .stream()
+                            .map(m -> m.getConversation().getId())
+                            .collect(Collectors.toSet());
+        }
+
+        String search = request.search() == null
+                ? ""
+                : request.search().trim().toLowerCase(Locale.ROOT);
+
+        Set<UUID> channelAccountIds =
+                request.channelAccountIds() == null
+                        ? Set.of()
+                        : Set.copyOf(request.channelAccountIds());
+
+        Set<UUID> clientAccountIds =
+                request.clientAccountIds() == null
+                        ? Set.of()
+                        : Set.copyOf(request.clientAccountIds());
+
+        /*
+         * В этой первой версии используется существующий метод репозитория.
+         * Workspace уже проверен через requireWorkspaceAccess.
+         */
+        List<ConversationEntity> conversations =
+                conversationRepository
+                        .findAllByWorkspaceIdOrderByLastMessageAtDesc(
+                                workspaceId
+                        );
+
+        final UUID currentEmployeeId = employeeId;
+        final Set<UUID> accessibleGroupConversationIds = groupConversationIds;
+
+        List<ConversationEntity> filtered = conversations.stream()
+                // ACL представления.
+                .filter(c -> switch (view) {
+                    case MINE -> c.getAssignedEmployee() != null
+                            && c.getAssignedEmployee().getId()
+                            .equals(currentEmployeeId);
+
+                    case UNASSIGNED -> c.getAssignedEmployee() == null;
+
+                    case GROUP -> accessibleGroupConversationIds.contains(c.getId());
+
+                    case ALL -> true;
+                })
+
+                // Фильтр по каналам.
+                .filter(c -> channelAccountIds.isEmpty()
+                        || channelAccountIds.contains(
+                        c.getChannelAccount().getId()
+                ))
+
+                // Фильтр по аккаунтам клиента.
+                .filter(c -> clientAccountIds.isEmpty()
+                        || clientAccountIds.contains(
+                        c.getClientAccount().getId()
+                ))
+
+                // Наличие связи ClientAccount -> Client.
+                .filter(c -> {
+                    ConversationClientLinkFilter link = request.clientLink();
+
+                    if (link == null
+                            || link == ConversationClientLinkFilter.ANY) {
+                        return true;
+                    }
+
+                    boolean linked = c.getClientAccount().getClient() != null;
+
+                    return link == ConversationClientLinkFilter.WITH_CLIENT
+                            ? linked
+                            : !linked;
+                })
+
+                // Непрочитанные сообщения.
+                .filter(c -> {
+                    ConversationUnreadFilter unread = request.unread();
+
+                    if (unread == null
+                            || unread == ConversationUnreadFilter.ANY) {
+                        return true;
+                    }
+
+                    return unread == ConversationUnreadFilter.HAS_UNREAD
+                            ? c.getUnreadCount() > 0
+                            : c.getUnreadCount() == 0;
+                })
+
+                // Диапазон активности по lastMessageAt.
+                .filter(c -> request.activityFrom() == null
+                        || (c.getLastMessageAt() != null
+                        && !c.getLastMessageAt()
+                        .isBefore(request.activityFrom())))
+
+                .filter(c -> request.activityTo() == null
+                        || (c.getLastMessageAt() != null
+                        && !c.getLastMessageAt()
+                        .isAfter(request.activityTo())))
+
+                // Поиск по данным аккаунта клиента и последнему сообщению.
+                .filter(c -> {
+                    if (search.isEmpty()) {
+                        return true;
+                    }
+
+                    var account = c.getClientAccount();
+
+                    return containsIgnoreCase(account.getDisplayName(), search)
+                            || containsIgnoreCase(account.getUsername(), search)
+                            || containsIgnoreCase(account.getExternalId(), search)
+                            || containsIgnoreCase(
+                            c.getLastMessagePreview(), search
+                    );
+                })
+                .collect(Collectors.toList());
+
+        // Сортировка.
+        ConversationSort sort = request.sort() == null
+                ? ConversationSort.LAST_MESSAGE_DESC
+                : request.sort();
+
+        Comparator<Instant> instantComparator =
+                Comparator.nullsFirst(Comparator.naturalOrder());
+
+        Comparator<ConversationEntity> comparator = switch (sort) {
+            case LAST_MESSAGE_ASC ->
+                    Comparator.comparing(
+                            ConversationEntity::getLastMessageAt,
+                            instantComparator
+                    );
+
+            case OLDEST_ACTIVITY_FIRST ->
+                    Comparator.comparing(
+                            ConversationEntity::getLastMessageAt,
+                            instantComparator
+                    );
+
+            case LAST_MESSAGE_DESC ->
+                    Comparator.comparing(
+                            ConversationEntity::getLastMessageAt,
+                            Comparator.nullsLast(Comparator.reverseOrder())
+                    );
+        };
+
+        filtered.sort(comparator.thenComparing(ConversationEntity::getId));
+
+        // Пагинация с ограничением размера страницы.
+        int page = Math.max(0, request.page() == null ? 0 : request.page());
+        int size = request.size() == null ? 20 : request.size();
+
+        if (size < 1) {
+            throw new IllegalArgumentException("Page size must be positive");
+        }
+
+        size = Math.min(size, 100);
+
+        long totalElements = filtered.size();
+        int totalPages = totalElements == 0
+                ? 0
+                : (int) ((totalElements + size - 1) / size);
+
+        long offset = (long) page * size;
+
+        List<ConversationDto> content;
+
+        if (offset >= totalElements) {
+            content = List.of();
+        } else {
+            content = filtered.subList(
+                            (int) offset,
+                            (int) Math.min(offset + size, totalElements)
+                    )
+                    .stream()
+                    .map(conversationMapper::toDto)
+                    .toList();
+        }
+
+        return new ConversationSearchResponse(
+                content,
+                page,
+                size,
+                totalElements,
+                totalPages,
+                page + 1 < totalPages
+        );
+    }
+
+    private boolean containsIgnoreCase(String value, String search) {
+        return value != null
+                && value.toLowerCase(Locale.ROOT).contains(search);
+    }
+
 
     @Transactional(readOnly = true)
     public ConversationDto getByAccounts(
@@ -1134,6 +1420,15 @@ public class ConversationService {
                     "External operations are unavailable for this conversation"
             );
         }
+    }
+
+    /* ==============================================
+                          HANDLERS
+    ================================================= */
+
+    private boolean canViewAll(UUID workspaceId) {
+        return currentUserService.isSuperAdmin()
+                || currentUserService.isSupervisor(workspaceId);
     }
 
 

@@ -143,7 +143,11 @@ class TelegramInboundMessageProcessorTest {
         PlatformMessageRequest result =
                 processor.process(ACCOUNT_ID, message).join();
 
-        assertNull(result);
+        assertNotNull(result);
+        assertEquals(
+                "{\"unsupportedContentType\":\"MessageSticker\"}",
+                result.metadata()
+        );
     }
 
     @Test

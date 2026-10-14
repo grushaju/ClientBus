@@ -18,6 +18,7 @@ export interface EmployeeDto {
 export interface EmployeeWorkspaceDto {
     employeeId: string
     workspaceId: string
+    isSupervisor: boolean
 }
 
 export interface WorkspaceDto {

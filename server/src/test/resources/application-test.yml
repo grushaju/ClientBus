@@ -56,6 +56,10 @@ logging:
 #    org.springframework.kafka.config: DEBUG
 
 clientbus:
+  kafka:
+    outbound:
+      enabled-channels:
+        - TELEGRAM
 
   jwt:
     secret: FnQHtz4yCzaBgma1a25xV30mShdAQZx/33msarZ57f0=

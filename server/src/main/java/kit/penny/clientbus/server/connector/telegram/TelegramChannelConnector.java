@@ -349,8 +349,9 @@ public class TelegramChannelConnector
 
         if (beforeMessageId == 0) {
 
-            historyStartReached =
-                    messages.messages.length < limit;
+            // Непустая начальная страница не доказывает,
+            // что TDLib загрузил всю историю.
+            historyStartReached = false;
 
         } else {
 

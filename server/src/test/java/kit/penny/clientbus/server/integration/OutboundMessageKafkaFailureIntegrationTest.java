@@ -1,10 +1,7 @@
 package kit.penny.clientbus.server.integration;
 
 import kit.penny.clientbus.common.dto.message.OutboundMessageRequest;
-import kit.penny.clientbus.common.enums.ChannelType;
-import kit.penny.clientbus.common.enums.MessageDeliveryStatus;
-import kit.penny.clientbus.common.enums.MessageProcessingStatus;
-import kit.penny.clientbus.common.enums.MessageType;
+import kit.penny.clientbus.common.enums.*;
 import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
 import kit.penny.clientbus.server.connector.IChannelConnector;
 import kit.penny.clientbus.server.connector.command.SendMessageCommand;
@@ -163,6 +160,9 @@ class OutboundMessageKafkaFailureIntegrationTest
                                 "Telegram Kafka failure"
                         )
                 );
+
+        channel.setStatus(ChannelConnectionStatus.CONNECTED);
+        channel = channelRepository.saveAndFlush(channel);
 
         ChannelAccountEntity channelAccount =
                 channelAccountRepository.saveAndFlush(

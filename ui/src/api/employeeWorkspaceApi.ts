@@ -24,9 +24,11 @@ export async function getEmployeeWorkspaces(
     return response.json()
 }
 
+
 export async function assignEmployeeWorkspace(
     employeeId: string,
     workspaceId: string,
+    isSupervisor = false,
 ): Promise<EmployeeWorkspaceDto> {
     const response = await apiFetch(
         `/api/employees/${employeeId}/workspaces`,
@@ -34,12 +36,14 @@ export async function assignEmployeeWorkspace(
             method: 'POST',
             body: JSON.stringify({
                 workspaceId,
+                isSupervisor,
             }),
         },
     )
 
     return response.json()
 }
+
 
 export async function removeEmployeeWorkspace(
     employeeId: string,
@@ -57,4 +61,23 @@ export async function removeEmployeeWorkspace(
             'Не удалось удалить Workspace у сотрудника',
         )
     }
+}
+
+
+export async function setEmployeeWorkspaceSupervisor(
+    employeeId: string,
+    workspaceId: string,
+    isSupervisor: boolean,
+): Promise<EmployeeWorkspaceDto> {
+    const response = await apiFetch(
+        `/api/employees/${employeeId}/workspaces/${workspaceId}/supervisor`,
+        {
+            method: 'PATCH',
+            body: JSON.stringify({
+                isSupervisor,
+            }),
+        },
+    )
+
+    return response.json()
 }

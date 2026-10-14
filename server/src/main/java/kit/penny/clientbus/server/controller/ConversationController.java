@@ -3,14 +3,8 @@ package kit.penny.clientbus.server.controller;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import kit.penny.clientbus.common.dto.conversation.ConversationDto;
-import kit.penny.clientbus.common.dto.conversation.CreateConversationRequest;
-import kit.penny.clientbus.common.dto.conversation.CreateOutboundConversationRequest;
+import kit.penny.clientbus.common.dto.conversation.*;
 import kit.penny.clientbus.server.service.ConversationService;
-import kit.penny.clientbus.common.dto.conversation.ConversationGroupDto;
-import kit.penny.clientbus.common.dto.conversation.CreateConversationGroupRequest;
-import kit.penny.clientbus.common.dto.conversation.RenameConversationGroupRequest;
-import kit.penny.clientbus.common.dto.conversation.ConversationGroupMembershipRequest;
 import kit.penny.clientbus.server.service.ConversationGroupService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -504,6 +498,17 @@ public class ConversationController {
                         workspaceId,
                         groupId
                 )
+        );
+    }
+
+    @PostMapping("/workspace/{workspaceId}/search")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ConversationSearchResponse> searchInbox(
+            @PathVariable UUID workspaceId,
+            @Valid @RequestBody ConversationSearchRequest request
+    ) {
+        return ResponseEntity.ok(
+                conversationService.searchInbox(workspaceId, request)
         );
     }
 

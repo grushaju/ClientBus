@@ -79,9 +79,6 @@ public class OutboundMessageTransactionService {
                             request.conversationId()
                     );
 
-            conversationService
-                    .requireExternalOperationsAvailable(conversation);
-
             conversationService.requireExternalOperationsAvailable(
                     conversation
             );
