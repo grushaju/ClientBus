@@ -157,7 +157,7 @@ public class EmployeeController {
     public ResponseEntity<InputStreamResource> getEmployeeAvatar(
             @PathVariable UUID id
     ) {
-        EmployeeDto employee = employeeService.getEmployee(id);
+        EmployeeDto employee = employeeService.getEmployeeAvatar(id);
         String storageKey = employee.avatarUrl();
 
         if (storageKey == null || storageKey.isBlank()) {
@@ -222,7 +222,7 @@ public class EmployeeController {
     }
 
     @GetMapping("/workspace/{workspaceId}")
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','EMPLOYEE')")
     public ResponseEntity<List<EmployeeDto>>
     getEmployeesByWorkspace(
             @PathVariable UUID workspaceId

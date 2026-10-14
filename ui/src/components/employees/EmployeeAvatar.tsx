@@ -1,7 +1,10 @@
 
 import { useEffect, useState } from 'react'
 
-import { getEmployeeAvatarContent } from '../../api/employeeApi'
+import {
+    getCurrentEmployeeAvatarContent,
+    getEmployeeAvatarContent,
+} from '../../api/employeeApi'
 
 interface EmployeeAvatarProps {
     employeeId: string
@@ -11,6 +14,7 @@ interface EmployeeAvatarProps {
     username?: string | null
     size?: number
     className?: string
+    isCurrentEmployee?: boolean
 }
 
 function EmployeeAvatar({
@@ -21,6 +25,7 @@ function EmployeeAvatar({
                             username,
                             size = 40,
                             className = '',
+                            isCurrentEmployee = false,
                         }: EmployeeAvatarProps) {
     const [imageSrc, setImageSrc] = useState<string | null>(null)
 
@@ -35,8 +40,11 @@ function EmployeeAvatar({
 
         setImageSrc(null)
 
-        void getEmployeeAvatarContent(employeeId)
-            .then(blob => {
+        void (
+            isCurrentEmployee
+                ? getCurrentEmployeeAvatarContent()
+                : getEmployeeAvatarContent(employeeId)
+        ).then(blob => {
                 if (!active) {
                     return
                 }
@@ -57,7 +65,7 @@ function EmployeeAvatar({
                 URL.revokeObjectURL(objectUrl)
             }
         }
-    }, [employeeId, avatarUrl])
+    }, [employeeId, avatarUrl, isCurrentEmployee])
 
     const initials =
         `${firstName?.[0] ?? ''}${lastName?.[0] ?? ''}`.toUpperCase()

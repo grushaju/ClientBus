@@ -46,6 +46,7 @@ function ConversationList() {
 
     const {
         currentEmployee,
+        employeeWorkspaces,
         isSuperAdmin,
         isEmployee,
     } = useAuth()
@@ -53,18 +54,34 @@ function ConversationList() {
     const { currentWorkspace } =
         useWorkspace()
 
-    const initialTab: Tab =
-        searchParams.get('tab') ===
-        'unassigned'
-            ? 'unassigned'
-            : 'mine'
-
-    const [tab, setTab] =
-        useState<Tab>(
-            isSuperAdmin
-                ? 'all'
-                : initialTab,
+    const isWorkspaceSupervisor =
+        isEmployee &&
+        !!currentWorkspace &&
+        employeeWorkspaces.some(
+            membership =>
+                membership.workspaceId === currentWorkspace.id &&
+                membership.isSupervisor,
         )
+
+    const canViewAll =
+        isSuperAdmin || isWorkspaceSupervisor
+
+
+
+    const requestedTab = searchParams.get('tab')
+
+    const initialTab: Tab =
+        isSuperAdmin
+            ? requestedTab === 'unassigned'
+                ? 'unassigned'
+                : 'all'
+            : canViewAll && requestedTab === 'all'
+                ? 'all'
+                : requestedTab === 'unassigned'
+                    ? 'unassigned'
+                    : 'mine'
+
+    const [tab, setTab] = useState<Tab>(initialTab)
 
     const [items, setItems] =
         useState<ConversationListItem[]>(
@@ -88,38 +105,58 @@ function ConversationList() {
     ] = useState(false)
 
     useEffect(() => {
-        if (isSuperAdmin) {
+        if (
+            isSuperAdmin &&
+            tab !== 'all' &&
+            tab !== 'unassigned'
+        ) {
             setTab('all')
             return
         }
 
         if (
             isEmployee &&
+            !canViewAll &&
             tab === 'all'
         ) {
             setTab('mine')
         }
     }, [
+        canViewAll,
         isEmployee,
         isSuperAdmin,
         tab,
     ])
 
     useEffect(() => {
-        if (isSuperAdmin) {
+        const urlTab = searchParams.get('tab')
+
+        if (
+            urlTab === 'unassigned' &&
+            (isEmployee || isSuperAdmin)
+        ) {
+            setTab('unassigned')
             return
         }
 
-        const urlTab =
-            searchParams.get('tab')
+        if (
+            urlTab === 'mine' &&
+            isEmployee &&
+            !isSuperAdmin
+        ) {
+            setTab('mine')
+            return
+        }
 
         if (
-            urlTab === 'mine' ||
-            urlTab === 'unassigned'
+            urlTab === 'all' &&
+            canViewAll
         ) {
-            setTab(urlTab)
+            setTab('all')
         }
     }, [
+        canViewAll,
+        isEmployee,
         isSuperAdmin,
         searchParams,
     ])
@@ -155,7 +192,7 @@ function ConversationList() {
                 const conversations: ConversationDto[] = []
 
                 const view =
-                    isSuperAdmin
+                    tab === 'all'
                         ? 'ALL'
                         : tab === 'unassigned'
                             ? 'UNASSIGNED'
@@ -307,7 +344,7 @@ function ConversationList() {
                     }
 
                     const shouldRemain =
-                        isSuperAdmin ||
+                        tab === 'all' ||
                         (
                             tab === 'mine' &&
                             updated.assignedEmployeeId ===
@@ -315,8 +352,7 @@ function ConversationList() {
                         ) ||
                         (
                             tab === 'unassigned' &&
-                            updated.assignedEmployeeId ===
-                            null
+                            updated.assignedEmployeeId === null
                         )
 
                     if (!shouldRemain) {
@@ -463,41 +499,35 @@ function ConversationList() {
                         )}
                     </div>
 
-                    {isEmployee && (
+                    {(isEmployee || isSuperAdmin) && (
                         <div className="conversation-list-tabs">
-                            <button
-                                type="button"
-                                className={
-                                    tab ===
-                                    'mine'
-                                        ? 'active'
-                                        : ''
-                                }
-                                onClick={() =>
-                                    handleTabChange(
-                                        'mine',
-                                    )
-                                }
-                            >
-                                Мои диалоги
-                            </button>
+                            {isEmployee && (
+                                <button
+                                    type="button"
+                                    className={tab === 'mine' ? 'active' : ''}
+                                    onClick={() => handleTabChange('mine')}
+                                >
+                                    Мои диалоги
+                                </button>
+                            )}
 
                             <button
                                 type="button"
-                                className={
-                                    tab ===
-                                    'unassigned'
-                                        ? 'active'
-                                        : ''
-                                }
-                                onClick={() =>
-                                    handleTabChange(
-                                        'unassigned',
-                                    )
-                                }
+                                className={tab === 'unassigned' ? 'active' : ''}
+                                onClick={() => handleTabChange('unassigned')}
                             >
                                 Свободные
                             </button>
+
+                            {canViewAll && (
+                                <button
+                                    type="button"
+                                    className={tab === 'all' ? 'active' : ''}
+                                    onClick={() => handleTabChange('all')}
+                                >
+                                    Все
+                                </button>
+                            )}
                         </div>
                     )}
                 </div>

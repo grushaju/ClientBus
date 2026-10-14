@@ -137,6 +137,7 @@ function AppLayout({
                         {currentEmployee && (
                             <EmployeeAvatar
                                 employeeId={currentEmployee.id}
+                                isCurrentEmployee
                                 avatarUrl={currentEmployee.avatarUrl ?? null}
                                 firstName={currentEmployee.firstName}
                                 lastName={currentEmployee.lastName}

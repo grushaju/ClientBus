@@ -21,7 +21,7 @@ interface ConversationHeaderProps {
     channel: ChannelSummary | null
     employees: EmployeeDto[]
     currentEmployeeId: string | null
-    isSuperAdmin: boolean
+    canManageAssignments: boolean
     isEmployee: boolean
     actionError: string | null
     onTake: () => Promise<void>
@@ -36,7 +36,7 @@ function ConversationHeader({
                                 channel,
                                 employees,
                                 currentEmployeeId,
-                                isSuperAdmin,
+                                canManageAssignments,
                                 isEmployee,
                                 actionError,
                                 onTake,
@@ -228,7 +228,7 @@ function ConversationHeader({
                             </button>
                         )}
 
-                    {isSuperAdmin && (
+                    {canManageAssignments  && (
                         <div className="conversation-assignment">
                             <label
                                 htmlFor="conversation-assignment"

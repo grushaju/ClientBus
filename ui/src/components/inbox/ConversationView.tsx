@@ -54,6 +54,7 @@ function ConversationView() {
 
     const {
         currentEmployee,
+        employeeWorkspaces,
         isEmployee,
         isSuperAdmin,
     } = useAuth()
@@ -61,6 +62,18 @@ function ConversationView() {
     const [conversation, setConversation] =
         useState<ConversationDto | null>(
             null,
+        )
+
+    const canManageAssignments =
+        isSuperAdmin ||
+        (
+            isEmployee &&
+            !!conversation &&
+            employeeWorkspaces.some(
+                membership =>
+                    membership.workspaceId === conversation.workspaceId &&
+                    membership.isSupervisor,
+            )
         )
 
     const [clientAccount, setClientAccount] =
@@ -203,16 +216,26 @@ function ConversationView() {
                         setChannel(null)
                     }
 
-                    if (isSuperAdmin) {
+                    const canManageWorkspaceAssignments =
+                        isSuperAdmin ||
+                        (
+                            isEmployee &&
+                            employeeWorkspaces.some(
+                                membership =>
+                                    membership.workspaceId ===
+                                    result.workspaceId &&
+                                    membership.isSupervisor,
+                            )
+                        )
+
+                    if (canManageWorkspaceAssignments) {
                         try {
                             const workspaceEmployees =
                                 await getWorkspaceEmployees(
                                     result.workspaceId,
                                 )
 
-                            setEmployees(
-                                workspaceEmployees,
-                            )
+                            setEmployees(workspaceEmployees)
                         } catch (err) {
                             console.error(
                                 'Workspace employees load failed:',
@@ -340,7 +363,7 @@ function ConversationView() {
         async (
             employeeId: string,
         ) => {
-            if (!isSuperAdmin) {
+            if (!canManageAssignments) {
                 return
             }
 
@@ -371,7 +394,7 @@ function ConversationView() {
 
     const handleUnassign =
         async () => {
-            if (!isSuperAdmin) {
+            if (!canManageAssignments) {
                 return
             }
 
@@ -426,8 +449,8 @@ function ConversationView() {
                     isEmployee={
                         isEmployee
                     }
-                    isSuperAdmin={
-                        isSuperAdmin
+                    canManageAssignments={
+                        canManageAssignments
                     }
                     actionError={
                         actionError

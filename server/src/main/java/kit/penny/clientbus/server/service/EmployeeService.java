@@ -9,6 +9,7 @@ import kit.penny.clientbus.server.persistence.entity.EmployeeEntity;
 import kit.penny.clientbus.server.persistence.entity.OrganizationEntity;
 import kit.penny.clientbus.server.persistence.entity.UserEntity;
 import kit.penny.clientbus.server.persistence.repository.EmployeeRepository;
+import kit.penny.clientbus.server.persistence.repository.EmployeeWorkspaceRepository;
 import kit.penny.clientbus.server.persistence.repository.OrganizationRepository;
 import kit.penny.clientbus.server.persistence.repository.UserRepository;
 import kit.penny.clientbus.server.security.service.CurrentUserService;
@@ -38,6 +39,7 @@ public class EmployeeService {
     private final PasswordEncoder passwordEncoder;
     private final CurrentUserService currentUserService;
     private final IAttachmentStorage attachmentStorage;
+    private final EmployeeWorkspaceRepository employeeWorkspaceRepository;
 
     public EmployeeService(
             EmployeeRepository employeeRepository,
@@ -46,7 +48,8 @@ public class EmployeeService {
             EmployeeMapper employeeMapper,
             PasswordEncoder passwordEncoder,
             CurrentUserService currentUserService,
-            IAttachmentStorage attachmentStorage
+            IAttachmentStorage attachmentStorage,
+            EmployeeWorkspaceRepository employeeWorkspaceRepository
     ) {
         this.employeeRepository = employeeRepository;
         this.userRepository = userRepository;
@@ -56,6 +59,7 @@ public class EmployeeService {
         this.passwordEncoder = passwordEncoder;
         this.currentUserService = currentUserService;
         this.attachmentStorage = attachmentStorage;
+        this.employeeWorkspaceRepository = employeeWorkspaceRepository;
     }
 
     /**
@@ -181,8 +185,6 @@ public class EmployeeService {
             UUID workspaceId
     ) {
 
-        currentUserService.requireSuperAdmin();
-
         EmployeeEntity currentEmployee =
                 currentUserService.getCurrentEmployee();
 
@@ -193,6 +195,14 @@ public class EmployeeService {
 
             throw new AccessDeniedException(
                     "Workspace does not belong to current organization"
+            );
+        }
+
+        if (!currentUserService.isSuperAdmin()
+                && !currentUserService.isSupervisor(workspaceId)) {
+
+            throw new AccessDeniedException(
+                    "Workspace supervisor access required"
             );
         }
 
@@ -497,6 +507,45 @@ public class EmployeeService {
         }
 
         return result;
+    }
+
+    @Transactional(readOnly = true)
+    public EmployeeDto getEmployeeAvatar(UUID employeeId) {
+        EmployeeEntity target = getEmployeeEntity(employeeId);
+
+        UUID currentEmployeeId = currentUserService.getCurrentEmployeeId();
+
+        // Собственный аватар доступен всегда авторизованному сотруднику.
+        if (currentEmployeeId.equals(employeeId)) {
+            return employeeMapper.toDto(target);
+        }
+
+        // SUPER_ADMIN может просматривать аватары сотрудников
+        // только своей организации.
+        if (currentUserService.isSuperAdmin()) {
+            currentUserService.requireEmployeeInCurrentOrganization(employeeId);
+            return employeeMapper.toDto(target);
+        }
+
+        // Для остальных пользователей нужен общий workspace.
+        boolean sharesWorkspace = employeeWorkspaceRepository
+                .findAllByEmployeeId(currentEmployeeId)
+                .stream()
+                .anyMatch(currentWorkspace ->
+                        employeeWorkspaceRepository
+                                .existsByEmployeeIdAndWorkspaceId(
+                                        employeeId,
+                                        currentWorkspace.getWorkspace().getId()
+                                )
+                );
+
+        if (!sharesWorkspace) {
+            throw new AccessDeniedException(
+                    "Employee avatar is not accessible"
+            );
+        }
+
+        return employeeMapper.toDto(target);
     }
 
     private void updateProfile(

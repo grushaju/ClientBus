@@ -114,11 +114,6 @@ public interface ConversationInboxRepository
                     THEN c.lastMessageAt
                     ELSE NULL
                 END ASC,
-                CASE
-                    WHEN :sort = kit.penny.clientbus.common.dto.conversation.ConversationSort.OLDEST_ACTIVITY_FIRST
-                    THEN c.lastMessageAt
-                    ELSE NULL
-                END ASC,
                 c.id ASC
             """,
             countQuery = """
