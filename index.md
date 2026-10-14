@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-10-14 18:28:01
+- Generated: 2026-10-14 22:43:15
 - Branch: `main`
-- Commit: `f17082f`
+- Commit: `f91e063`
 
 ## Project Structure
 
@@ -504,6 +504,7 @@
 - `ClientAccountServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/ClientAccountServiceTest.java`
 - `ClientServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/ClientServiceTest.java`
 - `ConversationGroupServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/ConversationGroupServiceTest.java`
+- `ConversationServiceAssignmentTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/ConversationServiceAssignmentTest.java`
 - `ConversationServiceOrderingTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/ConversationServiceOrderingTest.java`
 - `ConversationServiceSearchInboxTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/ConversationServiceSearchInboxTest.java`
 - `EmployeeWorkspaceServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/EmployeeWorkspaceServiceTest.java`
@@ -643,7 +644,7 @@
 ## Summary
 
 - Maven modules: 3
-- Java files: 314
+- Java files: 315
 - UI source files: 100
-- Git commit: `f17082f`
+- Git commit: `f91e063`
 

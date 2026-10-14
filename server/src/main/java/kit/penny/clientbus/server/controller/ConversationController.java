@@ -288,7 +288,7 @@ public class ConversationController {
      * Только SUPER_ADMIN.
      */
     @PutMapping("/{conversationId}/assignment/{employeeId}")
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasAnyRole('EMPLOYEE','SUPER_ADMIN')")
     public ResponseEntity<ConversationDto> assignEmployee(
             @PathVariable UUID conversationId,
             @PathVariable UUID employeeId
@@ -308,7 +308,7 @@ public class ConversationController {
      * Только SUPER_ADMIN.
      */
     @DeleteMapping("/{conversationId}/assignment")
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasAnyRole('EMPLOYEE','SUPER_ADMIN')")
     public ResponseEntity<ConversationDto> unassignEmployee(
             @PathVariable UUID conversationId
     ) {

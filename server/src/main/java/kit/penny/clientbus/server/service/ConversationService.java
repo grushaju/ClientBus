@@ -1030,13 +1030,10 @@ public class ConversationService {
             UUID conversationId,
             UUID employeeId
     ) {
-
-        currentUserService.requireSuperAdmin();
-
         ConversationEntity conversation =
                 getConversationEntity(conversationId);
 
-        requireConversationAccess(conversation);
+        requireAssignmentManagement(conversation);
 
         EmployeeEntity employee =
                 employeeRepository.findById(employeeId)
@@ -1048,20 +1045,16 @@ public class ConversationService {
                         );
 
         UUID workspaceId =
-                conversation
-                        .getWorkspace()
-                        .getId();
+                conversation.getWorkspace().getId();
 
         UUID organizationId =
-                conversation
-                        .getWorkspace()
+                conversation.getWorkspace()
                         .getOrganization()
                         .getId();
 
         if (!employee.getOrganization()
                 .getId()
                 .equals(organizationId)) {
-
             throw new AccessDeniedException(
                     "Employee belongs to another organization"
             );
@@ -1072,7 +1065,6 @@ public class ConversationService {
                         employeeId,
                         workspaceId
                 )) {
-
             throw new IllegalArgumentException(
                     "Employee does not have access to workspace"
             );
@@ -1086,13 +1078,10 @@ public class ConversationService {
     public ConversationDto unassignEmployee(
             UUID conversationId
     ) {
-
-        currentUserService.requireSuperAdmin();
-
         ConversationEntity conversation =
                 getConversationEntity(conversationId);
 
-        requireConversationAccess(conversation);
+        requireAssignmentManagement(conversation);
 
         conversation.setAssignedEmployee(null);
 
@@ -1103,10 +1092,16 @@ public class ConversationService {
             UUID conversationId
     ) {
 
+        if (currentUserService.isSuperAdmin()) {
+            throw new AccessDeniedException(
+                    "SUPER_ADMIN cannot manage self-assignments"
+            );
+        }
+
         ConversationEntity conversation =
                 getConversationEntity(conversationId);
 
-        requireConversationAccess(conversation);
+        requireAssignmentManagement(conversation);
 
         EmployeeEntity currentEmployee =
                 currentUserService.getCurrentEmployee();
@@ -1135,10 +1130,16 @@ public class ConversationService {
             UUID conversationId
     ) {
 
+        if (currentUserService.isSuperAdmin()) {
+            throw new AccessDeniedException(
+                    "SUPER_ADMIN cannot manage self-assignments"
+            );
+        }
+
         ConversationEntity conversation =
                 getConversationEntity(conversationId);
 
-        requireConversationAccess(conversation);
+        requireAssignmentManagement(conversation);
 
         EmployeeEntity currentEmployee =
                 currentUserService.getCurrentEmployee();
@@ -1274,6 +1275,25 @@ public class ConversationService {
                 conversation
                         .getWorkspace()
                         .getId()
+        );
+    }
+
+    private void requireAssignmentManagement(
+            ConversationEntity conversation
+    ) {
+        UUID workspaceId =
+                conversation.getWorkspace().getId();
+
+        currentUserService.requireWorkspaceAccess(workspaceId);
+
+        if (currentUserService.isSuperAdmin()
+                || currentUserService.isSupervisor(workspaceId)) {
+            return;
+        }
+
+        throw new AccessDeniedException(
+                "Only workspace supervisor or SUPER_ADMIN "
+                        + "can manage conversation assignments"
         );
     }
 
