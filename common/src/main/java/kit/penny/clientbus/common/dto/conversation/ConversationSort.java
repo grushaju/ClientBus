@@ -13,10 +13,5 @@ public enum ConversationSort {
     /**
      * Сначала диалоги с более ранними сообщениями.
      */
-    LAST_MESSAGE_ASC,
-
-    /**
-     * Сначала диалоги, давно не проявлявшие активность.
-     */
-    OLDEST_ACTIVITY_FIRST
+    LAST_MESSAGE_ASC
 }

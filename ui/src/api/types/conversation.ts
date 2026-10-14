@@ -83,7 +83,6 @@ export type ConversationUnreadFilter =
 export type ConversationSort =
     | 'LAST_MESSAGE_DESC'
     | 'LAST_MESSAGE_ASC'
-    | 'OLDEST_ACTIVITY_FIRST'
 
 export interface ConversationSearchRequest {
     view: ConversationView

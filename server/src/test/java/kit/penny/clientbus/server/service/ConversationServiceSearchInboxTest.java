@@ -433,6 +433,308 @@ class ConversationServiceSearchInboxTest {
         );
     }
 
+    @Test
+    void allView_isAvailableToWorkspaceSupervisor() {
+        when(currentUserService.isSuperAdmin()).thenReturn(false);
+        when(currentUserService.isSupervisor(workspaceId)).thenReturn(true);
+        when(currentUserService.getCurrentEmployeeId()).thenReturn(employeeId);
+
+        ConversationEntity assigned = conversation(
+                channelId, UUID.randomUUID(), UUID.randomUUID(),
+                true, "Alice", "alice", "1001",
+                "Hello", 0, from
+        );
+        ConversationEntity unassigned = conversation(
+                channelId, UUID.randomUUID(), null,
+                true, "Bob", "bob", "1002",
+                "Hello", 0, to
+        );
+
+        givenConversations(assigned, unassigned);
+        givenMapper();
+
+        ConversationSearchResponse response = service.searchInbox(
+                workspaceId, request(ConversationView.ALL)
+        );
+
+        assertThat(response.content())
+                .extracting(ConversationDto::id)
+                .containsExactly(unassigned.getId(), assigned.getId());
+        assertThat(response.totalElements()).isEqualTo(2);
+    }
+
+    @Test
+    void allView_isAvailableToSuperAdmin() {
+        when(currentUserService.isSuperAdmin()).thenReturn(true);
+
+        ConversationEntity conversation = conversation(
+                channelId, UUID.randomUUID(), employeeId,
+                true, "Alice", "alice", "1001",
+                "Hello", 0, from
+        );
+
+        givenConversations(conversation);
+        givenMapper();
+
+        ConversationSearchResponse response = service.searchInbox(
+                workspaceId, request(ConversationView.ALL)
+        );
+
+        assertThat(response.content())
+                .extracting(ConversationDto::id)
+                .containsExactly(conversation.getId());
+    }
+
+    @Test
+    void activityRange_includesBothBoundaries() {
+        givenEmployeeAccess();
+
+        ConversationEntity atStart = conversation(
+                channelId, UUID.randomUUID(), employeeId,
+                true, "Start", "start", "1001",
+                "Hello", 0, from
+        );
+        ConversationEntity atEnd = conversation(
+                channelId, UUID.randomUUID(), employeeId,
+                true, "End", "end", "1002",
+                "Hello", 0, to
+        );
+        ConversationEntity beforeStart = conversation(
+                channelId, UUID.randomUUID(), employeeId,
+                true, "Before", "before", "1003",
+                "Hello", 0, from.minusSeconds(1)
+        );
+        ConversationEntity afterEnd = conversation(
+                channelId, UUID.randomUUID(), employeeId,
+                true, "After", "after", "1004",
+                "Hello", 0, to.plusSeconds(1)
+        );
+
+        givenConversations(atStart, atEnd, beforeStart, afterEnd);
+        givenMapper();
+
+        ConversationSearchRequest searchRequest =
+                new ConversationSearchRequest(
+                        ConversationView.MINE,
+                        null, null, null, null, null, null,
+                        from, to,
+                        ConversationSort.LAST_MESSAGE_ASC,
+                        0, 20
+                );
+
+        ConversationSearchResponse response =
+                service.searchInbox(workspaceId, searchRequest);
+
+        assertThat(response.content())
+                .extracting(ConversationDto::id)
+                .containsExactly(atStart.getId(), atEnd.getId());
+        assertThat(response.totalElements()).isEqualTo(2);
+    }
+
+    @Test
+    void lastMessageAscendingSortsEarlierMessagesFirst() {
+        givenEmployeeAccess();
+
+        ConversationEntity newer = conversation(
+                channelId, UUID.randomUUID(), employeeId,
+                true, "Newer", "newer", "1001",
+                "Hello", 0, to
+        );
+        ConversationEntity older = conversation(
+                channelId, UUID.randomUUID(), employeeId,
+                true, "Older", "older", "1002",
+                "Hello", 0, from
+        );
+
+        givenConversations(newer, older);
+        givenMapper();
+
+        ConversationSearchResponse response = service.searchInbox(
+                workspaceId,
+                new ConversationSearchRequest(
+                        ConversationView.MINE,
+                        null, null, null, null, null, null,
+                        null, null,
+                        ConversationSort.LAST_MESSAGE_ASC,
+                        0, 20
+                )
+        );
+
+        assertThat(response.content())
+                .extracting(ConversationDto::id)
+                .containsExactly(older.getId(), newer.getId());
+    }
+
+
+    @Test
+    void negativePageIsNormalizedToZero() {
+        givenEmployeeAccess();
+
+        ConversationEntity first = conversation(
+                channelId, UUID.randomUUID(), employeeId,
+                true, "Alice", "alice", "1001",
+                "Hello", 0, from
+        );
+
+        ConversationEntity second = conversation(
+                channelId, UUID.randomUUID(), employeeId,
+                true, "Bob", "bob", "1002",
+                "Hello", 0, to
+        );
+
+        givenConversations(first, second);
+        givenMapper();
+
+        ConversationSearchResponse response = service.searchInbox(
+                workspaceId,
+                new ConversationSearchRequest(
+                        ConversationView.MINE,
+                        null, null, null, null, null, null,
+                        null, null,
+                        ConversationSort.LAST_MESSAGE_DESC,
+                        -1, 1
+                )
+        );
+
+        assertThat(response.page()).isZero();
+        assertThat(response.size()).isEqualTo(1);
+        assertThat(response.content())
+                .extracting(ConversationDto::id)
+                .containsExactly(second.getId());
+        assertThat(response.totalElements()).isEqualTo(2);
+        assertThat(response.hasNext()).isTrue();
+    }
+
+
+    @Test
+    void pageSizeIsCappedAtOneHundred() {
+        givenEmployeeAccess();
+
+        List<ConversationEntity> conversations =
+                new java.util.ArrayList<>();
+
+        for (int i = 0; i < 101; i++) {
+            conversations.add(conversation(
+                    channelId, UUID.randomUUID(), employeeId,
+                    true, "Client " + i, "user" + i,
+                    String.valueOf(1000 + i),
+                    "Hello", 0, from.plusSeconds(i)
+            ));
+        }
+
+        givenConversations(
+                conversations.toArray(new ConversationEntity[0])
+        );
+        givenMapper();
+
+        ConversationSearchResponse response = service.searchInbox(
+                workspaceId,
+                new ConversationSearchRequest(
+                        ConversationView.MINE,
+                        null, null, null, null, null, null,
+                        null, null,
+                        ConversationSort.LAST_MESSAGE_DESC,
+                        0, 101
+                )
+        );
+
+        assertThat(response.size()).isEqualTo(100);
+        assertThat(response.content()).hasSize(100);
+        assertThat(response.totalElements()).isEqualTo(101);
+        assertThat(response.totalPages()).isEqualTo(2);
+        assertThat(response.hasNext()).isTrue();
+    }
+
+
+    @Test
+    void ascendingSortPlacesNullTimestampsFirst() {
+        givenEmployeeAccess();
+
+        ConversationEntity withoutMessage = conversation(
+                channelId, UUID.randomUUID(), employeeId,
+                true, "No message", "no_message", "1001",
+                null, 0, null
+        );
+
+        ConversationEntity withMessage = conversation(
+                channelId, UUID.randomUUID(), employeeId,
+                true, "Has message", "has_message", "1002",
+                "Hello", 0, from
+        );
+
+        givenConversations(withoutMessage, withMessage);
+        givenMapper();
+
+        ConversationSearchResponse response = service.searchInbox(
+                workspaceId,
+                new ConversationSearchRequest(
+                        ConversationView.MINE,
+                        null, null, null, null, null, null,
+                        null, null,
+                        ConversationSort.LAST_MESSAGE_ASC,
+                        0, 20
+                )
+        );
+
+        assertThat(response.content())
+                .extracting(ConversationDto::id)
+                .containsExactly(
+                        withoutMessage.getId(),
+                        withMessage.getId()
+                );
+    }
+
+
+    @Test
+    void descendingSortPlacesNullTimestampsLast() {
+        givenEmployeeAccess();
+
+        ConversationEntity withoutMessage = conversation(
+                channelId, UUID.randomUUID(), employeeId,
+                true, "No message", "no_message", "1001",
+                null, 0, null
+        );
+
+        ConversationEntity withMessage = conversation(
+                channelId, UUID.randomUUID(), employeeId,
+                true, "Has message", "has_message", "1002",
+                "Hello", 0, from
+        );
+
+        givenConversations(withoutMessage, withMessage);
+        givenMapper();
+
+        ConversationSearchResponse response = service.searchInbox(
+                workspaceId,
+                new ConversationSearchRequest(
+                        ConversationView.MINE,
+                        null, null, null, null, null, null,
+                        null, null,
+                        ConversationSort.LAST_MESSAGE_DESC,
+                        0, 20
+                )
+        );
+
+        assertThat(response.content())
+                .extracting(ConversationDto::id)
+                .containsExactly(
+                        withMessage.getId(),
+                        withoutMessage.getId()
+                );
+    }
+
+
+    @Test
+    void conversationSort_supportsOnlyLastMessageDirections() {
+        assertThat(ConversationSort.values())
+                .containsExactly(
+                        ConversationSort.LAST_MESSAGE_DESC,
+                        ConversationSort.LAST_MESSAGE_ASC
+                );
+    }
+
+
+
     private void givenEmployeeAccess() {
         when(currentUserService.isSuperAdmin()).thenReturn(false);
         when(currentUserService.isSupervisor(workspaceId)).thenReturn(false);

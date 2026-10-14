@@ -806,12 +806,6 @@ public class ConversationService {
                             instantComparator
                     );
 
-            case OLDEST_ACTIVITY_FIRST ->
-                    Comparator.comparing(
-                            ConversationEntity::getLastMessageAt,
-                            instantComparator
-                    );
-
             case LAST_MESSAGE_DESC ->
                     Comparator.comparing(
                             ConversationEntity::getLastMessageAt,
