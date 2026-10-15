@@ -6,6 +6,8 @@ import {
 } from 'react-router-dom'
 
 import {
+    createGroup,
+    getGroups,
     searchInbox,
 } from '../../api/conversationApi'
 
@@ -19,6 +21,7 @@ import type {
 import type {
     ChannelSummary,
     ConversationDto,
+    ConversationGroupDto,
     ConversationListItem,
 } from '../../api/types/conversation'
 
@@ -66,8 +69,6 @@ function ConversationList() {
     const canViewAll =
         isSuperAdmin || isWorkspaceSupervisor
 
-
-
     const requestedTab = searchParams.get('tab')
 
     const initialTab: Tab =
@@ -82,6 +83,12 @@ function ConversationList() {
                     : 'mine'
 
     const [tab, setTab] = useState<Tab>(initialTab)
+
+    const [groups, setGroups] =
+        useState<ConversationGroupDto[]>([])
+
+    const [selectedGroupId, setSelectedGroupId] =
+        useState<string | null>(searchParams.get('groupId'))
 
     const [items, setItems] =
         useState<ConversationListItem[]>(
@@ -103,6 +110,55 @@ function ConversationList() {
         showNewConversation,
         setShowNewConversation,
     ] = useState(false)
+
+    const [showCreateGroup, setShowCreateGroup] =
+        useState(false)
+
+    const [groupName, setGroupName] =
+        useState('')
+
+    const [creatingGroup, setCreatingGroup] =
+        useState(false)
+
+    const [groupError, setGroupError] =
+        useState<string | null>(null)
+
+    useEffect(() => {
+        if (
+            !currentWorkspace ||
+            !isEmployee ||
+            !currentEmployee
+        ) {
+            setGroups([])
+            return
+        }
+
+        let active = true
+
+        void getGroups(currentWorkspace.id)
+            .then(result => {
+                if (active) {
+                    setGroups(result)
+                }
+            })
+            .catch(() => {
+                console.error(
+                    'Не удалось загрузить группы диалогов:',
+                    error,
+                )
+                if (active) {
+                    setGroups([])
+                }
+            })
+
+        return () => {
+            active = false
+        }
+    }, [
+        currentWorkspace?.id,
+        currentEmployee?.id,
+        isEmployee,
+    ])
 
     useEffect(() => {
         if (
@@ -130,6 +186,20 @@ function ConversationList() {
 
     useEffect(() => {
         const urlTab = searchParams.get('tab')
+
+        if (
+            urlTab === 'group' &&
+            isEmployee &&
+            !isSuperAdmin
+        ) {
+            const groupId = searchParams.get('groupId')
+
+            if (groupId) {
+                setSelectedGroupId(groupId)
+                setTab('group')
+                return
+            }
+        }
 
         if (
             urlTab === 'unassigned' &&
@@ -177,6 +247,12 @@ function ConversationList() {
             return
         }
 
+        if (tab === 'group' && !selectedGroupId) {
+            setItems([])
+            setLoading(false)
+            return
+        }
+
         const workspaceId =
             currentWorkspace.id
 
@@ -192,11 +268,13 @@ function ConversationList() {
                 const conversations: ConversationDto[] = []
 
                 const view =
-                    tab === 'all'
-                        ? 'ALL'
-                        : tab === 'unassigned'
-                            ? 'UNASSIGNED'
-                            : 'MINE'
+                    tab === 'group'
+                        ? 'GROUP'
+                        : tab === 'all'
+                            ? 'ALL'
+                            : tab === 'unassigned'
+                                ? 'UNASSIGNED'
+                                : 'MINE'
 
                 let page = 0
                 let hasNext = true
@@ -206,6 +284,9 @@ function ConversationList() {
                         workspaceId,
                         {
                             view,
+                            ...(tab === 'group' && selectedGroupId
+                                ? { groupId: selectedGroupId }
+                                : {}),
                             page,
                             size: 10,
                         },
@@ -436,6 +517,7 @@ function ConversationList() {
     const handleTabChange = (
         nextTab: Tab,
     ) => {
+        setSelectedGroupId(null)
         setTab(nextTab)
 
         const conversationPath =
@@ -449,6 +531,69 @@ function ConversationList() {
                 replace: true,
             },
         )
+    }
+
+    const handleGroupChange = (
+        groupId: string,
+    ) => {
+        setSelectedGroupId(groupId)
+        setTab('group')
+
+        const conversationPath =
+            conversationId
+                ? `/inbox/${conversationId}`
+                : '/inbox'
+
+        navigate(
+            `${conversationPath}?tab=group&groupId=${groupId}`,
+            {
+                replace: true,
+            },
+        )
+    }
+
+    const handleCreateGroup = async () => {
+        const name = groupName.trim()
+
+        if (!name) {
+            setGroupError('Введите название группы.')
+            return
+        }
+
+        if (name.length > 100) {
+            setGroupError(
+                'Название группы не должно превышать 100 символов.',
+            )
+            return
+        }
+
+        setCreatingGroup(true)
+        setGroupError(null)
+
+        try {
+            const created = await createGroup(
+                currentWorkspace!.id,
+                name,
+            )
+
+            setGroups(previous => [
+                ...previous,
+                created,
+            ].sort((a, b) =>
+                a.name.localeCompare(b.name, 'ru'),
+            ))
+
+            setGroupName('')
+            setShowCreateGroup(false)
+        } catch (err) {
+            setGroupError(
+                err instanceof Error
+                    ? err.message
+                    : 'Не удалось создать группу.',
+            )
+        } finally {
+            setCreatingGroup(false)
+        }
     }
 
     const handleConversationCreated = (
@@ -475,9 +620,7 @@ function ConversationList() {
                 <div className="conversation-list-header">
                     <div className="conversation-list-header-top">
                         <div>
-                            <h2>
-                                Диалоги
-                            </h2>
+                            <h2>Диалоги</h2>
 
                             <span className="conversation-list-workspace">
                                 {currentWorkspace.name}
@@ -488,11 +631,7 @@ function ConversationList() {
                             <button
                                 type="button"
                                 className="ui-button ui-button-primary"
-                                onClick={() =>
-                                    setShowNewConversation(
-                                        true,
-                                    )
-                                }
+                                onClick={() => setShowNewConversation(true)}
                             >
                                 + Новый диалог
                             </button>
@@ -530,8 +669,88 @@ function ConversationList() {
                             )}
                         </div>
                     )}
-                </div>
 
+                    {isEmployee && (
+                        <div className="conversation-list-groups">
+                            {groups.length > 0 && (
+                                <div className="conversation-list-tabs">
+                                    {groups.map(group => (
+                                        <button
+                                            key={group.id}
+                                            type="button"
+                                            className={
+                                                tab === 'group' &&
+                                                selectedGroupId === group.id
+                                                    ? 'active'
+                                                    : ''
+                                            }
+                                            onClick={() => handleGroupChange(group.id)}
+                                        >
+                                            {group.name}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+
+                            <div className="conversation-list-group-actions">
+                                <button
+                                    type="button"
+                                    className="ui-button ui-button-secondary"
+                                    onClick={() => {
+                                        setGroupError(null)
+                                        setShowCreateGroup(value => !value)
+                                    }}
+                                >
+                                    {showCreateGroup ? 'Отмена' : '+ Группа'}
+                                </button>
+                            </div>
+
+                            {showCreateGroup && (
+                                <form
+                                    className="conversation-list-group-form"
+                                    onSubmit={event => {
+                                        event.preventDefault()
+                                        void handleCreateGroup()
+                                    }}
+                                >
+                                    <input
+                                        className="ui-input"
+                                        type="text"
+                                        value={groupName}
+                                        onChange={event => {
+                                            setGroupName(event.target.value)
+                                            setGroupError(null)
+                                        }}
+                                        placeholder="Название группы"
+                                        maxLength={100}
+                                        autoFocus
+                                        disabled={creatingGroup}
+                                    />
+
+                                    <button
+                                        type="submit"
+                                        className="ui-button ui-button-primary"
+                                        disabled={creatingGroup || !groupName.trim()}
+                                    >
+                                        {creatingGroup ? 'Создание…' : 'Создать'}
+                                    </button>
+
+                                    {groupError && (
+                                        <div className="ui-form-error">
+                                            {groupError}
+                                        </div>
+                                    )}
+                                </form>
+                            )}
+
+                            {!showCreateGroup && groupError && (
+                                <div className="ui-form-error">
+                                    {groupError}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
                 {loading && (
                     <div className="conversation-list-state">
                         Загрузка…

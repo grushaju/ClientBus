@@ -107,3 +107,12 @@ export interface ConversationSearchResponse {
     totalPages: number
     hasNext: boolean
 }
+
+export interface ConversationGroupDto {
+    id: string
+    workspaceId: string
+    ownerEmployeeId: string
+    name: string
+    createdAt: string
+    updatedAt: string
+}

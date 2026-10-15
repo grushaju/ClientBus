@@ -2,6 +2,7 @@ import { apiFetch } from './apiClient'
 
 import type {
     ConversationDto,
+    ConversationGroupDto,
     ConversationSearchRequest,
     ConversationSearchResponse,
     CreateOutboundConversationRequest,
@@ -148,6 +149,42 @@ export async function searchInbox(
             method: 'POST',
             body: JSON.stringify(request),
         },
+    )
+
+    return response.json()
+}
+
+export async function createGroup(
+    workspaceId: string,
+    name: string,
+): Promise<ConversationGroupDto> {
+    const response = await apiFetch(
+        `/api/conversations/workspace/${workspaceId}/groups`,
+        {
+            method: 'POST',
+            body: JSON.stringify({ name }),
+        },
+    )
+
+    return response.json()
+}
+
+export async function getGroups(
+    workspaceId: string,
+): Promise<ConversationGroupDto[]> {
+    const response = await apiFetch(
+        `/api/conversations/workspace/${workspaceId}/groups`,
+    )
+
+    return response.json()
+}
+
+export async function getGroupConversations(
+    workspaceId: string,
+    groupId: string,
+): Promise<ConversationDto[]> {
+    const response = await apiFetch(
+        `/api/conversations/workspace/${workspaceId}/groups/${groupId}/conversations`,
     )
 
     return response.json()

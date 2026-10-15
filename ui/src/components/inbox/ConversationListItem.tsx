@@ -12,17 +12,20 @@ export type ConversationListTab =
     | 'mine'
     | 'unassigned'
     | 'all'
+    | 'group'
 
 interface ConversationListItemProps {
     item: ConversationListItem
     active: boolean
     tab: ConversationListTab
+    groupId?: string | null
 }
 
 function ConversationListItemComponent({
                                            item,
                                            active,
                                            tab,
+                                           groupId,
                                        }: ConversationListItemProps) {
     const {
         conversation,
@@ -52,7 +55,9 @@ function ConversationListItemComponent({
 
     return (
         <Link
-            to={`/inbox/${conversation.id}?tab=${tab}`}
+            to={tab === 'group' && groupId
+                ? `/inbox/${conversation.id}?tab=group&groupId=${groupId}`
+                : `/inbox/${conversation.id}?tab=${tab}`}
             className={
                 `conversation-list-item ${
                     active ? 'active' : ''
