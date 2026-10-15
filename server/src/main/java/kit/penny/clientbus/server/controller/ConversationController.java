@@ -512,4 +512,18 @@ public class ConversationController {
         );
     }
 
+    @GetMapping("/workspace/{workspaceId}/groups/membership")
+    @PreAuthorize("hasRole('EMPLOYEE')")
+    public ResponseEntity<List<UUID>> getConversationGroupIds(
+            @PathVariable UUID workspaceId,
+            @RequestParam UUID conversationId
+    ) {
+        return ResponseEntity.ok(
+                conversationGroupService.getConversationGroupIds(
+                        workspaceId,
+                        conversationId
+                )
+        );
+    }
+
 }

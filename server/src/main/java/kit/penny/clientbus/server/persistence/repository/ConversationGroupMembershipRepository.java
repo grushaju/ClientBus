@@ -60,4 +60,24 @@ public interface ConversationGroupMembershipRepository
             @Param("workspaceId") UUID workspaceId,
             @Param("employeeId") UUID employeeId
     );
+
+    void deleteAllByConversation_Id(UUID conversationId);
+
+    @Query("""
+        SELECT g.id
+        FROM ConversationGroupMembershipEntity m
+        JOIN m.group g
+        JOIN m.conversation c
+        WHERE c.id = :conversationId
+          AND c.workspace.id = :workspaceId
+          AND g.workspace.id = :workspaceId
+          AND g.ownerEmployee.id = :employeeId
+          AND c.assignedEmployee.id = :employeeId
+        ORDER BY g.name ASC
+        """)
+    List<UUID> findGroupIdsForAssignedConversation(
+            @Param("conversationId") UUID conversationId,
+            @Param("workspaceId") UUID workspaceId,
+            @Param("employeeId") UUID employeeId
+    );
 }

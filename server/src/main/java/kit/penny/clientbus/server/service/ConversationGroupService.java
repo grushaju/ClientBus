@@ -240,6 +240,43 @@ public class ConversationGroupService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public List<UUID> getConversationGroupIds(
+            UUID workspaceId,
+            UUID conversationId
+    ) {
+        currentUserService.requireWorkspaceAccess(workspaceId);
+
+        UUID employeeId = requireEmployee();
+
+        ConversationEntity conversation = conversationRepository
+                .findById(conversationId)
+                .orElseThrow(() -> new EntityNotFoundException(
+                        "Conversation not found: " + conversationId
+                ));
+
+        if (!conversation.getWorkspace().getId().equals(workspaceId)) {
+            throw new EntityNotFoundException(
+                    "Conversation not found in workspace: " + conversationId
+            );
+        }
+
+        currentUserService.requireConversationAccess(conversation);
+
+        if (conversation.getAssignedEmployee() == null
+                || !conversation.getAssignedEmployee().getId().equals(employeeId)) {
+            throw new AccessDeniedException(
+                    "Only the assigned employee can manage personal group membership"
+            );
+        }
+
+        return membershipRepository.findGroupIdsForAssignedConversation(
+                conversationId,
+                workspaceId,
+                employeeId
+        );
+    }
+
 
     private ConversationGroupEntity requireOwnedGroup(
             UUID workspaceId,

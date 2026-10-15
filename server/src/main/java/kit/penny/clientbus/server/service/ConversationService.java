@@ -1070,7 +1070,7 @@ public class ConversationService {
             );
         }
 
-        conversation.setAssignedEmployee(employee);
+        changeAssignment(conversation, employee);
 
         return conversationMapper.toDto(conversation);
     }
@@ -1083,7 +1083,7 @@ public class ConversationService {
 
         requireAssignmentManagement(conversation);
 
-        conversation.setAssignedEmployee(null);
+        changeAssignment(conversation, null);
 
         return conversationMapper.toDto(conversation);
     }
@@ -1119,9 +1119,7 @@ public class ConversationService {
             );
         }
 
-        conversation.setAssignedEmployee(
-                currentEmployee
-        );
+        changeAssignment(conversation, currentEmployee);
 
         return conversationMapper.toDto(conversation);
     }
@@ -1148,7 +1146,8 @@ public class ConversationService {
                 conversation.getAssignedEmployee();
 
         if (assignedEmployee == null) {
-
+            conversationGroupMembershipRepository
+                    .deleteAllByConversation_Id(conversation.getId());
             return conversationMapper.toDto(
                     conversation
             );
@@ -1287,7 +1286,8 @@ public class ConversationService {
         currentUserService.requireWorkspaceAccess(workspaceId);
 
         if (currentUserService.isSuperAdmin()
-                || currentUserService.isSupervisor(workspaceId)) {
+                || currentUserService.isSupervisor(workspaceId)
+                || conversation.getAssignedEmployee() == null) {
             return;
         }
 
@@ -1439,6 +1439,28 @@ public class ConversationService {
     /* ==============================================
                           HANDLERS
     ================================================= */
+
+    private void changeAssignment(
+            ConversationEntity conversation,
+            EmployeeEntity newEmployee
+    ) {
+        UUID currentEmployeeId =
+                conversation.getAssignedEmployee() == null
+                        ? null
+                        : conversation.getAssignedEmployee().getId();
+
+        UUID newEmployeeId =
+                newEmployee == null
+                        ? null
+                        : newEmployee.getId();
+
+        if (!Objects.equals(currentEmployeeId, newEmployeeId)) {
+            conversationGroupMembershipRepository
+                    .deleteAllByConversation_Id(conversation.getId());
+        }
+
+        conversation.setAssignedEmployee(newEmployee);
+    }
 
     private boolean canViewAll(UUID workspaceId) {
         return currentUserService.isSuperAdmin()

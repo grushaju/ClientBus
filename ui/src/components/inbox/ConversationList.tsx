@@ -6,8 +6,12 @@ import {
 } from 'react-router-dom'
 
 import {
+    addConversationToGroup,
     createGroup,
+    renameGroup,
+    deleteGroup,
     getGroups,
+    removeConversationFromGroup,
     searchInbox,
 } from '../../api/conversationApi'
 
@@ -101,6 +105,9 @@ function ConversationList() {
     const [error, setError] =
         useState<string | null>(null)
 
+    const [groupMembershipVersion, setGroupMembershipVersion] =
+        useState(0)
+
     const [
         channels,
         setChannels,
@@ -113,6 +120,15 @@ function ConversationList() {
 
     const [showCreateGroup, setShowCreateGroup] =
         useState(false)
+
+    const [showRenameGroup, setShowRenameGroup] =
+        useState(false)
+
+    const [renamingGroup, setRenamingGroup] =
+        useState(false)
+
+    const [deletingGroupId, setDeletingGroupId] =
+        useState<string | null>(null)
 
     const [groupName, setGroupName] =
         useState('')
@@ -395,6 +411,8 @@ function ConversationList() {
         isEmployee,
         isSuperAdmin,
         tab,
+        selectedGroupId,
+        groupMembershipVersion,
     ])
 
     useEffect(() => {
@@ -499,12 +517,12 @@ function ConversationList() {
             return
         }
 
-        navigate(
-            `/inbox/${items[0].conversation.id}?tab=${tab}`,
-            {
-                replace: true,
-            },
-        )
+        const firstConversationUrl =
+            tab === 'group' && selectedGroupId
+                ? `/inbox/${items[0].conversation.id}?tab=group&groupId=${selectedGroupId}`
+                : `/inbox/${items[0].conversation.id}?tab=${tab}`
+
+        navigate(firstConversationUrl, { replace: true })
     }, [
         conversationId,
         error,
@@ -594,6 +612,151 @@ function ConversationList() {
         } finally {
             setCreatingGroup(false)
         }
+    }
+
+
+    const handleRenameGroup = async () => {
+        const group = groups.find(
+            item => item.id === selectedGroupId,
+        )
+
+        const name = groupName.trim()
+
+        if (!group) {
+            setGroupError('Выберите группу.')
+            return
+        }
+
+        if (!name) {
+            setGroupError('Введите название группы.')
+            return
+        }
+
+        if (name.length > 100) {
+            setGroupError(
+                'Название группы не должно превышать 100 символов.',
+            )
+            return
+        }
+
+        setRenamingGroup(true)
+        setGroupError(null)
+
+        try {
+            const updated = await renameGroup(
+                currentWorkspace!.id,
+                group.id,
+                name,
+            )
+
+            setGroups(previous =>
+                previous
+                    .map(item =>
+                        item.id === updated.id ? updated : item,
+                    )
+                    .sort((a, b) =>
+                        a.name.localeCompare(b.name, 'ru'),
+                    ),
+            )
+
+            setGroupName('')
+            setShowRenameGroup(false)
+        } catch (err) {
+            setGroupError(
+                err instanceof Error
+                    ? err.message
+                    : 'Не удалось переименовать группу.',
+            )
+        } finally {
+            setRenamingGroup(false)
+        }
+    }
+
+    const handleDeleteGroup = async () => {
+        const group = groups.find(
+            item => item.id === selectedGroupId,
+        )
+
+        if (!group || deletingGroupId) {
+            return
+        }
+
+        if (!window.confirm(
+            `Удалить группу «${group.name}»? Диалоги останутся без изменений.`,
+        )) {
+            return
+        }
+
+        setDeletingGroupId(group.id)
+        setGroupError(null)
+
+        try {
+            await deleteGroup(
+                currentWorkspace!.id,
+                group.id,
+            )
+
+            setGroups(previous =>
+                previous.filter(item => item.id !== group.id),
+            )
+
+            setSelectedGroupId(null)
+            setShowRenameGroup(false)
+            setShowCreateGroup(false)
+            setGroupName('')
+            setTab('mine')
+
+            const conversationPath = conversationId
+                ? `/inbox/${conversationId}`
+                : '/inbox'
+
+            navigate(`${conversationPath}?tab=mine`, {
+                replace: true,
+            })
+        } catch (err) {
+            setGroupError(
+                err instanceof Error
+                    ? err.message
+                    : 'Не удалось удалить группу.',
+            )
+        } finally {
+            setDeletingGroupId(null)
+        }
+    }
+
+
+    const handleAddConversationToGroup = async (
+        conversationId: string,
+        groupId: string,
+    ) => {
+        if (!currentWorkspace) {
+            throw new Error('Workspace не выбран.')
+        }
+
+        await addConversationToGroup(
+            currentWorkspace.id,
+            groupId,
+            conversationId,
+        )
+
+        setGroupMembershipVersion(version => version + 1)
+    }
+
+    const handleRemoveConversationFromGroup = async (
+        conversationId: string,
+        groupId: string,
+    ) => {
+        if (!currentWorkspace) {
+            throw new Error('Workspace не выбран.')
+        }
+
+        await removeConversationFromGroup(
+            currentWorkspace.id,
+            groupId,
+            conversationId,
+        )
+
+        setGroupMembershipVersion(version => version + 1)
     }
 
     const handleConversationCreated = (
@@ -692,17 +855,56 @@ function ConversationList() {
                                 </div>
                             )}
 
+
                             <div className="conversation-list-group-actions">
                                 <button
                                     type="button"
                                     className="ui-button ui-button-secondary"
                                     onClick={() => {
                                         setGroupError(null)
+                                        setShowRenameGroup(false)
                                         setShowCreateGroup(value => !value)
                                     }}
                                 >
                                     {showCreateGroup ? 'Отмена' : '+ Группа'}
                                 </button>
+
+                                {selectedGroupId && groups.some(
+                                    group => group.id === selectedGroupId,
+                                ) && (
+                                    <>
+                                        <button
+                                            type="button"
+                                            className="ui-button ui-button-secondary"
+                                            disabled={deletingGroupId !== null || renamingGroup}
+                                            onClick={() => {
+                                                const group = groups.find(
+                                                    item => item.id === selectedGroupId,
+                                                )
+
+                                                if (!group) return
+
+                                                setGroupName(group.name)
+                                                setGroupError(null)
+                                                setShowCreateGroup(false)
+                                                setShowRenameGroup(value => !value)
+                                            }}
+                                        >
+                                            Переименовать
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            className="ui-button ui-button-secondary"
+                                            disabled={deletingGroupId !== null || renamingGroup}
+                                            onClick={() => void handleDeleteGroup()}
+                                        >
+                                            {deletingGroupId === selectedGroupId
+                                                ? 'Удаление…'
+                                                : 'Удалить'}
+                                        </button>
+                                    </>
+                                )}
                             </div>
 
                             {showCreateGroup && (
@@ -743,7 +945,57 @@ function ConversationList() {
                                 </form>
                             )}
 
-                            {!showCreateGroup && groupError && (
+                            {showRenameGroup && selectedGroupId && (
+                                <form
+                                    className="conversation-list-group-form"
+                                    onSubmit={event => {
+                                        event.preventDefault()
+                                        void handleRenameGroup()
+                                    }}
+                                >
+                                    <input
+                                        className="ui-input"
+                                        type="text"
+                                        value={groupName}
+                                        onChange={event => {
+                                            setGroupName(event.target.value)
+                                            setGroupError(null)
+                                        }}
+                                        placeholder="Новое название группы"
+                                        maxLength={100}
+                                        autoFocus
+                                        disabled={renamingGroup}
+                                    />
+
+                                    <button
+                                        type="submit"
+                                        className="ui-button ui-button-primary"
+                                        disabled={
+                                            renamingGroup ||
+                                            !groupName.trim() ||
+                                            deletingGroupId !== null
+                                        }
+                                    >
+                                        {renamingGroup ? 'Сохранение…' : 'Сохранить'}
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        className="ui-button ui-button-secondary"
+                                        disabled={renamingGroup}
+                                        onClick={() => {
+                                            setShowRenameGroup(false)
+                                            setGroupName('')
+                                            setGroupError(null)
+                                        }}
+                                    >
+                                        Отмена
+                                    </button>
+                                </form>
+                            )}
+
+
+                            {!showCreateGroup && !showRenameGroup && groupError && (
                                 <div className="ui-form-error">
                                     {groupError}
                                 </div>
@@ -795,6 +1047,26 @@ function ConversationList() {
                                         }
                                         tab={
                                             tab
+                                        }
+                                        groupId={
+                                            selectedGroupId
+                                        }
+                                        groups={
+                                            groups
+                                        }
+                                        workspaceId={
+                                            currentWorkspace.id
+                                        }
+                                        canManageGroups={
+                                            isEmployee &&
+                                            !!currentEmployee &&
+                                            item.conversation.assignedEmployeeId === currentEmployee.id
+                                        }
+                                        onAddToGroup={
+                                            handleAddConversationToGroup
+                                        }
+                                        onRemoveFromGroup={
+                                            handleRemoveConversationFromGroup
                                         }
                                     />
                                 ),

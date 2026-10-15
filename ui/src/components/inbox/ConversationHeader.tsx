@@ -335,16 +335,6 @@ function ConversationHeader({
                             </div>
                         </div>
                     )}
-
-                    {isEmployee &&
-                        conversation.assignedEmployeeId !== null &&
-                        !isAssignedToCurrentEmployee && (
-                            <span className="conversation-assignment-status">
-                                {assignedEmployeeName
-                                    ? `Назначен: ${assignedEmployeeName}`
-                                    : 'Назначен другому сотруднику'}
-                            </span>
-                        )}
                 </div>
             </div>
 

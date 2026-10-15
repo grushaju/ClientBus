@@ -169,6 +169,36 @@ export async function createGroup(
     return response.json()
 }
 
+
+export async function renameGroup(
+    workspaceId: string,
+    groupId: string,
+    name: string,
+): Promise<ConversationGroupDto> {
+    const response = await apiFetch(
+        `/api/conversations/workspace/${workspaceId}/groups/${groupId}`,
+        {
+            method: 'PUT',
+            body: JSON.stringify({ name }),
+        },
+    )
+
+    return response.json()
+}
+
+export async function deleteGroup(
+    workspaceId: string,
+    groupId: string,
+): Promise<void> {
+    await apiFetch(
+        `/api/conversations/workspace/${workspaceId}/groups/${groupId}`,
+        {
+            method: 'DELETE',
+        },
+    )
+}
+
+
 export async function getGroups(
     workspaceId: string,
 ): Promise<ConversationGroupDto[]> {
@@ -189,3 +219,42 @@ export async function getGroupConversations(
 
     return response.json()
 }
+
+export async function addConversationToGroup(
+    workspaceId: string,
+    groupId: string,
+    conversationId: string,
+): Promise<void> {
+    await apiFetch(
+        `/api/conversations/workspace/${workspaceId}/groups/${groupId}/members`,
+        {
+            method: 'POST',
+            body: JSON.stringify({ conversationId }),
+        },
+    )
+}
+
+export async function removeConversationFromGroup(
+    workspaceId: string,
+    groupId: string,
+    conversationId: string,
+): Promise<void> {
+    await apiFetch(
+        `/api/conversations/workspace/${workspaceId}/groups/${groupId}/members/${conversationId}`,
+        {
+            method: 'DELETE',
+        },
+    )
+}
+
+export async function getConversationGroupIds(
+    workspaceId: string,
+    conversationId: string,
+): Promise<string[]> {
+    const response = await apiFetch(
+        `/api/conversations/workspace/${workspaceId}/groups/membership?conversationId=${encodeURIComponent(conversationId)}`,
+    )
+
+    return response.json()
+}
+
