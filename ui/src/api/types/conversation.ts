@@ -113,6 +113,7 @@ export interface ConversationGroupDto {
     workspaceId: string
     ownerEmployeeId: string
     name: string
+    icon: string
     createdAt: string
     updatedAt: string
 }

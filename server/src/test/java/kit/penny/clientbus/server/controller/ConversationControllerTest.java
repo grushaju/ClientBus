@@ -207,6 +207,7 @@ class ConversationControllerTest {
                 UUID.randomUUID(),
                 "Важные клиенты",
                 null,
+                null,
                 null
         );
         List<ConversationGroupDto> groups = List.of(group);
@@ -226,13 +227,14 @@ class ConversationControllerTest {
     @Test
     void createGroup_returnsCreatedGroup() {
         CreateConversationGroupRequest request =
-                new CreateConversationGroupRequest("Важные клиенты");
+                new CreateConversationGroupRequest("Важные клиенты", "heart");
 
         ConversationGroupDto group = new ConversationGroupDto(
                 UUID.randomUUID(),
                 workspaceId,
                 UUID.randomUUID(),
                 "Важные клиенты",
+                null,
                 null,
                 null
         );
@@ -256,13 +258,14 @@ class ConversationControllerTest {
     void renameGroup_returnsUpdatedGroup() {
         UUID groupId = UUID.randomUUID();
         RenameConversationGroupRequest request =
-                new RenameConversationGroupRequest("VIP");
+                new RenameConversationGroupRequest("VIP", "star");
 
         ConversationGroupDto group = new ConversationGroupDto(
                 groupId,
                 workspaceId,
                 UUID.randomUUID(),
                 "VIP",
+                null,
                 null,
                 null
         );

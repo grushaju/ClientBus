@@ -157,12 +157,13 @@ export async function searchInbox(
 export async function createGroup(
     workspaceId: string,
     name: string,
+    icon = 'folder',
 ): Promise<ConversationGroupDto> {
     const response = await apiFetch(
         `/api/conversations/workspace/${workspaceId}/groups`,
         {
             method: 'POST',
-            body: JSON.stringify({ name }),
+            body: JSON.stringify({ name, icon }),
         },
     )
 
@@ -174,12 +175,13 @@ export async function renameGroup(
     workspaceId: string,
     groupId: string,
     name: string,
+    icon?: string,
 ): Promise<ConversationGroupDto> {
     const response = await apiFetch(
         `/api/conversations/workspace/${workspaceId}/groups/${groupId}`,
         {
             method: 'PUT',
-            body: JSON.stringify({ name }),
+            body: JSON.stringify({ name, icon }),
         },
     )
 

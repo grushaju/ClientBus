@@ -653,6 +653,28 @@
 }
 
 
+.conversation-list-groups .conversation-list-tabs button {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.conversation-group-icon {
+    display: block;
+    flex: 0 0 16px;
+    color: var(--ui-color-text-muted);
+}
+
+.conversation-list-group-icon-field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    color: var(--ui-color-text-secondary);
+    font-size: var(--ui-font-size-sm);
+}
+
+
+
 /* =========================================================
    RESPONSIVE
    ========================================================= */

@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-10-15 17:53:04
+- Generated: 2026-10-15 19:40:06
 - Branch: `main`
-- Commit: `ebe6f88`
+- Commit: `6840c6c`
 
 ## Project Structure
 
@@ -228,6 +228,7 @@
 ##### `kit.penny.clientbus.server.exception`
 
 - `ChannelUnavailableException.java` — `server/src/main/java/kit/penny/clientbus/server/exception/ChannelUnavailableException.java`
+- `ConversationGroupNameExistsException.java` — `server/src/main/java/kit/penny/clientbus/server/exception/ConversationGroupNameExistsException.java`
 - `GlobalExceptionHandler.java` — `server/src/main/java/kit/penny/clientbus/server/exception/GlobalExceptionHandler.java`
 - `InvalidCurrentPasswordException.java` — `server/src/main/java/kit/penny/clientbus/server/exception/InvalidCurrentPasswordException.java`
 
@@ -629,6 +630,7 @@
 
 #### `public`
 
+- `ui/public/assets/group/folder.svg`
 - `ui/public/favicon.ico`
 
 #### UI configuration
@@ -644,7 +646,7 @@
 ## Summary
 
 - Maven modules: 3
-- Java files: 315
+- Java files: 316
 - UI source files: 100
-- Git commit: `ebe6f88`
+- Git commit: `6840c6c`
 

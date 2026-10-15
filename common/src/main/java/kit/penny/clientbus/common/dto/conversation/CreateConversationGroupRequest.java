@@ -7,6 +7,7 @@ import jakarta.validation.constraints.Size;
 public record CreateConversationGroupRequest(
         @NotBlank
         @Size(max = 100)
-        String name
+        String name,
+        String icon
 ) {
 }

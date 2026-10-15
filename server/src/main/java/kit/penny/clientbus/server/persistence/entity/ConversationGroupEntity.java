@@ -61,6 +61,19 @@ public class ConversationGroupEntity {
     @Column(nullable = false, length = 100)
     private String name;
 
+
+    @Column(name = "icon", length = 40)
+    private String icon = "folder";
+
+    public String getIcon() {
+        return icon == null || icon.isBlank() ? "folder" : icon;
+    }
+
+    public void setIcon(String icon) {
+        this.icon = icon;
+    }
+
+
     @CreationTimestamp
     @Column(
             name = "createdat",

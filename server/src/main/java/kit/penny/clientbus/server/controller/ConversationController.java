@@ -409,7 +409,8 @@ public class ConversationController {
                 .body(
                         conversationGroupService.createGroup(
                                 workspaceId,
-                                request.name()
+                                request.name(),
+                                request.icon()
                         )
                 );
     }
@@ -428,7 +429,8 @@ public class ConversationController {
                 conversationGroupService.renameGroup(
                         workspaceId,
                         groupId,
-                        request.name()
+                        request.name(),
+                        request.icon()
                 )
         );
     }

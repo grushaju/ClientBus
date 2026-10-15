@@ -66,6 +66,18 @@ public class GlobalExceptionHandler {
                 );
     }
 
+    @ExceptionHandler(ConversationGroupNameExistsException.class)
+    public ResponseEntity<ErrorResponse> handleConversationGroupNameExists(
+            ConversationGroupNameExistsException exception
+    ) {
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse(
+                        "GROUP_NAME_EXISTS",
+                        exception.getMessage()
+                ));
+    }
+
 
     public record ErrorResponse(
             String code,

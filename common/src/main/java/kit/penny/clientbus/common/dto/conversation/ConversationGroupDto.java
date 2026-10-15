@@ -9,6 +9,7 @@ public record ConversationGroupDto(
         UUID workspaceId,
         UUID ownerEmployeeId,
         String name,
+        String icon,
         Instant createdAt,
         Instant updatedAt
 ) {

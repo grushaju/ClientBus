@@ -4,6 +4,7 @@ package kit.penny.clientbus.server.service;
 import jakarta.persistence.EntityNotFoundException;
 import kit.penny.clientbus.common.dto.conversation.ConversationDto;
 import kit.penny.clientbus.common.dto.conversation.ConversationGroupDto;
+import kit.penny.clientbus.server.exception.ConversationGroupNameExistsException;
 import kit.penny.clientbus.server.mapper.ConversationMapper;
 import kit.penny.clientbus.server.persistence.entity.ConversationEntity;
 import kit.penny.clientbus.server.persistence.entity.ConversationGroupEntity;
@@ -21,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -70,6 +72,14 @@ public class ConversationGroupService {
             UUID workspaceId,
             String rawName
     ) {
+        return createGroup(workspaceId, rawName, "folder");
+    }
+
+    public ConversationGroupDto createGroup(
+            UUID workspaceId,
+            String rawName,
+            String rawIcon
+    ) {
         currentUserService.requireWorkspaceAccess(workspaceId);
 
         EmployeeEntity employee = currentUserService.getCurrentEmployee();
@@ -81,9 +91,7 @@ public class ConversationGroupService {
                         employee.getId(),
                         name
                 )) {
-            throw new IllegalArgumentException(
-                    "A group with this name already exists"
-            );
+            throw new ConversationGroupNameExistsException();
         }
 
         WorkspaceEntity workspace = workspaceRepository
@@ -96,6 +104,7 @@ public class ConversationGroupService {
         group.setWorkspace(workspace);
         group.setOwnerEmployee(employee);
         group.setName(name);
+        group.setIcon(normalizeIcon(rawIcon));
 
         try {
             return toDto(groupRepository.saveAndFlush(group));
@@ -112,6 +121,15 @@ public class ConversationGroupService {
             UUID groupId,
             String rawName
     ) {
+        return renameGroup(workspaceId, groupId, rawName, null);
+    }
+
+    public ConversationGroupDto renameGroup(
+            UUID workspaceId,
+            UUID groupId,
+            String rawName,
+            String rawIcon
+    ) {
         ConversationGroupEntity group =
                 requireOwnedGroup(workspaceId, groupId);
 
@@ -124,20 +142,18 @@ public class ConversationGroupService {
                         group.getOwnerEmployee().getId(),
                         name
                 )) {
-            throw new IllegalArgumentException(
-                    "A group with this name already exists"
-            );
+            throw new ConversationGroupNameExistsException();
         }
 
         group.setName(name);
+        if (rawIcon != null) {
+            group.setIcon(normalizeIcon(rawIcon));
+        }
 
         try {
             return toDto(groupRepository.saveAndFlush(group));
         } catch (DataIntegrityViolationException ex) {
-            throw new IllegalArgumentException(
-                    "A group with this name already exists",
-                    ex
-            );
+            throw new ConversationGroupNameExistsException();
         }
     }
 
@@ -333,8 +349,30 @@ public class ConversationGroupService {
                 group.getWorkspace().getId(),
                 group.getOwnerEmployee().getId(),
                 group.getName(),
+                group.getIcon(),
                 group.getCreatedAt(),
                 group.getUpdatedAt()
         );
     }
+
+
+    private static final Set<String> GROUP_ICONS = Set.of(
+            "folder",
+            "star",
+            "heart",
+            "tag",
+            "briefcase",
+            "clock",
+            "flag",
+            "users",
+            "message-circle",
+            "bookmark"
+    );
+
+    private String normalizeIcon(String icon) {
+        return icon != null && GROUP_ICONS.contains(icon)
+                ? icon
+                : "folder";
+    }
+
 }
