@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-10-16 12:23:33
+- Generated: 2026-10-16 14:34:00
 - Branch: `main`
-- Commit: `8be7b10`
+- Commit: `c74a585`
 
 ## Project Structure
 
@@ -109,6 +109,7 @@
 - `MessageSenderType.java` — `common/src/main/java/kit/penny/clientbus/common/enums/MessageSenderType.java`
 - `MessageType.java` — `common/src/main/java/kit/penny/clientbus/common/enums/MessageType.java`
 - `PlatformMessageEventType.java` — `common/src/main/java/kit/penny/clientbus/common/enums/PlatformMessageEventType.java`
+- `SavedFilterType.java` — `common/src/main/java/kit/penny/clientbus/common/enums/SavedFilterType.java`
 - `UserRole.java` — `common/src/main/java/kit/penny/clientbus/common/enums/UserRole.java`
 
 ##### `kit.penny.clientbus.common.kafka`
@@ -675,7 +676,7 @@
 ## Summary
 
 - Maven modules: 3
-- Java files: 316
+- Java files: 317
 - UI source files: 100
-- Git commit: `8be7b10`
+- Git commit: `c74a585`
 

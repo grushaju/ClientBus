@@ -1,6 +1,7 @@
 package kit.penny.clientbus.server.persistence.entity;
 
 import jakarta.persistence.*;
+import kit.penny.clientbus.common.enums.SavedFilterType;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
@@ -12,8 +13,8 @@ import java.util.UUID;
         name = "savedconversationfilter",
         indexes = {
                 @Index(
-                        name = "saved_conversation_filter_workspace_private_idx",
-                        columnList = "workspaceid, isprivate"
+                        name = "saved_conversation_filter_workspace_type_idx",
+                        columnList = "workspaceid, filtertype"
                 ),
                 @Index(
                         name = "saved_conversation_filter_workspace_owner_idx",
@@ -54,11 +55,14 @@ public class SavedConversationFilterEntity {
     @Column(nullable = false, length = 100)
     private String name;
 
+    @Enumerated(EnumType.STRING)
     @Column(
-            name = "isprivate",
-            nullable = false
+            name = "filtertype",
+            nullable = false,
+            length = 20
     )
-    private boolean isPrivate = true;
+    private SavedFilterType filterType = SavedFilterType.PRIVATE;
+
 
     /**
      * JSON с условиями фильтра, не снимок результатов поиска.
@@ -117,12 +121,12 @@ public class SavedConversationFilterEntity {
         this.name = name;
     }
 
-    public boolean isPrivate() {
-        return isPrivate;
+    public SavedFilterType getFilterType() {
+        return filterType;
     }
 
-    public void setPrivate(boolean isPrivate) {
-        this.isPrivate = isPrivate;
+    public void setFilterType(SavedFilterType filterType) {
+        this.filterType = filterType;
     }
 
     public String getFilterDefinition() {

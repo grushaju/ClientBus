@@ -1,5 +1,6 @@
 package kit.penny.clientbus.server.persistence.repository;
 
+import kit.penny.clientbus.common.enums.SavedFilterType;
 import kit.penny.clientbus.server.persistence.entity.SavedConversationFilterEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
@@ -13,37 +14,43 @@ public interface SavedConversationFilterRepository
         extends JpaRepository<SavedConversationFilterEntity, UUID> {
 
     List<SavedConversationFilterEntity>
-    findAllByWorkspaceIdAndIsPrivateTrueAndOwnerEmployeeIdOrderByNameAsc(
+    findAllByWorkspaceIdAndFilterTypeAndOwnerEmployeeIdOrderByNameAsc(
             UUID workspaceId,
+            SavedFilterType filterType,
             UUID ownerEmployeeId
     );
 
     List<SavedConversationFilterEntity>
-    findAllByWorkspaceIdAndPrivateFalseOrderByNameAsc(
-            UUID workspaceId
+    findAllByWorkspaceIdAndFilterTypeOrderByNameAsc(
+            UUID workspaceId,
+            SavedFilterType filterType
     );
 
     Optional<SavedConversationFilterEntity>
-    findByIdAndWorkspaceIdAndIsPrivateTrueAndOwnerEmployeeId(
+    findByIdAndWorkspaceIdAndFilterTypeAndOwnerEmployeeId(
             UUID id,
             UUID workspaceId,
+            SavedFilterType filterType,
             UUID ownerEmployeeId
     );
 
     Optional<SavedConversationFilterEntity>
-    findByIdAndWorkspaceId(
+    findByIdAndWorkspaceIdAndFilterType(
             UUID id,
-            UUID workspaceId
+            UUID workspaceId,
+            SavedFilterType filterType
     );
 
-    boolean existsByWorkspaceIdAndIsPrivateTrueAndOwnerEmployeeIdAndNameIgnoreCase(
+    boolean existsByWorkspaceIdAndFilterTypeAndOwnerEmployeeIdAndNameIgnoreCase(
             UUID workspaceId,
+            SavedFilterType filterType,
             UUID ownerEmployeeId,
             String name
     );
 
-    boolean existsByWorkspaceIdAndIsPrivateFalseAndNameIgnoreCase(
+    boolean existsByWorkspaceIdAndFilterTypeAndNameIgnoreCase(
             UUID workspaceId,
+            SavedFilterType filterType,
             String name
     );
 }
