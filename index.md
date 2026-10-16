@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-10-15 19:40:06
+- Generated: 2026-10-16 12:23:33
 - Branch: `main`
-- Commit: `6840c6c`
+- Commit: `8be7b10`
 
 ## Project Structure
 
@@ -121,6 +121,11 @@
 - `PlatformOutboundAttachment.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/PlatformOutboundAttachment.java`
 - `SyncConversationHistoryKafkaCommand.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/SyncConversationHistoryKafkaCommand.java`
 - `SyncRecentChatsKafkaCommand.java` — `common/src/main/java/kit/penny/clientbus/common/kafka/SyncRecentChatsKafkaCommand.java`
+
+#### `src/main/resources`
+
+
+#### `src/test/java`
 
 ### server
 
@@ -573,25 +578,25 @@
 - `ui/src/components/common/platform/platform.ts`
 - `ui/src/components/common/platform/PlatformIcon.tsx`
 - `ui/src/components/common/platform/PlatformName.tsx`
+- `ui/src/components/conversations/ConversationClientPanel.tsx`
+- `ui/src/components/conversations/ConversationHeader.tsx`
+- `ui/src/components/conversations/ConversationList.tsx`
+- `ui/src/components/conversations/ConversationListItem.tsx`
+- `ui/src/components/conversations/Conversations.css`
+- `ui/src/components/conversations/ConversationView.tsx`
+- `ui/src/components/conversations/ImageViewer.tsx`
+- `ui/src/components/conversations/Inbox.css`
+- `ui/src/components/conversations/InboxLayout.tsx`
+- `ui/src/components/conversations/MessageBubble.tsx`
+- `ui/src/components/conversations/MessageComposer.tsx`
+- `ui/src/components/conversations/MessageList.tsx`
+- `ui/src/components/conversations/Messages.css`
+- `ui/src/components/conversations/NewConversationDialog.tsx`
+- `ui/src/components/conversations/useConversationMessages.ts`
 - `ui/src/components/employees/EmployeeAvatar.tsx`
 - `ui/src/components/employees/EmployeeCreateDialog.tsx`
 - `ui/src/components/employees/EmployeeDetailsDialog.tsx`
 - `ui/src/components/employees/Employees.css`
-- `ui/src/components/inbox/ConversationClientPanel.tsx`
-- `ui/src/components/inbox/ConversationHeader.tsx`
-- `ui/src/components/inbox/ConversationList.tsx`
-- `ui/src/components/inbox/ConversationListItem.tsx`
-- `ui/src/components/inbox/Conversations.css`
-- `ui/src/components/inbox/ConversationView.tsx`
-- `ui/src/components/inbox/ImageViewer.tsx`
-- `ui/src/components/inbox/Inbox.css`
-- `ui/src/components/inbox/InboxLayout.tsx`
-- `ui/src/components/inbox/MessageBubble.tsx`
-- `ui/src/components/inbox/MessageComposer.tsx`
-- `ui/src/components/inbox/MessageList.tsx`
-- `ui/src/components/inbox/Messages.css`
-- `ui/src/components/inbox/NewConversationDialog.tsx`
-- `ui/src/components/inbox/useConversationMessages.ts`
 - `ui/src/components/layout/AppLayout.css`
 - `ui/src/components/layout/AppLayout.tsx`
 - `ui/src/components/layout/ProtectedLayout.tsx`
@@ -630,7 +635,31 @@
 
 #### `public`
 
-- `ui/public/assets/group/folder.svg`
+- `ui/public/assets/group/attach.svg`
+- `ui/public/assets/group/ban.svg`
+- `ui/public/assets/group/book.svg`
+- `ui/public/assets/group/bookmark.svg`
+- `ui/public/assets/group/cross.svg`
+- `ui/public/assets/group/dollar.svg`
+- `ui/public/assets/group/fire.svg`
+- `ui/public/assets/group/heart.svg`
+- `ui/public/assets/group/info.svg`
+- `ui/public/assets/group/like.svg`
+- `ui/public/assets/group/lock.svg`
+- `ui/public/assets/group/mail.svg`
+- `ui/public/assets/group/mute.svg`
+- `ui/public/assets/group/notifications.svg`
+- `ui/public/assets/group/pin.svg`
+- `ui/public/assets/group/restore.svg`
+- `ui/public/assets/group/speaker.svg`
+- `ui/public/assets/group/speech.svg`
+- `ui/public/assets/group/tag.svg`
+- `ui/public/assets/group/target.svg`
+- `ui/public/assets/group/tick.svg`
+- `ui/public/assets/group/trash.svg`
+- `ui/public/assets/group/user.svg`
+- `ui/public/assets/group/users.svg`
+- `ui/public/assets/group/warning.svg`
 - `ui/public/favicon.ico`
 
 #### UI configuration
@@ -648,5 +677,5 @@
 - Maven modules: 3
 - Java files: 316
 - UI source files: 100
-- Git commit: `6840c6c`
+- Git commit: `8be7b10`
 
