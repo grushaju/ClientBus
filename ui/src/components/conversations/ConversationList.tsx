@@ -53,6 +53,32 @@ import type {
 
 type Tab = ConversationListTab
 
+type ConversationFilterDraft = {
+    search: string
+    channelAccountIds: string[]
+    clientLink: NonNullable<
+        ConversationSearchRequest['clientLink']
+    >
+    unread: NonNullable<
+        ConversationSearchRequest['unread']
+    >
+    activityFrom: string
+    activityTo: string
+    sort: NonNullable<
+        ConversationSearchRequest['sort']
+    >
+}
+
+const EMPTY_FILTER_DRAFT: ConversationFilterDraft = {
+    search: '',
+    channelAccountIds: [],
+    clientLink: 'ANY',
+    unread: 'ANY',
+    activityFrom: '',
+    activityTo: '',
+    sort: 'LAST_MESSAGE_DESC',
+}
+
 const GROUP_ICON_OPTIONS = [
     { value: 'attach.svg', label: 'Вложение' },
     { value: 'ban.svg', label: 'Запрет' },
@@ -202,6 +228,19 @@ function ConversationList() {
 
     const [savedFiltersError, setSavedFiltersError] =
         useState<string | null>(null)
+
+    const [filterDraft, setFilterDraft] =
+        useState<ConversationFilterDraft>({
+            ...EMPTY_FILTER_DRAFT,
+        })
+
+    const [appliedFilter, setAppliedFilter] =
+        useState<ConversationFilterDraft>({
+            ...EMPTY_FILTER_DRAFT,
+        })
+
+    const [showFilterConditions, setShowFilterConditions] =
+        useState(false)
 
     const [loading, setLoading] = useState(false)
 
@@ -447,16 +486,13 @@ function ConversationList() {
                 const conversations: ConversationDto[] = []
 
                 const view =
-                    selectedSavedFilter?.filterDefinition.view ??
-                    (
-                        tab === 'group'
-                            ? 'GROUP'
-                            : tab === 'all'
-                                ? 'ALL'
-                                : tab === 'unassigned'
-                                    ? 'UNASSIGNED'
-                                    : 'MINE'
-                    )
+                    tab === 'group'
+                        ? 'GROUP'
+                        : tab === 'all'
+                            ? 'ALL'
+                            : tab === 'unassigned'
+                                ? 'UNASSIGNED'
+                                : 'MINE'
 
                 let page = 0
                 let hasNext = true
@@ -468,14 +504,12 @@ function ConversationList() {
                             ...(selectedSavedFilter
                                 ? selectedSavedFilter.filterDefinition
                                 : {}),
+                            ...buildFilterRequest(appliedFilter),
                             view,
-                            ...(
-                                selectedSavedFilter
-                                    ? {}
-                                    : tab === 'group' && selectedGroupId
-                                        ? { groupId: selectedGroupId }
-                                        : {}
-                            ),
+                            groupId:
+                                tab === 'group'
+                                    ? selectedGroupId
+                                    : null,
                             page,
                             size: 10,
                         },
@@ -559,6 +593,7 @@ function ConversationList() {
         selectedGroupId,
         groupMembershipVersion,
         selectedSavedFilter,
+        appliedFilter,
     ])
 
     useEffect(() => {
@@ -657,12 +692,60 @@ function ConversationList() {
         selectedGroupId,
     ])
 
+    const buildFilterRequest = (
+        filter: ConversationFilterDraft,
+    ): Partial<ConversationSearchRequest> => ({
+        ...(filter.search.trim()
+            ? { search: filter.search.trim() }
+            : {}),
+        ...(filter.channelAccountIds.length > 0
+            ? { channelAccountIds: filter.channelAccountIds }
+            : {}),
+        clientLink: filter.clientLink,
+        unread: filter.unread,
+        ...(filter.activityFrom
+            ? { activityFrom: filter.activityFrom }
+            : {}),
+        ...(filter.activityTo
+            ? { activityTo: filter.activityTo }
+            : {}),
+        sort: filter.sort,
+    })
+
+    const handleApplyFilter = () => {
+        setAppliedFilter({
+            ...filterDraft,
+            search: filterDraft.search.trim(),
+        })
+    }
+
+    const handleResetFilter = () => {
+        const emptyFilter = { ...EMPTY_FILTER_DRAFT }
+
+        setFilterDraft(emptyFilter)
+        setAppliedFilter(emptyFilter)
+        setSelectedSavedFilter(null)
+    }
+
     const handleSavedFilterSelect = (
         filter: SavedConversationFilterDto,
     ) => {
         setSelectedSavedFilter(filter)
 
         const definition = filter.filterDefinition
+
+        const restoredFilter: ConversationFilterDraft = {
+            search: definition.search ?? '',
+            channelAccountIds: definition.channelAccountIds ?? [],
+            clientLink: definition.clientLink ?? 'ANY',
+            unread: definition.unread ?? 'ANY',
+            activityFrom: definition.activityFrom?.slice(0, 16) ?? '',
+            activityTo: definition.activityTo?.slice(0, 16) ?? '',
+            sort: definition.sort ?? 'LAST_MESSAGE_DESC',
+        }
+
+        setFilterDraft(restoredFilter)
+        setAppliedFilter(restoredFilter)
 
         const nextTab: Tab =
             definition.view === 'GROUP'
@@ -712,20 +795,16 @@ function ConversationList() {
 
         const definition: ConversationSearchRequest = {
             ...(selectedSavedFilter?.filterDefinition ?? {}),
+            ...buildFilterRequest(appliedFilter),
             view:
-                selectedSavedFilter?.filterDefinition.view ??
-                (
-                    tab === 'group'
-                        ? 'GROUP'
-                        : tab === 'all'
-                            ? 'ALL'
-                            : tab === 'unassigned'
-                                ? 'UNASSIGNED'
-                                : 'MINE'
-                ),
-            ...(tab === 'group' && selectedGroupId
-                ? { groupId: selectedGroupId }
-                : {}),
+                tab === 'group'
+                    ? 'GROUP'
+                    : tab === 'all'
+                        ? 'ALL'
+                        : tab === 'unassigned'
+                            ? 'UNASSIGNED'
+                            : 'MINE',
+            groupId: tab === 'group' ? selectedGroupId : null,
         }
 
         // Пагинация не является частью сохранённого фильтра.
@@ -1317,7 +1396,195 @@ function ConversationList() {
                                 )}
                         </div>
                     )}
+                    <button
+                        type="button"
+                        className="ui-button ui-button-secondary"
+                        onClick={() =>
+                            setShowFilterConditions(value => !value)
+                        }
+                        aria-expanded={showFilterConditions}
+                    >
+                        {showFilterConditions
+                            ? 'Скрыть условия ▲'
+                            : 'Условия фильтра ▼'}
+                    </button>
+                    {showFilterConditions && (
+                        <div className="conversation-list-group-form">
+                            <strong>Условия фильтра</strong>
 
+                            <input
+                                className="ui-input"
+                                type="search"
+                                value={filterDraft.search}
+                                onChange={event =>
+                                    setFilterDraft(current => ({
+                                        ...current,
+                                        search: event.target.value,
+                                    }))
+                                }
+                                placeholder="Поиск по диалогам"
+                                aria-label="Поиск по диалогам"
+                            />
+
+                            <div
+                                className="conversation-filter-conditions"
+                                style={{
+                                    maxHeight: 'min(45vh, 360px)',
+                                    overflowY: 'auto',
+                                    overflowX: 'hidden',
+                                }}
+                            >
+                                <label>
+                                    Каналы
+                                    <select
+                                        className="ui-input"
+                                        multiple
+                                        value={filterDraft.channelAccountIds}
+                                        onChange={event =>
+                                            setFilterDraft(current => ({
+                                                ...current,
+                                                channelAccountIds: Array.from(
+                                                    event.target.selectedOptions,
+                                                    option => option.value,
+                                                ),
+                                            }))
+                                        }
+                                        aria-label="Каналы"
+                                    >
+                                        {[
+                                            ...new Map(
+                                                channels
+                                                    .filter(channel => channel.account)
+                                                    .map(channel => [
+                                                        channel.account!.id,
+                                                        {
+                                                            id: channel.account!.id,
+                                                            name:
+                                                                channel.name ||
+                                                                channel.account!.displayName ||
+                                                                channel.account!.username ||
+                                                                channel.account!.id,
+                                                        },
+                                                    ]),
+                                            ).values(),
+                                        ].map(channel => (
+                                            <option key={channel.id} value={channel.id}>
+                                                {channel.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <small>Для выбора нескольких каналов используйте Ctrl или Cmd.</small>
+                                </label>
+
+                                <label>
+                                    Связь с клиентом
+                                    <select
+                                        className="ui-input"
+                                        value={filterDraft.clientLink}
+                                        onChange={event =>
+                                            setFilterDraft(current => ({
+                                                ...current,
+                                                clientLink: event.target.value as
+                                                    ConversationFilterDraft['clientLink'],
+                                            }))
+                                        }
+                                    >
+                                        <option value="ANY">Любая</option>
+                                        <option value="WITH_CLIENT">С клиентом</option>
+                                        <option value="WITHOUT_CLIENT">Без клиента</option>
+                                    </select>
+                                </label>
+
+                                <label>
+                                    Сообщения
+                                    <select
+                                        className="ui-input"
+                                        value={filterDraft.unread}
+                                        onChange={event =>
+                                            setFilterDraft(current => ({
+                                                ...current,
+                                                unread: event.target.value as
+                                                    ConversationFilterDraft['unread'],
+                                            }))
+                                        }
+                                    >
+                                        <option value="ANY">Все</option>
+                                        <option value="HAS_UNREAD">Есть непрочитанные</option>
+                                        <option value="READ_ONLY">Только прочитанные</option>
+                                    </select>
+                                </label>
+
+                                <label>
+                                    Активность с
+                                    <input
+                                        className="ui-input"
+                                        type="datetime-local"
+                                        value={filterDraft.activityFrom}
+                                        onChange={event =>
+                                            setFilterDraft(current => ({
+                                                ...current,
+                                                activityFrom: event.target.value,
+                                            }))
+                                        }
+                                    />
+                                </label>
+
+                                <label>
+                                    Активность по
+                                    <input
+                                        className="ui-input"
+                                        type="datetime-local"
+                                        value={filterDraft.activityTo}
+                                        onChange={event =>
+                                            setFilterDraft(current => ({
+                                                ...current,
+                                                activityTo: event.target.value,
+                                            }))
+                                        }
+                                    />
+                                </label>
+
+                                <label>
+                                    Сортировка
+                                    <select
+                                        className="ui-input"
+                                        value={filterDraft.sort}
+                                        onChange={event =>
+                                            setFilterDraft(current => ({
+                                                ...current,
+                                                sort: event.target.value as
+                                                    ConversationFilterDraft['sort'],
+                                            }))
+                                        }
+                                    >
+                                        <option value="LAST_MESSAGE_DESC">
+                                            Сначала новые
+                                        </option>
+                                        <option value="LAST_MESSAGE_ASC">
+                                            Сначала старые
+                                        </option>
+                                    </select>
+                                </label>
+                            </div>
+                            <div className="conversation-list-group-actions">
+                                <button
+                                    type="button"
+                                    className="ui-button ui-button-primary"
+                                    onClick={handleApplyFilter}
+                                >
+                                    Применить
+                                </button>
+
+                                <button
+                                    type="button"
+                                    className="ui-button ui-button-secondary"
+                                    onClick={handleResetFilter}
+                                >
+                                    Сбросить
+                                </button>
+                            </div>
+                        </div>
+                    )}
                     {(isEmployee || isSuperAdmin) && (
                         <div className="conversation-list-saved-filters">
                             <button
@@ -1529,7 +1796,7 @@ function sortConversationItems(
     })
 }
 
-function GroupIcon({ icon }: { icon: string }) {
+function GroupIcon({icon}: { icon: string }) {
     const filename = GROUP_ICON_OPTIONS.some(
         option => option.value === icon,
     )

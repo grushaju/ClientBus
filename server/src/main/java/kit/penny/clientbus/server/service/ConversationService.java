@@ -744,9 +744,7 @@ public class ConversationService {
 
                     boolean linked = c.getClientAccount().getClient() != null;
 
-                    return link == ConversationClientLinkFilter.WITH_CLIENT
-                            ? linked
-                            : !linked;
+                    return (link == ConversationClientLinkFilter.WITH_CLIENT) == linked;
                 })
 
                 // Непрочитанные сообщения.
