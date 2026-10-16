@@ -72,11 +72,12 @@
     flex: 0 0 auto;
 }
 
-.platform-icon svg {
+.platform-icon img {
     display: block;
 
     width: 100%;
     height: 100%;
+    border-radius: 6px;
 }
 
 

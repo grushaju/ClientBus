@@ -403,6 +403,108 @@
     color: #6b7280;
 }
 
+.channel-type-select {
+       position: relative;
+       width: 100%;
+   }
+
+.channel-type-select-trigger {
+    display: flex;
+    align-items: center;
+    gap: var(--ui-space-2);
+    width: 100%;
+    min-height: var(--ui-control-height-lg);
+    padding: var(--ui-space-2) var(--ui-control-padding-x);
+    border: 1px solid var(--ui-color-border);
+    border-radius: var(--ui-radius-lg);
+    background: var(--ui-color-background);
+    color: var(--ui-color-text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: var(--ui-transition-fast);
+}
+
+.channel-type-select-trigger:hover:not(:disabled) {
+    border-color: var(--ui-color-border-focus);
+}
+
+.channel-type-select-trigger:focus-visible,
+.channel-type-select-option:focus-visible {
+    outline: 2px solid var(--ui-color-primary);
+    outline-offset: 2px;
+}
+
+.channel-type-select-trigger:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.channel-type-icon {
+    display: block;
+    flex: 0 0 24px;
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
+    border-radius: 6px;
+}
+
+.channel-type-chevron {
+    margin-left: auto;
+    color: var(--ui-color-text-muted);
+    transition: transform 0.15s ease;
+}
+
+.channel-type-chevron.is-open {
+    transform: rotate(180deg);
+}
+
+.channel-type-select-options {
+    position: absolute;
+    z-index: 100;
+    top: calc(100% + var(--ui-space-1));
+    right: 0;
+    left: 0;
+    max-height: 280px;
+    overflow-y: auto;
+    padding: var(--ui-space-1);
+    border: 1px solid var(--ui-color-border-light);
+    border-radius: var(--ui-radius-lg);
+    background: var(--ui-color-background);
+    box-shadow: var(--ui-shadow-card);
+}
+
+.channel-type-select-option {
+    display: flex;
+    align-items: center;
+    gap: var(--ui-space-2);
+    width: 100%;
+    min-height: var(--ui-control-height);
+    padding: var(--ui-space-2);
+    border: 0;
+    border-radius: var(--ui-radius-sm);
+    background: transparent;
+    color: var(--ui-color-text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: var(--ui-transition-fast);
+}
+
+.channel-type-select-option:hover {
+    background: var(--ui-color-background-subtle);
+}
+
+.channel-type-select-option.is-selected {
+    background: var(--ui-color-background-muted);
+}
+
+.channel-type-check {
+    margin-left: auto;
+    color: var(--ui-color-primary);
+    font-weight: var(--ui-font-weight-semibold);
+}
+
 /* Responsive */
 
 @media (max-width: 640px) {
