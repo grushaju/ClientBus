@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-10-16 14:34:00
+- Generated: 2026-10-16 16:19:48
 - Branch: `main`
-- Commit: `c74a585`
+- Commit: `ce050bb`
 
 ## Project Structure
 
@@ -59,6 +59,8 @@
 - `CreateOutboundConversationRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/conversation/CreateOutboundConversationRequest.java`
 - `PlatformConversationRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/conversation/PlatformConversationRequest.java`
 - `RenameConversationGroupRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/conversation/RenameConversationGroupRequest.java`
+- `SaveConversationFilterRequest.java` — `common/src/main/java/kit/penny/clientbus/common/dto/conversation/SaveConversationFilterRequest.java`
+- `SavedConversationFilterDto.java` — `common/src/main/java/kit/penny/clientbus/common/dto/conversation/SavedConversationFilterDto.java`
 
 ##### `kit.penny.clientbus.common.dto.employee`
 
@@ -229,6 +231,7 @@
 - `EmployeeController.java` — `server/src/main/java/kit/penny/clientbus/server/controller/EmployeeController.java`
 - `MessageController.java` — `server/src/main/java/kit/penny/clientbus/server/controller/MessageController.java`
 - `OrganizationController.java` — `server/src/main/java/kit/penny/clientbus/server/controller/OrganizationController.java`
+- `SavedConversationFilterController.java` — `server/src/main/java/kit/penny/clientbus/server/controller/SavedConversationFilterController.java`
 - `WorkspaceController.java` — `server/src/main/java/kit/penny/clientbus/server/controller/WorkspaceController.java`
 
 ##### `kit.penny.clientbus.server.exception`
@@ -373,6 +376,7 @@
 - `RecentChatsSynchronizationService.java` — `server/src/main/java/kit/penny/clientbus/server/service/RecentChatsSynchronizationService.java`
 - `RecentChatsSyncRunService.java` — `server/src/main/java/kit/penny/clientbus/server/service/RecentChatsSyncRunService.java`
 - `RecentChatsSyncScheduler.java` — `server/src/main/java/kit/penny/clientbus/server/service/RecentChatsSyncScheduler.java`
+- `SavedConversationFilterService.java` — `server/src/main/java/kit/penny/clientbus/server/service/SavedConversationFilterService.java`
 - `WorkspaceService.java` — `server/src/main/java/kit/penny/clientbus/server/service/WorkspaceService.java`
 
 ##### `kit.penny.clientbus.server.storage`
@@ -441,6 +445,7 @@
 - `ConversationControllerTest.java` — `server/src/test/java/kit/penny/clientbus/server/controller/ConversationControllerTest.java`
 - `EmployeeControllerTest.java` — `server/src/test/java/kit/penny/clientbus/server/controller/EmployeeControllerTest.java`
 - `MessageControllerTest.java` — `server/src/test/java/kit/penny/clientbus/server/controller/MessageControllerTest.java`
+- `SavedConversationFilterControllerTest.java` — `server/src/test/java/kit/penny/clientbus/server/controller/SavedConversationFilterControllerTest.java`
 
 ##### `kit.penny.clientbus.server.fixture`
 
@@ -494,6 +499,7 @@
 - `ClientRepositoryTest.java` — `server/src/test/java/kit/penny/clientbus/server/persistence/repository/ClientRepositoryTest.java`
 - `ConversationGroupMembershipRepositoryTest.java` — `server/src/test/java/kit/penny/clientbus/server/persistence/repository/ConversationGroupMembershipRepositoryTest.java`
 - `MessageRepositoryIdempotencyTest.java` — `server/src/test/java/kit/penny/clientbus/server/persistence/repository/MessageRepositoryIdempotencyTest.java`
+- `SavedConversationFilterRepositoryTest.java` — `server/src/test/java/kit/penny/clientbus/server/persistence/repository/SavedConversationFilterRepositoryTest.java`
 
 ##### `kit.penny.clientbus.server.security.jwt`
 
@@ -523,6 +529,7 @@
 - `RecentChatsSynchronizationServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/RecentChatsSynchronizationServiceTest.java`
 - `RecentChatsSyncRunConcurrencyIntegrationTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/RecentChatsSyncRunConcurrencyIntegrationTest.java`
 - `RecentChatsSyncRunServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/RecentChatsSyncRunServiceTest.java`
+- `SavedConversationFilterServiceTest.java` — `server/src/test/java/kit/penny/clientbus/server/service/SavedConversationFilterServiceTest.java`
 
 #### `src/test/resources`
 
@@ -676,7 +683,7 @@
 ## Summary
 
 - Maven modules: 3
-- Java files: 317
+- Java files: 324
 - UI source files: 100
-- Git commit: `c74a585`
+- Git commit: `ce050bb`
 

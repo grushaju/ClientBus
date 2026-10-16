@@ -53,4 +53,9 @@ public interface SavedConversationFilterRepository
             SavedFilterType filterType,
             String name
     );
+
+    Optional<SavedConversationFilterEntity> findByIdAndWorkspaceId(
+            UUID id,
+            UUID workspaceId
+    );
 }
