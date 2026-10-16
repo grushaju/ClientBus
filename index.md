@@ -2,9 +2,9 @@
 
 > Generated automatically. Do not edit manually.
 
-- Generated: 2026-10-16 16:19:48
+- Generated: 2026-10-16 17:34:30
 - Branch: `main`
-- Commit: `ce050bb`
+- Commit: `b0802d9`
 
 ## Project Structure
 
@@ -550,6 +550,7 @@
 - `ui/src/api/employeeWorkspaceApi.ts`
 - `ui/src/api/messageApi.ts`
 - `ui/src/api/organizationApi.ts`
+- `ui/src/api/savedConversationFilterApi.ts`
 - `ui/src/api/telegramChannelApi.ts`
 - `ui/src/api/types/channel.ts`
 - `ui/src/api/types/client.ts`
@@ -557,6 +558,7 @@
 - `ui/src/api/types/conversation.ts`
 - `ui/src/api/types/message.ts`
 - `ui/src/api/types/organization.ts`
+- `ui/src/api/types/savedConversationFilter.ts`
 - `ui/src/api/workspaceApi.ts`
 - `ui/src/app/App.tsx`
 - `ui/src/app/router.tsx`
@@ -643,6 +645,17 @@
 
 #### `public`
 
+- `ui/public/assets/channel/avito.svg`
+- `ui/public/assets/channel/dikidi.svg`
+- `ui/public/assets/channel/instagram.svg`
+- `ui/public/assets/channel/max.svg`
+- `ui/public/assets/channel/telegram.svg`
+- `ui/public/assets/channel/vk.svg`
+- `ui/public/assets/channel/whatsapp.svg`
+- `ui/public/assets/filter/calendar.svg`
+- `ui/public/assets/filter/pending.svg`
+- `ui/public/assets/filter/private.svg`
+- `ui/public/assets/filter/system.svg`
 - `ui/public/assets/group/attach.svg`
 - `ui/public/assets/group/ban.svg`
 - `ui/public/assets/group/book.svg`
@@ -684,6 +697,6 @@
 
 - Maven modules: 3
 - Java files: 324
-- UI source files: 100
-- Git commit: `ce050bb`
+- UI source files: 102
+- Git commit: `b0802d9`
 

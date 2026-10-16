@@ -27,7 +27,17 @@ import type {
     ConversationDto,
     ConversationGroupDto,
     ConversationListItem,
+    ConversationSearchRequest
 } from '../../api/types/conversation'
+
+import {
+    getSavedConversationFilters,
+} from '../../api/savedConversationFilterApi'
+
+import type {
+    SavedFilterType,
+    SavedConversationFilterDto,
+} from '../../api/types/savedConversationFilter'
 
 import { useAuth } from '../../auth/AuthContext'
 import { useWorkspace } from '../../workspace/WorkspaceContext'
@@ -172,6 +182,18 @@ function ConversationList() {
     const [items, setItems] =
         useState<ConversationListItem[]>([])
 
+    const [systemFilters, setSystemFilters] =
+        useState<SavedConversationFilterDto[]>([])
+
+    const [privateFilters, setPrivateFilters] =
+        useState<SavedConversationFilterDto[]>([])
+
+    const [selectedSavedFilter, setSelectedSavedFilter] =
+        useState<SavedConversationFilterDto | null>(null)
+
+    const [savedFiltersError, setSavedFiltersError] =
+        useState<string | null>(null)
+
     const [loading, setLoading] = useState(false)
 
     const [error, setError] = useState<string | null>(null)
@@ -205,6 +227,65 @@ function ConversationList() {
 
     const [groupError, setGroupError] =
         useState<string | null>(null)
+
+    useEffect(() => {
+        if (!currentWorkspace || !isEmployee || !currentEmployee) {
+            setSystemFilters([])
+            setPrivateFilters([])
+            setSelectedSavedFilter(null)
+            return
+        }
+
+        let active = true
+
+        const loadFilters = async () => {
+            setSavedFiltersError(null)
+
+            try {
+                const [system, personal] = await Promise.all([
+                    getSavedConversationFilters(
+                        currentWorkspace.id,
+                        'SYSTEM',
+                    ),
+                    getSavedConversationFilters(
+                        currentWorkspace.id,
+                        'PRIVATE',
+                    ),
+                ])
+
+                if (!active) return
+
+                setSystemFilters(system)
+                setPrivateFilters(personal)
+
+                setSelectedSavedFilter(current =>
+                    current
+                        ? [...system, ...personal].find(
+                        filter => filter.id === current.id,
+                    ) ?? null
+                        : null,
+                )
+            } catch (err) {
+                if (!active) return
+
+                setSavedFiltersError(
+                    err instanceof Error
+                        ? err.message
+                        : 'Не удалось загрузить сохранённые фильтры.',
+                )
+            }
+        }
+
+        void loadFilters()
+
+        return () => {
+            active = false
+        }
+    }, [
+        currentWorkspace?.id,
+        currentEmployee?.id,
+        isEmployee,
+    ])
 
     useEffect(() => {
         if (
@@ -347,13 +428,16 @@ function ConversationList() {
                 const conversations: ConversationDto[] = []
 
                 const view =
-                    tab === 'group'
-                        ? 'GROUP'
-                        : tab === 'all'
-                            ? 'ALL'
-                            : tab === 'unassigned'
-                                ? 'UNASSIGNED'
-                                : 'MINE'
+                    selectedSavedFilter?.filterDefinition.view ??
+                    (
+                        tab === 'group'
+                            ? 'GROUP'
+                            : tab === 'all'
+                                ? 'ALL'
+                                : tab === 'unassigned'
+                                    ? 'UNASSIGNED'
+                                    : 'MINE'
+                    )
 
                 let page = 0
                 let hasNext = true
@@ -362,10 +446,17 @@ function ConversationList() {
                     const result = await searchInbox(
                         workspaceId,
                         {
-                            view,
-                            ...(tab === 'group' && selectedGroupId
-                                ? { groupId: selectedGroupId }
+                            ...(selectedSavedFilter
+                                ? selectedSavedFilter.filterDefinition
                                 : {}),
+                            view,
+                            ...(
+                                selectedSavedFilter
+                                    ? {}
+                                    : tab === 'group' && selectedGroupId
+                                        ? { groupId: selectedGroupId }
+                                        : {}
+                            ),
                             page,
                             size: 10,
                         },
@@ -448,6 +539,7 @@ function ConversationList() {
         tab,
         selectedGroupId,
         groupMembershipVersion,
+        selectedSavedFilter
     ])
 
     useEffect(() => {
@@ -546,8 +638,33 @@ function ConversationList() {
         selectedGroupId,
     ])
 
+    const handleSavedFilterSelect = (
+        filter: SavedConversationFilterDto,
+    ) => {
+        setSelectedSavedFilter(filter)
+
+        const definition = filter.filterDefinition
+
+        const nextTab: Tab =
+            definition.view === 'GROUP'
+                ? 'group'
+                : definition.view === 'ALL'
+                    ? 'all'
+                    : definition.view === 'UNASSIGNED'
+                        ? 'unassigned'
+                        : 'mine'
+
+        setTab(nextTab)
+        setSelectedGroupId(
+            definition.view === 'GROUP'
+                ? definition.groupId ?? null
+                : null,
+        )
+    }
+
     const handleTabChange = (nextTab: Tab) => {
         setSelectedGroupId(null)
+        setSelectedSavedFilter(null)
         setTab(nextTab)
 
         const conversationPath =
@@ -563,6 +680,7 @@ function ConversationList() {
 
     const handleGroupChange = (groupId: string) => {
         setSelectedGroupId(groupId)
+        setSelectedSavedFilter(null)
         setTab('group')
 
         const conversationPath =
@@ -1094,6 +1212,71 @@ function ConversationList() {
                                         {groupError}
                                     </div>
                                 )}
+                        </div>
+                    )}
+                    {isEmployee && (
+                        <div className="conversation-list-saved-filters">
+                            {savedFiltersError && (
+                                <div className="conversation-list-state conversation-list-error">
+                                    {savedFiltersError}
+                                </div>
+                            )}
+
+                            {systemFilters.length > 0 && (
+                                <div className="conversation-list-saved-filter-section">
+                <span className="conversation-list-saved-filter-title">
+                    Общие фильтры
+                </span>
+
+                                    {systemFilters.map(filter => (
+                                        <button
+                                            key={filter.id}
+                                            type="button"
+                                            className={
+                                                selectedSavedFilter?.id === filter.id
+                                                    ? 'conversation-list-saved-filter active'
+                                                    : 'conversation-list-saved-filter'
+                                            }
+                                            onClick={() => handleSavedFilterSelect(filter)}
+                                        >
+                                            <img
+                                                src="/assets/filter/system.svg"
+                                                alt=""
+                                                aria-hidden="true"
+                                            />
+                                            <span>{filter.name}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+
+                            {privateFilters.length > 0 && (
+                                <div className="conversation-list-saved-filter-section">
+                <span className="conversation-list-saved-filter-title">
+                    Мои фильтры
+                </span>
+
+                                    {privateFilters.map(filter => (
+                                        <button
+                                            key={filter.id}
+                                            type="button"
+                                            className={
+                                                selectedSavedFilter?.id === filter.id
+                                                    ? 'conversation-list-saved-filter active'
+                                                    : 'conversation-list-saved-filter'
+                                            }
+                                            onClick={() => handleSavedFilterSelect(filter)}
+                                        >
+                                            <img
+                                                src="/assets/filter/private.svg"
+                                                alt=""
+                                                aria-hidden="true"
+                                            />
+                                            <span>{filter.name}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

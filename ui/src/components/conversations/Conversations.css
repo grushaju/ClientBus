@@ -503,6 +503,58 @@
     }
 }
 
+.conversation-list-saved-filters {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ui-space-3);
+    margin-top: var(--ui-space-3);
+}
+
+.conversation-list-saved-filter-section {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--ui-space-2);
+}
+
+.conversation-list-saved-filter-title {
+    flex-basis: 100%;
+    color: var(--ui-color-text-muted);
+    font-size: var(--ui-font-size-sm);
+}
+
+.conversation-list-saved-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    max-width: 100%;
+    padding: 6px 9px;
+    border: 1px solid var(--ui-color-border-light);
+    border-radius: var(--ui-radius-md);
+    background: var(--ui-color-background);
+    color: var(--ui-color-text-secondary);
+    cursor: pointer;
+}
+
+.conversation-list-saved-filter img {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
+}
+
+.conversation-list-saved-filter span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.conversation-list-saved-filter:hover,
+.conversation-list-saved-filter.active {
+    border-color: var(--ui-color-border-focus);
+    background: var(--ui-color-background-muted);
+    color: var(--ui-color-text);
+}
+
 
 /* =========================================================
    RESPONSIVE
