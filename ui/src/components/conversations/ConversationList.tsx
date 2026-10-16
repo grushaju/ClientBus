@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from 'react'
 import {
     useNavigate,
@@ -27,10 +28,11 @@ import type {
     ConversationDto,
     ConversationGroupDto,
     ConversationListItem,
-    ConversationSearchRequest
+    ConversationSearchRequest,
 } from '../../api/types/conversation'
 
 import {
+    createSavedConversationFilter,
     getSavedConversationFilters,
 } from '../../api/savedConversationFilterApi'
 
@@ -191,6 +193,13 @@ function ConversationList() {
     const [selectedSavedFilter, setSelectedSavedFilter] =
         useState<SavedConversationFilterDto | null>(null)
 
+    const [showSaveFilter, setShowSaveFilter] = useState(false)
+    const [newFilterName, setNewFilterName] = useState('')
+
+    const [savingFilter, setSavingFilter] = useState(false)
+    const [saveFilterError, setSaveFilterError] =
+        useState<string | null>(null)
+
     const [savedFiltersError, setSavedFiltersError] =
         useState<string | null>(null)
 
@@ -228,8 +237,10 @@ function ConversationList() {
     const [groupError, setGroupError] =
         useState<string | null>(null)
 
+    // SuperAdmin загружает только SYSTEM-фильтры.
+    // Employee загружает SYSTEM и свои PRIVATE-фильтры.
     useEffect(() => {
-        if (!currentWorkspace || !isEmployee || !currentEmployee) {
+        if (!currentWorkspace || (!isEmployee && !isSuperAdmin)) {
             setSystemFilters([])
             setPrivateFilters([])
             setSelectedSavedFilter(null)
@@ -242,15 +253,22 @@ function ConversationList() {
             setSavedFiltersError(null)
 
             try {
+                const systemPromise = getSavedConversationFilters(
+                    currentWorkspace.id,
+                    'SYSTEM',
+                )
+
+                const privatePromise =
+                    isEmployee && currentEmployee
+                        ? getSavedConversationFilters(
+                            currentWorkspace.id,
+                            'PRIVATE',
+                        )
+                        : Promise.resolve([] as SavedConversationFilterDto[])
+
                 const [system, personal] = await Promise.all([
-                    getSavedConversationFilters(
-                        currentWorkspace.id,
-                        'SYSTEM',
-                    ),
-                    getSavedConversationFilters(
-                        currentWorkspace.id,
-                        'PRIVATE',
-                    ),
+                    systemPromise,
+                    privatePromise,
                 ])
 
                 if (!active) return
@@ -285,6 +303,7 @@ function ConversationList() {
         currentWorkspace?.id,
         currentEmployee?.id,
         isEmployee,
+        isSuperAdmin,
     ])
 
     useEffect(() => {
@@ -539,7 +558,7 @@ function ConversationList() {
         tab,
         selectedGroupId,
         groupMembershipVersion,
-        selectedSavedFilter
+        selectedSavedFilter,
     ])
 
     useEffect(() => {
@@ -567,15 +586,15 @@ function ConversationList() {
                     tab === 'group'
                         ? true
                         : tab === 'all' ||
-                          (
-                              tab === 'mine' &&
-                              updated.assignedEmployeeId ===
-                                  currentEmployee?.id
-                          ) ||
-                          (
-                              tab === 'unassigned' &&
-                              updated.assignedEmployeeId === null
-                          )
+                        (
+                            tab === 'mine' &&
+                            updated.assignedEmployeeId ===
+                            currentEmployee?.id
+                        ) ||
+                        (
+                            tab === 'unassigned' &&
+                            updated.assignedEmployeeId === null
+                        )
 
                 if (!shouldRemain) {
                     return currentItems.filter(
@@ -660,6 +679,90 @@ function ConversationList() {
                 ? definition.groupId ?? null
                 : null,
         )
+    }
+
+    const handleSaveFilter = async () => {
+        if (!currentWorkspace) {
+            return
+        }
+
+        const name = newFilterName.trim()
+
+        if (!name) {
+            setSaveFilterError('Введите название фильтра.')
+            return
+        }
+
+        if (name.length > 100) {
+            setSaveFilterError(
+                'Название фильтра не должно превышать 100 символов.',
+            )
+            return
+        }
+
+        if (!isEmployee && !isSuperAdmin) {
+            setSaveFilterError(
+                'Недостаточно прав для создания фильтра.',
+            )
+            return
+        }
+
+        const filterType: SavedFilterType =
+            isSuperAdmin ? 'SYSTEM' : 'PRIVATE'
+
+        const definition: ConversationSearchRequest = {
+            ...(selectedSavedFilter?.filterDefinition ?? {}),
+            view:
+                selectedSavedFilter?.filterDefinition.view ??
+                (
+                    tab === 'group'
+                        ? 'GROUP'
+                        : tab === 'all'
+                            ? 'ALL'
+                            : tab === 'unassigned'
+                                ? 'UNASSIGNED'
+                                : 'MINE'
+                ),
+            ...(tab === 'group' && selectedGroupId
+                ? { groupId: selectedGroupId }
+                : {}),
+        }
+
+        // Пагинация не является частью сохранённого фильтра.
+        delete definition.page
+        delete definition.size
+
+        setSavingFilter(true)
+        setSaveFilterError(null)
+
+        try {
+            const created = await createSavedConversationFilter(
+                currentWorkspace.id,
+                {
+                    name,
+                    filterType,
+                    filterDefinition: definition,
+                },
+            )
+
+            if (created.filterType === 'SYSTEM') {
+                setSystemFilters(current => [...current, created])
+            } else {
+                setPrivateFilters(current => [...current, created])
+            }
+
+            setSelectedSavedFilter(created)
+            setNewFilterName('')
+            setShowSaveFilter(false)
+        } catch (err) {
+            setSaveFilterError(
+                err instanceof Error
+                    ? err.message
+                    : 'Не удалось сохранить фильтр.',
+            )
+        } finally {
+            setSavingFilter(false)
+        }
     }
 
     const handleTabChange = (nextTab: Tab) => {
@@ -841,7 +944,7 @@ function ConversationList() {
             setShowRenameGroup(false)
             setShowCreateGroup(false)
             setGroupName('')
-            setGroupIcon('folder')
+            setGroupIcon(DEFAULT_GROUP_ICON)
             setGroupError(null)
             setTab('mine')
 
@@ -1214,8 +1317,66 @@ function ConversationList() {
                                 )}
                         </div>
                     )}
-                    {isEmployee && (
+
+                    {(isEmployee || isSuperAdmin) && (
                         <div className="conversation-list-saved-filters">
+                            <button
+                                type="button"
+                                className="ui-button ui-button-secondary"
+                                onClick={() => {
+                                    setSaveFilterError(null)
+                                    setNewFilterName('')
+                                    setShowSaveFilter(value => !value)
+                                }}
+                            >
+                                {showSaveFilter
+                                    ? 'Отмена'
+                                    : '+ Сохранить фильтр'}
+                            </button>
+
+                            {showSaveFilter && (
+                                <form
+                                    className="conversation-list-group-form"
+                                    onSubmit={event => {
+                                        event.preventDefault()
+                                        void handleSaveFilter()
+                                    }}
+                                >
+                                    <input
+                                        className="ui-input"
+                                        type="text"
+                                        value={newFilterName}
+                                        onChange={event => {
+                                            setNewFilterName(event.target.value)
+                                            setSaveFilterError(null)
+                                        }}
+                                        placeholder="Название фильтра"
+                                        maxLength={100}
+                                        autoFocus
+                                        disabled={savingFilter}
+                                    />
+
+                                    <button
+                                        type="submit"
+                                        className="ui-button ui-button-primary"
+                                        disabled={
+                                            savingFilter ||
+                                            !newFilterName.trim()
+                                        }
+                                    >
+                                        {savingFilter
+                                            ? 'Сохранение…'
+                                            : 'Сохранить'}
+                                    </button>
+
+                                    {saveFilterError && (
+                                        <div className="ui-form-error">
+                                            {saveFilterError}
+                                        </div>
+                                    )}
+                                </form>
+                            )}
+
                             {savedFiltersError && (
                                 <div className="conversation-list-state conversation-list-error">
                                     {savedFiltersError}
@@ -1224,9 +1385,9 @@ function ConversationList() {
 
                             {systemFilters.length > 0 && (
                                 <div className="conversation-list-saved-filter-section">
-                <span className="conversation-list-saved-filter-title">
-                    Общие фильтры
-                </span>
+                                    <span className="conversation-list-saved-filter-title">
+                                        Общие фильтры
+                                    </span>
 
                                     {systemFilters.map(filter => (
                                         <button
@@ -1237,7 +1398,9 @@ function ConversationList() {
                                                     ? 'conversation-list-saved-filter active'
                                                     : 'conversation-list-saved-filter'
                                             }
-                                            onClick={() => handleSavedFilterSelect(filter)}
+                                            onClick={() =>
+                                                handleSavedFilterSelect(filter)
+                                            }
                                         >
                                             <img
                                                 src="/assets/filter/system.svg"
@@ -1250,11 +1413,11 @@ function ConversationList() {
                                 </div>
                             )}
 
-                            {privateFilters.length > 0 && (
+                            {isEmployee && privateFilters.length > 0 && (
                                 <div className="conversation-list-saved-filter-section">
-                <span className="conversation-list-saved-filter-title">
-                    Мои фильтры
-                </span>
+                                    <span className="conversation-list-saved-filter-title">
+                                        Мои фильтры
+                                    </span>
 
                                     {privateFilters.map(filter => (
                                         <button
@@ -1265,7 +1428,9 @@ function ConversationList() {
                                                     ? 'conversation-list-saved-filter active'
                                                     : 'conversation-list-saved-filter'
                                             }
-                                            onClick={() => handleSavedFilterSelect(filter)}
+                                            onClick={() =>
+                                                handleSavedFilterSelect(filter)
+                                            }
                                         >
                                             <img
                                                 src="/assets/filter/private.svg"
@@ -1316,7 +1481,7 @@ function ConversationList() {
                                     isEmployee &&
                                     !!currentEmployee &&
                                     item.conversation.assignedEmployeeId ===
-                                        currentEmployee.id
+                                    currentEmployee.id
                                 }
                                 onAddToGroup={
                                     handleAddConversationToGroup
@@ -1363,7 +1528,6 @@ function sortConversationItems(
         return bTime - aTime
     })
 }
-
 
 function GroupIcon({ icon }: { icon: string }) {
     const filename = GROUP_ICON_OPTIONS.some(
