@@ -157,7 +157,7 @@ export async function searchInbox(
 export async function createGroup(
     workspaceId: string,
     name: string,
-    icon = 'folder',
+    icon = 'users.svg',
 ): Promise<ConversationGroupDto> {
     const response = await apiFetch(
         `/api/conversations/workspace/${workspaceId}/groups`,

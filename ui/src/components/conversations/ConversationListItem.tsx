@@ -216,6 +216,12 @@ function ConversationListItemComponent({
                                             )
                                         }
                                     />
+                                    <img
+                                        className="conversation-list-item-group-icon"
+                                        src={`/assets/group/${group.icon || 'users.svg'}`}
+                                        alt=""
+                                        aria-hidden="true"
+                                    />
                                     <span>{group.name}</span>
                                 </label>
                             ))}

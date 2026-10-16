@@ -29,6 +29,8 @@ import java.util.UUID;
 @Transactional
 public class ConversationGroupService {
 
+    private static final String DEFAULT_GROUP_ICON = "users.svg";
+
     private final ConversationGroupRepository groupRepository;
     private final ConversationGroupMembershipRepository membershipRepository;
     private final ConversationRepository conversationRepository;
@@ -349,30 +351,55 @@ public class ConversationGroupService {
                 group.getWorkspace().getId(),
                 group.getOwnerEmployee().getId(),
                 group.getName(),
-                group.getIcon(),
+                normalizeIcon(group.getIcon()),
                 group.getCreatedAt(),
                 group.getUpdatedAt()
         );
     }
 
-
     private static final Set<String> GROUP_ICONS = Set.of(
-            "folder",
-            "star",
-            "heart",
-            "tag",
-            "briefcase",
-            "clock",
-            "flag",
-            "users",
-            "message-circle",
-            "bookmark"
+            "attach.svg",
+            "ban.svg",
+            "book.svg",
+            "bookmark.svg",
+            "cross.svg",
+            "dollar.svg",
+            "fire.svg",
+            "heart.svg",
+            "info.svg",
+            "like.svg",
+            "lock.svg",
+            "mail.svg",
+            "mute.svg",
+            "notifications.svg",
+            "pin.svg",
+            "restore.svg",
+            "speaker.svg",
+            "speech.svg",
+            "tag.svg",
+            "target.svg",
+            "tick.svg",
+            "trash.svg",
+            "user.svg",
+            "users.svg",
+            "warning.svg"
     );
 
     private String normalizeIcon(String icon) {
-        return icon != null && GROUP_ICONS.contains(icon)
-                ? icon
-                : "folder";
+        if (icon == null || icon.isBlank()) {
+            return DEFAULT_GROUP_ICON;
+        }
+
+        String filename = icon.trim();
+
+        // Поддерживаем ранее сохранённые значения без расширения.
+        if (!filename.endsWith(".svg")) {
+            filename += ".svg";
+        }
+
+        return GROUP_ICONS.contains(filename)
+                ? filename
+                : DEFAULT_GROUP_ICON;
     }
 
 }

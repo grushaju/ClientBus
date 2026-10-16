@@ -3,13 +3,13 @@ import {
 } from 'react-router-dom'
 
 import InboxLayout
-    from '../components/inbox/InboxLayout'
+    from '../components/conversations/InboxLayout'
 
 import ConversationList
-    from '../components/inbox/ConversationList'
+    from '../components/conversations/ConversationList'
 
 import ConversationView
-    from '../components/inbox/ConversationView'
+    from '../components/conversations/ConversationView'
 
 function InboxPage() {
     const {

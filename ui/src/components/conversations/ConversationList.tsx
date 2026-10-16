@@ -42,46 +42,79 @@ import type {
 type Tab = ConversationListTab
 
 const GROUP_ICON_OPTIONS = [
-    { value: 'folder', label: 'Папка' },
-    { value: 'star', label: 'Избранное' },
-    { value: 'heart', label: 'Важное' },
-    { value: 'tag', label: 'Метка' },
-    { value: 'briefcase', label: 'Работа' },
-    { value: 'clock', label: 'Позже' },
-    { value: 'flag', label: 'Приоритет' },
-    { value: 'users', label: 'Команда' },
-    { value: 'message-circle', label: 'Сообщения' },
-    { value: 'bookmark', label: 'Закладка' },
+    { value: 'attach.svg', label: 'Вложение' },
+    { value: 'ban.svg', label: 'Запрет' },
+    { value: 'book.svg', label: 'Книга' },
+    { value: 'bookmark.svg', label: 'Закладка' },
+    { value: 'cross.svg', label: 'Крестик' },
+    { value: 'dollar.svg', label: 'Деньги' },
+    { value: 'fire.svg', label: 'Огонь' },
+    { value: 'heart.svg', label: 'Сердце' },
+    { value: 'info.svg', label: 'Информация' },
+    { value: 'like.svg', label: 'Нравится' },
+    { value: 'lock.svg', label: 'Защита' },
+    { value: 'mail.svg', label: 'Почта' },
+    { value: 'mute.svg', label: 'Без звука' },
+    { value: 'notifications.svg', label: 'Уведомления' },
+    { value: 'pin.svg', label: 'Закрепить' },
+    { value: 'restore.svg', label: 'Восстановить' },
+    { value: 'speaker.svg', label: 'Динамик' },
+    { value: 'speech.svg', label: 'Речь' },
+    { value: 'tag.svg', label: 'Метка' },
+    { value: 'target.svg', label: 'Цель' },
+    { value: 'tick.svg', label: 'Готово' },
+    { value: 'trash.svg', label: 'Корзина' },
+    { value: 'user.svg', label: 'Пользователь' },
+    { value: 'users.svg', label: 'Группа' },
+    { value: 'warning.svg', label: 'Предупреждение' },
 ] as const
 
+const DEFAULT_GROUP_ICON = 'users.svg'
+
 function GroupIconSelect({
-    value,
-    onChange,
-    disabled = false,
-}: {
+                             value,
+                             onChange,
+                             disabled = false,
+                         }: {
     value: string
     onChange: (value: string) => void
     disabled?: boolean
 }) {
     return (
-        <label className="conversation-list-group-icon-field">
-            <span>Значок</span>
-            <select
-                className="ui-input"
-                value={value}
-                onChange={event => onChange(event.target.value)}
-                disabled={disabled}
+        <div className="conversation-list-group-icon-field">
+            <span className="conversation-list-group-icon-label">
+                Значок
+            </span>
+
+            <div
+                className="conversation-list-group-icon-picker"
+                role="group"
+                aria-label="Значок группы"
             >
                 {GROUP_ICON_OPTIONS.map(option => (
-                    <option
+                    <button
                         key={option.value}
-                        value={option.value}
+                        type="button"
+                        className={
+                            value === option.value
+                                ? 'conversation-list-group-icon-option selected'
+                                : 'conversation-list-group-icon-option'
+                        }
+                        title={option.label}
+                        aria-label={option.label}
+                        aria-pressed={value === option.value}
+                        disabled={disabled}
+                        onClick={() => onChange(option.value)}
                     >
-                        {option.label}
-                    </option>
+                        <img
+                            src={`/assets/group/${option.value}`}
+                            alt=""
+                            aria-hidden="true"
+                        />
+                    </button>
                 ))}
-            </select>
-        </label>
+            </div>
+        </div>
     )
 }
 
@@ -166,7 +199,7 @@ function ConversationList() {
 
     const [groupName, setGroupName] = useState('')
 
-    const [groupIcon, setGroupIcon] = useState('folder')
+    const [groupIcon, setGroupIcon] = useState(DEFAULT_GROUP_ICON)
 
     const [creatingGroup, setCreatingGroup] = useState(false)
 
@@ -580,7 +613,7 @@ function ConversationList() {
             )
 
             setGroupName('')
-            setGroupIcon('folder')
+            setGroupIcon(DEFAULT_GROUP_ICON)
             setShowCreateGroup(false)
         } catch (err) {
             setGroupError(
@@ -644,7 +677,7 @@ function ConversationList() {
             )
 
             setGroupName('')
-            setGroupIcon('folder')
+            setGroupIcon(DEFAULT_GROUP_ICON)
             setGroupError(null)
             setShowRenameGroup(false)
         } catch (err) {
@@ -855,7 +888,7 @@ function ConversationList() {
                                             }
                                         >
                                             <GroupIcon
-                                                icon={group.icon || 'folder'}
+                                                icon={group.icon || DEFAULT_GROUP_ICON}
                                             />
                                             <span>{group.name}</span>
                                         </button>
@@ -871,7 +904,7 @@ function ConversationList() {
                                         setGroupError(null)
                                         setShowRenameGroup(false)
                                         setGroupName('')
-                                        setGroupIcon('folder')
+                                        setGroupIcon(DEFAULT_GROUP_ICON)
                                         setShowCreateGroup(value => !value)
                                     }}
                                 >
@@ -904,7 +937,7 @@ function ConversationList() {
 
                                                     setGroupName(group.name)
                                                     setGroupIcon(
-                                                        group.icon || 'folder',
+                                                        group.icon || DEFAULT_GROUP_ICON,
                                                     )
                                                     setGroupError(null)
                                                     setShowCreateGroup(false)
@@ -1039,7 +1072,7 @@ function ConversationList() {
                                             onClick={() => {
                                                 setShowRenameGroup(false)
                                                 setGroupName('')
-                                                setGroupIcon('folder')
+                                                setGroupIcon(DEFAULT_GROUP_ICON)
                                                 setGroupError(null)
                                             }}
                                         >
@@ -1148,30 +1181,18 @@ function sortConversationItems(
     })
 }
 
-const groupIconPaths: Record<string, string> = {
-    folder: 'M3 6h7l2 2h9v10H3z',
-    star: 'm12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3l-5.6 2.9 1.1-6.2L3 9.6l6.2-.9z',
-    heart: 'M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21l7.8-7.5 1.1-1.1a5.5 5.5 0 0 0-.1-7.8z',
-    tag: 'M20.6 13.4 13.4 20.6 3 10.2V3h7.2z M7.5 7.5h.01',
-    briefcase: 'M3 7h18v14H3z M8 7V4h8v3 M3 12h18 M10 12v2h4v-2',
-    clock: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M12 6v6l4 2',
-    flag: 'M5 21V4m0 0c6-4 8 4 14 0v10c-6 4-8-4-14 0',
-    users: 'M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M10 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M20 21v-2a4 4 0 0 0-3-3.9 M16 3.1a4 4 0 0 1 0 7.8',
-    'message-circle': 'M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8z',
-    bookmark: 'M6 3h12v18l-6-4-6 4z',
-}
 
 function GroupIcon({ icon }: { icon: string }) {
     const filename = GROUP_ICON_OPTIONS.some(
         option => option.value === icon,
     )
         ? icon
-        : 'folder'
+        : DEFAULT_GROUP_ICON
 
     return (
         <img
             className="conversation-group-icon"
-            src={`/assets/group/${filename}.svg`}
+            src={`/assets/group/${filename}`}
             alt=""
             aria-hidden="true"
         />
