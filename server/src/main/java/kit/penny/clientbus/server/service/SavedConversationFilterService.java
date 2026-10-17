@@ -3,6 +3,9 @@ package kit.penny.clientbus.server.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import kit.penny.clientbus.common.dto.conversation.ConversationSearchRequest;
 import kit.penny.clientbus.common.dto.conversation.SaveConversationFilterRequest;
 import kit.penny.clientbus.common.dto.conversation.SavedConversationFilterDto;
@@ -40,7 +43,10 @@ public class SavedConversationFilterService {
         this.filterRepository = filterRepository;
         this.workspaceRepository = workspaceRepository;
         this.currentUserService = currentUserService;
-        this.objectMapper = new ObjectMapper();
+        this.objectMapper = JsonMapper.builder()
+                .addModule(new JavaTimeModule())
+                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+                .build();
     }
 
     @Transactional(readOnly = true)

@@ -11,13 +11,13 @@ interface Props {
     selection: InboxSelection
     onSelect: (id: string) => void
     onDeleted: (id: string) => void
+    onActionError: (message: string | null) => void
 }
 
-export default function ConversationGroupsSection({ model, selection, onSelect, onDeleted }: Props) {
+export default function ConversationGroupsSection({ model, selection, onSelect, onDeleted, onActionError }: Props) {
     const [editor, setEditor] = useState<Editor>({ mode: 'closed' })
     const [deletingId, setDeletingId] = useState<string | null>(null)
     const [saving, setSaving] = useState(false)
-    const [error, setError] = useState<string | null>(null)
     const mounted = useRef(false)
     useEffect(() => {
         mounted.current = true
@@ -29,15 +29,17 @@ export default function ConversationGroupsSection({ model, selection, onSelect, 
     useEffect(() => {
         setEditor(current => current.mode === 'edit' && current.groupId !== selectedGroupId
             ? { mode: 'closed' } : current)
-        setError(null)
     }, [selectedGroupId])
 
     const save = async (id: string | null, name: string, icon: string) => {
         setSaving(true)
+        onActionError(null)
         try {
             if (id) await model.rename(id, name, icon)
             else await model.create(name, icon)
             if (mounted.current) setEditor({ mode: 'closed' })
+        } catch (err) {
+            if (mounted.current) onActionError(`Не удалось сохранить группу «${name}»: ${err instanceof Error ? err.message : 'ошибка сервера.'}`)
         } finally {
             if (mounted.current) setSaving(false)
         }
@@ -47,14 +49,14 @@ export default function ConversationGroupsSection({ model, selection, onSelect, 
         if (!selectedGroup || deletingId) return
         if (!window.confirm(`Удалить группу «${selectedGroup.name}»? Диалоги останутся без изменений.`)) return
         setDeletingId(selectedGroup.id)
-        setError(null)
+        onActionError(null)
         try {
             await model.remove(selectedGroup.id)
             if (!mounted.current) return
             setEditor({ mode: 'closed' })
             onDeleted(selectedGroup.id)
         } catch (err) {
-            if (mounted.current) setError(err instanceof Error ? err.message : 'Не удалось удалить группу.')
+            if (mounted.current) onActionError(`Не удалось удалить группу «${selectedGroup.name}»: ${err instanceof Error ? err.message : 'ошибка сервера.'}`)
         } finally {
             if (mounted.current) setDeletingId(null)
         }
@@ -62,32 +64,35 @@ export default function ConversationGroupsSection({ model, selection, onSelect, 
 
     return (
         <div className="conversation-list-groups">
+            <div className="inbox-navigation-section-head">
+                <h3>Мои группы</h3>
+                <button type="button" className="ui-button ui-button-secondary" disabled={deletingId !== null || saving}
+                    aria-expanded={editor.mode === 'create'}
+                    onClick={() => { onActionError(null); setEditor(editor.mode === 'create' ? { mode: 'closed' } : { mode: 'create' }) }}>
+                    {editor.mode === 'create' ? 'Отмена' : '+ Группа'}
+                </button>
+            </div>
             {model.groups.length > 0 && (
                 <div className="conversation-list-tabs">
                     {model.groups.map(group => (
                         <button key={group.id} type="button"
                             className={selection.view === 'GROUP' && selection.groupId === group.id ? 'active' : ''}
+                            aria-pressed={selection.view === 'GROUP' && selection.groupId === group.id} title={group.name}
                             onClick={() => onSelect(group.id)}>
                             <GroupIcon icon={group.icon} /><span>{group.name}</span>
                         </button>
                     ))}
                 </div>
             )}
-            <div className="conversation-list-group-actions">
-                <button type="button" className="ui-button ui-button-secondary" disabled={deletingId !== null || saving}
-                    onClick={() => { setError(null); setEditor(editor.mode === 'create' ? { mode: 'closed' } : { mode: 'create' }) }}>
-                    {editor.mode === 'create' ? 'Отмена' : '+ Группа'}
-                </button>
-                {selectedGroup && <>
+            {selectedGroup && <div className="conversation-list-group-actions">
                     <button type="button" className="ui-button ui-button-secondary" disabled={deletingId !== null || saving}
-                        onClick={() => { setError(null); setEditor(editedGroup ? { mode: 'closed' } : { mode: 'edit', groupId: selectedGroup.id }) }}>
+                        onClick={() => { onActionError(null); setEditor(editedGroup ? { mode: 'closed' } : { mode: 'edit', groupId: selectedGroup.id }) }}>
                         Переименовать
                     </button>
                     <button type="button" className="ui-button ui-button-secondary" disabled={deletingId !== null || saving} onClick={() => void remove()}>
                         {deletingId === selectedGroup.id ? 'Удаление…' : 'Удалить'}
                     </button>
-                </>}
-            </div>
+            </div>}
             {editor.mode === 'create' && <ConversationGroupForm key="create" editing={false}
                 onCancel={() => setEditor({ mode: 'closed' })}
                 onSubmit={(name, icon) => save(null, name, icon)} />}
@@ -95,7 +100,7 @@ export default function ConversationGroupsSection({ model, selection, onSelect, 
                 initialName={editedGroup.name} initialIcon={editedGroup.icon}
                 onCancel={() => setEditor({ mode: 'closed' })}
                 onSubmit={(name, icon) => save(editedGroup.id, name, icon)} />}
-            {(error || model.error) && <div className="ui-form-error">{error || model.error}</div>}
+            {model.error && <div className="ui-form-error" role="alert">{model.error}</div>}
         </div>
     )
 }

@@ -241,7 +241,7 @@ class ConversationControllerTest {
 
         when(conversationGroupService.createGroup(
                 workspaceId,
-                request.name()
+                request.name(), request.icon()
         )).thenReturn(group);
 
         ResponseEntity<ConversationGroupDto> response =
@@ -251,7 +251,7 @@ class ConversationControllerTest {
         assertSame(group, response.getBody());
 
         verify(conversationGroupService)
-                .createGroup(workspaceId, request.name());
+                .createGroup(workspaceId, request.name(), request.icon());
     }
 
     @Test
@@ -273,7 +273,7 @@ class ConversationControllerTest {
         when(conversationGroupService.renameGroup(
                 workspaceId,
                 groupId,
-                request.name()
+                request.name(), request.icon()
         )).thenReturn(group);
 
         ResponseEntity<ConversationGroupDto> response =
@@ -283,7 +283,7 @@ class ConversationControllerTest {
         assertSame(group, response.getBody());
 
         verify(conversationGroupService)
-                .renameGroup(workspaceId, groupId, request.name());
+                .renameGroup(workspaceId, groupId, request.name(), request.icon());
     }
 
     @Test

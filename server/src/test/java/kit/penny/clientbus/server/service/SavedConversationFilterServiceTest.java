@@ -1,8 +1,11 @@
 
 package kit.penny.clientbus.server.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import kit.penny.clientbus.common.dto.conversation.ConversationSearchRequest;
+import kit.penny.clientbus.common.dto.conversation.ConversationClientLinkFilter;
+import kit.penny.clientbus.common.dto.conversation.ConversationSort;
+import kit.penny.clientbus.common.dto.conversation.ConversationUnreadFilter;
+import kit.penny.clientbus.common.dto.conversation.ConversationView;
 import kit.penny.clientbus.common.dto.conversation.SaveConversationFilterRequest;
 import kit.penny.clientbus.common.enums.SavedFilterType;
 import kit.penny.clientbus.server.persistence.entity.EmployeeEntity;
@@ -20,6 +23,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -191,6 +195,49 @@ class SavedConversationFilterServiceTest {
         )).isInstanceOf(AccessDeniedException.class);
 
         verify(filterRepository, never()).save(any());
+    }
+
+    @Test
+    void filterWithActivityDates_preservesAllConditionsOnCreateUpdateAndReload() {
+        WorkspaceEntity workspace = new WorkspaceEntity();
+        EmployeeEntity employee = new EmployeeEntity();
+        employee.setId(employeeId);
+        UUID filterId = UUID.randomUUID();
+        Instant from = Instant.parse("2026-10-16T21:00:00Z");
+        Instant to = Instant.parse("2026-10-17T20:59:59.999999Z");
+        ConversationSearchRequest definition = new ConversationSearchRequest(
+                ConversationView.MINE, null, "alice", List.of(UUID.randomUUID()),
+                List.of(UUID.randomUUID()), ConversationClientLinkFilter.WITHOUT_CLIENT,
+                ConversationUnreadFilter.HAS_UNREAD, from, to,
+                ConversationSort.LAST_MESSAGE_ASC, null, null
+        );
+        when(workspaceRepository.findById(workspaceId)).thenReturn(Optional.of(workspace));
+        when(currentUserService.getCurrentEmployeeId()).thenReturn(employeeId);
+        when(currentUserService.getCurrentEmployee()).thenReturn(employee);
+        when(filterRepository.save(any(SavedConversationFilterEntity.class)))
+                .thenAnswer(invocation -> {
+                    SavedConversationFilterEntity entity = invocation.getArgument(0);
+                    entity.setId(filterId);
+                    return entity;
+                });
+
+        var created = service.createFilter(workspaceId,
+                new SaveConversationFilterRequest("With dates", SavedFilterType.PRIVATE, definition));
+        assertThat(created.filterDefinition()).isEqualTo(definition);
+
+        var captor = org.mockito.ArgumentCaptor.forClass(SavedConversationFilterEntity.class);
+        verify(filterRepository).save(captor.capture());
+        SavedConversationFilterEntity stored = captor.getValue();
+        assertThat(stored.getFilterDefinition()).contains("2026-10-17T20:59:59.999999Z");
+        when(filterRepository.findByIdAndWorkspaceId(filterId, workspaceId)).thenReturn(Optional.of(stored));
+        var updated = service.updateFilter(workspaceId, filterId,
+                new SaveConversationFilterRequest("Renamed with dates", SavedFilterType.PRIVATE, definition));
+        assertThat(updated.filterDefinition()).isEqualTo(definition);
+        when(filterRepository.findAllByWorkspaceIdAndFilterTypeAndOwnerEmployeeIdOrderByNameAsc(
+                workspaceId, SavedFilterType.PRIVATE, employeeId)).thenReturn(List.of(stored));
+        var reloaded = service.getFilters(workspaceId, SavedFilterType.PRIVATE);
+        assertThat(reloaded).hasSize(1);
+        assertThat(reloaded.getFirst().filterDefinition()).isEqualTo(definition);
     }
 
     private SaveConversationFilterRequest request(

@@ -1,7 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react'
 import type { ChannelDto } from '../../../api/types/channel'
 import type { ConversationFilterDraft } from './conversationFilterModel'
-import ConversationSortSelect from './ConversationSortSelect'
 import { toLocalDateInput } from './filterDates'
 
 interface Props {
@@ -11,29 +10,8 @@ interface Props {
 }
 
 export default function ConversationFilterFields({ filterDraft, setFilterDraft, channels }: Props) {
-    return (<>
-        <input
-            className="ui-input"
-            type="search"
-            value={filterDraft.search}
-            onChange={event =>
-                setFilterDraft(current => ({
-                    ...current,
-                    search: event.target.value,
-                }))
-            }
-            placeholder="Поиск по диалогам"
-            aria-label="Поиск по диалогам"
-        />
-
-        <div
-            className="conversation-filter-conditions"
-            style={{
-                maxHeight: 'min(45vh, 360px)',
-                overflowY: 'auto',
-                overflowX: 'hidden',
-            }}
-        >
+    return (
+        <div className="conversation-filter-conditions">
             <label>
                 Каналы
                 <select
@@ -81,6 +59,7 @@ export default function ConversationFilterFields({ filterDraft, setFilterDraft, 
                 <select
                     className="ui-input"
                     value={filterDraft.clientLink}
+                    aria-label="Связь с клиентом"
                     onChange={event =>
                         setFilterDraft(current => ({
                             ...current,
@@ -100,6 +79,7 @@ export default function ConversationFilterFields({ filterDraft, setFilterDraft, 
                 <select
                     className="ui-input"
                     value={filterDraft.unread}
+                    aria-label="Сообщения"
                     onChange={event =>
                         setFilterDraft(current => ({
                             ...current,
@@ -146,7 +126,13 @@ export default function ConversationFilterFields({ filterDraft, setFilterDraft, 
                 </label>
             </div>
 
-            <ConversationSortSelect value={filterDraft.sort} onChange={sort => setFilterDraft(current => ({ ...current, sort }))} />
+            {filterDraft.clientAccountIds.length > 0 && <div className="conversation-filter-account-restriction">
+                <small>Аккаунтов из сохранённого фильтра: {filterDraft.clientAccountIds.length}</small>
+                <button type="button" className="ui-button ui-button-secondary"
+                    onClick={() => setFilterDraft(current => ({ ...current, clientAccountIds: [] }))}>
+                    Снять ограничение по аккаунтам
+                </button>
+            </div>}
         </div>
-    </>)
+    )
 }

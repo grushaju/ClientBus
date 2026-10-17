@@ -24,8 +24,8 @@ export function toFilterInstant(value: string, boundary: 'start' | 'end' = 'star
         }
         return date.toISOString()
     }
-    // Compatibility for callers with an existing timestamp. Restored editor
-    // criteria are converted to calendar dates in criteriaFromDefinition.
+    // Applied saved filters retain their original timestamps until the user
+    // edits the period. Rendering dates must not change their search bounds.
     const date = new Date(value)
     if (!Number.isFinite(date.getTime())) throw new Error('Укажите корректные даты активности.')
     return TIME_ZONE_SUFFIX.test(value) ? value : date.toISOString()

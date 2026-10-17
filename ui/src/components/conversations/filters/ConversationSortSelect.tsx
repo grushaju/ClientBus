@@ -4,7 +4,7 @@ export default function ConversationSortSelect({ value, onChange }: { value: Con
     return (
         <label>
             Сортировка
-            <select className="ui-input" value={value} onChange={event => onChange(event.target.value as ConversationSort)}>
+            <select className="ui-input" aria-label="Сортировка" value={value} onChange={event => onChange(event.target.value as ConversationSort)}>
                 <option value="LAST_MESSAGE_DESC">Сначала новые</option>
                 <option value="LAST_MESSAGE_ASC">Сначала старые</option>
             </select>

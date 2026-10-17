@@ -2,8 +2,9 @@ const assert = require('node:assert/strict')
 const { test } = require('node:test')
 const React = require('react')
 const { act, create } = require('react-test-renderer')
-const { MemoryRouter, useLocation, useNavigate } = require('react-router-dom')
+const { MemoryRouter, Route, Routes, useLocation, useNavigate } = require('react-router-dom')
 const load = require('./loadInboxModule.cjs')
+const focusDom = require('./inboxFocusDom.cjs')
 process.env.TZ = 'Europe/Moscow'
 
 function deferred() {
@@ -31,9 +32,37 @@ function text(node) {
     return text(node.children)
 }
 
+function viewport(events, initialWidth = 1024) {
+    let width = initialWidth
+    const queries = new Map()
+    const matches = query => {
+        const max = /max-width:\s*(\d+)px/.exec(query)
+        const min = /min-width:\s*(\d+)px/.exec(query)
+        return !!(max || min) && (!max || width <= Number(max[1])) && (!min || width >= Number(min[1]))
+    }
+    events.matchMedia = query => {
+        if (!queries.has(query)) {
+            const media = new EventTarget()
+            Object.defineProperties(media, { matches: { get: () => matches(query) }, media: { value: query } })
+            queries.set(query, media)
+        }
+        return queries.get(query)
+    }
+    return nextWidth => {
+        const previous = new Map([...queries.keys()].map(query => [query, matches(query)]))
+        width = nextWidth
+        for (const [query, media] of queries) {
+            if (previous.get(query) !== matches(query)) {
+                media.dispatchEvent(Object.assign(new Event('change'), { matches: matches(query), media: query }))
+            }
+        }
+    }
+}
+
 async function inbox(t, options = {}) {
     const previousWindow = global.window
     const events = new EventTarget()
+    const resize = viewport(events, options.width ?? 1024)
     events.confirm = () => true
     global.window = events
     let search = options.search ?? (async () => response())
@@ -43,10 +72,22 @@ async function inbox(t, options = {}) {
     const membershipCalls = []
     const membership = new Set(options.groupIds ?? [])
     const saved = [...(options.savedFilters ?? [])]
+    const savedCalls = []
+    const filterLoads = []
     const renameCalls = []
+    const readCalls = [], conversationLoads = [], workspaceSelections = []
     let groups = [...(options.groups ?? [])]
     let workspace = { id: 'workspace', name: 'Workspace' }
     let renderer, location, navigate
+    let threadMounts = 0
+
+    function Thread() {
+        const [draft, setDraft] = React.useState('')
+        React.useEffect(() => { threadMounts++ }, [])
+        return React.createElement('section', { className: 'conversation-view' },
+            React.createElement('textarea', { 'aria-label': 'Черновик сообщения', value: draft,
+                onChange: event => setDraft(event.target.value) }))
+    }
 
     function Row({ item }) {
         const id = item.conversation.id
@@ -62,6 +103,14 @@ async function inbox(t, options = {}) {
         return null
     }
     const api = {
+        getConversation: async id => {
+            conversationLoads.push(id)
+            return options.loadConversation ? options.loadConversation(id) : conversation(id)
+        },
+        markConversationAsRead: async id => {
+            readCalls.push(id)
+            return options.markRead ? options.markRead(id) : conversation(id, { unreadCount: 0 })
+        },
         searchInbox: async (workspaceId, request) => {
             calls.push({ workspaceId, ...request })
             return search(workspaceId, request)
@@ -77,6 +126,7 @@ async function inbox(t, options = {}) {
         },
         renameGroup: async (workspaceId, id, name, icon) => {
             renameCalls.push({ id, name, icon })
+            if (options.renameGroup) return options.renameGroup(workspaceId, id, name, icon)
             groups = groups.map(group => group.id === id ? { ...group, name, icon } : group)
             return groups.find(group => group.id === id)
         },
@@ -94,24 +144,42 @@ async function inbox(t, options = {}) {
     const Workspace = load('InboxWorkspace.tsx', {
         '../../auth/AuthContext': {
             useAuth: () => ({
-                currentEmployee: { id: 'employee' }, employeeWorkspaces: [],
+                currentEmployee: { id: 'employee' }, employeeWorkspaces: options.employeeWorkspaces ?? [],
                 isEmployee: !options.superAdmin, isSuperAdmin: !!options.superAdmin,
             }),
         },
-        '../../workspace/WorkspaceContext': { useWorkspace: () => ({ currentWorkspace: workspace }) },
+        '../../workspace/WorkspaceContext': { useWorkspace: () => ({ currentWorkspace: workspace,
+            setCurrentWorkspaceId: id => workspaceSelections.push(id) }) },
         '../../../api/conversationApi': api,
-        '../../../api/channelApi': { getWorkspaceChannels: async () => [] },
+        '../../../api/channelApi': { getWorkspaceChannels: async () => options.channels ?? [] },
         '../../../api/clientAccountApi': { getClientAccountsByIds: async ids => ids.map(id => ({ id })) },
         '../../../api/savedConversationFilterApi': {
-            getSavedConversationFilters: async (id, type) => type === 'PRIVATE'
-                ? (options.loadPrivateFilters ? options.loadPrivateFilters(id) : [...saved]) : [],
+            getSavedConversationFilters: async (id, type) => {
+                filterLoads.push([id, type])
+                return type === 'PRIVATE'
+                    ? (options.loadPrivateFilters ? options.loadPrivateFilters(id) : [...saved])
+                    : (options.loadSystemFilters ? options.loadSystemFilters(id) : options.systemFilters ?? [])
+            },
             createSavedConversationFilter: async (workspaceId, request) => {
+                savedCalls.push({ workspaceId, ...request })
+                if (options.saveFilter) return options.saveFilter(workspaceId, request)
                 const filter = { id: 'created-filter', ...request }
                 saved.push(filter)
                 return filter
             },
         },
-        './ConversationView': { default: () => React.createElement('section', null, 'thread') },
+        ...(options.realThread ? {
+            '../../api/conversationApi': api,
+            '../../api/clientAccountApi': { getClientAccount: async id => ({ id }) },
+            '../../api/channelApi': { getWorkspaceChannels: async () => options.channels ?? [] },
+            '../../api/employeeApi': { getWorkspaceEmployees: async () => [] },
+            '../../api/messageApi': { sendOutboundMessage: async () => {} },
+            './useConversationMessages': { useConversationMessages: () => ({ messages: [], loading: false,
+                loadingOlder: false, hasMore: false, historyStartReached: true, error: null }) },
+            './ConversationHeader': { default: () => null },
+            './ConversationClientPanel': { default: () => null },
+            './MessageList': { default: () => null },
+        } : { './ConversationView': { default: Thread } }),
         './NewConversationDialog': { default: () => null },
         '../clients/ClientAccountAvatar': { default: () => null },
         ...(options.realRows ? {} : { '../ConversationListItem': { default: Row } }),
@@ -122,18 +190,32 @@ async function inbox(t, options = {}) {
     })
     const tree = () => React.createElement(MemoryRouter, {
         initialEntries: options.initialEntries ?? ['/inbox/conversation-1?tab=mine'],
-    }, React.createElement(Workspace), React.createElement(RouteProbe))
-    await act(async () => { renderer = create(tree()) })
+    }, React.createElement(Routes, null,
+        React.createElement(Route, { path: '/inbox/:conversationId?', element: React.createElement(Workspace) })),
+    React.createElement(RouteProbe))
+    await act(async () => { renderer = create(tree(), { createNodeMock: options.createNodeMock }) })
     const button = label => renderer.root.findAllByType('button').find(node => text(node) === label)
     return {
-        renderer, calls, mounts, groupCalls, membershipCalls, renameCalls,
+        renderer, calls, mounts, groupCalls, membershipCalls, renameCalls, savedCalls, filterLoads, readCalls, conversationLoads, workspaceSelections,
         setSearch: handler => { search = handler },
         button,
         click: async label => {
             assert.ok(button(label), `Missing button: ${label}`)
-            await act(async () => button(label).props.onClick())
+            await act(async () => {
+                const target = button(label)
+                if (target.props.onClick) return target.props.onClick()
+                assert.equal(target.props.type, 'submit')
+                let form = target.parent
+                while (form && form.type !== 'form') form = form.parent
+                assert.ok(form, 'Submit button must belong to a form')
+                return form.props.onSubmit({ preventDefault() {} })
+            })
         },
-        submit: async () => act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} })),
+        submit: async () => act(async () => {
+            const editors = renderer.root.findAllByType('form').filter(node => node.props.className === 'conversation-list-group-form')
+            assert.equal(editors.length, 1, 'Expected one open group or saved filter editor')
+            return editors[0].props.onSubmit({ preventDefault() {} })
+        }),
         emit: async (updated = conversation()) => act(async () => {
             const event = new Event('clientbus:conversation-updated')
             event.detail = updated
@@ -141,7 +223,9 @@ async function inbox(t, options = {}) {
         }),
         navigate: async value => act(async () => navigate(value)),
         switchWorkspace: async next => act(async () => { workspace = next; renderer.update(tree()) }),
+        resize: async width => act(async () => resize(width)),
         get location() { return location },
+        get threadMounts() { return threadMounts },
         row: (id = 'conversation-1') => renderer.root.findByProps({ 'data-id': id }),
         list: () => renderer.root.findByProps({ className: 'conversation-list-items' }),
     }
@@ -319,6 +403,7 @@ test('a late initial GET merges a saved filter without erasing or duplicating it
     await act(async () => ui.renderer.root.findByProps({ placeholder: 'Название фильтра' }).props.onChange({ target: { value: 'Created filter' } }))
     await ui.submit()
     assert.ok(ui.button('Created filter'))
+    assert.equal(text(ui.renderer.root.findByProps({ className: 'conversation-list-saved-filter active' })), 'Created filter')
     await act(async () => initial.resolve([
         { id: 'old', name: 'Old filter', filterDefinition: { view: 'MINE' } },
         { id: 'created-filter', name: 'Stale filter name', filterType: 'PRIVATE', filterDefinition: { view: 'MINE' } },
@@ -464,4 +549,363 @@ test('late search, group and filter responses from a previous Workspace cannot r
     assert.equal(ui.renderer.root.findAllByProps({ 'data-id': 'obsolete-conversation' }).length, 0)
     assert.ok(ui.row('current-conversation'))
     assert.equal(ui.calls.at(-1).workspaceId, 'workspace-2')
+})
+
+test('combined filter draft waits for Apply, saves all conditions and resets without changing representation', async t => {
+    const ui = await inbox(t, { channels: [
+        { id: 'telegram', name: 'Telegram', account: { id: 'account-a' } },
+        { id: 'duplicate', name: 'Same account', account: { id: 'account-a' } },
+        { id: 'whatsapp', name: 'WhatsApp', account: { id: 'account-b' } },
+        { id: 'unconnected', name: 'No account', account: null },
+    ] })
+    await ui.click('Свободные')
+    await ui.click('Условия фильтра ▼')
+    const field = label => ui.renderer.root.findAllByType('label')
+        .find(node => text(node).startsWith(label)).findByType('select')
+    const channels = ui.renderer.root.findByProps({ 'aria-label': 'Каналы' })
+    assert.deepEqual(channels.findAllByType('option').map(node => node.props.value), ['account-a', 'account-b'])
+    const before = ui.calls.length
+    await act(async () => {
+        ui.renderer.root.findByProps({ type: 'search' }).props.onChange({ target: { value: '  alice  ' } })
+        channels.props.onChange({ target: { selectedOptions: [{ value: 'account-a' }, { value: 'account-b' }] } })
+        field('Связь с клиентом').props.onChange({ target: { value: 'WITHOUT_CLIENT' } })
+        field('Сообщения').props.onChange({ target: { value: 'HAS_UNREAD' } })
+        field('Сортировка').props.onChange({ target: { value: 'LAST_MESSAGE_ASC' } })
+        const dates = ui.renderer.root.findAllByProps({ type: 'date' })
+        dates[0].props.onChange({ target: { value: '2026-10-16' } })
+        dates[1].props.onChange({ target: { value: '2026-10-17' } })
+    })
+    assert.equal(ui.calls.length, before)
+    await ui.click('Применить')
+    const expected = {
+        view: 'UNASSIGNED', groupId: null, search: 'alice', channelAccountIds: ['account-a', 'account-b'],
+        clientAccountIds: [], clientLink: 'WITHOUT_CLIENT', unread: 'HAS_UNREAD',
+        activityFrom: '2026-10-15T21:00:00.000Z', activityTo: '2026-10-17T20:59:59.999999Z',
+        sort: 'LAST_MESSAGE_ASC',
+    }
+    assert.deepEqual(ui.calls.at(-1), { workspaceId: 'workspace', ...expected, page: 0, size: 10 })
+    await ui.click('+ Сохранить фильтр')
+    await act(async () => ui.renderer.root.findByProps({ placeholder: 'Название фильтра' })
+        .props.onChange({ target: { value: '  Combined  ' } }))
+    await ui.submit()
+    assert.deepEqual(ui.savedCalls, [{ workspaceId: 'workspace', name: 'Combined', filterType: 'PRIVATE', filterDefinition: expected }])
+    await ui.click('Сбросить')
+    assert.deepEqual(ui.calls.at(-1), {
+        workspaceId: 'workspace', view: 'UNASSIGNED', groupId: null, search: null,
+        channelAccountIds: [], clientAccountIds: [], clientLink: 'ANY', unread: 'ANY',
+        activityFrom: null, activityTo: null, sort: 'LAST_MESSAGE_DESC', page: 0, size: 10,
+    })
+    await ui.click('Combined')
+    assert.deepEqual(ui.calls.at(-1), { workspaceId: 'workspace', ...expected, page: 0, size: 10 })
+    assert.equal(field('Сообщения').props.value, 'HAS_UNREAD')
+    assert.equal(field('Сортировка').props.value, 'LAST_MESSAGE_ASC')
+})
+
+test('employee can apply a system filter and save a personal copy without changing the system definition', async t => {
+    const definition = { view: 'UNASSIGNED', search: 'shared', unread: 'READ_ONLY', page: 5, size: 80 }
+    const original = structuredClone(definition)
+    const ui = await inbox(t, { systemFilters: [{ id: 'system', name: 'Shared filter', filterType: 'SYSTEM', filterDefinition: definition }] })
+    await ui.click('Shared filter')
+    assert.equal(ui.calls.at(-1).view, 'UNASSIGNED')
+    assert.equal(ui.calls.at(-1).page, 0)
+    assert.equal(ui.calls.at(-1).size, 10)
+    await ui.click('Условия фильтра ▼')
+    await act(async () => ui.renderer.root.findByProps({ type: 'search' }).props.onChange({ target: { value: 'my copy' } }))
+    await ui.click('Применить')
+    await ui.click('+ Сохранить фильтр')
+    await act(async () => ui.renderer.root.findByProps({ placeholder: 'Название фильтра' }).props.onChange({ target: { value: 'My copy' } }))
+    await ui.submit()
+    assert.equal(ui.savedCalls[0].filterType, 'PRIVATE')
+    assert.equal(ui.savedCalls[0].filterDefinition.search, 'my copy')
+    assert.deepEqual(definition, original)
+})
+
+test('SuperAdmin loads system filters only and creates a system definition in the current Workspace', async t => {
+    const ui = await inbox(t, { superAdmin: true })
+    assert.deepEqual(ui.filterLoads, [['workspace', 'SYSTEM']])
+    await ui.click('+ Сохранить фильтр')
+    await act(async () => ui.renderer.root.findByProps({ placeholder: 'Название фильтра' }).props.onChange({ target: { value: 'For everyone' } }))
+    await ui.submit()
+    assert.equal(ui.savedCalls[0].filterType, 'SYSTEM')
+    assert.equal(ui.savedCalls[0].filterDefinition.view, 'ALL')
+})
+
+test('failure to load system filters does not hide personal filters and permits a retry', async t => {
+    let fail = true
+    const ui = await inbox(t, {
+        savedFilters: [{ id: 'personal', name: 'Still available', filterDefinition: { view: 'MINE', unread: 'HAS_UNREAD' } }],
+        loadSystemFilters: async () => {
+            if (fail) throw Error('Shared filters unavailable')
+            return [{ id: 'shared', name: 'Recovered shared', filterDefinition: { view: 'UNASSIGNED' } }]
+        },
+    })
+    assert.ok(ui.button('Still available'))
+    await ui.click('Still available')
+    assert.equal(ui.calls.at(-1).unread, 'HAS_UNREAD')
+    fail = false
+    await ui.click('Повторить загрузку фильтров')
+    assert.ok(ui.button('Recovered shared'))
+    assert.ok(ui.button('Still available'))
+})
+
+test('Inbox navigation occupies its own column; search, sort and conditions belong to the list', async t => {
+    const ui = await inbox(t, {
+        groups: [{ id: 'g', name: 'Priority group', icon: 'heart.svg' }],
+        savedFilters: [{ id: 'f', name: 'My unread', filterDefinition: { view: 'MINE', unread: 'HAS_UNREAD' } }],
+    })
+    const browser = ui.renderer.root.findByProps({ className: 'inbox-browser' })
+    const navigation = browser.findByType('nav')
+    const list = browser.findByType('aside')
+    assert.equal(navigation.props['aria-label'], 'Навигация Inbox')
+    assert.ok(text(navigation).includes('Мои диалоги'))
+    assert.ok(text(navigation).includes('Priority group'))
+    assert.ok(text(navigation).includes('My unread'))
+    assert.equal(list.findAllByProps({ className: 'conversation-list-saved-filters' }).length, 0)
+    assert.equal(list.findByProps({ type: 'search' }).props['aria-label'], 'Поиск по диалогам')
+    assert.ok(list.findByProps({ 'aria-label': 'Сортировка' }))
+    assert.equal(list.findAllByProps({ type: 'date' }).length, 0)
+    await ui.click('Настроить фильтры')
+    assert.equal(list.findAllByProps({ type: 'date' }).length, 2)
+    assert.equal(list.findByProps({ className: 'conversation-filter-date-range' }).findAllByProps({ type: 'date' }).length, 2)
+    await ui.click('Priority group')
+    assert.equal(list.findByType('h2').children.join(''), 'Priority group')
+    await ui.click('My unread')
+    assert.equal(list.findByType('h2').children.join(''), 'My unread')
+})
+
+test('navigation disclosure and representation changes keep the conversation draft mounted', async t => {
+    const ui = await inbox(t, { groups: [{ id: 'g', name: 'My group', icon: 'users.svg' }] })
+    const composer = () => ui.renderer.root.findByProps({ 'aria-label': 'Черновик сообщения' })
+    const navigation = () => ui.renderer.root.findByProps({ className: 'inbox-navigation' })
+    await act(async () => composer().props.onChange({ target: { value: 'Unsent message' } }))
+    await ui.click('Меню Inbox')
+    assert.equal(navigation().props['data-open'], true)
+    await ui.click('My group')
+    assert.equal(navigation().props['data-open'], false)
+    assert.equal(ui.calls.at(-1).groupId, 'g')
+    await ui.click('Свободные')
+    await ui.switchWorkspace({ id: 'workspace-2', name: 'Another Workspace' })
+    assert.equal(composer().props.value, 'Unsent message')
+    assert.equal(ui.threadMounts, 1)
+})
+
+test('search submits with collapsed conditions and saved account restrictions can be cleared explicitly', async t => {
+    const ui = await inbox(t, { savedFilters: [{ id: 'f', name: 'Restricted', filterDefinition: {
+        view: 'MINE', clientAccountIds: ['account-a', 'account-b'],
+    } }] })
+    await act(async () => ui.renderer.root.findByProps({ type: 'search' }).props.onChange({ target: { value: '  find me  ' } }))
+    await act(async () => ui.renderer.root.findByProps({ className: 'conversation-filters' }).props.onSubmit({ preventDefault() {} }))
+    assert.equal(ui.calls.at(-1).search, 'find me')
+    await ui.click('Restricted')
+    assert.ok(text(ui.renderer.root.findByProps({ 'aria-label': 'Применённые условия' })).includes('Аккаунты: 2'))
+    await ui.click('Настроить фильтры')
+    const before = ui.calls.length
+    await ui.click('Снять ограничение по аккаунтам')
+    assert.equal(ui.calls.length, before)
+    await ui.click('Применить')
+    assert.deepEqual(ui.calls.at(-1).clientAccountIds, [])
+    assert.equal(ui.renderer.root.findAllByProps({ className: 'conversation-list-saved-filter active' }).length, 0)
+})
+
+test('mobile return to the list keeps filters and the open thread; selecting the same dialogue restores it', async t => {
+    const ui = await inbox(t, { realRows: true })
+    const layout = () => ui.renderer.root.findByProps({ className: 'inbox-layout' })
+    await act(async () => ui.renderer.root.findByProps({ type: 'search' }).props.onChange({ target: { value: 'filter text' } }))
+    await ui.click('Применить')
+    const before = ui.calls.length
+    await ui.click('К списку диалогов')
+    assert.equal(layout().props['data-mobile-list'], true)
+    await ui.click('Меню Inbox')
+    await ui.click('Закрыть меню')
+    assert.equal(ui.renderer.root.findByProps({ type: 'search' }).props.value, 'filter text')
+    const link = ui.renderer.root.findAllByType('a').find(node => node.props.className.includes('conversation-list-item'))
+    await act(async () => link.props.onClick({ button: 0, defaultPrevented: false,
+        preventDefault() {}, metaKey: false, altKey: false, ctrlKey: false, shiftKey: false }))
+    assert.equal(layout().props['data-mobile-list'], false)
+    assert.equal(ui.calls.length, before)
+    assert.equal(ui.threadMounts, 1)
+})
+
+test('invalid saved dates open the editor and close navigation without replacing the applied search', async t => {
+    const ui = await inbox(t, { savedFilters: [{ id: 'bad', name: 'Invalid period', filterDefinition: {
+        view: 'UNASSIGNED', activityFrom: '2026-10-18', activityTo: '2026-10-17',
+    } }] })
+    const before = ui.calls.length
+    await ui.click('Меню Inbox')
+    await ui.click('Invalid period')
+    assert.equal(ui.calls.length, before)
+    assert.equal(ui.calls.at(-1).view, 'MINE')
+    assert.equal(ui.renderer.root.findByProps({ className: 'inbox-navigation' }).props['data-open'], false)
+    assert.equal(ui.renderer.root.findAllByProps({ type: 'date' }).length, 2)
+    assert.ok(text(ui.renderer.root.findByProps({ role: 'alert' })).includes('Начало периода'))
+})
+
+test('a late real conversation GET stays unread in the mobile list; reopening marks it without remounting the composer', async t => {
+    const pending = deferred(), read = deferred()
+    const ui = await inbox(t, { width: 600, realThread: true, realRows: true,
+        loadConversation: () => pending.promise, markRead: () => read.promise })
+    await ui.click('К списку диалогов')
+    await act(async () => pending.resolve(conversation()))
+    assert.deepEqual(ui.readCalls, [])
+    assert.equal(ui.renderer.root.findByProps({ className: 'inbox-layout' }).props['data-mobile-list'], true)
+    const link = ui.renderer.root.findAllByType('a').find(node => node.props.className.includes('conversation-list-item'))
+    await act(async () => link.props.onClick({ button: 0, defaultPrevented: false, preventDefault() {} }))
+    assert.deepEqual(ui.readCalls, ['conversation-1'])
+    const composer = ui.renderer.root.findByProps({ placeholder: 'Введите сообщение...' })
+    await act(async () => composer.props.onChange({ target: { value: 'Unsent reply' } }))
+    await act(async () => read.resolve(conversation('conversation-1', { unreadCount: 0 })))
+    assert.equal(ui.renderer.root.findByProps({ placeholder: 'Введите сообщение...' }), composer)
+    assert.equal(composer.props.value, 'Unsent reply')
+    assert.deepEqual(ui.conversationLoads, ['conversation-1'])
+})
+
+test('resizing the mobile list to desktop marks the now visible real thread as read', async t => {
+    const pending = deferred()
+    const ui = await inbox(t, { width: 600, realThread: true, loadConversation: () => pending.promise })
+    await ui.click('К списку диалогов')
+    await act(async () => pending.resolve(conversation()))
+    assert.deepEqual(ui.readCalls, [])
+    await ui.resize(1366)
+    assert.deepEqual(ui.readCalls, ['conversation-1'])
+    assert.deepEqual(ui.conversationLoads, ['conversation-1'])
+})
+
+test('an obsolete real conversation GET cannot switch Workspace or mark the previous route read', async t => {
+    const previous = deferred()
+    const ui = await inbox(t, { realThread: true, loadConversation: id => id === 'conversation-1'
+        ? previous.promise : conversation(id) })
+    await ui.navigate('/inbox/conversation-2?tab=mine')
+    assert.deepEqual(ui.readCalls, ['conversation-2'])
+    await act(async () => previous.resolve(conversation('conversation-1', { workspaceId: 'obsolete-workspace' })))
+    assert.deepEqual(ui.readCalls, ['conversation-2'])
+    assert.ok(!ui.workspaceSelections.includes('obsolete-workspace'))
+})
+
+test('a saved period keeps its exact bounds in another zone until the dates themselves change', async t => {
+    const previousZone = process.env.TZ
+    process.env.TZ = 'America/New_York'
+    t.after(() => { process.env.TZ = previousZone })
+    const from = '2026-10-17T21:00:00.000Z', to = '2026-10-18T20:59:59.999999Z'
+    const ui = await inbox(t, { savedFilters: [{ id: 'period', name: 'Moscow day', filterDefinition: {
+        view: 'MINE', activityFrom: from, activityTo: to,
+    } }] })
+    await ui.click('Moscow day')
+    assert.equal(ui.calls.at(-1).activityFrom, from)
+    assert.equal(ui.calls.at(-1).activityTo, to)
+    assert.equal(ui.renderer.root.findAllByProps({ className: 'conversation-filter-hint' }).length, 0)
+    await ui.click('Настроить фильтры')
+    const dates = () => ui.renderer.root.findAllByProps({ type: 'date' })
+    assert.deepEqual(dates().map(node => node.props.value), ['2026-10-17', '2026-10-18'])
+    await act(async () => ui.renderer.root.findByProps({ type: 'search' }).props.onChange({ target: { value: 'changed text' } }))
+    await ui.click('Применить')
+    assert.equal(ui.calls.at(-1).activityFrom, from)
+    assert.equal(ui.calls.at(-1).activityTo, to)
+    await ui.click('+ Сохранить фильтр')
+    await act(async () => ui.renderer.root.findByProps({ type: 'text' }).props.onChange({ target: { value: 'Exact copy' } }))
+    await ui.submit()
+    assert.equal(ui.savedCalls[0].filterDefinition.activityFrom, from)
+    assert.equal(ui.savedCalls[0].filterDefinition.activityTo, to)
+    await act(async () => dates()[0].props.onChange({ target: { value: '2026-10-18' } }))
+    await ui.click('Применить')
+    assert.equal(ui.calls.at(-1).activityFrom, '2026-10-18T04:00:00.000Z')
+    assert.equal(ui.calls.at(-1).activityTo, '2026-10-19T03:59:59.999999Z')
+})
+
+for (const returnToFirst of [false, true]) test(`late saving respects a more recent preset choice${returnToFirst ? ', including A-B-A' : ''}`, async t => {
+    const pending = deferred()
+    let sent
+    const ui = await inbox(t, { savedFilters: [
+        { id: 'a', name: 'Filter A', filterType: 'PRIVATE', filterDefinition: { view: 'MINE' } },
+        { id: 'b', name: 'Filter B', filterType: 'PRIVATE', filterDefinition: { view: 'MINE' } },
+    ], saveFilter: async (workspaceId, request) => { sent = request; return pending.promise } })
+    await ui.click('Filter A')
+    await ui.click('+ Сохранить фильтр')
+    await act(async () => ui.renderer.root.findByProps({ type: 'text' }).props.onChange({ target: { value: 'New copy' } }))
+    await ui.submit()
+    await ui.click('Filter B')
+    if (returnToFirst) await ui.click('Filter A')
+    await act(async () => pending.resolve({ id: 'created-filter', ...sent }))
+    assert.ok(ui.button('New copy'))
+    assert.equal(text(ui.renderer.root.findByProps({ className: 'conversation-list-saved-filter active' })), returnToFirst ? 'Filter A' : 'Filter B')
+})
+
+for (const width of [1024, 1366]) test(`a late rename error survives group navigation at width ${width}`, async t => {
+    const pending = deferred()
+    const ui = await inbox(t, { width, groups: [
+        { id: 'a', name: 'Group A', icon: 'users.svg' }, { id: 'b', name: 'Group B', icon: 'heart.svg' },
+    ], renameGroup: () => pending.promise })
+    await ui.click('Group A')
+    if (width <= 1100) await ui.click('Меню Inbox')
+    await ui.click('Переименовать')
+    await act(async () => ui.renderer.root.findByProps({ type: 'text' }).props.onChange({ target: { value: 'Renamed A' } }))
+    await ui.submit()
+    await ui.click('Group B')
+    await act(async () => pending.reject(Error('Rename conflict')))
+    const list = ui.renderer.root.findByProps({ className: 'conversation-list-header' })
+    assert.ok(text(list.findByProps({ role: 'alert' })).includes('Rename conflict'))
+    assert.ok(text(list.findByProps({ role: 'alert' })).includes('Renamed A'))
+    if (width <= 1100) {
+        await ui.click('Меню Inbox')
+        const navigation = ui.renderer.root.findByProps({ className: 'inbox-navigation' })
+        assert.ok(text(navigation.findByProps({ role: 'alert' })).includes('Rename conflict'))
+        assert.equal(list.findAllByProps({ role: 'alert' }).length, 0)
+    }
+    await ui.click('Скрыть')
+    assert.equal(ui.renderer.root.findAllByProps({ role: 'alert' }).length, 0)
+    assert.equal(ui.calls.at(-1).groupId, 'b')
+})
+
+test('drawer contains focus, makes the background inert and handles Escape outside the panel', async t => {
+    const dom = focusDom()
+    const ui = await inbox(t, { createNodeMock: dom.createNodeMock })
+    await ui.click('Меню Inbox')
+    assert.equal(dom.document.activeElement, dom.close)
+    assert.equal(ui.renderer.root.findByProps({ className: 'inbox-navigation' }).props.role, 'dialog')
+    assert.equal(ui.renderer.root.findByProps({ className: 'inbox-navigation' }).props['aria-modal'], true)
+    for (const element of [dom.list, dom.thread, dom.chrome]) assert.equal(element.hasAttribute('inert'), true)
+    assert.equal(dom.backdrop.hasAttribute('inert'), false)
+    dom.last.focus()
+    assert.equal(dom.key('Tab').defaultPrevented, true)
+    assert.equal(dom.document.activeElement, dom.close)
+    assert.equal(dom.key('Tab', true).defaultPrevented, true)
+    assert.equal(dom.document.activeElement, dom.last)
+    dom.search.focus()
+    assert.equal(dom.document.activeElement, dom.close)
+    // Even an externally moved focus must not make Escape stop working.
+    dom.document.activeElement = dom.search
+    await act(async () => dom.key('Escape'))
+    assert.equal(ui.renderer.root.findByProps({ className: 'inbox-navigation' }).props['data-open'], false)
+    assert.equal(dom.document.activeElement, dom.opener)
+    for (const element of [dom.list, dom.thread, dom.chrome]) assert.equal(element.hasAttribute('inert'), false)
+    assert.equal(dom.existing.getAttribute('inert'), 'existing')
+    await ui.click('Меню Inbox')
+    await ui.click('Настроить фильтры')
+    assert.equal(dom.document.activeElement, dom.search)
+})
+
+test('drawer cleanup releases focus and inert when resizing to a permanent navigation column', async t => {
+    const dom = focusDom()
+    const ui = await inbox(t, { createNodeMock: dom.createNodeMock })
+    await ui.click('Меню Inbox')
+    dom.close.visible = false
+    dom.opener.visible = false
+    await ui.resize(1366)
+    assert.equal(ui.renderer.root.findByProps({ className: 'inbox-navigation' }).props['data-open'], false)
+    assert.equal(dom.list.hasAttribute('inert'), false)
+    assert.equal(dom.document.activeElement, dom.first)
+})
+
+test('automatic mobile conversation selection closes a hidden drawer and releases its background', async t => {
+    const dom = focusDom(), pending = deferred()
+    const ui = await inbox(t, { width: 600, initialEntries: ['/inbox?tab=mine'],
+        createNodeMock: dom.createNodeMock, search: () => pending.promise })
+    await ui.click('Меню Inbox')
+    assert.equal(dom.thread.hasAttribute('inert'), true)
+    dom.panel.visible = false
+    dom.opener.visible = false
+    await act(async () => pending.resolve(response()))
+    assert.equal(ui.renderer.root.findByProps({ className: 'inbox-navigation' }).props['data-open'], false)
+    assert.equal(dom.thread.hasAttribute('inert'), false)
+    assert.equal(dom.list.hasAttribute('inert'), false)
+    assert.equal(ui.renderer.root.findByProps({ className: 'inbox-layout' }).props['data-has-conversation'], true)
 })

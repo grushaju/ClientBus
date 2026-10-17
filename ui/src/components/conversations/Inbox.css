@@ -12,8 +12,17 @@
     min-height: 0;
 }
 
+.inbox-browser {
+    position: relative;
+    display: flex;
+    flex: 0 0 auto;
+    min-width: 0;
+    min-height: 0;
+    max-width: 100%;
+}
+
 .inbox-sidebar {
-    width: 360px;
+    width: 340px;
     flex-shrink: 0;
 
     display: flex;
@@ -32,6 +41,10 @@
     min-height: 0;
 
     background: var(--ui-color-background-muted);
+}
+
+.inbox-mobile-toolbar {
+    display: none;
 }
 
 
@@ -680,14 +693,26 @@
    RESPONSIVE
    ========================================================= */
 
+/* Four fixed side areas need at least 320px for the thread. At medium
+   widths keep navigation visible and place details below the messages. */
+@media (max-width: 1440px) {
+    .conversation-view {
+        flex-direction: column;
+    }
+
+    .conversation-client-panel {
+        width: 100%;
+        max-height: 38%;
+        border-top: 1px solid var(--ui-color-border-light);
+        border-left: 0;
+    }
+}
+
 @media (max-width: 1100px) {
     .inbox-sidebar {
         width: 320px;
     }
 
-    .conversation-client-panel {
-        width: 300px;
-    }
 }
 
 @media (max-width: 900px) {
@@ -695,9 +720,6 @@
         width: 300px;
     }
 
-    .conversation-client-panel {
-        width: 280px;
-    }
 }
 
 @media (max-width: 760px) {
@@ -705,6 +727,7 @@
         position: relative;
     }
 
+    .inbox-browser,
     .inbox-sidebar {
         width: 100%;
     }
@@ -713,14 +736,28 @@
         display: none;
     }
 
-    .inbox-layout:has(.conversation-view) .inbox-sidebar {
+    .inbox-layout[data-has-conversation="true"]:not([data-mobile-list="true"]) .inbox-browser {
         display: none;
     }
 
-    .inbox-layout:has(.conversation-view) .inbox-content {
-        display: block;
+    .inbox-layout[data-has-conversation="true"]:not([data-mobile-list="true"]) .inbox-content {
+        display: flex;
+        flex-direction: column;
 
         width: 100%;
+    }
+
+    .inbox-mobile-toolbar {
+        display: flex;
+        flex-shrink: 0;
+        padding: var(--ui-space-2);
+        border-bottom: 1px solid var(--ui-color-border-light);
+        background: var(--ui-color-background);
+    }
+
+    .inbox-content > .conversation-view {
+        flex: 1;
+        height: auto;
     }
 
     .conversation-view {

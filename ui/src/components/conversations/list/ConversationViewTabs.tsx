@@ -13,6 +13,7 @@ export default function ConversationViewTabs({ access, tab, onSelect }: {
                         className={
                             tab === 'mine' ? 'active' : ''
                         }
+                        aria-pressed={tab === 'mine'}
                         onClick={() =>
                             onSelect('mine')
                         }
@@ -28,6 +29,7 @@ export default function ConversationViewTabs({ access, tab, onSelect }: {
                             ? 'active'
                             : ''
                     }
+                    aria-pressed={tab === 'unassigned'}
                     onClick={() =>
                         onSelect('unassigned')
                     }
@@ -41,6 +43,7 @@ export default function ConversationViewTabs({ access, tab, onSelect }: {
                         className={
                             tab === 'all' ? 'active' : ''
                         }
+                        aria-pressed={tab === 'all'}
                         onClick={() =>
                             onSelect('all')
                         }

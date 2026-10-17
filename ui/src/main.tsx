@@ -23,6 +23,7 @@ import './components/workspaces/Workspaces.css'
 
 import './components/conversations/Inbox.css'
 import './components/conversations/Conversations.css'
+import './components/conversations/InboxNavigation.css'
 import './components/conversations/Messages.css'
 
 import React from 'react'

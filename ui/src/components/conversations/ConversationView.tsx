@@ -1,6 +1,7 @@
 import {
     useCallback,
     useEffect,
+    useRef,
     useState,
 } from 'react'
 
@@ -44,13 +45,20 @@ import {
 } from '../../workspace/WorkspaceContext'
 
 
-function ConversationView() {
+function publishConversationUpdate(conversation: ConversationDto) {
+    window.dispatchEvent(new CustomEvent('clientbus:conversation-updated', { detail: conversation }))
+}
+
+function ConversationView({ visible = true }: { visible?: boolean }) {
     const {
         conversationId,
     } = useParams()
 
     const navigate =
         useNavigate()
+    const loadGeneration = useRef(0)
+    const currentConversationId = useRef(conversationId)
+    currentConversationId.current = conversationId
 
     const {
         currentEmployee,
@@ -113,23 +121,13 @@ function ConversationView() {
         loadOlderMessages,
     } = useConversationMessages(conversationId)
 
-    const publishConversationUpdate = (
-        updatedConversation: ConversationDto,
-    ) => {
-        window.dispatchEvent(
-            new CustomEvent(
-                'clientbus:conversation-updated',
-                {
-                    detail:
-                    updatedConversation,
-                },
-            ),
-        )
-    }
-
     const loadConversation =
         useCallback(
             async () => {
+                if (conversationId !== currentConversationId.current) return
+                const generation = ++loadGeneration.current
+                const isCurrent = () => generation === loadGeneration.current
+                    && currentConversationId.current === conversationId
                 if (!conversationId) {
                     setConversation(null)
                     setClientAccount(null)
@@ -142,32 +140,14 @@ function ConversationView() {
                 setError(null)
 
                 try {
-                    let result =
+                    const result =
                         await getConversation(
                             conversationId,
                         )
+                    if (!isCurrent()) return
                     setCurrentWorkspaceId(
                         result.workspaceId,
                     )
-
-                    /*
-                     * Only EMPLOYEE is an operator and therefore
-                     * marks the conversation as read.
-                     */
-                    if (isEmployee) {
-                        try {
-                            result =
-                                await markConversationAsRead(
-                                    result.id,
-                                )
-                        } catch (err) {
-                            console.error(
-                                'Conversation read failed:',
-                                result.id,
-                                err,
-                            )
-                        }
-                    }
 
                     setConversation(result)
 
@@ -180,11 +160,13 @@ function ConversationView() {
                             await getClientAccount(
                                 result.clientAccountId,
                             )
+                        if (!isCurrent()) return
 
                         setClientAccount(
                             account,
                         )
                     } catch (err) {
+                        if (!isCurrent()) return
                         console.error(
                             'ClientAccount load failed:',
                             result.clientAccountId,
@@ -201,6 +183,7 @@ function ConversationView() {
                             await getWorkspaceChannels(
                                 result.workspaceId,
                             )
+                        if (!isCurrent()) return
 
                         const matchingChannel =
                             channels.find(
@@ -213,6 +196,7 @@ function ConversationView() {
                             matchingChannel,
                         )
                     } catch {
+                        if (!isCurrent()) return
                         setChannel(null)
                     }
 
@@ -234,9 +218,11 @@ function ConversationView() {
                                 await getWorkspaceEmployees(
                                     result.workspaceId,
                                 )
+                            if (!isCurrent()) return
 
                             setEmployees(workspaceEmployees)
                         } catch (err) {
+                            if (!isCurrent()) return
                             console.error(
                                 'Workspace employees load failed:',
                                 result.workspaceId,
@@ -249,6 +235,7 @@ function ConversationView() {
                         setEmployees([])
                     }
                 } catch (err) {
+                    if (!isCurrent()) return
                     setError(
                         err instanceof Error
                             ? err.message
@@ -260,7 +247,7 @@ function ConversationView() {
                     setChannel(null)
                     setEmployees([])
                 } finally {
-                    setLoading(false)
+                    if (isCurrent()) setLoading(false)
                 }
             },
             [
@@ -272,7 +259,25 @@ function ConversationView() {
 
     useEffect(() => {
         void loadConversation()
+        return () => { loadGeneration.current += 1 }
     }, [loadConversation])
+
+    // Loading metadata and retaining the composer do not imply that the
+    // operator can see the thread. In particular the mobile list hides it.
+    useEffect(() => {
+        if (!visible || loading || messagesLoading || messagesError || !isEmployee
+            || !conversation || conversation.id !== conversationId || conversation.unreadCount <= 0) return
+        let active = true
+        const id = conversation.id
+        void markConversationAsRead(id).then(updated => {
+            if (!active || currentConversationId.current !== id) return
+            setConversation(previous => previous?.id === id ? { ...previous, unreadCount: updated.unreadCount } : previous)
+            publishConversationUpdate(updated)
+        }).catch(err => {
+            if (active) console.error('Conversation read failed:', id, err)
+        })
+        return () => { active = false }
+    }, [visible, loading, messagesLoading, messagesError, isEmployee, conversationId, conversation?.id, conversation?.unreadCount])
 
     if (!conversationId) {
         return (

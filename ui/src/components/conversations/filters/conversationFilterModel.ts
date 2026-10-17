@@ -33,6 +33,26 @@ export function criteriaFromDefinition(definition: ConversationSearchRequest): C
     }
 }
 
+// The editor shows calendar dates; the applied definition keeps the exact
+// server bounds, including its original zone and sub-millisecond precision.
+export function appliedCriteriaFromDefinition(definition: ConversationSearchRequest): ConversationFilterDraft {
+    return {
+        ...criteriaFromDefinition(definition),
+        activityFrom: definition.activityFrom ?? '',
+        activityTo: definition.activityTo ?? '',
+    }
+}
+
+export function criteriaToApply(draft: ConversationFilterDraft, applied: ConversationFilterDraft): ConversationFilterDraft {
+    const periodUnchanged = draft.activityFrom === toLocalDateInput(applied.activityFrom)
+        && draft.activityTo === toLocalDateInput(applied.activityTo)
+    return {
+        ...draft,
+        search: draft.search.trim(),
+        ...(periodUnchanged ? { activityFrom: applied.activityFrom, activityTo: applied.activityTo } : {}),
+    }
+}
+
 export function buildSavedDefinition(selection: InboxSelection, criteria: ConversationFilterDraft): ConversationSearchRequest {
     return {
         view: selection.view,

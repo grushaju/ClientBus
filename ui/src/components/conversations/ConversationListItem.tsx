@@ -18,6 +18,7 @@ import ClientAccountAvatar from '../clients/ClientAccountAvatar'
 interface ConversationListItemProps {
     item: ConversationListItem
     active: boolean
+    onOpenConversation?: () => void
     tab: ConversationListTab
     groupId?: string | null
     groups: ConversationGroupDto[]
@@ -36,6 +37,7 @@ interface ConversationListItemProps {
 function ConversationListItemComponent({
                                            item,
                                            active,
+                                           onOpenConversation,
                                            tab,
                                            groupId,
                                            groups,
@@ -69,6 +71,11 @@ function ConversationListItemComponent({
         <div className="conversation-list-item-row">
             <Link
                 to={href}
+                onClick={event => {
+                    if (event.button === 0 && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
+                        onOpenConversation?.()
+                    }
+                }}
                 className={`conversation-list-item ${active ? 'active' : ''}`}
             >
                 <div className="conversation-list-item-main">

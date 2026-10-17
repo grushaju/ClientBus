@@ -2,21 +2,18 @@ import type { ReactNode } from 'react'
 
 interface Props {
     toolbar: ReactNode
-    navigation: ReactNode
+    notice?: ReactNode
     filters: ReactNode
-    savedFilters: ReactNode
     content: ReactNode
 }
 
-// Preserve the current DOM and CSS. Navigation can later move to its own column.
-export default function ConversationList({ toolbar, navigation, filters, savedFilters, content }: Props) {
+export default function ConversationList({ toolbar, notice, filters, content }: Props) {
     return (
         <div className="conversation-list">
             <div className="conversation-list-header">
                 {toolbar}
-                {navigation}
+                {notice}
                 {filters}
-                {savedFilters}
             </div>
             {content}
         </div>

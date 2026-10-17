@@ -71,6 +71,14 @@ test('saved filter restores calendar dates and account constraints without share
     assert.deepEqual(b.clientAccountIds, [])
 })
 
+test('restoring an inverted timestamp period validates its exact order even within one calendar day', () => {
+    const definition = { view: 'MINE', activityFrom: '2026-10-18T16:00:00Z', activityTo: '2026-10-18T12:00:00Z' }
+    const applied = filters.appliedCriteriaFromDefinition(definition)
+    assert.match(filters.validateCriteria(applied), /Начало периода/)
+    assert.equal(applied.activityFrom, definition.activityFrom)
+    assert.equal(applied.activityTo, definition.activityTo)
+})
+
 test('unrecognized server group icons use a valid local fallback', () => {
     assert.equal(icons.resolveGroupIcon('../unknown.svg'), icons.DEFAULT_GROUP_ICON)
     assert.equal(icons.resolveGroupIcon(null), icons.DEFAULT_GROUP_ICON)

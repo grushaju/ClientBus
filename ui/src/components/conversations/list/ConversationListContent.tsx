@@ -8,6 +8,7 @@ interface Props {
     refreshing: boolean
     error: string | null
     onRetry: () => void
+    onOpenConversation: () => void
     items: ConversationListItem[]
     conversationId?: string
     tab: ConversationListTab
@@ -19,7 +20,7 @@ interface Props {
     handleRemoveConversationFromGroup: (conversationId: string, groupId: string) => Promise<void>
 }
 
-export default function ConversationListContent({ loading, refreshing, error, onRetry, items, conversationId, tab, selectedGroupId, groups, workspaceId, access, handleAddConversationToGroup, handleRemoveConversationFromGroup }: Props) {
+export default function ConversationListContent({ loading, refreshing, error, onRetry, onOpenConversation, items, conversationId, tab, selectedGroupId, groups, workspaceId, access, handleAddConversationToGroup, handleRemoveConversationFromGroup }: Props) {
     return (<>
         {loading && (
             <div className="conversation-list-state">
@@ -50,6 +51,7 @@ export default function ConversationListContent({ loading, refreshing, error, on
                     <ConversationListItemComponent
                         key={item.conversation.id}
                         item={item}
+                        onOpenConversation={onOpenConversation}
                         active={
                             item.conversation.id === conversationId
                         }

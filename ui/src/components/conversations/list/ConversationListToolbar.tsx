@@ -1,10 +1,18 @@
-export default function ConversationListToolbar({ workspaceName, isEmployee, onNewConversation }: {
-    workspaceName: string; isEmployee: boolean; onNewConversation: () => void
+import type { RefObject } from 'react'
+
+export default function ConversationListToolbar({ title, workspaceName, isEmployee, onNewConversation, navigationId, navigationOpen, navigationButtonRef, onToggleNavigation }: {
+    title: string; workspaceName: string; isEmployee: boolean; onNewConversation: () => void
+    navigationId: string; navigationOpen: boolean; onToggleNavigation: () => void
+    navigationButtonRef: RefObject<HTMLButtonElement>
 }) {
     return (
         <div className="conversation-list-header-top">
             <div>
-                <h2>Диалоги</h2>
+                <button ref={navigationButtonRef} type="button" className="ui-button ui-button-secondary inbox-navigation-toggle"
+                    aria-expanded={navigationOpen} aria-controls={navigationId} onClick={onToggleNavigation}>
+                    Меню Inbox
+                </button>
+                <h2 title={title}>{title}</h2>
 
                 <span className="conversation-list-workspace">
                     {workspaceName}
