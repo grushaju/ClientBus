@@ -1,10 +1,10 @@
 
-import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
-import {
-    getConversationGroupIds,
-} from '../../api/conversationApi'
+import ConversationGroupMenu from './groups/ConversationGroupMenu'
+import { conversationUrl, selectionFromTab } from './list/inboxSelection'
+import type { ConversationListTab } from './list/inboxSelection'
+export type { ConversationListTab } from './list/inboxSelection'
 
 import type {
     ConversationGroupDto,
@@ -14,12 +14,6 @@ import type {
 import PlatformIcon from '../common/platform/PlatformIcon'
 import PlatformName from '../common/platform/PlatformName'
 import ClientAccountAvatar from '../clients/ClientAccountAvatar'
-
-export type ConversationListTab =
-    | 'mine'
-    | 'unassigned'
-    | 'all'
-    | 'group'
 
 interface ConversationListItemProps {
     item: ConversationListItem
@@ -52,12 +46,6 @@ function ConversationListItemComponent({
                                        }: ConversationListItemProps) {
     const { conversation, clientAccount, channel } = item
 
-    const [showGroupMenu, setShowGroupMenu] = useState(false)
-    const [loadingMembership, setLoadingMembership] = useState(false)
-    const [busyGroupId, setBusyGroupId] = useState<string | null>(null)
-    const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([])
-    const [actionError, setActionError] = useState<string | null>(null)
-
     const clientName =
         clientAccount?.displayName ||
         clientAccount?.username ||
@@ -75,77 +63,12 @@ function ConversationListItemComponent({
     const timestamp =
         conversation.lastMessageAt ?? conversation.updatedAt
 
-    const handleGroupMenuToggle = async () => {
-        if (showGroupMenu) {
-            setShowGroupMenu(false)
-            return
-        }
-
-        setActionError(null)
-        setLoadingMembership(true)
-
-        try {
-            const groupIds = await getConversationGroupIds(
-                workspaceId,
-                conversation.id,
-            )
-
-            setSelectedGroupIds(groupIds)
-            setShowGroupMenu(true)
-        } catch (err) {
-            setActionError(
-                err instanceof Error
-                    ? err.message
-                    : 'Не удалось загрузить группы диалога.',
-            )
-        } finally {
-            setLoadingMembership(false)
-        }
-    }
-
-    const handleGroupToggle = async (
-        targetGroupId: string,
-        checked: boolean,
-    ) => {
-        setBusyGroupId(targetGroupId)
-        setActionError(null)
-
-        try {
-            if (checked) {
-                await onAddToGroup(conversation.id, targetGroupId)
-
-                setSelectedGroupIds(current =>
-                    current.includes(targetGroupId)
-                        ? current
-                        : [...current, targetGroupId],
-                )
-            } else {
-                await onRemoveFromGroup(conversation.id, targetGroupId)
-
-                setSelectedGroupIds(current =>
-                    current.filter(id => id !== targetGroupId),
-                )
-            }
-        } catch (err) {
-            setActionError(
-                err instanceof Error
-                    ? err.message
-                    : 'Не удалось изменить состав группы.',
-            )
-        } finally {
-            setBusyGroupId(null)
-        }
-    }
-
-    const conversationUrl =
-        tab === 'group' && groupId
-            ? `/inbox/${conversation.id}?tab=group&groupId=${groupId}`
-            : `/inbox/${conversation.id}?tab=${tab}`
+    const href = conversationUrl(conversation.id, selectionFromTab(tab, groupId))
 
     return (
         <div className="conversation-list-item-row">
             <Link
-                to={conversationUrl}
+                to={href}
                 className={`conversation-list-item ${active ? 'active' : ''}`}
             >
                 <div className="conversation-list-item-main">
@@ -180,60 +103,8 @@ function ConversationListItemComponent({
             </Link>
 
             {canManageGroups && (
-                <div className="conversation-list-item-group-actions">
-                    <button
-                        type="button"
-                        className="conversation-list-item-group-button"
-                        aria-expanded={showGroupMenu}
-                        disabled={loadingMembership || busyGroupId !== null}
-                        onClick={() => void handleGroupMenuToggle()}
-                    >
-                        {loadingMembership ? 'Загрузка…' : 'В группу'}
-                    </button>
-
-                    {showGroupMenu && (
-                        <div className="conversation-list-item-group-menu">
-                            {groups.length === 0 && (
-                                <span>Сначала создайте группу</span>
-                            )}
-
-                            {groups.map(group => (
-                                <label
-                                    key={group.id}
-                                    className="conversation-list-item-group-option"
-                                >
-                                    <input
-                                        type="checkbox"
-                                        checked={selectedGroupIds.includes(group.id)}
-                                        disabled={
-                                            loadingMembership ||
-                                            busyGroupId !== null
-                                        }
-                                        onChange={event =>
-                                            void handleGroupToggle(
-                                                group.id,
-                                                event.target.checked,
-                                            )
-                                        }
-                                    />
-                                    <img
-                                        className="conversation-list-item-group-icon"
-                                        src={`/assets/group/${group.icon || 'users.svg'}`}
-                                        alt=""
-                                        aria-hidden="true"
-                                    />
-                                    <span>{group.name}</span>
-                                </label>
-                            ))}
-                        </div>
-                    )}
-
-                    {actionError && (
-                        <div className="conversation-list-item-group-error">
-                            {actionError}
-                        </div>
-                    )}
-                </div>
+                <ConversationGroupMenu key={`${workspaceId}:${conversation.id}`} workspaceId={workspaceId} conversationId={conversation.id}
+                    groups={groups} onAddToGroup={onAddToGroup} onRemoveFromGroup={onRemoveFromGroup} />
             )}
         </div>
     )

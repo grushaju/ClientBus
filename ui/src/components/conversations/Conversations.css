@@ -136,6 +136,16 @@
 
 .conversation-list-error {
     color: var(--ui-color-danger-hover);
+    gap: var(--ui-space-2);
+}
+
+.conversation-list-refresh-error {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--ui-space-2);
+    padding: var(--ui-space-3) var(--ui-space-4);
+    color: var(--ui-color-danger-hover);
 }
 
 
@@ -433,6 +443,22 @@
 .conversation-list-group-form .ui-input {
     flex: 1 1 160px;
     min-width: 0;
+}
+
+.conversation-filter-date-range {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--ui-space-2);
+}
+
+.conversation-filter-date-range > label {
+    display: block;
+    min-width: 0;
+}
+
+.conversation-filter-date-range .ui-input {
+    display: block;
+    width: 100%;
 }
 
 .conversation-group-icon {
