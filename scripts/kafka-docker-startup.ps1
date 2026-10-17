@@ -1,3 +1,7 @@
+
+docker network create --driver bridge clientbus-net
+docker network inspect clientbus-net
+
 # Остановка и удаление запущенных компьютеров
 docker rm -f kafka kafka-ui
 # Запуск kafka
