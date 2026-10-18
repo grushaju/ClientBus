@@ -40,6 +40,7 @@ import ConversationClientPanel from './ConversationClientPanel'
 import MessageComposer from './MessageComposer'
 import MessageList from './MessageList'
 import { useConversationMessages } from './useConversationMessages'
+import type { MessageDto } from '../../api/types/message'
 import {
     useWorkspace,
 } from '../../workspace/WorkspaceContext'
@@ -59,6 +60,10 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
     const loadGeneration = useRef(0)
     const currentConversationId = useRef(conversationId)
     currentConversationId.current = conversationId
+    const assignmentRequest = useRef(0)
+    const refreshRequest = useRef(0)
+    const assignmentPending = useRef<string | null>(null)
+    const detailsRequest = useRef(0)
 
     const {
         currentEmployee,
@@ -71,6 +76,8 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
         useState<ConversationDto | null>(
             null,
         )
+    const latestConversation = useRef(conversation)
+    latestConversation.current = conversation
 
     const canManageAssignments =
         isSuperAdmin ||
@@ -93,10 +100,18 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
         useState<ChannelSummary | null>(
             null,
         )
+    const [accountError, setAccountError] = useState<string | null>(null)
+    const [channelError, setChannelError] = useState<string | null>(null)
+    const [refreshingDetails, setRefreshingDetails] = useState(false)
 
     const {
         setCurrentWorkspaceId,
     } = useWorkspace()
+    const workspaceSelector = useRef(setCurrentWorkspaceId)
+    workspaceSelector.current = setCurrentWorkspaceId
+    const memberships = useRef(employeeWorkspaces)
+    memberships.current = employeeWorkspaces
+    const membershipKey = employeeWorkspaces.map(item => `${item.workspaceId}:${item.isSupervisor}`).sort().join(',')
 
     const [loading, setLoading] =
         useState(false)
@@ -118,12 +133,53 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
         historyStartReached,
         error: messagesError,
         reloadMessages,
+        refreshMessages,
+        refreshError,
+        acceptMessage,
+        retryMessage,
+        retryingIds,
+        retryOlderMessages,
         loadOlderMessages,
-    } = useConversationMessages(conversationId)
+    } = useConversationMessages(conversationId, visible)
+
+    const loadDetails = useCallback(async (target: ConversationDto, notifyList = false) => {
+        const generation = loadGeneration.current
+        const request = ++detailsRequest.current
+        const isCurrent = () => currentConversationId.current === target.id
+            && generation === loadGeneration.current && request === detailsRequest.current
+        if (!isCurrent()) return
+        setRefreshingDetails(true)
+        const [accountResult, channelsResult] = await Promise.allSettled([
+            getClientAccount(target.clientAccountId),
+            getWorkspaceChannels(target.workspaceId),
+        ])
+        if (!isCurrent()) return
+        if (accountResult.status === 'fulfilled') {
+            setClientAccount(accountResult.value)
+            setAccountError(null)
+        } else {
+            setClientAccount(previous => previous?.id === target.clientAccountId ? previous : null)
+            setAccountError(accountResult.reason instanceof Error ? accountResult.reason.message : 'Не удалось загрузить аккаунт')
+        }
+        if (channelsResult.status === 'fulfilled') {
+            setChannel(channelsResult.value.find(item => item.account?.id === target.channelAccountId) ?? null)
+            setChannelError(null)
+        } else {
+            setChannel(previous => previous?.workspaceId === target.workspaceId
+                && previous.account?.id === target.channelAccountId ? previous : null)
+            setChannelError(channelsResult.reason instanceof Error ? channelsResult.reason.message : 'Не удалось загрузить канал')
+        }
+        setRefreshingDetails(false)
+        // A command may have committed even when its response was lost. A
+        // successful manual retry must reconcile the filtered list as well.
+        if (notifyList && accountResult.status === 'fulfilled') {
+            publishConversationUpdate(latestConversation.current ?? target)
+        }
+    }, [])
 
     const loadConversation =
         useCallback(
-            async () => {
+            async (background = false) => {
                 if (conversationId !== currentConversationId.current) return
                 const generation = ++loadGeneration.current
                 const isCurrent = () => generation === loadGeneration.current
@@ -136,7 +192,7 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
                     return
                 }
 
-                setLoading(true)
+                if (!background) setLoading(true)
                 setError(null)
 
                 try {
@@ -145,7 +201,7 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
                             conversationId,
                         )
                     if (!isCurrent()) return
-                    setCurrentWorkspaceId(
+                    workspaceSelector.current(
                         result.workspaceId,
                     )
 
@@ -155,56 +211,14 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
                         result,
                     )
 
-                    try {
-                        const account =
-                            await getClientAccount(
-                                result.clientAccountId,
-                            )
-                        if (!isCurrent()) return
-
-                        setClientAccount(
-                            account,
-                        )
-                    } catch (err) {
-                        if (!isCurrent()) return
-                        console.error(
-                            'ClientAccount load failed:',
-                            result.clientAccountId,
-                            err,
-                        )
-
-                        setClientAccount(
-                            null,
-                        )
-                    }
-
-                    try {
-                        const channels =
-                            await getWorkspaceChannels(
-                                result.workspaceId,
-                            )
-                        if (!isCurrent()) return
-
-                        const matchingChannel =
-                            channels.find(
-                                item =>
-                                    item.account?.id ===
-                                    result.channelAccountId,
-                            ) ?? null
-
-                        setChannel(
-                            matchingChannel,
-                        )
-                    } catch {
-                        if (!isCurrent()) return
-                        setChannel(null)
-                    }
+                    await loadDetails(result)
+                    if (!isCurrent()) return
 
                     const canManageWorkspaceAssignments =
                         isSuperAdmin ||
                         (
                             isEmployee &&
-                            employeeWorkspaces.some(
+                            memberships.current.some(
                                 membership =>
                                     membership.workspaceId ===
                                     result.workspaceId &&
@@ -254,13 +268,49 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
                 conversationId,
                 isEmployee,
                 isSuperAdmin,
+                membershipKey,
+                loadDetails,
             ],
         )
 
     useEffect(() => {
+        setActionError(null)
         void loadConversation()
         return () => { loadGeneration.current += 1 }
     }, [loadConversation])
+
+    const refreshConversation = useCallback(async () => {
+        if (!conversationId || assignmentPending.current === conversationId) return
+        const generation = loadGeneration.current
+        const command = assignmentRequest.current
+        const request = ++refreshRequest.current
+        try {
+            const updated = await getConversation(conversationId)
+            if (currentConversationId.current !== conversationId || loadGeneration.current !== generation
+                || assignmentRequest.current !== command || refreshRequest.current !== request) return
+            if (latestConversation.current?.id === conversationId && JSON.stringify(latestConversation.current) !== JSON.stringify(updated)) {
+                setConversation(updated)
+                publishConversationUpdate(updated)
+            }
+        } catch (err) {
+            if (currentConversationId.current === conversationId && loadGeneration.current === generation
+                && assignmentRequest.current === command && refreshRequest.current === request) {
+                setActionError(err instanceof Error ? err.message : 'Не удалось обновить диалог')
+            }
+        }
+    }, [conversationId])
+
+    useEffect(() => {
+        if (!conversationId || !visible) return
+        let stopped = false
+        let timer: ReturnType<typeof setTimeout>
+        const tick = async () => {
+            if (typeof document === 'undefined' || !document.hidden) await refreshConversation()
+            if (!stopped) timer = setTimeout(tick, 10000)
+        }
+        timer = setTimeout(tick, 10000)
+        return () => { stopped = true; clearTimeout(timer) }
+    }, [conversationId, visible, refreshConversation])
 
     // Loading metadata and retaining the composer do not imply that the
     // operator can see the thread. In particular the mobile list hides it.
@@ -287,7 +337,7 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
         )
     }
 
-    if (loading) {
+    if (loading || (conversation && conversation.id !== conversationId)) {
         return (
             <div className="conversation-state">
                 Загрузка диалога…
@@ -299,6 +349,7 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
         return (
             <div className="conversation-state conversation-error">
                 {error}
+                <button type="button" className="ui-button ui-button-secondary" onClick={() => void loadConversation()}>Повторить загрузку диалога</button>
             </div>
         )
     }
@@ -316,127 +367,68 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
         conversation.assignedEmployeeId ===
         currentEmployee?.id
 
-    const handleTake =
-        async () => {
-            if (!isEmployee) {
-                return
-            }
-
-            const updated =
-                await assignConversationToMe(
-                    conversation.id,
-                )
-
+    const runAssignment = async (operation: () => Promise<ConversationDto>, tab?: 'mine' | 'unassigned') => {
+        const id = conversation.id
+        const generation = loadGeneration.current
+        if (assignmentPending.current === id) return
+        assignmentPending.current = id
+        const request = ++assignmentRequest.current
+        setActionError(null)
+        try {
+            const updated = await operation()
+            publishConversationUpdate(updated)
+            if (currentConversationId.current !== id || assignmentRequest.current !== request || loadGeneration.current !== generation) return
             setConversation(updated)
-            publishConversationUpdate(
-                updated,
-            )
-
-            navigate(
-                `/inbox/${conversation.id}?tab=mine`,
-                {
-                    replace: true,
-                },
-            )
-        }
-
-    const handleRelease =
-        async () => {
-            if (!isEmployee) {
-                return
-            }
-
-            const updated =
-                await unassignConversationFromMe(
-                    conversation.id,
-                )
-
-            setConversation(updated)
-            publishConversationUpdate(
-                updated,
-            )
-
-            navigate(
-                `/inbox/${conversation.id}?tab=unassigned`,
-                {
-                    replace: true,
-                },
-            )
-        }
-
-    const handleAssign =
-        async (
-            employeeId: string,
-        ) => {
-            if (!canManageAssignments) {
-                return
-            }
-
-            setActionError(null)
-
+            if (tab) navigate(`/inbox/${id}?tab=${tab}`, { replace: true })
+        } catch (err) {
+            if (currentConversationId.current !== id || assignmentRequest.current !== request || loadGeneration.current !== generation) return
+            setActionError(err instanceof Error ? err.message : 'Не удалось изменить ответственного')
+            // The server may have rejected a concurrent assignment. Re-read its
+            // state without clearing the draft or hiding the operation error.
             try {
-                const updated =
-                    await assignConversation(
-                        conversation.id,
-                        employeeId,
-                    )
-
-                setConversation(
-                    updated,
-                )
-
-                publishConversationUpdate(
-                    updated,
-                )
-            } catch (err) {
-                setActionError(
-                    err instanceof Error
-                        ? err.message
-                        : 'Не удалось назначить сотрудника',
-                )
-            }
+                const updated = await getConversation(id)
+                if (currentConversationId.current === id && assignmentRequest.current === request && loadGeneration.current === generation) {
+                    setConversation(updated)
+                    publishConversationUpdate(updated)
+                }
+            } catch { /* Keep the original operation error visible. */ }
+        } finally {
+            if (assignmentRequest.current === request) assignmentPending.current = null
         }
-
-    const handleUnassign =
-        async () => {
-            if (!canManageAssignments) {
-                return
-            }
-
-            setActionError(null)
-
-            try {
-                const updated =
-                    await unassignConversation(
-                        conversation.id,
-                    )
-
-                setConversation(
-                    updated,
-                )
-
-                publishConversationUpdate(
-                    updated,
-                )
-            } catch (err) {
-                setActionError(
-                    err instanceof Error
-                        ? err.message
-                        : 'Не удалось снять назначение',
-                )
-            }
-        }
-
-    const handleMessageSent =
-        async () => {
-            await reloadMessages()
-            await loadConversation()
-        }
-
+    }
+    const handleTake = async () => {
+        if (isEmployee) await runAssignment(() => assignConversationToMe(conversation.id), 'mine')
+    }
+    const handleRelease = async () => {
+        if (isEmployee) await runAssignment(() => unassignConversationFromMe(conversation.id), 'unassigned')
+    }
+    const handleAssign = async (employeeId: string) => {
+        if (canManageAssignments) await runAssignment(() => assignConversation(conversation.id, employeeId))
+    }
+    const handleUnassign = async () => {
+        if (canManageAssignments) await runAssignment(() => unassignConversation(conversation.id))
+    }
+    const handleMessageSent = async (message: MessageDto) => {
+        if (currentConversationId.current !== conversation.id) return
+        if (message) acceptMessage(message)
+        await refreshConversation()
+    }
+    const detailsGeneration = loadGeneration.current
+    const handleClientChanged = (account: ClientAccountSummary) => {
+        // A confirmed command invalidates the original workspace list even
+        // after this view has navigated elsewhere or has been unmounted.
+        publishConversationUpdate(conversation)
+        if (currentConversationId.current !== conversation.id || detailsGeneration !== loadGeneration.current) return
+        // Invalidate a read started before this successful change of relationship.
+        detailsRequest.current += 1
+        setRefreshingDetails(false)
+        setClientAccount(account)
+        setAccountError(null)
+    }
     return (
         <div className="conversation-view">
             <div className="conversation-main">
-                <ConversationHeader
+                <ConversationHeader key={`header:${conversation.id}`}
                     conversation={
                         conversation
                     }
@@ -474,8 +466,10 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
                     }
                 />
 
-                <MessageList
+                <MessageList key={`messages:${conversation.id}`}
                     messages={messages}
+                    refreshError={refreshError} onReload={messages.length ? refreshMessages : reloadMessages}
+                    onRetryOlder={retryOlderMessages} onRetryMessage={canSend ? retryMessage : undefined} retryingIds={retryingIds}
                     loading={messagesLoading}
                     loadingOlder={messagesLoadingOlder}
                     hasMore={messagesHasMore}
@@ -485,7 +479,7 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
                 />
 
                 {canSend && (
-                    <MessageComposer
+                    <MessageComposer key={`composer:${conversation.id}`}
                         conversationId={
                             conversation.id
                         }
@@ -504,8 +498,12 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
                     clientAccount
                 }
                 channel={channel}
+                accountError={accountError}
+                channelError={channelError}
+                refreshingDetails={refreshingDetails}
+                onRetryDetails={() => void loadDetails(conversation, true)}
                 onChanged={
-                    loadConversation
+                    handleClientChanged
                 }
             />
         </div>

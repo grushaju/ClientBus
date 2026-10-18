@@ -1105,7 +1105,7 @@ public class ConversationService {
         ConversationEntity conversation =
                 getConversationEntity(conversationId);
 
-        requireAssignmentManagement(conversation);
+        currentUserService.requireWorkspaceAccess(conversation.getWorkspace().getId());
 
         EmployeeEntity currentEmployee =
                 currentUserService.getCurrentEmployee();
@@ -1141,7 +1141,7 @@ public class ConversationService {
         ConversationEntity conversation =
                 getConversationEntity(conversationId);
 
-        requireAssignmentManagement(conversation);
+        currentUserService.requireWorkspaceAccess(conversation.getWorkspace().getId());
 
         EmployeeEntity currentEmployee =
                 currentUserService.getCurrentEmployee();
@@ -1166,7 +1166,7 @@ public class ConversationService {
             );
         }
 
-        conversation.setAssignedEmployee(null);
+        changeAssignment(conversation, null);
 
         return conversationMapper.toDto(conversation);
     }
@@ -1290,8 +1290,7 @@ public class ConversationService {
         currentUserService.requireWorkspaceAccess(workspaceId);
 
         if (currentUserService.isSuperAdmin()
-                || currentUserService.isSupervisor(workspaceId)
-                || conversation.getAssignedEmployee() == null) {
+                || currentUserService.isSupervisor(workspaceId)) {
             return;
         }
 

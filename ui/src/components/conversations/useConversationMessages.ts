@@ -1,292 +1,238 @@
-import {
-    useCallback,
-    useEffect,
-    useRef,
-    useState,
-} from 'react'
-
-import {
-    getConversationMessages,
-    syncConversationHistory,
-} from '../../api/messageApi'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { getConversationMessages, getMessage, retryOutboundMessage, syncConversationHistory } from '../../api/messageApi'
 import type { MessageDto } from '../../api/types/message'
 
-interface UseConversationMessagesResult {
-    messages: MessageDto[]
-    loading: boolean
-    loadingOlder: boolean
-    hasMore: boolean
-    historyStartReached: boolean
-    error: string | null
-    reloadMessages: () => Promise<void>
-    loadOlderMessages: () => Promise<void>
+const PAGE_SIZE = 100
+const REFRESH_INTERVAL = 5000
+
+export function mergeMessages(current: MessageDto[], incoming: MessageDto[]): MessageDto[] {
+    const byId = new Map(current.map(message => [message.id, message]))
+    incoming.forEach(message => byId.set(message.id, message))
+    return [...byId.values()].sort((left, right) => {
+        const time = Date.parse(left.sentAt ?? left.createdAt) - Date.parse(right.sentAt ?? right.createdAt)
+        return time || left.id.localeCompare(right.id)
+    })
 }
 
-const PAGE_SIZE = 100
+function newestStableMessage(items: MessageDto[]): string | null {
+    // Pending messages with null sentAt sort ahead of sent messages in the DB,
+    // and failed messages can move when retried. Neither is a stable frontier.
+    const stable = mergeMessages([], items.filter(message => message.sentAt &&
+        (message.direction === 'INBOUND' || ['SENT', 'DELIVERED', 'READ'].includes(message.deliveryStatus))))
+    return stable[stable.length - 1]?.id ?? null
+}
 
-export function useConversationMessages(
-    conversationId: string | undefined,
-): UseConversationMessagesResult {
-    const [messages, setMessages] =
-        useState<MessageDto[]>([])
+function createSession(conversationId: string | undefined) {
+    return { conversationId, active: true, generation: 0, initialPending: false, olderPending: false,
+        refreshPending: false, localPage: 0, localHasMore: true, refreshAnchor: null as string | null,
+        retrying: new Set<string>(), messageVersions: new Map<string, number>() }
+}
+type Session = ReturnType<typeof createSession>
+function emptyState(session: Session) {
+    return { session, messages: [] as MessageDto[], loading: !!session.conversationId, loadingOlder: false,
+        hasMore: !!session.conversationId, historyStartReached: false, error: null as string | null,
+        refreshError: null as string | null, retryingIds: [] as string[] }
+}
+type State = ReturnType<typeof emptyState>
 
-    const [loading, setLoading] =
-        useState(false)
+export function useConversationMessages(conversationId: string | undefined, visible = true) {
+    const session = useMemo(() => createSession(conversationId), [conversationId])
+    const [state, setState] = useState(() => emptyState(session))
+    const current = state.session === session ? state : emptyState(session)
+    const latest = useRef(current)
+    latest.current = current
+    const update = useCallback((change: (state: State) => State) => {
+        if (!session.active) return
+        setState(previous => session.active ? change(previous.session === session ? previous : emptyState(session)) : previous)
+    }, [session])
+    const isCurrent = (generation: number) => session.active && session.generation === generation
 
-    const [loadingOlder, setLoadingOlder] =
-        useState(false)
-
-    const [hasMore, setHasMore] =
-        useState(true)
-
-    const [historyStartReached, setHistoryStartReached] =
-        useState(false)
-
-    const [error, setError] =
-        useState<string | null>(null)
-
-    const loadingOlderRef =
-        useRef(false)
-
-    const sortMessages = (
-        items: MessageDto[],
-    ): MessageDto[] => {
-        return [...items].sort(
-            (a, b) => {
-                const aTime =
-                    a.sentAt ??
-                    a.createdAt
-
-                const bTime =
-                    b.sentAt ??
-                    b.createdAt
-
-                return (
-                    new Date(aTime).getTime() -
-                    new Date(bTime).getTime()
-                )
-            },
-        )
-    }
-
-    const reloadMessages =
-        useCallback(async () => {
-            if (!conversationId) {
-                setMessages([])
-                setHasMore(false)
-                setHistoryStartReached(false)
-                return
+    const reloadMessages = useCallback(async () => {
+        if (!conversationId) return
+        const generation = ++session.generation
+        const versions = new Map(session.messageVersions)
+        session.initialPending = true
+        session.olderPending = false
+        session.refreshPending = false
+        session.localPage = 0
+        session.localHasMore = true
+        update(previous => ({ ...previous, loading: true, loadingOlder: false, error: null, refreshError: null }))
+        try {
+            const page = await getConversationMessages(conversationId, 0, PAGE_SIZE)
+            if (!isCurrent(generation)) return
+            session.localPage = 1
+            session.localHasMore = !page.last
+            let messages = mergeMessages([], page.content)
+            let historyStartReached = false
+            if (!messages.length) {
+                const result = await syncConversationHistory(conversationId, null, PAGE_SIZE)
+                if (!isCurrent(generation)) return
+                messages = mergeMessages([], result.messages)
+                historyStartReached = result.historyStartReached
             }
+            session.refreshAnchor = newestStableMessage(messages)
+            update(previous => ({ ...previous, messages: mergeMessages(messages, previous.messages.filter(message =>
+                (session.messageVersions.get(message.id) ?? 0) !== (versions.get(message.id) ?? 0))), hasMore: !historyStartReached,
+                historyStartReached, error: null }))
+        } catch (error) {
+            if (isCurrent(generation)) update(previous => ({ ...previous,
+                error: error instanceof Error ? error.message : 'Не удалось загрузить сообщения' }))
+        } finally {
+            if (isCurrent(generation)) {
+                session.initialPending = false
+                update(previous => ({ ...previous, loading: false }))
+            }
+        }
+    }, [session, conversationId, update])
 
-            setLoading(true)
-            setError(null)
+    const loadOlder = useCallback(async (manual = false, onStart?: () => void) => {
+        const snapshot = latest.current
+        if (!conversationId || session.initialPending || session.olderPending || session.refreshPending
+            || snapshot.historyStartReached || (!manual && (!snapshot.hasMore || !!snapshot.error))) return
+        const generation = session.generation
+        const versions = new Map(session.messageVersions)
+        session.olderPending = true
+        onStart?.()
+        update(previous => ({ ...previous, loadingOlder: true, error: null }))
+        try {
+            let incoming: MessageDto[]
+            let historyStartReached = false
+            let hasMore = true
+            if (session.localHasMore) {
+                const page = await getConversationMessages(conversationId, session.localPage, PAGE_SIZE)
+                if (!isCurrent(generation)) return
+                session.localPage += 1
+                session.localHasMore = !page.last && page.content.length > 0
+                incoming = page.content
+            } else {
+                const cursor = snapshot.messages.find(message => message.externalId)?.externalId ?? null
+                const result = await syncConversationHistory(conversationId, cursor, PAGE_SIZE)
+                if (!isCurrent(generation)) return
+                incoming = result.messages
+                historyStartReached = result.historyStartReached
+                const existing = new Set(snapshot.messages.map(message => message.id))
+                hasMore = !historyStartReached && incoming.some(message => !existing.has(message.id))
+            }
+            incoming = incoming.filter(message => (session.messageVersions.get(message.id) ?? 0) === (versions.get(message.id) ?? 0))
+            update(previous => ({ ...previous, messages: mergeMessages(previous.messages, incoming),
+                historyStartReached, hasMore }))
+        } catch (error) {
+            if (isCurrent(generation)) update(previous => ({ ...previous,
+                error: error instanceof Error ? error.message : 'Не удалось загрузить старые сообщения' }))
+        } finally {
+            if (isCurrent(generation)) {
+                session.olderPending = false
+                update(previous => ({ ...previous, loadingOlder: false }))
+            }
+        }
+    }, [session, conversationId, update])
 
-            loadingOlderRef.current = false
-            setHasMore(true)
-            setHistoryStartReached(false)
-
-            try {
-                const page =
-                    await getConversationMessages(
-                        conversationId,
-                        0,
-                        PAGE_SIZE,
-                    )
-
-                const sortedMessages =
-                    sortMessages(page.content)
-
-                setMessages(sortedMessages)
-
-                /*
-                 * Если локальная история отсутствует,
-                 * сразу пытаемся загрузить первую страницу
-                 * истории с платформы.
-                 *
-                 * Это важно: MessageList не сможет инициировать
-                 * loadOlderMessages через scroll, если сообщений
-                 * вообще нет.
-                 */
-                if (sortedMessages.length === 0) {
-                    setLoadingOlder(true)
-
-                    try {
-                        const result =
-                            await syncConversationHistory(
-                                conversationId,
-                                null,
-                                PAGE_SIZE,
-                            )
-
-                        const syncedMessages =
-                            sortMessages(
-                                result.messages,
-                            )
-
-                        setMessages(
-                            syncedMessages,
-                        )
-
-                        setHistoryStartReached(
-                            result.historyStartReached,
-                        )
-
-                        setHasMore(
-                            !result.historyStartReached,
-                        )
-                    } finally {
-                        setLoadingOlder(false)
-                    }
-
-                    return
+    const refreshMessages = useCallback(async () => {
+        if (!conversationId || session.initialPending || session.refreshPending || session.olderPending) return
+        const generation = session.generation
+        const versions = new Map(session.messageVersions)
+        const snapshot = latest.current
+        const anchor = session.refreshAnchor
+        session.refreshPending = true
+        try {
+            let page = await getConversationMessages(conversationId, 0, PAGE_SIZE)
+            if (!isCurrent(generation)) return
+            const firstPage = page
+            const incomingById = new Map(page.content.map(message => [message.id, message]))
+            let pageNumber = 0
+            // Returning to a busy conversation can reveal several new pages.
+            // Read back to the previous server frontier, not a newly sent local
+            // message, which may sit above a still-unfilled gap.
+            while ((anchor ? !incomingById.has(anchor) : snapshot.messages.length > 0 || snapshot.historyStartReached)
+                && !page.last && page.content.length > 0) {
+                page = await getConversationMessages(conversationId, ++pageNumber, PAGE_SIZE)
+                if (!isCurrent(generation)) return
+                const previousSize = incomingById.size
+                page.content.forEach(message => incomingById.set(message.id, message))
+                if (incomingById.size === previousSize && !page.last && page.content.length > 0) {
+                    throw new Error('Не удалось дочитать новые сообщения. Повторите обновление.')
                 }
-
-                /*
-                 * Локальная история есть.
-                 *
-                 * page.last означает, что достигнут конец
-                 * локальной БД, но не обязательно конец истории
-                 * на платформе. Поэтому historyStartReached здесь
-                 * намеренно не устанавливаем в true.
-                 */
-                setHasMore(!page.last)
-
-            } catch (err) {
-                setError(
-                    err instanceof Error
-                        ? err.message
-                        : 'Не удалось загрузить сообщения',
-                )
-
-                setMessages([])
-                setHasMore(false)
-                setHistoryStartReached(false)
-            } finally {
-                setLoading(false)
             }
-        }, [conversationId])
-
-    const loadOlderMessages =
-        useCallback(async () => {
-            if (
-                !conversationId ||
-                loadingOlderRef.current ||
-                !hasMore
-            ) {
-                return
+            const pageMessages = mergeMessages([], [...incomingById.values()])
+            const recoveredInitial = snapshot.messages.length === 0 && !!snapshot.error && pageMessages.length > 0
+            if (recoveredInitial && session.localPage === 0) {
+                session.localPage = 1
+                session.localHasMore = !firstPage.last
             }
+            session.localPage = Math.max(session.localPage, pageNumber + 1)
+            session.refreshAnchor = newestStableMessage(pageMessages)
+            const unchangedVersion = (message: MessageDto) =>
+                (session.messageVersions.get(message.id) ?? 0) === (versions.get(message.id) ?? 0)
+            update(previous => ({ ...previous, messages: mergeMessages(previous.messages, pageMessages.filter(unchangedVersion)),
+                refreshError: null, ...(recoveredInitial ? { error: null } : {}) }))
 
-            const oldestMessage =
-                messages[0]
+            // SENT and DELIVERED can still advance to READ outside the newest
+            // page. Limit concurrent status requests for long loaded histories.
+            const pending = snapshot.messages.filter(message => message.direction === 'OUTBOUND'
+                && ['PENDING', 'SENT', 'DELIVERED'].includes(message.deliveryStatus)
+                && message.processingStatus !== 'FAILED' && !incomingById.has(message.id))
+            const olderStatuses: MessageDto[] = []
+            let next = 0
+            let statusError: Error | null = null
+            await Promise.all(Array.from({ length: Math.min(4, pending.length) }, async () => {
+                while (next < pending.length && isCurrent(generation) && !statusError) {
+                    const message = pending[next++]
+                    try { olderStatuses.push(await getMessage(message.id)) }
+                    catch (err) { statusError = err instanceof Error ? err : new Error('Не удалось обновить статус сообщения') }
+                }
+            }))
+            if (!isCurrent(generation)) return
+            if (olderStatuses.length) update(previous => ({ ...previous,
+                messages: mergeMessages(previous.messages, olderStatuses.filter(unchangedVersion)) }))
+            if (statusError) throw statusError
+        } catch (error) {
+            if (isCurrent(generation)) update(previous => ({ ...previous,
+                refreshError: error instanceof Error ? error.message : 'Не удалось обновить сообщения' }))
+        } finally {
+            if (isCurrent(generation)) session.refreshPending = false
+        }
+    }, [session, conversationId, update])
 
-            const beforeExternalId =
-                oldestMessage?.externalId ?? null
+    const acceptMessage = useCallback((message: MessageDto) => {
+        if (message.conversationId !== conversationId) return
+        session.messageVersions.set(message.id, (session.messageVersions.get(message.id) ?? 0) + 1)
+        update(previous => ({ ...previous, messages: mergeMessages(previous.messages, [message]) }))
+    }, [session, conversationId, update])
 
-            if (
-                messages.length > 0 &&
-                !beforeExternalId
-            ) {
-                return
-            }
-
-            loadingOlderRef.current = true
-            setLoadingOlder(true)
-
-            try {
-                const result =
-                    await syncConversationHistory(
-                        conversationId,
-                        beforeExternalId,
-                        PAGE_SIZE,
-                    )
-
-                const olderMessages =
-                    sortMessages(
-                        result.messages,
-                    )
-
-                let addedMessages = false
-
-                setMessages(
-                    currentMessages => {
-                        const existingIds =
-                            new Set(
-                                currentMessages.map(
-                                    message =>
-                                        message.id,
-                                ),
-                            )
-
-                        const uniqueOlderMessages =
-                            olderMessages.filter(
-                                message =>
-                                    !existingIds.has(
-                                        message.id,
-                                    ),
-                            )
-
-                        if (
-                            uniqueOlderMessages.length ===
-                            0
-                        ) {
-                            return currentMessages
-                        }
-
-                        addedMessages = true
-
-                        return [
-                            ...uniqueOlderMessages,
-                            ...currentMessages,
-                        ]
-                    },
-                )
-
-                setHistoryStartReached(
-                    result.historyStartReached,
-                )
-
-                /*
-                 * Если backend не сообщил о конце истории,
-                 * но при этом не вернул ни одного нового сообщения,
-                 * дальше запрашивать бессмысленно.
-                 *
-                 * Это также защищает автоматическую догрузку
-                 * от бесконечного цикла.
-                 */
-                setHasMore(
-                    addedMessages &&
-                    !result.historyStartReached,
-                )
-            } catch (err) {
-                setError(
-                    err instanceof Error
-                        ? err.message
-                        : 'Не удалось загрузить старые сообщения',
-                )
-            } finally {
-                loadingOlderRef.current =
-                    false
-
-                setLoadingOlder(false)
-            }
-        }, [
-            conversationId,
-            hasMore,
-            messages,
-        ])
+    const retryMessage = useCallback(async (messageId: string) => {
+        if (!conversationId || session.retrying.has(messageId)) return
+        const generation = session.generation
+        session.retrying.add(messageId)
+        session.messageVersions.set(messageId, (session.messageVersions.get(messageId) ?? 0) + 1)
+        update(previous => ({ ...previous, retryingIds: [...session.retrying] }))
+        try {
+            const message = await retryOutboundMessage(messageId)
+            if (isCurrent(generation)) acceptMessage(message)
+        } finally {
+            session.retrying.delete(messageId)
+            if (session.active) update(previous => ({ ...previous, retryingIds: [...session.retrying] }))
+        }
+    }, [session, conversationId, acceptMessage, update])
 
     useEffect(() => {
+        session.active = true
         void reloadMessages()
-    }, [reloadMessages])
+        return () => { session.active = false; session.generation += 1 }
+    }, [session, reloadMessages])
 
-    return {
-        messages,
-        loading,
-        loadingOlder,
-        hasMore,
-        historyStartReached,
-        error,
-        reloadMessages,
-        loadOlderMessages,
-    }
+    useEffect(() => {
+        if (!conversationId || !visible) return
+        let timer: ReturnType<typeof setTimeout>
+        let cancelled = false
+        const tick = async () => {
+            if (typeof document === 'undefined' || !document.hidden) await refreshMessages()
+            if (!cancelled) timer = setTimeout(tick, REFRESH_INTERVAL)
+        }
+        timer = setTimeout(tick, REFRESH_INTERVAL)
+        return () => { cancelled = true; clearTimeout(timer) }
+    }, [conversationId, visible, refreshMessages])
+
+    return { ...current, reloadMessages, refreshMessages, acceptMessage, retryMessage,
+        loadOlderMessages: useCallback((onStart?: () => void) => loadOlder(false, onStart), [loadOlder]),
+        retryOlderMessages: useCallback((onStart?: () => void) => loadOlder(true, onStart), [loadOlder]) }
 }

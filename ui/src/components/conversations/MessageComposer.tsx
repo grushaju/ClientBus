@@ -1,4 +1,5 @@
 import {
+    useEffect,
     useRef,
     useState,
     type ChangeEvent,
@@ -8,7 +9,7 @@ import {
 
 import { sendOutboundMessage } from '../../api/messageApi'
 
-import type { MessageType } from '../../api/types/message'
+import type { MessageDto, MessageType } from '../../api/types/message'
 
 type AttachmentMode =
     | 'NONE'
@@ -17,7 +18,7 @@ type AttachmentMode =
 
 interface Props {
     conversationId: string
-    onSent?: () => void | Promise<void>
+    onSent?: (message: MessageDto) => void | Promise<void>
 }
 
 function MessageComposer({
@@ -44,6 +45,11 @@ function MessageComposer({
 
     const fileInputRef =
         useRef<HTMLInputElement | null>(null)
+    const sendingRef = useRef(false)
+    const currentConversation = useRef(conversationId)
+    currentConversation.current = conversationId
+    const mounted = useRef(false)
+    useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
 
     const clearAttachments = () => {
         setAttachments([])
@@ -158,6 +164,8 @@ function MessageComposer({
     }
 
     const handleSend = async () => {
+        if (sendingRef.current) return
+        const effectiveMode = attachments.length ? attachmentMode : 'NONE'
         const trimmedContent =
             content.trim()
 
@@ -168,7 +176,7 @@ function MessageComposer({
             return
         }
 
-        if (attachmentMode === 'IMAGE') {
+        if (effectiveMode === 'IMAGE') {
             if (
                 attachments.length === 0 ||
                 attachments.length > 10
@@ -181,7 +189,7 @@ function MessageComposer({
             }
         }
 
-        if (attachmentMode === 'AUDIO') {
+        if (effectiveMode === 'AUDIO') {
             if (attachments.length !== 1) {
                 setError(
                     'Для аудио необходимо выбрать один файл',
@@ -191,39 +199,45 @@ function MessageComposer({
             }
         }
 
+        sendingRef.current = true
+        const sentConversationId = conversationId
+        const isCurrent = () => mounted.current && currentConversation.current === sentConversationId
         setSending(true)
         setError(null)
 
         try {
             let type: MessageType = 'TEXT'
 
-            if (attachmentMode === 'IMAGE') {
+            if (effectiveMode === 'IMAGE') {
                 type = 'IMAGE'
             } else if (
-                attachmentMode === 'AUDIO'
+                effectiveMode === 'AUDIO'
             ) {
                 type = 'AUDIO'
             }
 
-            await sendOutboundMessage(
+            const message = await sendOutboundMessage(
                 conversationId,
                 type,
                 trimmedContent || null,
                 attachments,
             )
-
+            if (!isCurrent()) return
             setContent('')
             clearAttachments()
-
-            await onSent?.()
+            // Sending succeeded. A subsequent refresh failure must never be
+            // presented as an unsent message that the operator might send again.
+            try { await onSent?.(message) } catch { /* The thread shows refresh failures separately. */ }
         } catch (err) {
+            if (!isCurrent()) return
             setError(
                 err instanceof Error
                     ? err.message
                     : 'Не удалось отправить сообщение',
             )
         } finally {
-            setSending(false)
+            sendingRef.current = false
+            if (isCurrent()) setSending(false)
         }
     }
 
@@ -239,7 +253,7 @@ function MessageComposer({
     ) => {
         if (
             event.key !== 'Enter' ||
-            event.shiftKey
+            event.shiftKey || event.nativeEvent?.isComposing || event.keyCode === 229
         ) {
             return
         }
@@ -370,6 +384,7 @@ function MessageComposer({
             <input
                 ref={fileInputRef}
                 type="file"
+                disabled={sending}
                 hidden
                 accept={
                     attachmentMode === 'IMAGE'

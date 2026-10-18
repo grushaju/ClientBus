@@ -1,911 +1,324 @@
-import {
-    useEffect,
-    useState,
-} from 'react'
-
+import { useEffect, useRef, useState } from 'react'
 import {
     assignClientAccount,
-    createClient,
+    createClientFromConversation,
     getClient,
     getClientAccountsByClient,
-    getClients,
-    unassignClientAccount,
     getClientAvatarContent,
+    searchClients,
+    unassignClientAccount,
 } from '../../api/clientApi'
-
-import type {
-    ClientDto,
-    ClientListItemDto,
-} from '../../api/types/client'
-
-import type {
-    ChannelSummary,
-    ClientAccountSummary,
-    ConversationDto,
-} from '../../api/types/conversation'
-
-import type {
-    ClientAccountDto,
-} from '../../api/types/clientAccount'
-
-import { useAuth } from '../../auth/AuthContext'
-
+import type { ClientDto, ClientListItemDto } from '../../api/types/client'
+import type { ChannelSummary, ClientAccountSummary, ConversationDto } from '../../api/types/conversation'
+import type { ClientAccountDto } from '../../api/types/clientAccount'
 import PlatformIcon from '../common/platform/PlatformIcon'
 import PlatformName from '../common/platform/PlatformName'
 import ClientAccountPicker from '../clients/ClientAccountPicker'
-import {
-    ChannelAccountAvatar,
-} from '../channels/ChannelAccountAvatar'
-
+import { ChannelAccountAvatar } from '../channels/ChannelAccountAvatar'
 import ClientAccountAvatar from '../clients/ClientAccountAvatar'
 
 interface Props {
     conversation: ConversationDto
     clientAccount: ClientAccountSummary | null
     channel: ChannelSummary | null
-    onChanged: () => Promise<void>
+    accountError?: string | null
+    channelError?: string | null
+    refreshingDetails?: boolean
+    onRetryDetails: () => void
+    onChanged: (account: ClientAccountSummary) => void
 }
 
-function ConversationClientPanel({
-                                     conversation,
-                                     clientAccount,
-                                     channel,
-                                     onChanged,
-                                 }: Props) {
-    const {
-        isSuperAdmin,
-    } = useAuth()
+const errorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback
+const username = (value: string) => `@${value.replace(/^@+/, '')}`
+const accountName = (account: ClientAccountSummary) => account.displayName || account.username || account.phone || account.externalId
 
-    const [client, setClient] =
-        useState<ClientDto | null>(null)
+function AccountCard({ account }: { account: ClientAccountSummary }) {
+    return (
+        <div className="conversation-client-account-card">
+            <ClientAccountAvatar accountId={account.id} avatarUrl={account.avatarUrl} displayName={accountName(account)} size={36} />
+            <PlatformIcon type={account.channelType} size={18} />
+            <div className="conversation-client-account-info">
+                <strong>{accountName(account)}</strong>
+                {account.username && <span>{username(account.username)}</span>}
+                {account.phone && <span>{account.phone}</span>}
+            </div>
+        </div>
+    )
+}
 
-    const [clientAvatarSrc, setClientAvatarSrc] =
-        useState<string | null>(null)
-
-    const [clientAccounts, setClientAccounts] =
-        useState<ClientAccountSummary[]>([])
-
-    const [loadingClient, setLoadingClient] =
-        useState(false)
-
-    const [clients, setClients] =
-        useState<ClientListItemDto[]>([])
-
-    const [loadingClients, setLoadingClients] =
-        useState(false)
-
-    const [showCreateForm, setShowCreateForm] =
-        useState(false)
-
-    const [showLinkForm, setShowLinkForm] =
-        useState(false)
-
-    const [showOtherAccounts, setShowOtherAccounts] =
-        useState(false)
-
-    const [showAccountPicker, setShowAccountPicker] =
-        useState(false)
-
-    const [firstName, setFirstName] =
-        useState('')
-
-    const [lastName, setLastName] =
-        useState('')
-
-    const [phone, setPhone] =
-        useState('')
-
-    const [selectedClientId, setSelectedClientId] =
-        useState('')
-
-    const [actionLoading, setActionLoading] =
-        useState(false)
-
-    const [error, setError] =
-        useState<string | null>(null)
+function ConversationClientDetails({
+    conversation, clientAccount, channel, accountError, channelError,
+    refreshingDetails = false, onRetryDetails, onChanged,
+}: Props) {
+    const alive = useRef(true)
+    const actionPending = useRef(false)
+    const accountsRequest = useRef(0)
+    const [client, setClient] = useState<ClientDto | null>(null)
+    const [clientAccounts, setClientAccounts] = useState<ClientAccountSummary[]>([])
+    const [clientAvatarSrc, setClientAvatarSrc] = useState<string | null>(null)
+    const [loadingClient, setLoadingClient] = useState(!!clientAccount?.clientId)
+    const [loadingAccounts, setLoadingAccounts] = useState(!!clientAccount?.clientId)
+    const [clientError, setClientError] = useState<string | null>(null)
+    const [accountsError, setAccountsError] = useState<string | null>(null)
+    const [clientReload, setClientReload] = useState(0)
+    const [accountsReload, setAccountsReload] = useState(0)
+    const [actionLoading, setActionLoading] = useState(false)
+    const [error, setError] = useState<string | null>(null)
+    const [form, setForm] = useState<'create' | 'link' | null>(null)
+    const [firstName, setFirstName] = useState('')
+    const [lastName, setLastName] = useState('')
+    const [phone, setPhone] = useState('')
+    const [showOtherAccounts, setShowOtherAccounts] = useState(false)
+    const [showAccountPicker, setShowAccountPicker] = useState(false)
+    const [clientQuery, setClientQuery] = useState('')
+    const [clients, setClients] = useState<ClientListItemDto[]>([])
+    const [loadingClients, setLoadingClients] = useState(false)
+    const [clientsError, setClientsError] = useState<string | null>(null)
+    const [clientsReload, setClientsReload] = useState(0)
+    const [selectedClientId, setSelectedClientId] = useState('')
+    const clientId = clientAccount?.clientId
 
     useEffect(() => {
-        let cancelled = false
-        let avatarObjectUrl: string | null = null
+        alive.current = true
+        return () => { alive.current = false }
+    }, [])
 
-        async function loadClient() {
-            setShowOtherAccounts(false)
-            setClientAvatarSrc(null)
+    // These requests are independent: unavailable accounts must not hide the client.
+    useEffect(() => {
+        if (!clientId) return
+        let active = true
+        setLoadingClient(true)
+        setClientError(null)
+        void getClient(clientId).then(result => {
+            if (active) setClient(result)
+        }).catch(err => {
+            if (active) setClientError(errorMessage(err, 'Не удалось загрузить клиента'))
+        }).finally(() => {
+            if (active) setLoadingClient(false)
+        })
+        return () => { active = false }
+    }, [clientId, clientReload])
 
-            if (!clientAccount?.clientId) {
-                setClient(null)
-                setClientAccounts([])
-                return
-            }
+    useEffect(() => {
+        if (!clientId) return
+        let active = true
+        const request = ++accountsRequest.current
+        const isCurrent = () => active && request === accountsRequest.current
+        setLoadingAccounts(true)
+        setAccountsError(null)
+        void getClientAccountsByClient(clientId).then(result => {
+            if (isCurrent()) setClientAccounts(result)
+        }).catch(err => {
+            if (isCurrent()) setAccountsError(errorMessage(err, 'Не удалось загрузить аккаунты клиента'))
+        }).finally(() => {
+            if (isCurrent()) setLoadingAccounts(false)
+        })
+        return () => { active = false }
+    }, [clientId, accountsReload])
 
-            setLoadingClient(true)
-            setError(null)
-
-            try {
-                const result =
-                    await getClient(
-                        clientAccount.clientId,
-                    )
-
-                const accounts =
-                    await getClientAccountsByClient(
-                        clientAccount.clientId,
-                    )
-
-                let avatarSrc: string | null = null
-
-                if (result.avatarUrl) {
-                    try {
-                        const blob = await getClientAvatarContent(
-                            result.id,
-                        )
-
-                        avatarSrc = URL.createObjectURL(blob)
-                        avatarObjectUrl = avatarSrc
-                    } catch {
-                        // Если аватар недоступен, покажем первую букву имени.
-                    }
-                }
-                if (!cancelled) {
-                    setClient(result)
-                    setClientAvatarSrc(avatarSrc)
-                    setClientAccounts(accounts)
-                }
-            } catch (err) {
-                if (!cancelled) {
-                    setClient(null)
-                    if (avatarObjectUrl) {
-                        URL.revokeObjectURL(avatarObjectUrl)
-                    }
-                    setClientAccounts([])
-
-                    setError(
-                        err instanceof Error
-                            ? err.message
-                            : 'Не удалось загрузить клиента',
-                    )
-                }
-            } finally {
-                if (!cancelled) {
-                    setLoadingClient(false)
-                }
-            }
-        }
-
-        void loadClient()
-
+    useEffect(() => {
+        setClientAvatarSrc(null)
+        if (!client?.avatarUrl) return
+        let active = true
+        let objectUrl: string | undefined
+        void getClientAvatarContent(client.id).then(blob => {
+            if (!active) return
+            objectUrl = URL.createObjectURL(blob)
+            setClientAvatarSrc(objectUrl)
+        }).catch(() => { /* Fall back to the initial when the avatar is unavailable. */ })
         return () => {
-            cancelled = true
-            if (avatarObjectUrl) {
-                URL.revokeObjectURL(avatarObjectUrl)
-            }
+            active = false
+            if (objectUrl) URL.revokeObjectURL(objectUrl)
         }
-    }, [
-        clientAccount?.clientId,
-    ])
+    }, [client?.id, client?.avatarUrl])
 
-    const loadClients =
-        async () => {
-            setLoadingClients(true)
-            setError(null)
-
+    useEffect(() => {
+        if (form !== 'link') return
+        const controller = new AbortController()
+        setLoadingClients(true)
+        setClients([])
+        setClientsError(null)
+        const timer = window.setTimeout(async () => {
             try {
-                const result =
-                    await getClients()
-
-                setClients(result)
+                const result = await searchClients(clientQuery.trim(), controller.signal)
+                if (!controller.signal.aborted) setClients(result)
             } catch (err) {
-                setError(
-                    err instanceof Error
-                        ? err.message
-                        : 'Не удалось загрузить клиентов',
-                )
+                if (!controller.signal.aborted) setClientsError(errorMessage(err, 'Не удалось загрузить клиентов'))
             } finally {
-                setLoadingClients(false)
+                if (!controller.signal.aborted) setLoadingClients(false)
             }
-        }
+        }, 250)
+        return () => { window.clearTimeout(timer); controller.abort() }
+    }, [form, clientQuery, clientsReload])
 
-    const handleCreateClient =
-        async () => {
-            const normalizedFirstName =
-                firstName.trim()
-
-            const normalizedLastName =
-                lastName.trim()
-
-            if (
-                !normalizedFirstName &&
-                !normalizedLastName
-            ) {
-                setError(
-                    'Укажите имя или фамилию клиента',
-                )
-                return
-            }
-
-            if (!clientAccount) {
-                return
-            }
-
-            setActionLoading(true)
-            setError(null)
-
-            try {
-                const created =
-                    await createClient({
-                        firstName:
-                        normalizedFirstName,
-                        lastName:
-                        normalizedLastName,
-                        phoneList:
-                            phone.trim()
-                                ? [phone.trim()]
-                                : [],
-                    })
-
-                await assignClientAccount(
-                    created.id,
-                    clientAccount.id,
-                )
-
-                const updatedAccount:
-                    ClientAccountSummary = {
-                    ...clientAccount,
-                    clientId: created.id,
-                }
-
-                setClient(created)
-
-                setClientAccounts([
-                    updatedAccount,
-                ])
-
-                setShowCreateForm(false)
-                setFirstName('')
-                setLastName('')
-                setPhone('')
-
-                await onChanged()
-            } catch (err) {
-                setError(
-                    err instanceof Error
-                        ? err.message
-                        : 'Не удалось создать клиента',
-                )
-            } finally {
+    async function mutate(operation: () => Promise<ClientAccountSummary>, fallback: string) {
+        if (actionPending.current || !alive.current) return
+        actionPending.current = true
+        setActionLoading(true)
+        setError(null)
+        let updated: ClientAccountSummary
+        try {
+            updated = await operation()
+        } catch (err) {
+            if (alive.current) setError(errorMessage(err, fallback))
+            return
+        } finally {
+            if (alive.current) {
+                actionPending.current = false
                 setActionLoading(false)
             }
         }
+        // Notify the list even when navigation has already closed this panel.
+        // The parent guards updates to the currently displayed conversation.
+        onChanged(updated)
+        if (!alive.current) return
+        setForm(null)
+        setShowAccountPicker(false)
+    }
 
-    const handleLinkClient =
-        async () => {
-            if (
-                !selectedClientId ||
-                !clientAccount
-            ) {
-                return
-            }
-
-            setActionLoading(true)
-            setError(null)
-
-            try {
-                await assignClientAccount(
-                    selectedClientId,
-                    clientAccount.id,
-                )
-
-                const linkedClient =
-                    await getClient(
-                        selectedClientId,
-                    )
-
-                const accounts =
-                    await getClientAccountsByClient(
-                        selectedClientId,
-                    )
-
-                setClient(linkedClient)
-                setClientAccounts(accounts)
-
-                setShowLinkForm(false)
-                setSelectedClientId('')
-
-                await onChanged()
-            } catch (err) {
-                setError(
-                    err instanceof Error
-                        ? err.message
-                        : 'Не удалось привязать аккаунт',
-                )
-            } finally {
-                setActionLoading(false)
-            }
+    function handleCreateClient() {
+        if (!clientAccount || clientId || actionPending.current || refreshingDetails) return
+        const name = firstName.trim()
+        const surname = lastName.trim()
+        if (!name && !surname) {
+            setError('Укажите имя или фамилию клиента')
+            return
         }
+        void mutate(async () => {
+            const created = await createClientFromConversation(conversation.id, {
+                firstName: name, lastName: surname, phoneList: phone.trim() ? [phone.trim()] : [],
+            })
+            return { ...clientAccount, clientId: created.id }
+        }, 'Не удалось создать клиента')
+    }
 
-    const handleAssignAnotherAccount =
-        async (
-            account: ClientAccountDto,
-        ) => {
-            if (!client) {
-                return
+    function handleLinkClient() {
+        if (!clientAccount || clientId || !selectedClientId || loadingClients || clientsError || refreshingDetails) return
+        void mutate(() => assignClientAccount(selectedClientId, clientAccount.id), 'Не удалось привязать аккаунт')
+    }
+
+    function handleAssignAnotherAccount(account: ClientAccountDto) {
+        if (!clientId || !clientAccount || account.clientId !== null) return
+        void mutate(async () => {
+            const updated = await assignClientAccount(clientId, account.id)
+            if (alive.current) {
+                accountsRequest.current += 1
+                setClientAccounts(previous => [...previous.filter(item => item.id !== updated.id), updated])
+                // Re-read the list if its earlier request failed or is still in flight.
+                setAccountsReload(value => value + 1)
             }
+            return clientAccount
+        }, 'Не удалось привязать аккаунт')
+    }
 
-            setActionLoading(true)
-            setError(null)
-
-            try {
-                await assignClientAccount(
-                    client.id,
-                    account.id,
-                )
-
-                const accounts =
-                    await getClientAccountsByClient(
-                        client.id,
-                    )
-
-                setClientAccounts(accounts)
-                setShowAccountPicker(false)
-
-                await onChanged()
-            } catch (err) {
-                setError(
-                    err instanceof Error
-                        ? err.message
-                        : 'Не удалось привязать аккаунт',
-                )
-            } finally {
-                setActionLoading(false)
-            }
-        }
-
-    const handleUnlink =
-        async () => {
-            if (!clientAccount?.clientId) {
-                return
-            }
-
-            setActionLoading(true)
-            setError(null)
-
-            try {
-                await unassignClientAccount(
-                    clientAccount.clientId,
-                    clientAccount.id,
-                )
-
-                const orphanAccount:
-                    ClientAccountSummary = {
-                    ...clientAccount,
-                    clientId: null,
-                }
-
-                setClient(null)
-                setClientAccounts([
-                    orphanAccount,
-                ])
-
-                await onChanged()
-            } catch (err) {
-                setError(
-                    err instanceof Error
-                        ? err.message
-                        : 'Не удалось отвязать аккаунт',
-                )
-            } finally {
-                setActionLoading(false)
-            }
-        }
-
-    const clientName = client
-        ? [
-            client.firstName,
-            client.lastName,
-        ]
-            .filter(Boolean)
-            .join(' ')
-        : null
-
-    const accountName =
-        clientAccount?.displayName ||
-        clientAccount?.username ||
-        clientAccount?.phone ||
-        clientAccount?.externalId ||
-        'Неизвестный аккаунт'
-
-    const currentAccount =
-        clientAccount
-            ? clientAccounts.find(
-            account =>
-                account.id ===
-                clientAccount.id,
-        ) ?? clientAccount
-            : null
-
-    const otherAccounts =
-        clientAccounts.filter(
-            account =>
-                account.id !==
-                clientAccount?.id,
-        )
+    const clientName = client ? [client.firstName, client.lastName].filter(Boolean).join(' ') || 'Без имени' : ''
+    const otherAccounts = clientAccounts.filter(account => account.id !== clientAccount?.id)
+    const disabled = actionLoading || refreshingDetails
+    const retryDetails = <button type="button" className="ui-button ui-button-sm ui-button-secondary" disabled={disabled} onClick={onRetryDetails}>Обновить данные</button>
 
     return (
         <aside className="conversation-client-panel">
-            <div className="conversation-client-panel-header">
-                <h3>Клиент</h3>
-            </div>
-
-            <div className="conversation-client-panel-section">
-                {loadingClient ? (
-                    <div className="conversation-client-panel-state">
-                        Загрузка клиента…
-                    </div>
-                ) : client ? (
+            <div className="conversation-client-panel-header"><h3>Клиент</h3></div>
+            <div className="conversation-client-panel-section" aria-busy={loadingClient}>
+                {accountError && <div className="conversation-client-panel-error" role="alert">{accountError}{retryDetails}</div>}
+                {!clientAccount ? (
+                    !accountError && <div className="conversation-client-panel-state">Аккаунт недоступен{retryDetails}</div>
+                ) : clientId ? (
                     <>
-                        <div className="conversation-client-card">
-                            <div className="conversation-client-avatar">
-                                {clientAvatarSrc ? (
-                                    <img
-                                        src={clientAvatarSrc}
-                                        alt=""
-                                    />
-                                ) : (
-                                    (clientName || accountName)
-                                        .charAt(0)
-                                        .toUpperCase()
-                                )}
-                            </div>
-
-                            <div className="conversation-client-card-info">
-                                <strong>
-                                    {clientName ||
-                                        'Без имени'}
-                                </strong>
-
-                                {!client.enabled && (
-                                    <span className="conversation-client-disabled">
-                                        Неактивен
-                                    </span>
-                                )}
-                            </div>
-                        </div>
-
-                        {client.phoneList.length > 0 && (
-                            <div className="conversation-client-field">
-                                <span>
-                                    Телефон
-                                </span>
-
-                                <div>
-                                    {client.phoneList.map(
-                                        value => (
-                                            <div
-                                                key={value}
-                                            >
-                                                {value}
-                                            </div>
-                                        ),
-                                    )}
+                        {loadingClient && !client && <div className="conversation-client-panel-state">Загрузка клиента…</div>}
+                        {clientError && <div className="conversation-client-panel-error" role="alert">
+                            {clientError}
+                            <button type="button" className="ui-button ui-button-sm ui-button-secondary" disabled={loadingClient} onClick={() => setClientReload(value => value + 1)}>Повторить загрузку клиента</button>
+                        </div>}
+                        {client && <>
+                            <div className="conversation-client-card">
+                                <div className="conversation-client-avatar">
+                                    {clientAvatarSrc ? <img src={clientAvatarSrc} alt="" /> : clientName.charAt(0).toUpperCase()}
+                                </div>
+                                <div className="conversation-client-card-info">
+                                    <strong>{clientName}</strong>
+                                    {!client.enabled && <span className="conversation-client-disabled">Неактивен</span>}
                                 </div>
                             </div>
-                        )}
+                            {client.phoneList.length > 0 && <div className="conversation-client-field">
+                                <span>Телефон</span><div>{client.phoneList.map((value, index) => <div key={index}>{value}</div>)}</div>
+                            </div>}
+                        </>}
                     </>
                 ) : (
                     <>
-                        <div className="conversation-client-orphan">
-                            <strong>
-                                Клиент не создан
-                            </strong>
-
-                            <span>
-                                Аккаунт существует, но
-                                пока не привязан к клиенту.
-                            </span>
-                        </div>
-
-                        {!showCreateForm &&
-                            !showLinkForm && (
-                                <div className="conversation-client-actions">
-                                    <button
-                                        type="button"
-                                        className="ui-button ui-button-sm ui-button-primary ui-button-block"
-                                        onClick={() => {
-                                            setError(null)
-                                            setShowCreateForm(true)
-                                        }}
-                                    >
-                                        Создать клиента
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        className="ui-button ui-button-sm ui-button-secondary ui-button-block"
-                                        onClick={() => {
-                                            setError(null)
-                                            setShowLinkForm(true)
-                                            void loadClients()
-                                        }}
-                                    >
-                                        Привязать к клиенту
-                                    </button>
-                                </div>
-                            )}
-
-                        {showCreateForm && (
-                            <div className="conversation-client-form">
-                                <label className="ui-form-field">
-                                    <span className="ui-form-label">
-                                        Имя
-                                    </span>
-
-                                    <input
-                                        className="ui-input ui-input-sm"
-                                        value={firstName}
-                                        onChange={event =>
-                                            setFirstName(
-                                                event.target.value,
-                                            )
-                                        }
-                                        disabled={actionLoading}
-                                    />
-                                </label>
-
-                                <label className="ui-form-field">
-                                    <span className="ui-form-label">
-                                        Фамилия
-                                    </span>
-
-                                    <input
-                                        className="ui-input ui-input-sm"
-                                        value={lastName}
-                                        onChange={event =>
-                                            setLastName(
-                                                event.target.value,
-                                            )
-                                        }
-                                        disabled={actionLoading}
-                                    />
-                                </label>
-
-                                <label className="ui-form-field">
-                                    <span className="ui-form-label">
-                                        Телефон
-                                    </span>
-
-                                    <input
-                                        className="ui-input ui-input-sm"
-                                        value={phone}
-                                        onChange={event =>
-                                            setPhone(
-                                                event.target.value,
-                                            )
-                                        }
-                                        disabled={actionLoading}
-                                    />
-                                </label>
-
-                                <div className="conversation-client-form-actions">
-                                    <button
-                                        type="button"
-                                        className="ui-button ui-button-sm ui-button-primary ui-button-block"
-                                        onClick={() =>
-                                            void handleCreateClient()
-                                        }
-                                        disabled={actionLoading}
-                                    >
-                                        {actionLoading
-                                            ? 'Создание…'
-                                            : 'Создать и привязать'}
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        className="ui-button ui-button-sm ui-button-secondary ui-button-block"
-                                        onClick={() => {
-                                            setShowCreateForm(false)
-                                            setError(null)
-                                        }}
-                                        disabled={actionLoading}
-                                    >
-                                        Отмена
-                                    </button>
-                                </div>
+                        <div className="conversation-client-orphan"><strong>Клиент не создан</strong><span>Аккаунт пока не привязан к клиенту.</span></div>
+                        {!form && <div className="conversation-client-actions">
+                            <button type="button" className="ui-button ui-button-sm ui-button-primary ui-button-block" disabled={disabled} onClick={() => { setError(null); setForm('create') }}>Создать клиента</button>
+                            <button type="button" className="ui-button ui-button-sm ui-button-secondary ui-button-block" disabled={disabled} onClick={() => { setError(null); setForm('link') }}>Привязать к клиенту</button>
+                        </div>}
+                        {form === 'create' && <form className="conversation-client-form" onSubmit={event => { event.preventDefault(); handleCreateClient() }}>
+                            <label className="ui-form-field"><span className="ui-form-label">Имя</span><input className="ui-input ui-input-sm" value={firstName} onChange={event => setFirstName(event.target.value)} disabled={disabled} /></label>
+                            <label className="ui-form-field"><span className="ui-form-label">Фамилия</span><input className="ui-input ui-input-sm" value={lastName} onChange={event => setLastName(event.target.value)} disabled={disabled} /></label>
+                            <label className="ui-form-field"><span className="ui-form-label">Телефон</span><input type="tel" className="ui-input ui-input-sm" value={phone} onChange={event => setPhone(event.target.value)} disabled={disabled} /></label>
+                            <div className="conversation-client-form-actions">
+                                <button type="submit" className="ui-button ui-button-sm ui-button-primary ui-button-block" disabled={disabled}>{actionLoading ? 'Создание…' : 'Создать и привязать'}</button>
+                                <button type="button" className="ui-button ui-button-sm ui-button-secondary ui-button-block" disabled={disabled} onClick={() => { setForm(null); setError(null) }}>Отмена</button>
                             </div>
-                        )}
-
-                        {showLinkForm && (
-                            <div className="conversation-client-form">
-                                <label className="ui-form-field">
-                                    <span className="ui-form-label">
-                                        Клиент
-                                    </span>
-
-                                    <select
-                                        className="ui-select ui-select-sm"
-                                        value={selectedClientId}
-                                        onChange={event =>
-                                            setSelectedClientId(
-                                                event.target.value,
-                                            )
-                                        }
-                                        disabled={
-                                            actionLoading ||
-                                            loadingClients
-                                        }
-                                    >
-                                        <option value="">
-                                            {loadingClients
-                                                ? 'Загрузка…'
-                                                : 'Выберите клиента'}
-                                        </option>
-
-                                        {clients.map(
-                                            item => (
-                                                <option
-                                                    key={item.id}
-                                                    value={item.id}
-                                                >
-                                                    {[
-                                                            item.firstName,
-                                                            item.lastName,
-                                                        ]
-                                                            .filter(Boolean)
-                                                            .join(' ') ||
-                                                        'Без имени'}
-                                                </option>
-                                            ),
-                                        )}
-                                    </select>
-                                </label>
-
-                                <div className="conversation-client-form-actions">
-                                    <button
-                                        type="button"
-                                        className="ui-button ui-button-sm ui-button-primary ui-button-block"
-                                        onClick={() =>
-                                            void handleLinkClient()
-                                        }
-                                        disabled={
-                                            actionLoading ||
-                                            !selectedClientId
-                                        }
-                                    >
-                                        {actionLoading
-                                            ? 'Привязка…'
-                                            : 'Привязать'}
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        className="ui-button ui-button-sm ui-button-secondary ui-button-block"
-                                        onClick={() => {
-                                            setShowLinkForm(false)
-                                            setSelectedClientId('')
-                                            setError(null)
-                                        }}
-                                        disabled={actionLoading}
-                                    >
-                                        Отмена
-                                    </button>
-                                </div>
+                        </form>}
+                        {form === 'link' && <form className="conversation-client-form" onSubmit={event => { event.preventDefault(); handleLinkClient() }}>
+                            <label className="ui-form-field"><span className="ui-form-label">Поиск клиента</span>
+                                <input type="search" className="ui-input ui-input-sm" value={clientQuery} onChange={event => { setClientQuery(event.target.value); setSelectedClientId('') }} disabled={disabled} placeholder="Имя, фамилия или телефон" />
+                            </label>
+                            <label className="ui-form-field"><span className="ui-form-label">Клиент</span>
+                                <select className="ui-select ui-select-sm" value={selectedClientId} onChange={event => setSelectedClientId(event.target.value)} disabled={disabled || loadingClients || !!clientsError}>
+                                    <option value="">{loadingClients ? 'Загрузка…' : clients.length ? 'Выберите клиента' : 'Клиенты не найдены'}</option>
+                                    {clients.map(item => <option key={item.id} value={item.id}>{[item.firstName, item.lastName].filter(Boolean).join(' ') || 'Без имени'}</option>)}
+                                </select>
+                            </label>
+                            {clientsError && <div className="conversation-client-panel-error" role="alert">{clientsError}<button type="button" className="ui-button ui-button-sm ui-button-secondary" disabled={disabled} onClick={() => setClientsReload(value => value + 1)}>Повторить поиск</button></div>}
+                            <div className="conversation-client-form-actions">
+                                <button type="submit" className="ui-button ui-button-sm ui-button-primary ui-button-block" disabled={disabled || loadingClients || !!clientsError || !selectedClientId}>{actionLoading ? 'Привязка…' : 'Привязать'}</button>
+                                <button type="button" className="ui-button ui-button-sm ui-button-secondary ui-button-block" disabled={disabled} onClick={() => { setForm(null); setSelectedClientId(''); setError(null) }}>Отмена</button>
                             </div>
-                        )}
+                        </form>}
                     </>
                 )}
-
-                {error && (
-                    <div className="conversation-client-panel-error">
-                        {error}
-                    </div>
-                )}
+                {error && <div className="conversation-client-panel-error" role="alert">{error}{retryDetails}</div>}
             </div>
 
-            {client && currentAccount && (
-                <div className="conversation-client-panel-section">
-                    <div className="conversation-client-section-header">
-                        <h4>
-                            Аккаунт
-                        </h4>
-                    </div>
-
-                    <div className="conversation-client-account-card">
-                        <ClientAccountAvatar
-                            accountId={currentAccount.id}
-                            avatarUrl={currentAccount.avatarUrl}
-                            displayName={
-                                currentAccount.displayName ||
-                                currentAccount.username ||
-                                currentAccount.phone
-                            }
-                            size={36}
-                        />
-
-                        <PlatformIcon
-                            type={currentAccount.channelType}
-                            size={18}
-                        />
-
-                        <div className="conversation-client-account-info">
-                            <strong>
-                                {currentAccount.displayName ||
-                                    currentAccount.username ||
-                                    currentAccount.phone ||
-                                    currentAccount.externalId}
-                            </strong>
-
-                            {currentAccount.username && (
-                                <span>
-                                    @{currentAccount.username}
-                                </span>
-                            )}
-
-                            {currentAccount.phone && (
-                                <span>
-                                    {currentAccount.phone}
-                                </span>
-                            )}
-                        </div>
-                    </div>
-
+            {clientAccount && <div className="conversation-client-panel-section">
+                <div className="conversation-client-section-header"><h4>Аккаунт</h4></div>
+                <AccountCard account={clientAccount} />
+                {clientId && <>
                     <div className="conversation-client-actions">
-                        <button
-                            type="button"
-                            className="ui-button ui-button-sm ui-button-danger ui-button-block"
-                            onClick={() =>
-                                void handleUnlink()
-                            }
-                            disabled={actionLoading}
-                        >
-                            {actionLoading
-                                ? 'Выполняется…'
-                                : 'Отвязать аккаунт'}
-                        </button>
-
-                        {(
-                            <button
-                                type="button"
-                                className="ui-button ui-button-sm ui-button-secondary ui-button-block"
-                                onClick={() => {
-                                    setError(null)
-                                    setShowAccountPicker(true)
-                                }}
-                                disabled={actionLoading}
-                            >
-                                Привязать еще аккаунт
-                            </button>
-                        )}
-
-                        {otherAccounts.length > 0 && (
-                            <button
-                                type="button"
-                                className="ui-button ui-button-sm ui-button-secondary ui-button-block"
-                                onClick={() =>
-                                    setShowOtherAccounts(
-                                        value => !value,
-                                    )
-                                }
-                            >
-                                {showOtherAccounts
-                                    ? 'Скрыть другие аккаунты'
-                                    : `Другие аккаунты (${otherAccounts.length})`}
-                            </button>
-                        )}
-
+                        <button type="button" className="ui-button ui-button-sm ui-button-danger ui-button-block" disabled={disabled} onClick={() => void mutate(() => unassignClientAccount(clientId, clientAccount.id), 'Не удалось отвязать аккаунт')}>Отвязать аккаунт</button>
+                        <button type="button" className="ui-button ui-button-sm ui-button-secondary ui-button-block" disabled={disabled || !client} onClick={() => { setError(null); setShowAccountPicker(true) }}>Привязать еще аккаунт</button>
+                        {otherAccounts.length > 0 && <button type="button" className="ui-button ui-button-sm ui-button-secondary ui-button-block" aria-expanded={showOtherAccounts} onClick={() => setShowOtherAccounts(value => !value)}>{showOtherAccounts ? 'Скрыть другие аккаунты' : `Другие аккаунты (${otherAccounts.length})`}</button>}
                     </div>
+                    {loadingAccounts && <div className="conversation-client-panel-state">Загрузка аккаунтов…</div>}
+                    {accountsError && <div className="conversation-client-panel-error" role="alert">{accountsError}<button type="button" className="ui-button ui-button-sm ui-button-secondary" disabled={loadingAccounts || actionLoading} onClick={() => setAccountsReload(value => value + 1)}>Повторить загрузку аккаунтов</button></div>}
+                    {showOtherAccounts && <div className="conversation-client-other-accounts">{otherAccounts.map(account => <AccountCard key={account.id} account={account} />)}</div>}
+                </>}
+            </div>}
 
-                    {showOtherAccounts &&
-                        otherAccounts.length > 0 && (
-                            <div className="conversation-client-other-accounts">
-                                {otherAccounts.map(
-                                    account => (
-                                        <div
-                                            key={account.id}
-                                            className="conversation-client-account-card"
-                                        >
-                                            <ClientAccountAvatar
-                                                accountId={account.id}
-                                                avatarUrl={account.avatarUrl}
-                                                displayName={
-                                                    account.displayName ||
-                                                    account.username ||
-                                                    account.phone
-                                                }
-                                                size={36}
-                                            />
-
-                                            <PlatformIcon
-                                                type={account.channelType}
-                                                size={18}
-                                            />
-
-                                            <div className="conversation-client-account-info">
-                                                <strong>
-                                                    {account.displayName ||
-                                                        account.username ||
-                                                        account.phone ||
-                                                        account.externalId}
-                                                </strong>
-
-                                                {account.username && (
-                                                    <span>
-                                                        @{account.username}
-                                                    </span>
-                                                )}
-
-                                                {account.phone && (
-                                                    <span>
-                                                        {account.phone}
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ),
-                                )}
-                            </div>
-                        )}
-                </div>
-            )}
-
-            {channel && (
-                <div className="conversation-client-panel-section">
-                    <div className="conversation-client-section-header">
-                        <h4>
-                            Канал
-                        </h4>
+            <div className="conversation-client-panel-section">
+                <div className="conversation-client-section-header"><h4>Канал</h4></div>
+                {channelError && <div className="conversation-client-panel-error" role="alert">{channelError}{retryDetails}</div>}
+                {channel ? <div className="conversation-client-channel">
+                    <ChannelAccountAvatar channelId={channel.id} avatarUrl={channel.account?.avatarUrl ?? null} displayName={channel.account?.displayName ?? null} />
+                    <PlatformIcon type={channel.type} size={18} />
+                    <div>
+                        <strong>{channel.name}</strong>
+                        <span><PlatformName type={channel.type} /></span>
+                        {channel.account?.displayName && <strong>{channel.account.displayName}</strong>}
+                        {channel.account?.username && <span>{username(channel.account.username)}</span>}
+                        {channel.account?.phone && <span>{channel.account.phone}</span>}
                     </div>
+                </div> : !channelError && <div className="conversation-client-panel-state">Канал недоступен{retryDetails}</div>}
+            </div>
 
-                    <div className="conversation-client-channel">
-                        <ChannelAccountAvatar
-                            channelId={channel.id}
-                            avatarUrl={channel.account?.avatarUrl ?? null}
-                            displayName={channel.account?.displayName ?? null}
-                        />
-
-                        <PlatformIcon
-                            type={channel.type}
-                            size={18}
-                        />
-
-                        <div>
-                            <strong>
-                                {channel.name}
-                            </strong>
-
-                            <span>
-                                <PlatformName
-                                    type={channel.type}
-                                />
-                            </span>
-
-                            <strong>
-                                👤 @{channel.account?.username}
-                            </strong>
-
-                            <strong>
-                                ☎ {channel.account?.phone}
-                            </strong>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            <ClientAccountPicker
-                open={showAccountPicker}
-                onClose={() => {
-                    if (!actionLoading) {
-                        setShowAccountPicker(false)
-                    }
-                }}
-                onSelect={account =>
-                    void handleAssignAnotherAccount(
-                        account,
-                    )
-                }
-                busy={actionLoading}
-            />
+            <ClientAccountPicker open={showAccountPicker} onClose={() => { if (!actionPending.current) setShowAccountPicker(false) }} onSelect={handleAssignAnotherAccount} busy={actionLoading} />
         </aside>
     )
 }
 
-export default ConversationClientPanel
+export default function ConversationClientPanel(props: Props) {
+    // A changed relationship starts a fresh form session, including A → B → A.
+    return <ConversationClientDetails key={`${props.conversation.id}:${props.conversation.clientAccountId}:${props.clientAccount?.clientId ?? ''}`} {...props} />
+}

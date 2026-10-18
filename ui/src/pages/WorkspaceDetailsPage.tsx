@@ -1,5 +1,6 @@
 import {
     useEffect,
+    useRef,
     useState,
 } from 'react'
 
@@ -20,6 +21,7 @@ import {
 
 import {
     removeEmployeeWorkspace,
+    getEmployeeWorkspaces,
 } from '../api/employeeWorkspaceApi'
 
 import {
@@ -126,6 +128,8 @@ function WorkspaceDetailsPage() {
 
     const [employees, setEmployees] =
         useState<EmployeeDto[]>([])
+    const [supervisorIds, setSupervisorIds] = useState<string[]>([])
+    const loadGeneration = useRef(0)
 
     const [channels, setChannels] =
         useState<ChannelDto[]>([])
@@ -164,6 +168,8 @@ function WorkspaceDetailsPage() {
         if (!workspaceId) {
             return
         }
+        const generation = ++loadGeneration.current
+        const isCurrent = () => loadGeneration.current === generation
 
         setLoading(true)
         setError(null)
@@ -171,6 +177,7 @@ function WorkspaceDetailsPage() {
         try {
             const allWorkspaces =
                 await getAllWorkspaces()
+            if (!isCurrent()) return
 
             const current =
                 allWorkspaces.find(
@@ -207,13 +214,18 @@ function WorkspaceDetailsPage() {
                 ),
             ])
 
-            setEmployees(
-                workspaceEmployees.filter(
+            if (!isCurrent()) return
+            const visibleEmployees = workspaceEmployees.filter(
                     employee =>
                         employee.role !==
                         'SUPER_ADMIN',
-                ),
-            )
+                )
+            const memberships = await Promise.all(visibleEmployees.map(employee => getEmployeeWorkspaces(employee.id)))
+            if (!isCurrent()) return
+            setEmployees(visibleEmployees)
+            setSupervisorIds(visibleEmployees.filter((_, index) => memberships[index].some(
+                membership => membership.workspaceId === workspaceId && membership.isSupervisor,
+            )).map(employee => employee.id))
 
             setChannels(
                 workspaceChannels,
@@ -270,18 +282,20 @@ function WorkspaceDetailsPage() {
                 latestActivity,
             )
         } catch (err) {
+            if (!isCurrent()) return
             setError(
                 err instanceof Error
                     ? err.message
                     : 'Не удалось загрузить рабочее пространство',
             )
         } finally {
-            setLoading(false)
+            if (isCurrent()) setLoading(false)
         }
     }
 
     useEffect(() => {
         loadData()
+        return () => { loadGeneration.current++ }
     }, [workspaceId])
 
     function handleWorkspaceUpdated(
@@ -541,9 +555,12 @@ function WorkspaceDetailsPage() {
                                         />
 
                                         <div className="workspace-employee-info">
+                                            <div className="workspace-employee-name">
                                             <strong>
                                                 {getEmployeeName(employee)}
                                             </strong>
+                                            {supervisorIds.includes(employee.id) && <span className="workspace-employee-supervisor">Супервизор</span>}
+                                            </div>
 
                                             <span>{employee.email}</span>
                                         </div>

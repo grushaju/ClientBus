@@ -452,6 +452,23 @@
     min-width: 0;
 }
 
+.workspace-employee-name {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.workspace-employee-row .workspace-employee-supervisor {
+    margin-top: 0;
+    padding: 3px 7px;
+    border-radius: 5px;
+    background: #dcfce7;
+    color: #166534;
+    font-size: 11px;
+    flex-shrink: 0;
+}
+
 /* =========================================================
    CHANNEL IDENTITY
    ========================================================= */

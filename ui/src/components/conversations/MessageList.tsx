@@ -15,7 +15,12 @@ interface Props {
     hasMore: boolean
     historyStartReached: boolean
     error: string | null
-    onLoadOlder: () => Promise<void>
+    onLoadOlder: (onStart?: () => void) => Promise<void>
+    refreshError?: string | null
+    onReload?: () => Promise<void>
+    onRetryOlder?: (onStart?: () => void) => Promise<void>
+    onRetryMessage?: (messageId: string) => Promise<void>
+    retryingIds?: string[]
 }
 
 function getMessageDate(
@@ -109,6 +114,11 @@ function MessageList({
                          historyStartReached,
                          error,
                          onLoadOlder,
+                         refreshError,
+                         onReload,
+                         onRetryOlder,
+                         onRetryMessage,
+                         retryingIds = [],
                      }: Props) {
     const containerRef =
         useRef<HTMLDivElement | null>(null)
@@ -116,14 +126,22 @@ function MessageList({
     const initialScrollDoneRef =
         useRef(false)
 
-    const previousMessageCountRef =
-        useRef(0)
+    const atBottomRef = useRef(true)
+    const previousLastId = useRef<string | undefined>(undefined)
+    const loadingOlderRef = useRef(false)
 
     const preserveScrollRef =
         useRef<{
             scrollHeight: number
             scrollTop: number
         } | null>(null)
+
+    const preserveScroll = useCallback(() => {
+        const container = containerRef.current
+        if (container) preserveScrollRef.current = {
+            scrollHeight: container.scrollHeight, scrollTop: container.scrollTop,
+        }
+    }, [])
 
     useLayoutEffect(() => {
         const container =
@@ -132,9 +150,6 @@ function MessageList({
         if (!container) {
             return
         }
-
-        const previousCount =
-            previousMessageCountRef.current
 
         const currentCount =
             messages.length
@@ -156,6 +171,7 @@ function MessageList({
 
             initialScrollDoneRef.current =
                 true
+            atBottomRef.current = true
         }
 
         /*
@@ -167,7 +183,7 @@ function MessageList({
 
         if (
             preservedScroll &&
-            currentCount > previousCount
+            !loadingOlder
         ) {
             const heightDelta =
                 container.scrollHeight -
@@ -181,9 +197,13 @@ function MessageList({
                 null
         }
 
-        previousMessageCountRef.current =
-            currentCount
-    }, [messages])
+        const lastId = messages[messages.length - 1]?.id
+        if (!preservedScroll && atBottomRef.current && lastId !== previousLastId.current) {
+            container.scrollTop = container.scrollHeight
+        }
+        previousLastId.current = lastId
+
+    }, [messages, loadingOlder, loading])
 
     const tryLoadOlder =
         useCallback(async () => {
@@ -195,7 +215,7 @@ function MessageList({
             }
 
             if (
-                loadingOlder ||
+                loadingOlder || loadingOlderRef.current || !!error || loading ||
                 !hasMore ||
                 historyStartReached
             ) {
@@ -219,19 +239,16 @@ function MessageList({
                 return
             }
 
-            preserveScrollRef.current = {
-                scrollHeight:
-                container.scrollHeight,
-                scrollTop:
-                container.scrollTop,
-            }
-
-            await onLoadOlder()
+            loadingOlderRef.current = true
+            try { await onLoadOlder(preserveScroll) } finally { loadingOlderRef.current = false }
         }, [
             loadingOlder,
             hasMore,
             historyStartReached,
             onLoadOlder,
+            error,
+            loading,
+            preserveScroll,
         ])
 
     useLayoutEffect(() => {
@@ -243,7 +260,7 @@ function MessageList({
         }
 
         if (
-            loading ||
+            loading || !!error ||
             loadingOlder ||
             !hasMore ||
             historyStartReached ||
@@ -268,16 +285,12 @@ function MessageList({
         hasMore,
         historyStartReached,
         tryLoadOlder,
+        error,
     ])
 
-    /*
-     * При смене conversationId MessageList
-     * фактически получает новый набор сообщений.
-     *
-     * Если сообщений стало 0, разрешаем
-     * следующей загрузке снова сделать
-     * initial scroll вниз.
-     */
+    const retryOlder = () => {
+        void onRetryOlder?.(preserveScroll)
+    }
     if (loading) {
         return (
             <div className="message-list message-list-state">
@@ -290,6 +303,7 @@ function MessageList({
         return (
             <div className="message-list message-list-state message-list-error">
                 {error}
+                {onReload && <button type="button" className="ui-button ui-button-secondary" onClick={() => void onReload()}>Повторить загрузку сообщений</button>}
             </div>
         )
     }
@@ -298,6 +312,7 @@ function MessageList({
         return (
             <div className="message-list message-list-state">
                 Сообщений пока нет
+                {onReload && <button type="button" className="ui-button ui-button-secondary" onClick={() => void onReload()}>Обновить сообщения</button>}
             </div>
         )
     }
@@ -311,6 +326,7 @@ function MessageList({
         if (!container) {
             return
         }
+        atBottomRef.current = container.scrollHeight - container.scrollTop - container.clientHeight < 80
 
         if (
             container.scrollTop <=
@@ -328,6 +344,15 @@ function MessageList({
                 void handleScroll()
             }}
         >
+            {error && <div className="message-history-error" role="alert">{error}
+                {onRetryOlder && <button type="button" className="ui-button ui-button-secondary ui-button-sm" disabled={loadingOlder}
+                    onClick={retryOlder}>Повторить загрузку истории</button>}
+            </div>}
+            {refreshError && <div className="message-history-error" role="alert">{refreshError}
+                {onReload && <button type="button" className="ui-button ui-button-secondary ui-button-sm" onClick={() => void onReload()}>Обновить сообщения</button>}
+            </div>}
+            {!error && !hasMore && !historyStartReached && onRetryOlder && <button type="button" className="ui-button ui-button-secondary ui-button-sm"
+                disabled={loadingOlder} onClick={retryOlder}>Загрузить более ранние сообщения</button>}
             {loadingOlder && (
                 <div className="message-list-loading-older">
                     Загрузка старых сообщений…
@@ -377,6 +402,8 @@ function MessageList({
 
                             <MessageBubble
                                 message={message}
+                                onRetry={onRetryMessage}
+                                retrying={retryingIds.includes(message.id)}
                             />
                         </div>
                     )

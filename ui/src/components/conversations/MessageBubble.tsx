@@ -17,11 +17,17 @@ import ImageViewer from './ImageViewer'
 
 interface MessageBubbleProps {
     message: MessageDto
+    onRetry?: (messageId: string) => Promise<void>
+    retrying?: boolean
 }
 
 function MessageBubble({
                            message,
+                           onRetry,
+                           retrying = false,
                        }: MessageBubbleProps) {
+    const [retryError, setRetryError] = useState<string | null>(null)
+    const retryable = message.deliveryStatus === 'FAILED' && message.processingStatus === 'PROCESSED'
     const isOutbound =
         message.direction === 'OUTBOUND'
 
@@ -84,6 +90,15 @@ function MessageBubble({
                         </span>
                     )}
                 </div>
+                {isOutbound && retryable && onRetry && <div className="message-retry">
+                    <button type="button" className="ui-button ui-button-secondary ui-button-sm" disabled={retrying}
+                        onClick={async () => {
+                            setRetryError(null)
+                            try { await onRetry(message.id) }
+                            catch (err) { setRetryError(err instanceof Error ? err.message : 'Не удалось повторить отправку') }
+                        }}>{retrying ? 'Повторная отправка…' : 'Повторить отправку'}</button>
+                    {retryError && <span role="alert">{retryError}</span>}
+                </div>}
             </div>
         </div>
     )
@@ -360,6 +375,7 @@ function getMessageTypeLabel(
 function getDeliveryLabel(
     message: MessageDto,
 ): string {
+    if (message.processingStatus === 'FAILED') return 'Ошибка'
     switch (message.deliveryStatus) {
         case 'READ':
             return 'Прочитано'

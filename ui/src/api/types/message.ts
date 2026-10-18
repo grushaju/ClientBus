@@ -88,23 +88,3 @@ export interface MessageAttachmentDto {
     storageKey: string
     createdAt: string
 }
-
-export interface OutboundMessageRequest {
-    conversationId: string
-    type: MessageType
-    content: string | null
-    metadata: string | null
-    replyToMessageId: string | null
-}
-
-export interface MessagePage {
-    content: MessageDto[]
-    totalElements: number
-    totalPages: number
-    size: number
-    number: number
-    first: boolean
-    last: boolean
-    numberOfElements: number
-    empty: boolean
-}

@@ -623,6 +623,7 @@ public class ClientService {
                     .getId()
                     .equals(clientId)) {
 
+                requireAccountAccess(account);
                 return clientAccountMapper.toDto(account);
             }
 

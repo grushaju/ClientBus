@@ -39,6 +39,7 @@ function ClientAccountPicker({
 
     const [error, setError] =
         useState<string | null>(null)
+    const [searchAttempt, setSearchAttempt] = useState(0)
 
     useEffect(() => {
         if (!open) {
@@ -57,13 +58,13 @@ function ClientAccountPicker({
 
         const controller =
             new AbortController()
+        setLoading(true)
+        setAccounts([])
+        setError(null)
 
         const timeoutId =
             window.setTimeout(
                 async () => {
-                    setLoading(true)
-                    setError(null)
-
                     try {
                         const result =
                             await searchUnassignedClientAccounts(
@@ -71,11 +72,10 @@ function ClientAccountPicker({
                                 controller.signal,
                             )
 
-                        setAccounts(result)
+                        if (!controller.signal.aborted) setAccounts(result)
                     } catch (err) {
                         if (
-                            err instanceof DOMException &&
-                            err.name === 'AbortError'
+                            controller.signal.aborted
                         ) {
                             return
                         }
@@ -100,7 +100,7 @@ function ClientAccountPicker({
             window.clearTimeout(timeoutId)
             controller.abort()
         }
-    }, [open, query])
+    }, [open, query, searchAttempt])
 
     if (!open) {
         return null
@@ -112,7 +112,7 @@ function ClientAccountPicker({
             onMouseDown={event => {
                 if (
                     event.target ===
-                    event.currentTarget
+                    event.currentTarget && !busy
                 ) {
                     onClose()
                 }
@@ -167,8 +167,9 @@ function ClientAccountPicker({
                     </label>
 
                     {error && (
-                        <div className="clients-error">
+                        <div className="clients-error" role="alert">
                             {error}
+                            <button type="button" className="ui-button ui-button-sm ui-button-secondary" disabled={busy} onClick={() => setSearchAttempt(value => value + 1)}>Повторить поиск</button>
                         </div>
                     )}
 
@@ -176,7 +177,7 @@ function ClientAccountPicker({
                         <div className="client-modal-state">
                             Поиск…
                         </div>
-                    ) : accounts.length === 0 ? (
+                    ) : !error && accounts.length === 0 ? (
                         <div className="client-modal-state">
                             {query.trim()
                                 ? 'Аккаунты не найдены'
@@ -198,7 +199,7 @@ function ClientAccountPicker({
                                             null
                                         }
                                         onClick={() =>
-                                            onSelect(
+                                            !busy && onSelect(
                                                 account,
                                             )
                                         }
@@ -228,9 +229,8 @@ function ClientAccountPicker({
                                         <div className="client-account-picker-meta">
                                             {account.username && (
                                                 <span>
-                                                    @
                                                     {
-                                                        account.username
+                                                        `@${account.username.replace(/^@+/, '')}`
                                                     }
                                                 </span>
                                             )}

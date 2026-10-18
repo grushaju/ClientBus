@@ -288,6 +288,11 @@
     text-overflow: ellipsis;
 }
 
+.employee-workspace-tag-supervisor {
+    background: #dcfce7;
+    color: #166534;
+}
+
 .employee-no-workspaces {
     color: #9ca3af;
 

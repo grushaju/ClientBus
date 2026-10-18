@@ -88,6 +88,9 @@ function ConversationHeader({
     const channelName =
         channel?.name ||
         'Канал не определён'
+    const accountUsername = clientAccount?.username
+        ? `@${clientAccount.username.replace(/^@+/, '')}`
+        : null
 
     const isAssignedToCurrentEmployee =
         isEmployee &&
@@ -171,9 +174,9 @@ function ConversationHeader({
                                 </span>
                             </span>
 
-                            {clientAccount?.username && (
-                                <span className="conversation-header-username" title={`@${clientAccount.username}`}>
-                                    @{clientAccount.username}
+                            {accountUsername && (
+                                <span className="conversation-header-username" title={accountUsername}>
+                                    {accountUsername}
                                 </span>
                             )}
                         </div>

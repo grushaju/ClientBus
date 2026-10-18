@@ -44,6 +44,7 @@ test('employee roles load without changing an existing supervisor when saving un
     await ui.save()
     assert.deepEqual(ui.calls, [])
     assert.deepEqual(ui.updated[1], ['a'])
+    assert.deepEqual(ui.updated[2], ['a'])
 })
 
 test('employee supervisor changes use PATCH and new memberships include the selected role', async t => {
@@ -55,6 +56,7 @@ test('employee supervisor changes use PATCH and new memberships include the sele
     await act(async () => ui.role('B').props.onChange({ target: { checked: true } }))
     await ui.save()
     assert.deepEqual(ui.calls, [['supervisor', 'a', false], ['assign', 'b', true]])
+    assert.deepEqual(ui.updated[2], ['b'])
 })
 
 test('failed role loading prevents saving incomplete workspace state', async t => {
@@ -93,4 +95,54 @@ test('adding employees to a workspace submits the supervisor flag separately for
     await act(async () => renderer.root.findByProps({ className: 'ui-button ui-button-primary' }).props.onClick())
     assert.deepEqual(calls, [['a', 'workspace', true], ['b', 'workspace', false]])
     assert.equal(closed, true)
+})
+
+test('employee workspace tags highlight supervisor memberships and update after editing roles', async t => {
+    const employee = { id: 'employee', organizationId: 'org', firstName: 'Name', email: 'name@example.com', role: 'EMPLOYEE', enabled: true }
+    const Page = load('../../pages/EmployeesPage.tsx', {
+        '../auth/AuthContext': { useAuth: () => ({ currentEmployee: { organizationId: 'org' }, isSuperAdmin: true }) },
+        '../workspace/WorkspaceContext': { useWorkspace: () => ({ workspaces: [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }] }) },
+        '../api/employeeApi': {
+            getEmployeesByOrganization: async () => [employee],
+            getEmployeeWorkspaces: async () => [{ workspaceId: 'a', isSupervisor: true }, { workspaceId: 'b', isSupervisor: false }],
+        },
+        '../components/employees/EmployeeAvatar': { default: () => null },
+        '../components/employees/EmployeeCreateDialog': { default: () => null },
+        '../components/employees/EmployeeDetailsDialog': { default: props => React.createElement('aside', props) },
+    }).default
+    let renderer
+    await act(async () => { renderer = create(React.createElement(Page)) })
+    t.after(() => act(() => renderer.unmount()))
+    const highlighted = () => renderer.root.findAllByType('span').filter(node => node.props.className?.includes('employee-workspace-tag-supervisor')).map(node => node.children.join(''))
+    assert.deepEqual(highlighted(), ['A'])
+    await act(async () => renderer.root.findByProps({ className: 'employee-card' }).props.onClick())
+    await act(async () => renderer.root.findByType('aside').props.onUpdated(employee, ['a', 'b'], ['b']))
+    assert.deepEqual(highlighted(), ['B'])
+})
+
+test('workspace employee list marks supervisors only for the displayed workspace', async t => {
+    const workspace = { id: 'workspace', name: 'Workspace', createdAt: '2026-10-18T12:00:00Z', updatedAt: '2026-10-18T12:00:00Z' }
+    const employees = ['a', 'b'].map(id => ({ id, firstName: id, email: `${id}@example.com`, role: 'EMPLOYEE' }))
+    const Page = load('../../pages/WorkspaceDetailsPage.tsx', {
+        'react-router-dom': { useParams: () => ({ workspaceId: 'workspace' }), useNavigate: () => () => {}, Link: props => React.createElement('a', null, props.children) },
+        '../auth/AuthContext': { useAuth: () => ({ currentEmployee: { organizationId: 'org' } }) },
+        '../workspace/WorkspaceContext': { useWorkspace: () => ({ removeWorkspace() {}, setCurrentWorkspaceId() {} }) },
+        '../api/workspaceApi': { getAllWorkspaces: async () => [workspace] },
+        '../api/employeeApi': { getWorkspaceEmployees: async () => employees },
+        '../api/employeeWorkspaceApi': { getEmployeeWorkspaces: async id => [{ workspaceId: id === 'a' ? 'workspace' : 'other', isSupervisor: true }] },
+        '../api/channelApi': { getWorkspaceChannels: async () => [] },
+        '../api/conversationApi': { getWorkspaceConversations: async () => [] },
+        '../components/workspaces/WorkspaceAvatar': { default: () => null },
+        '../components/employees/EmployeeAvatar': { default: () => null },
+        '../components/workspaces/EditWorkspaceDialog': { EditWorkspaceDialog: () => null },
+        '../components/workspaces/DeleteWorkspaceDialog': { DeleteWorkspaceDialog: () => null },
+        '../components/workspaces/WorkspaceEmployeesDialog': { WorkspaceEmployeesDialog: () => null },
+    }).default
+    let renderer
+    await act(async () => { renderer = create(React.createElement(Page)) })
+    t.after(() => act(() => renderer.unmount()))
+    const rows = renderer.root.findAllByProps({ className: 'workspace-employee-row' })
+    assert.equal(rows.length, 2)
+    assert.equal(rows[0].findByProps({ className: 'workspace-employee-supervisor' }).children.join(''), 'Супервизор')
+    assert.equal(rows[1].findAllByProps({ className: 'workspace-employee-supervisor' }).length, 0)
 })

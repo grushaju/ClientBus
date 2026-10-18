@@ -21,7 +21,23 @@ export async function getConversationMessages(
         `/api/messages/conversation/${conversationId}?page=${page}&size=${size}`
     )
 
-    return response.json()
+    // Spring's PagedModel exposes metadata under `page`; older responses
+    // expose Page fields at the top level. Keep one UI contract for both.
+    const result = await response.json()
+    const metadata = result.page ?? result
+    const number = metadata.number ?? page
+    const totalPages = metadata.totalPages ?? 0
+    return {
+        content: result.content ?? [],
+        totalElements: metadata.totalElements ?? 0,
+        totalPages,
+        size: metadata.size ?? size,
+        number,
+        first: result.first ?? number === 0,
+        last: result.last ?? number + 1 >= totalPages,
+        numberOfElements: result.content?.length ?? 0,
+        empty: !result.content?.length,
+    }
 }
 
 export async function getMessageAttachments(
@@ -129,5 +145,10 @@ export async function syncConversationHistory(
         },
     )
 
+    return response.json()
+}
+
+export async function getMessage(messageId: string): Promise<MessageDto> {
+    const response = await apiFetch(`/api/messages/${messageId}`)
     return response.json()
 }

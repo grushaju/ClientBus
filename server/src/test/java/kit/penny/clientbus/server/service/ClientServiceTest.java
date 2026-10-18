@@ -134,6 +134,70 @@ class ClientServiceTest {
     // =========================================================
 
     @Test
+    void createClientFromConversation_createsAndLinksAccessibleOrphan() {
+        UUID conversationId = UUID.randomUUID();
+        ConversationEntity conversation = new ConversationEntity();
+        conversation.setId(conversationId);
+        account.setClient(null);
+        conversation.setClientAccount(account);
+        CreateClientRequest request = new CreateClientRequest("Ivan", "Ivanov", List.of("+79990000000"));
+        ClientDto dto = mock(ClientDto.class);
+        when(conversationRepository.findById(conversationId)).thenReturn(Optional.of(conversation));
+        when(currentUserService.getCurrentOrganizationId()).thenReturn(organizationId);
+        when(organizationRepository.findById(organizationId)).thenReturn(Optional.of(organization));
+        when(clientMapper.toEntity(request, organization)).thenReturn(client);
+        when(clientRepository.saveAndFlush(client)).thenReturn(client);
+        when(clientMapper.toDto(client)).thenReturn(dto);
+
+        assertSame(dto, clientService.createClientFromConversation(conversationId, request));
+        assertSame(client, account.getClient());
+        var ordered = inOrder(currentUserService, clientRepository, clientAccountRepository);
+        ordered.verify(currentUserService).requireConversationAccess(conversation);
+        ordered.verify(clientRepository).saveAndFlush(client);
+        ordered.verify(clientAccountRepository).saveAndFlush(account);
+    }
+
+    @Test
+    void createClientFromConversation_rejectsAlreadyLinkedAccountBeforeCreatingClient() {
+        UUID conversationId = UUID.randomUUID();
+        ConversationEntity conversation = new ConversationEntity();
+        conversation.setClientAccount(account);
+        when(conversationRepository.findById(conversationId)).thenReturn(Optional.of(conversation));
+
+        assertThrows(IllegalStateException.class, () -> clientService.createClientFromConversation(
+                conversationId, new CreateClientRequest("Ivan", "", List.of())));
+
+        verify(currentUserService).requireConversationAccess(conversation);
+        verifyNoInteractions(organizationRepository, clientRepository, clientAccountRepository, clientMapper);
+        assertSame(client, account.getClient());
+    }
+
+    @Test
+    void createClientFromConversation_requiresConversationAccessBeforeCreatingClient() {
+        UUID conversationId = UUID.randomUUID();
+        ConversationEntity conversation = new ConversationEntity();
+        when(conversationRepository.findById(conversationId)).thenReturn(Optional.of(conversation));
+        doThrow(new AccessDeniedException("No workspace access")).when(currentUserService).requireConversationAccess(conversation);
+
+        assertThrows(AccessDeniedException.class, () -> clientService.createClientFromConversation(
+                conversationId, new CreateClientRequest("Ivan", "", List.of())));
+
+        verifyNoInteractions(organizationRepository, clientRepository, clientAccountRepository, clientMapper);
+    }
+
+    @Test
+    void createClientFromConversation_rejectsMissingAccountBeforeCreatingClient() {
+        UUID conversationId = UUID.randomUUID();
+        ConversationEntity conversation = new ConversationEntity();
+        when(conversationRepository.findById(conversationId)).thenReturn(Optional.of(conversation));
+
+        assertThrows(IllegalStateException.class, () -> clientService.createClientFromConversation(
+                conversationId, new CreateClientRequest("Ivan", "", List.of())));
+
+        verifyNoInteractions(organizationRepository, clientRepository, clientAccountRepository, clientMapper);
+    }
+
+    @Test
     void createClient_success() {
 
         CreateClientRequest request =
@@ -1053,6 +1117,9 @@ class ClientServiceTest {
         when(currentUserService.getCurrentOrganizationId())
                 .thenReturn(organizationId);
 
+        when(conversationRepository.findAllByClientAccountIdAndEmployeeIdOrderByLastMessageAtDesc(accountId, employeeId))
+                .thenReturn(List.of(new ConversationEntity()));
+
         ClientAccountDto result =
                 clientService.assignClientAccount(
                         clientId,
@@ -1069,11 +1136,23 @@ class ClientServiceTest {
         verify(clientAccountMapper)
                 .toDto(account);
 
-        verify(conversationRepository, never())
+        verify(conversationRepository)
                 .findAllByClientAccountIdAndEmployeeIdOrderByLastMessageAtDesc(
-                        any(),
-                        any()
+                        accountId,
+                        employeeId
                 );
+    }
+
+    @Test
+    void assignClientAccount_alreadyAssignedButInaccessible_denied() {
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
+        when(clientAccountRepository.findById(accountId)).thenReturn(Optional.of(account));
+        when(currentUserService.getCurrentOrganizationId()).thenReturn(organizationId);
+
+        assertThrows(AccessDeniedException.class, () -> clientService.assignClientAccount(clientId, accountId));
+
+        verifyNoInteractions(clientAccountMapper);
+        assertSame(client, account.getClient());
     }
 
     @Test

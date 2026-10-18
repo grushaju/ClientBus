@@ -33,6 +33,7 @@ interface EmployeeDetailsDialogProps {
     onUpdated: (
         employee: EmployeeDto,
         workspaceIds: string[],
+        supervisorWorkspaceIds: string[],
     ) => void
 }
 
@@ -307,6 +308,7 @@ export default function EmployeeDetailsDialog({
             onUpdated(
                 updatedEmployee,
                 selectedWorkspaceIds,
+                selectedWorkspaceIds.filter(id => supervisorIds.includes(id)),
             )
         } catch (err) {
             setError(

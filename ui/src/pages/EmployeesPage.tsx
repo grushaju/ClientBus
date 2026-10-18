@@ -32,6 +32,7 @@ import EmployeeAvatar from '../components/employees/EmployeeAvatar'
 interface EmployeeRow {
     employee: EmployeeDto
     workspaceIds: string[]
+    supervisorWorkspaceIds: string[]
 }
 
 function getEmployeeName(
@@ -126,6 +127,8 @@ function EmployeesPage() {
 
                             return {
                                 employee,
+                                supervisorWorkspaceIds: assignments.filter(assignment => assignment.isSupervisor)
+                                    .map(assignment => assignment.workspaceId),
                                 workspaceIds:
                                     assignments.map(
                                         assignment =>
@@ -212,6 +215,7 @@ function EmployeesPage() {
     function handleEmployeeUpdated(
         updatedEmployee: EmployeeDto,
         workspaceIds: string[],
+        supervisorWorkspaceIds: string[],
     ) {
         setEmployees(current =>
             current.map(row =>
@@ -222,6 +226,7 @@ function EmployeesPage() {
                         employee:
                         updatedEmployee,
                         workspaceIds,
+                        supervisorWorkspaceIds,
                     },
             ),
         )
@@ -237,6 +242,7 @@ function EmployeesPage() {
             {
                 employee,
                 workspaceIds: [],
+                supervisorWorkspaceIds: [],
             },
         ])
 
@@ -457,7 +463,8 @@ function EmployeesPage() {
                                                             key={
                                                                 workspace.id
                                                             }
-                                                            className="employee-workspace-tag"
+                                                            className={`employee-workspace-tag${row.supervisorWorkspaceIds.includes(workspace.id) ? ' employee-workspace-tag-supervisor' : ''}`}
+                                                            title={row.supervisorWorkspaceIds.includes(workspace.id) ? `${workspace.name} — Супервизор` : workspace.name}
                                                         >
                                                             {
                                                                 workspace.name

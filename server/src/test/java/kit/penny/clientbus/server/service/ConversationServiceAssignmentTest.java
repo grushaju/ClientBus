@@ -210,4 +210,58 @@ class ConversationServiceAssignmentTest {
 
         verifyNoInteractions(conversationRepository);
     }
+
+    @Test
+    void ordinaryEmployeeCanTakeFreeConversation() {
+        ConversationEntity conversation = conversation();
+        EmployeeEntity employee = employee();
+        givenConversation(conversation);
+        when(currentUserService.getCurrentEmployee()).thenReturn(employee);
+
+        service.assignmentToMe(conversationId);
+
+        assertSame(employee, conversation.getAssignedEmployee());
+        verify(currentUserService).requireWorkspaceAccess(workspaceId);
+        verify(conversationGroupMembershipRepository).deleteAllByConversation_Id(conversationId);
+    }
+
+    @Test
+    void ordinaryEmployeeCanReleaseOwnConversationAndRemoveGroupMemberships() {
+        ConversationEntity conversation = conversation();
+        EmployeeEntity employee = employee();
+        conversation.setAssignedEmployee(employee);
+        givenConversation(conversation);
+        when(currentUserService.getCurrentEmployee()).thenReturn(employee);
+
+        service.unassignmentFromMe(conversationId);
+
+        assertNull(conversation.getAssignedEmployee());
+        verify(currentUserService).requireWorkspaceAccess(workspaceId);
+        verify(conversationGroupMembershipRepository).deleteAllByConversation_Id(conversationId);
+    }
+
+    @Test
+    void ordinaryEmployeeCannotTakeOrReleaseAnotherEmployeesConversation() {
+        ConversationEntity conversation = conversation();
+        EmployeeEntity owner = employee();
+        conversation.setAssignedEmployee(owner);
+        EmployeeEntity another = employee();
+        another.setId(UUID.randomUUID());
+        givenConversation(conversation);
+        when(currentUserService.getCurrentEmployee()).thenReturn(another);
+
+        assertThrows(AccessDeniedException.class, () -> service.assignmentToMe(conversationId));
+        assertThrows(AccessDeniedException.class, () -> service.unassignmentFromMe(conversationId));
+
+        assertSame(owner, conversation.getAssignedEmployee());
+        verifyNoInteractions(conversationGroupMembershipRepository);
+    }
+
+    @Test
+    void ordinaryEmployeeCannotAdministrativelyUnassignFreeConversation() {
+        givenConversation(conversation());
+
+        assertThrows(AccessDeniedException.class, () -> service.unassignEmployee(conversationId));
+        verifyNoInteractions(conversationGroupMembershipRepository);
+    }
 }
