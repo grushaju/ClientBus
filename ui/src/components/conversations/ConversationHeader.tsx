@@ -85,11 +85,6 @@ function ConversationHeader({
         channel?.type ||
         'UNKNOWN'
 
-    const platformName =
-        clientAccount?.channelType ||
-        channel?.type ||
-        'Неизвестная платформа'
-
     const channelName =
         channel?.name ||
         'Канал не определён'
@@ -160,7 +155,7 @@ function ConversationHeader({
                     />
 
                     <div className="conversation-header-info">
-                        <h2 className="conversation-header-client-name">
+                        <h2 className="conversation-header-client-name" title={clientName}>
                             {clientName}
                         </h2>
 
@@ -171,29 +166,15 @@ function ConversationHeader({
                                     size={18}
                                 />
 
-                                <span>
-                                    {platformName}
+                                <span className="conversation-header-channel" title={channelName}>
+                                    {channelName}
                                 </span>
                             </span>
 
-                            <span className="conversation-header-separator">
-                                ·
-                            </span>
-
-                            <span className="conversation-header-channel">
-                                {channelName}
-                            </span>
-
                             {clientAccount?.username && (
-                                <>
-                                    <span className="conversation-header-separator">
-                                        ·
-                                    </span>
-
-                                    <span>
-                                        @{clientAccount.username}
-                                    </span>
-                                </>
+                                <span className="conversation-header-username" title={`@${clientAccount.username}`}>
+                                    @{clientAccount.username}
+                                </span>
                             )}
                         </div>
                     </div>

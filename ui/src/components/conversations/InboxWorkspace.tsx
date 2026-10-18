@@ -12,15 +12,17 @@ import NewConversationDialog from './NewConversationDialog'
 import ConversationListToolbar from './list/ConversationListToolbar'
 import ConversationListContent from './list/ConversationListContent'
 import { getInboxAccess } from './list/inboxAccess'
-import { normalizeSelection, selectionFromDefinition, selectionTab, type InboxAccess, type InboxSelection } from './list/inboxSelection'
+import { selectionTab, type InboxAccess, type InboxSelection } from './list/inboxSelection'
 import { useFirstConversation, useInboxSelection } from './list/useInboxSelection'
 import { useInboxConversations } from './list/useInboxConversations'
 import { useConversationGroups } from './groups/useConversationGroups'
 import ConversationFilters from './filters/ConversationFilters'
 import SavedConversationFilters from './filters/SavedConversationFilters'
+import SaveConversationFilterForm from './filters/SaveConversationFilterForm'
+
 import { useConversationFilters } from './filters/useConversationFilters'
 import { useSavedConversationFilters } from './filters/useSavedConversationFilters'
-import { buildSavedDefinition, buildSearchRequest } from './filters/conversationFilterModel'
+import { buildSavedDefinition, buildSearchRequest, criteriaFromDefinition, criteriaToApply, sameFilterCriteria, validateCriteria } from './filters/conversationFilterModel'
 import { INBOX_DRAWER_QUERY, INBOX_MOBILE_QUERY, useMediaQuery } from './inboxViewport'
 
 export default function InboxWorkspace() {
@@ -61,14 +63,23 @@ function InboxWorkspaceContent({ workspace, access, onOpenConversation, visible 
     const isDrawer = useMediaQuery(INBOX_DRAWER_QUERY)
     const drawerOpen = isDrawer && navigationOpen && visible
     const [groupActionError, setGroupActionError] = useState<string | null>(null)
-    const [showFilterConditions, setShowFilterConditions] = useState(false)
+    const [filterEditor, setFilterEditor] = useState<'create' | 'update' | null>(null)
+    const filterEditorSession = useRef(0)
+    const [filterEditorRevision, setFilterEditorRevision] = useState(0)
+    const changeFilterEditor = (editor: 'create' | 'update' | null) => {
+        filterEditorSession.current++
+        setFilterEditorRevision(filterEditorSession.current)
+        setFilterEditor(editor)
+    }
+    const [filterActionError, setFilterActionError] = useState<string | null>(null)
+    const [deletingFilter, setDeletingFilter] = useState(false)
     const navigationId = useId()
     const navigationButton = useRef<HTMLButtonElement>(null)
     const searchInput = useRef<HTMLInputElement>(null)
     const focusAfterClose = useRef<'navigation' | 'search'>('navigation')
     useEffect(() => { if (!isDrawer || !visible) setNavigationOpen(false) }, [isDrawer, visible])
-    const latest = useRef({ selection: route.selection, request: JSON.stringify(request) })
-    latest.current = { selection: route.selection, request: JSON.stringify(request) }
+    const latest = useRef({ selection: route.selection, request: JSON.stringify(request), selectedFilterId: filters.selectedId })
+    latest.current = { selection: route.selection, request: JSON.stringify(request), selectedFilterId: filters.selectedId }
     const mounted = useRef(false)
     useEffect(() => {
         mounted.current = true
@@ -84,20 +95,21 @@ function InboxWorkspaceContent({ workspace, access, onOpenConversation, visible 
     const returnNavigationFocus = useCallback(() => focusAfterClose.current === 'search'
         ? searchInput.current : navigationButton.current, [])
     const configureFilters = () => {
-        setShowFilterConditions(true)
-        focusAfterClose.current = 'search'
-        setNavigationOpen(false)
-        if (!drawerOpen) searchInput.current?.focus()
+        setNavigationOpen(true)
     }
+    const applyFilters = () => {
+        if (filters.apply()) { conversations.reload(); closeNavigation() }
+        else configureFilters()
+    }
+    const resetFilters = () => { filters.reset(); changeFilterEditor(null); conversations.reload() }
     const select = (selection: InboxSelection) => {
-        filters.clearSelection()
+        changeFilterEditor(null)
         route.select(selection)
         closeNavigation()
     }
     const selectFilter = (filter: SavedConversationFilterDto) => {
-        const selection = normalizeSelection(selectionFromDefinition(filter.filterDefinition), access)
-        if (filters.select(filter, selection)) {
-            route.select(selection)
+        changeFilterEditor(null)
+        if (filters.select(filter)) {
             closeNavigation()
         } else configureFilters()
     }
@@ -107,50 +119,90 @@ function InboxWorkspaceContent({ workspace, access, onOpenConversation, visible 
     }
     const selectedFilter = [...savedFilters.privateFilters, ...savedFilters.systemFilters]
         .find(filter => filter.id === filters.selectedId)
-    const selectedGroupId = route.selection.view === 'GROUP' ? route.selection.groupId : null
-    const title = selectedFilter?.name ?? (route.selection.view === 'GROUP'
-        ? groups.groups.find(group => group.id === selectedGroupId)?.name ?? 'Группа'
-        : { MINE: 'Мои диалоги', UNASSIGNED: 'Свободные', ALL: 'Все диалоги' }[route.selection.view])
+    const canEditFilter = selectedFilter && (selectedFilter.filterType === 'PRIVATE' || access.isSuperAdmin)
+    const deleteFilter = () => {
+        if (!selectedFilter || !window.confirm(`Удалить фильтр «${selectedFilter.name}»?`)) return
+        setDeletingFilter(true)
+        setFilterActionError(null)
+        const editorSession = filterEditorSession.current
+        void savedFilters.remove(selectedFilter).then(() => {
+            if (mounted.current) {
+                filters.clearSelection(selectedFilter.id)
+                if (latest.current.selectedFilterId === selectedFilter.id && filterEditorSession.current === editorSession) changeFilterEditor(null)
+            }
+        }).catch(err => {
+            if (mounted.current) setFilterActionError(err instanceof Error ? err.message : 'Не удалось удалить фильтр.')
+        }).finally(() => { if (mounted.current) setDeletingFilter(false) })
+    }
+    const saveFilter = async (name: string, update = false) => {
+        const criteria = criteriaToApply(filters.draft, filters.applied)
+        const error = validateCriteria(criteria)
+        if (error) throw new Error(error)
+        const revision = filters.revision
+        const editorSession = filterEditorSession.current
+        const definition = buildSavedDefinition(route.selection, criteria)
+        const saved = update && selectedFilter
+            ? await savedFilters.update(selectedFilter, name, definition)
+            : await savedFilters.save(name, definition)
+        if (mounted.current && saved && filterEditorSession.current === editorSession) {
+            filters.markSaved(saved.id, revision, criteria)
+            changeFilterEditor(null)
+        }
+    }
     const groupNotice = groupActionError && <div className="conversation-list-action-error" role="alert">
         <span>{groupActionError}</span>
         <button type="button" className="ui-button ui-button-secondary ui-button-sm" aria-label="Закрыть ошибку группы"
             onClick={() => setGroupActionError(null)}>Скрыть</button>
     </div>
 
+    const filterEditorPanel = <>
+        <SaveConversationFilterForm key={`${filterEditor}:${selectedFilter?.id ?? ''}:${filterEditorRevision}`}
+            initialName={filterEditor === 'create' ? '' : selectedFilter?.name ?? ''}
+            saveLabel={filterEditor !== 'create' && selectedFilter?.filterType === 'SYSTEM' && !access.isSuperAdmin ? 'Сохранить себе' : 'Сохранить'}
+            disabled={deletingFilter}
+            requiresChanges={filterEditor !== 'create' && !!canEditFilter}
+            conditionsChanged={!!selectedFilter && !sameFilterCriteria(filters.draft, criteriaFromDefinition(selectedFilter.filterDefinition))}
+            onDelete={filterEditor !== 'create' && canEditFilter ? deleteFilter : undefined}
+            onCancel={() => { setFilterActionError(null); changeFilterEditor(null) }}
+            onSave={name => saveFilter(name, filterEditor !== 'create' && !!canEditFilter)} />
+        {filterActionError && <div className="ui-form-error" role="alert">{filterActionError}</div>}
+    </>
     return (<>
         {drawerOpen && <button type="button" className="inbox-navigation-backdrop" data-inbox-backdrop="" aria-hidden="true" tabIndex={-1}
             onClick={closeNavigation} />}
         <InboxNavigation id={navigationId} open={drawerOpen} access={access}
-                returnFocus={returnNavigationFocus} notice={drawerOpen ? groupNotice : null} onGroupActionError={setGroupActionError}
-                selection={route.selection} groups={groups} onSelect={select}
+                returnFocus={returnNavigationFocus} notice={groupNotice} onGroupActionError={setGroupActionError}
+                groups={groups}
                 onClose={closeNavigation}
-                onConfigureFilters={configureFilters}
                 onGroupDeleted={id => {
                     if (latest.current.selection.view === 'GROUP' && latest.current.selection.groupId === id) select({ view: 'MINE' })
                 }}
                 savedFilters={(access.isEmployee || access.isSuperAdmin) && <SavedConversationFilters
                     model={savedFilters} selectedId={filters.selectedId} onSelect={selectFilter} isSuperAdmin={access.isSuperAdmin}
-                    onSave={async name => {
-                        const snapshot = latest.current.request
-                        const revision = filters.revision
-                        const created = await savedFilters.save(name, buildSavedDefinition(route.selection, filters.applied))
-                        if (mounted.current && latest.current.request === snapshot) filters.markSaved(created.id, revision)
-                    }} />} />
+                    onCreate={() => { filters.reset(); setFilterActionError(null); changeFilterEditor('create'); conversations.reload() }}
+                    />}
+                conditions={<ConversationFilters area="conditions" model={filters} channels={conversations.channels} workspaceId={workspace.id}
+                    filterName={filterEditor === 'create' ? 'Новый фильтр' : selectedFilter?.name} filterIcon={selectedFilter ? selectedFilter.filterType === 'SYSTEM' ? 'system.svg' : 'private.svg' : 'nofilter.svg'}
+                    management={filterEditorPanel}
+                    searchInputRef={searchInput}
+                    onApply={applyFilters} onReset={resetFilters} />} />
         <aside className="inbox-sidebar" aria-label="Список диалогов">
             <ConversationList
-                toolbar={<ConversationListToolbar title={title} workspaceName={workspace.name} isEmployee={access.isEmployee}
+                toolbar={<ConversationListToolbar access={access} selection={route.selection} groups={groups.groups} onSelect={select}
+                    onResetFilter={resetFilters}
+                    filterName={selectedFilter?.name ?? 'Без фильтра'}
+                    filterIcon={selectedFilter ? selectedFilter.filterType === 'SYSTEM' ? 'system.svg' : 'private.svg' : 'nofilter.svg'}
                     onNewConversation={() => setShowNewConversation(true)} navigationId={navigationId}
                     navigationButtonRef={navigationButton}
                     navigationOpen={drawerOpen} onToggleNavigation={() => {
                         focusAfterClose.current = 'navigation'
                         setNavigationOpen(value => !value)
                     }} />}
-                notice={!drawerOpen ? groupNotice : null}
-                filters={<ConversationFilters model={filters} channels={conversations.channels}
+                filters={<><ConversationFilters area="list" model={filters} channels={conversations.channels} workspaceId={workspace.id}
                     searchInputRef={searchInput}
-                    open={showFilterConditions} onToggle={() => setShowFilterConditions(value => !value)}
-                    onApply={() => { if (filters.apply()) conversations.reload(); else setShowFilterConditions(true) }}
-                    onReset={() => { filters.reset(); conversations.reload() }} />}
+                    onApply={applyFilters}
+                    onReset={resetFilters} />
+                </>}
                 content={<ConversationListContent
                     onOpenConversation={onOpenConversation}
                     loading={conversations.loading} refreshing={conversations.refreshing}

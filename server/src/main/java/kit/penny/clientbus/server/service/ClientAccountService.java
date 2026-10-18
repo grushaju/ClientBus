@@ -314,18 +314,23 @@ public class ClientAccountService {
                 .toList();
     }
 
-    /**
-     * Поиск orphan ClientAccount.
-     *
-     * SUPER_ADMIN:
-     *   видит orphan accounts текущей Organization.
-     *
-     * EMPLOYEE:
-     *   видит только orphan accounts,
-     *   имеющие Conversation в доступном Workspace.
-     *
-     * Сам ClientAccount при этом остаётся глобальной identity.
-     */
+    /** Аккаунты диалогов текущего Workspace, включая аккаунты без Client. */
+    @Transactional(readOnly = true)
+    public List<ClientAccountDto> getWorkspaceAccounts(UUID workspaceId) {
+        return getWorkspaceAccounts(workspaceId, null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ClientAccountDto> getWorkspaceAccounts(UUID workspaceId, List<UUID> channelAccountIds) {
+        currentUserService.requireWorkspaceAccess(workspaceId);
+        var accounts = channelAccountIds == null || channelAccountIds.isEmpty()
+                ? clientAccountRepository.findAllByWorkspaceId(workspaceId)
+                : clientAccountRepository.findAllByWorkspaceIdAndChannelAccountIds(workspaceId, channelAccountIds);
+        return accounts.stream()
+                .map(clientAccountMapper::toDto).toList();
+    }
+
+    /** Поиск аккаунтов без Client в пределах доступных пользователю Workspace. */
     @Transactional(readOnly = true)
     public List<ClientAccountDto> searchUnassignedAccounts(
             String query

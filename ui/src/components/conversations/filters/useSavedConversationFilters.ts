@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { createSavedConversationFilter, getSavedConversationFilters } from '../../../api/savedConversationFilterApi'
+import { createSavedConversationFilter, getSavedConversationFilters, updateSavedConversationFilter, deleteSavedConversationFilter } from '../../../api/savedConversationFilterApi'
 import type { SavedConversationFilterDto, SavedFilterType } from '../../../api/types/savedConversationFilter'
 import type { ConversationSearchRequest } from '../../../api/types/conversation'
 import type { InboxAccess } from '../list/inboxSelection'
@@ -12,11 +12,18 @@ export function useSavedConversationFilters(workspaceId: string, access: InboxAc
     const [version, setVersion] = useState(0)
     const mounted = useRef(false)
     const loadingChanges = useRef<Map<string, SavedConversationFilterDto> | null>(null)
+    const deletedIds = useRef(new Set<string>())
     useEffect(() => {
         mounted.current = true
         return () => { mounted.current = false }
     }, [])
     const { isEmployee, isSuperAdmin, employeeId } = access
+    const publish = (filter: SavedConversationFilterDto) => {
+        if (!mounted.current || deletedIds.current.has(filter.id)) return
+        loadingChanges.current?.set(filter.id, filter)
+        const update = filter.filterType === 'SYSTEM' ? setSystemFilters : setPrivateFilters
+        update(current => [...current.filter(item => item.id !== filter.id), filter])
+    }
     useEffect(() => {
         if (!isEmployee && !isSuperAdmin) return
         let active = true
@@ -34,6 +41,7 @@ export function useSavedConversationFilters(workspaceId: string, access: InboxAc
                 for (const filter of changes.values()) {
                     if (filter.filterType === type) merged.set(filter.id, filter)
                 }
+                for (const id of deletedIds.current) merged.delete(id)
                 const update = type === 'SYSTEM' ? setSystemFilters : setPrivateFilters
                 update([...merged.values()])
             } catch (err) {
@@ -58,16 +66,32 @@ export function useSavedConversationFilters(workspaceId: string, access: InboxAc
     return {
         systemFilters, privateFilters, error, loading,
         reload: () => setVersion(current => current + 1),
+        update: async (filter: SavedConversationFilterDto, name: string, definition: ConversationSearchRequest) => {
+            if (filter.filterType === 'SYSTEM' && !isSuperAdmin) throw new Error('Системный фильтр можно сохранить только как личную копию.')
+            const updated = await updateSavedConversationFilter(workspaceId, filter.id, {
+                name, filterType: filter.filterType, filterDefinition: definition,
+            })
+            if (deletedIds.current.has(filter.id)) return null
+            publish(updated)
+            return updated
+        },
+        remove: async (filter: SavedConversationFilterDto) => {
+            if (filter.filterType === 'SYSTEM' && !isSuperAdmin) throw new Error('Недостаточно прав для удаления системного фильтра.')
+            await deleteSavedConversationFilter(workspaceId, filter.id)
+            if (mounted.current) {
+                deletedIds.current.add(filter.id)
+                loadingChanges.current?.delete(filter.id)
+                const update = filter.filterType === 'SYSTEM' ? setSystemFilters : setPrivateFilters
+                update(current => current.filter(item => item.id !== filter.id))
+                setVersion(current => current + 1)
+            }
+        },
         save: async (name: string, definition: ConversationSearchRequest) => {
             if (!isEmployee && !isSuperAdmin) throw new Error('Недостаточно прав для создания фильтра.')
             const created = await createSavedConversationFilter(workspaceId, {
                 name, filterType: isSuperAdmin ? 'SYSTEM' : 'PRIVATE', filterDefinition: definition,
             })
-            if (mounted.current) {
-                loadingChanges.current?.set(created.id, created)
-                const update = created.filterType === 'SYSTEM' ? setSystemFilters : setPrivateFilters
-                update(current => [...current.filter(filter => filter.id !== created.id), created])
-            }
+            publish(created)
             return created
         },
     }

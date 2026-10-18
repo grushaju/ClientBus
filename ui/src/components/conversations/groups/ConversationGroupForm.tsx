@@ -35,14 +35,14 @@ export default function ConversationGroupForm({ initialName = '', initialIcon = 
 
     return (
         <form className="conversation-list-group-form" onSubmit={event => { event.preventDefault(); void submit() }}>
-            <input className="ui-input" type="text" value={name}
+            <div className="conversation-group-name-row"><input className="ui-input" type="text" value={name}
                 onChange={event => { setName(event.target.value); setError(null) }}
                 placeholder="Название группы" maxLength={100} autoFocus disabled={saving} />
-            <GroupIconSelect value={icon} onChange={setIcon} disabled={saving} />
-            <button type="submit" className="ui-button ui-button-primary" disabled={saving || !name.trim()}>
-                {saving ? (editing ? 'Сохранение…' : 'Создание…') : (editing ? 'Сохранить' : 'Создать')}
+            <GroupIconSelect value={icon} onChange={setIcon} disabled={saving} /></div>
+            <div className="conversation-list-group-actions"><button type="submit" className="ui-button ui-button-primary" disabled={saving || !name.trim()}>
+                {saving ? (editing ? 'Сохранение…' : 'Создание…') : 'Сохранить'}
             </button>
-            {editing && <button type="button" className="ui-button ui-button-secondary" disabled={saving} onClick={onCancel}>Отмена</button>}
+            <button type="button" className="ui-button ui-button-secondary" disabled={saving} onClick={onCancel}>Отмена</button></div>
             {error && <div className="ui-form-error">{error}</div>}
         </form>
     )

@@ -13,6 +13,22 @@ import java.util.UUID;
 public interface ClientAccountRepository
         extends JpaRepository<ClientAccountEntity, UUID> {
 
+    @Query("""
+        SELECT DISTINCT a FROM ClientAccountEntity a
+        JOIN ConversationEntity c ON c.clientAccount.id = a.id
+        WHERE c.workspace.id = :workspaceId
+        """)
+    List<ClientAccountEntity> findAllByWorkspaceId(@Param("workspaceId") UUID workspaceId);
+
+    @Query("""
+        SELECT DISTINCT a FROM ClientAccountEntity a
+        JOIN ConversationEntity c ON c.clientAccount.id = a.id
+        WHERE c.workspace.id = :workspaceId AND c.channelAccount.id IN :channelAccountIds
+        """)
+    List<ClientAccountEntity> findAllByWorkspaceIdAndChannelAccountIds(
+            @Param("workspaceId") UUID workspaceId,
+            @Param("channelAccountIds") List<UUID> channelAccountIds);
+
     List<ClientAccountEntity> findAllByClientId(
             UUID clientId
     );

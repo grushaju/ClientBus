@@ -6,41 +6,26 @@ import { appliedCriteriaFromDefinition, createEmptyCriteria, criteriaFromDefinit
 interface FilterState {
     revision: number
     selectionKey: string
-    pendingSelectionKey: string | null
     draft: ConversationFilterDraft
     applied: ConversationFilterDraft
     selectedId: string | null
     error: string | null
 }
 
-function withoutHiddenAccounts(criteria: ConversationFilterDraft): ConversationFilterDraft {
-    return criteria.clientAccountIds.length ? { ...criteria, clientAccountIds: [] } : criteria
-}
-
-function clearSelection(state: FilterState): FilterState {
-    return {
-        ...state, revision: state.revision + 1, selectedId: null, pendingSelectionKey: null, error: null,
-        draft: withoutHiddenAccounts(state.draft),
-        applied: withoutHiddenAccounts(state.applied),
-    }
-}
-
 function syncSelection(state: FilterState, selectionKey: string): FilterState {
     if (state.selectionKey === selectionKey) return state
-    // Applying a saved filter intentionally changes both representation and
-    // criteria. Every other URL change, including POP, leaves the saved view.
-    const next = state.pendingSelectionKey === selectionKey ? state : clearSelection(state)
-    return { ...next, selectionKey, pendingSelectionKey: null }
+    // Scope navigation preserves the filter and both applied and draft conditions.
+    // Invalidate pending saves so a late response cannot override a newer choice.
+    return { ...state, selectionKey, revision: state.revision + 1 }
 }
 
 export function useConversationFilters(selection: InboxSelection) {
     const selectionKey = JSON.stringify(selection)
     const [state, setState] = useState<FilterState>(() => ({
-        revision: 0, selectionKey, pendingSelectionKey: null,
+        revision: 0, selectionKey,
         draft: createEmptyCriteria(), applied: createEmptyCriteria(), selectedId: null, error: null,
     }))
-    // Derive the correct criteria in the very first render of a changed URL,
-    // before useInboxConversations can issue a request with old restrictions.
+    // Derive the current revision immediately when URL scope changes.
     const current = syncSelection(state, selectionKey)
     useEffect(() => {
         setState(previous => syncSelection(previous, selectionKey))
@@ -50,6 +35,11 @@ export function useConversationFilters(selection: InboxSelection) {
         draft: current.draft,
         applied: current.applied,
         selectedId: current.selectedId,
+        setSort: (sort: ConversationFilterDraft['sort']) => setState(previous => {
+            const next = syncSelection(previous, selectionKey)
+            return { ...next, revision: next.revision + 1,
+                draft: { ...next.draft, sort }, applied: { ...next.applied, sort } }
+        }),
         revision: current.revision,
         error: current.error,
         setDraft: (update: SetStateAction<ConversationFilterDraft>) => {
@@ -58,9 +48,14 @@ export function useConversationFilters(selection: InboxSelection) {
                 return { ...next, revision: next.revision + 1, draft: typeof update === 'function' ? update(next.draft) : update, error: null }
             })
         },
-        markSaved: (id: string, expectedRevision: number) => setState(previous => previous.revision === expectedRevision
-            ? { ...previous, revision: previous.revision + 1, selectedId: id } : previous),
-        clearSelection: () => setState(previous => clearSelection(syncSelection(previous, selectionKey))),
+        markSaved: (id: string, expectedRevision: number, criteria?: ConversationFilterDraft) => setState(previous => previous.revision === expectedRevision
+            ? { ...previous, revision: previous.revision + 1, selectedId: id,
+                ...(criteria ? { applied: criteria } : {}) } : previous),
+        clearSelection: (expectedId?: string) => setState(previous => {
+            const next = syncSelection(previous, selectionKey)
+            return expectedId !== undefined && next.selectedId !== expectedId ? next
+                : { ...next, revision: next.revision + 1, selectedId: null, error: null }
+        }),
         apply: () => {
             const error = validateCriteria(criteriaToApply(current.draft, current.applied))
             if (error) {
@@ -72,15 +67,15 @@ export function useConversationFilters(selection: InboxSelection) {
             }
             setState(previous => {
                 const next = syncSelection(previous, selectionKey)
-                return { ...next, revision: next.revision + 1, applied: criteriaToApply(next.draft, next.applied), selectedId: null, error: null }
+                return { ...next, revision: next.revision + 1, applied: criteriaToApply(next.draft, next.applied), error: null }
             })
             return true
         },
         reset: () => setState(previous => ({
-            revision: previous.revision + 1, selectionKey, pendingSelectionKey: null,
+            revision: previous.revision + 1, selectionKey,
             draft: createEmptyCriteria(), applied: createEmptyCriteria(), selectedId: null, error: null,
         })),
-        select: (filter: SavedConversationFilterDto, target: InboxSelection) => {
+        select: (filter: SavedConversationFilterDto) => {
             const criteria = criteriaFromDefinition(filter.filterDefinition)
             const applied = appliedCriteriaFromDefinition(filter.filterDefinition)
             const error = validateCriteria(applied)
@@ -92,7 +87,7 @@ export function useConversationFilters(selection: InboxSelection) {
                 return false
             }
             setState(previous => ({
-                revision: previous.revision + 1, selectionKey, pendingSelectionKey: JSON.stringify(target),
+                revision: previous.revision + 1, selectionKey,
                 draft: criteria, applied, selectedId: filter.id, error: null,
             }))
             return true

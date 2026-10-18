@@ -77,15 +77,15 @@
 }
 
 .ui-button-danger {
-    border-color: var(--ui-color-danger);
+    border-color: var(--ui-color-danger-border);
 
-    background: var(--ui-color-danger);
-    color: #ffffff;
+    background: var(--ui-color-background);
+    color: var(--ui-color-danger);
 }
 
 .ui-button-danger:hover:not(:disabled) {
-    border-color: var(--ui-color-danger-hover);
-    background: var(--ui-color-danger-hover);
+    border-color: var(--ui-color-danger-border);
+    background: var(--ui-color-danger-background);
 }
 
 .ui-button-danger-filled {

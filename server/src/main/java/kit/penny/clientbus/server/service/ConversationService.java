@@ -689,6 +689,8 @@ public class ConversationService {
                         ? Set.of()
                         : Set.copyOf(request.channelAccountIds());
 
+        Set<UUID> clientIds = request.clientIds() == null ? Set.of() : Set.copyOf(request.clientIds());
+
         Set<UUID> clientAccountIds =
                 request.clientAccountIds() == null
                         ? Set.of()
@@ -726,6 +728,10 @@ public class ConversationService {
                         || channelAccountIds.contains(
                         c.getChannelAccount().getId()
                 ))
+
+                .filter(c -> clientIds.isEmpty()
+                        || (c.getClientAccount().getClient() != null
+                        && clientIds.contains(c.getClientAccount().getClient().getId())))
 
                 // Фильтр по аккаунтам клиента.
                 .filter(c -> clientAccountIds.isEmpty()

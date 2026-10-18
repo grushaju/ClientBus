@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test:inbox": "node --test tests/inbox.test.cjs tests/inbox.react.test.cjs"
+    "test:inbox": "node --test tests/inbox.test.cjs tests/inbox.react.test.cjs",
+    "test:employees": "node --test tests/employeeDetails.react.test.cjs"
   },
   "dependencies": {
     "react": "^18.3.1",

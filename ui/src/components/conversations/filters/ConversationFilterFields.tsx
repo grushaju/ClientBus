@@ -2,57 +2,20 @@ import type { Dispatch, SetStateAction } from 'react'
 import type { ChannelDto } from '../../../api/types/channel'
 import type { ConversationFilterDraft } from './conversationFilterModel'
 import { toLocalDateInput } from './filterDates'
+import ConversationClientFields from './ConversationClientFields'
+import ConversationChannelFields from './ConversationChannelFields'
 
 interface Props {
     filterDraft: ConversationFilterDraft
     setFilterDraft: Dispatch<SetStateAction<ConversationFilterDraft>>
     channels: ChannelDto[]
+    workspaceId: string
 }
 
-export default function ConversationFilterFields({ filterDraft, setFilterDraft, channels }: Props) {
+export default function ConversationFilterFields({ filterDraft, setFilterDraft, channels, workspaceId }: Props) {
     return (
         <div className="conversation-filter-conditions">
-            <label>
-                Каналы
-                <select
-                    className="ui-input"
-                    multiple
-                    value={filterDraft.channelAccountIds}
-                    onChange={event =>
-                        setFilterDraft(current => ({
-                            ...current,
-                            channelAccountIds: Array.from(
-                                event.target.selectedOptions,
-                                option => option.value,
-                            ),
-                        }))
-                    }
-                    aria-label="Каналы"
-                >
-                    {[
-                        ...new Map(
-                            channels
-                                .filter(channel => channel.account)
-                                .map(channel => [
-                                    channel.account!.id,
-                                    {
-                                        id: channel.account!.id,
-                                        name:
-                                            channel.name ||
-                                            channel.account!.displayName ||
-                                            channel.account!.username ||
-                                            channel.account!.id,
-                                    },
-                                ]),
-                        ).values(),
-                    ].map(channel => (
-                        <option key={channel.id} value={channel.id}>
-                            {channel.name}
-                        </option>
-                    ))}
-                </select>
-                <small>Для выбора нескольких каналов используйте Ctrl или Cmd.</small>
-            </label>
+            <ConversationChannelFields draft={filterDraft} setDraft={setFilterDraft} channels={channels} />
 
             <label>
                 Связь с клиентом
@@ -63,6 +26,8 @@ export default function ConversationFilterFields({ filterDraft, setFilterDraft, 
                     onChange={event =>
                         setFilterDraft(current => ({
                             ...current,
+                            clientIds: event.target.value === 'WITHOUT_CLIENT' ? [] : current.clientIds,
+                            clientAccountIds: [],
                             clientLink: event.target.value as
                                 ConversationFilterDraft['clientLink'],
                         }))
@@ -126,8 +91,9 @@ export default function ConversationFilterFields({ filterDraft, setFilterDraft, 
                 </label>
             </div>
 
+            <ConversationClientFields draft={filterDraft} setDraft={setFilterDraft} workspaceId={workspaceId} />
             {filterDraft.clientAccountIds.length > 0 && <div className="conversation-filter-account-restriction">
-                <small>Аккаунтов из сохранённого фильтра: {filterDraft.clientAccountIds.length}</small>
+                <small>Выбрано аккаунтов: {filterDraft.clientAccountIds.length}</small>
                 <button type="button" className="ui-button ui-button-secondary"
                     onClick={() => setFilterDraft(current => ({ ...current, clientAccountIds: [] }))}>
                     Снять ограничение по аккаунтам

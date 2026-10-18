@@ -5,7 +5,9 @@ import {
 
 import {
     assignEmployeeWorkspace,
+    getEmployeeWorkspaces,
     removeEmployeeWorkspace,
+    setEmployeeWorkspaceSupervisor,
 } from '../../api/employeeWorkspaceApi'
 
 import {
@@ -16,6 +18,7 @@ import {
 
 import type {
     EmployeeDto,
+    EmployeeWorkspaceDto,
     WorkspaceDto,
 } from '../../auth/types'
 
@@ -96,6 +99,26 @@ export default function EmployeeDetailsDialog({
     ] = useState<string[]>(
         workspaceIds,
     )
+    const [memberships, setMemberships] = useState<EmployeeWorkspaceDto[]>([])
+    const [supervisorIds, setSupervisorIds] = useState<string[]>([])
+    const [loadingMemberships, setLoadingMemberships] = useState(true)
+    const [membershipError, setMembershipError] = useState<string | null>(null)
+    const [membershipReload, setMembershipReload] = useState(0)
+
+    useEffect(() => {
+        let cancelled = false
+        setLoadingMemberships(true)
+        setMembershipError(null)
+        void getEmployeeWorkspaces(employee.id).then(items => {
+            if (cancelled) return
+            setMemberships(items)
+            setSelectedWorkspaceIds(items.map(item => item.workspaceId))
+            setSupervisorIds(items.filter(item => item.isSupervisor).map(item => item.workspaceId))
+        }).catch(err => {
+            if (!cancelled) setMembershipError(err instanceof Error ? err.message : 'Не удалось загрузить роли в рабочих пространствах')
+        }).finally(() => { if (!cancelled) setLoadingMemberships(false) })
+        return () => { cancelled = true }
+    }, [employee.id, membershipReload])
 
     const [
         enabled,
@@ -174,6 +197,7 @@ export default function EmployeeDetailsDialog({
     }
 
     async function handleSave() {
+        if (saving || loadingMemberships || membershipError) return
         setSaving(true)
         setError(null)
 
@@ -240,7 +264,7 @@ export default function EmployeeDetailsDialog({
             }
 
             const originalIds =
-                new Set(workspaceIds)
+                new Set(memberships.map(item => item.workspaceId))
 
             const nextIds =
                 new Set(
@@ -255,7 +279,8 @@ export default function EmployeeDetailsDialog({
                         ) !==
                         nextIds.has(
                             workspace.id,
-                        ),
+                        ) || (nextIds.has(workspace.id) &&
+                            !!memberships.find(item => item.workspaceId === workspace.id)?.isSupervisor !== supervisorIds.includes(workspace.id)),
                 )
 
             for (const workspace of
@@ -265,15 +290,17 @@ export default function EmployeeDetailsDialog({
                         workspace.id,
                     )
                 ) {
-                    await assignEmployeeWorkspace(
-                        employee.id,
-                        workspace.id,
-                    )
+                    const isSupervisor = supervisorIds.includes(workspace.id)
+                    const saved = originalIds.has(workspace.id)
+                        ? await setEmployeeWorkspaceSupervisor(employee.id, workspace.id, isSupervisor)
+                        : await assignEmployeeWorkspace(employee.id, workspace.id, isSupervisor)
+                    setMemberships(current => [...current.filter(item => item.workspaceId !== workspace.id), saved])
                 } else {
                     await removeEmployeeWorkspace(
                         employee.id,
                         workspace.id,
                     )
+                    setMemberships(current => current.filter(item => item.workspaceId !== workspace.id))
                 }
             }
 
@@ -489,7 +516,7 @@ export default function EmployeeDetailsDialog({
                                             )
 
                                         return (
-                                            <label
+                                            <div
                                                 key={
                                                     workspace.id
                                                 }
@@ -499,7 +526,7 @@ export default function EmployeeDetailsDialog({
                                                         : ''
                                                 }`}
                                             >
-                                                <input
+                                                <label className="employee-details-workspace-membership"><input
                                                     type="checkbox"
                                                     checked={
                                                         assigned
@@ -510,7 +537,7 @@ export default function EmployeeDetailsDialog({
                                                         )
                                                     }
                                                     disabled={
-                                                        saving
+                                                        saving || loadingMemberships || !!membershipError
                                                     }
                                                 />
 
@@ -518,13 +545,25 @@ export default function EmployeeDetailsDialog({
                                                     {
                                                         workspace.name
                                                     }
-                                                </span>
-                                            </label>
+                                                </span></label>
+                                                <label className="employee-details-supervisor">
+                                                    <input type="checkbox" checked={assigned && supervisorIds.includes(workspace.id)}
+                                                        disabled={saving || loadingMemberships || !!membershipError || !assigned}
+                                                        aria-label={`Супервизор: ${workspace.name}`}
+                                                        onChange={event => setSupervisorIds(current => event.target.checked
+                                                            ? [...current, workspace.id] : current.filter(id => id !== workspace.id))} />
+                                                    <span>Супервизор</span>
+                                                </label>
+                                            </div>
                                         )
                                     },
                                 )}
                             </div>
                         )}
+                        {loadingMemberships && <div className="employee-no-workspaces">Загрузка ролей…</div>}
+                        {membershipError && <div className="employee-details-error" role="alert">{membershipError}
+                            <button type="button" className="ui-button ui-button-secondary ui-button-sm" onClick={() => setMembershipReload(current => current + 1)}>Повторить</button>
+                        </div>}
                     </div>
 
                     {error && (
@@ -550,7 +589,7 @@ export default function EmployeeDetailsDialog({
                         onClick={
                             handleSave
                         }
-                        disabled={saving}
+                        disabled={saving || loadingMemberships || !!membershipError}
                     >
                         {saving
                             ? 'Сохранение…'

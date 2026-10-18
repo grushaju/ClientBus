@@ -18,7 +18,8 @@ export default function ConversationViewTabs({ access, tab, onSelect }: {
                             onSelect('mine')
                         }
                     >
-                        Мои диалоги
+                        <img src="/assets/group/my.svg" alt="" aria-hidden="true" />
+                        Мои
                     </button>
                 )}
 
@@ -34,7 +35,8 @@ export default function ConversationViewTabs({ access, tab, onSelect }: {
                         onSelect('unassigned')
                     }
                 >
-                    Свободные
+                    <img src="/assets/group/free.svg" alt="" aria-hidden="true" />
+                    Другие
                 </button>
 
                 {canViewAll && (
@@ -48,6 +50,7 @@ export default function ConversationViewTabs({ access, tab, onSelect }: {
                             onSelect('all')
                         }
                     >
+                        <img src="/assets/group/all.svg" alt="" aria-hidden="true" />
                         Все
                     </button>
                 )}

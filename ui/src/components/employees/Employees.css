@@ -336,6 +336,29 @@
     text-overflow: ellipsis;
 }
 
+.employee-details-workspace-membership {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+    cursor: pointer;
+}
+
+.employee-details-supervisor {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    flex-shrink: 0;
+    cursor: pointer;
+}
+
+.employee-details-supervisor:has(input:disabled) {
+    opacity: 0.5;
+    cursor: default;
+}
+
 .employee-no-workspaces {
     padding: 10px 0;
 

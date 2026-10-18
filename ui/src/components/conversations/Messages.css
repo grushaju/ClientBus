@@ -13,6 +13,7 @@
 
 .conversation-header-main {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
 
@@ -21,8 +22,16 @@
     min-width: 0;
 }
 
+.conversation-header-actions .conversation-action-button {
+    width: 120px;
+    min-width: 120px;
+    flex: 0 0 120px;
+    justify-content: center;
+}
+
 .conversation-header-client {
     display: flex;
+    flex: 1 1 220px;
     align-items: center;
 
     min-width: 0;
@@ -51,6 +60,7 @@
 
 .conversation-header-info {
     min-width: 0;
+    flex: 1;
 }
 
 .conversation-header-client-name {
@@ -72,11 +82,12 @@
 
 .conversation-header-meta {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
 
     min-width: 0;
 
-    gap: 8px;
+    gap: 3px 10px;
 
     color: var(--ui-color-text-muted);
 
@@ -91,10 +102,17 @@
     gap: 5px;
 
     min-width: 0;
+    max-width: 100%;
 }
 
-.conversation-header-channel {
+.conversation-header-platform .platform-icon {
+    flex: 0 0 18px;
+}
+
+.conversation-header-channel,
+.conversation-header-username {
     min-width: 0;
+    max-width: 100%;
 
     overflow: hidden;
 
@@ -102,12 +120,9 @@
     text-overflow: ellipsis;
 }
 
-.conversation-header-separator {
-    color: var(--ui-color-border);
-}
-
 .conversation-header-actions {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
 
     flex-shrink: 0;
@@ -130,8 +145,9 @@
 }
 
 .conversation-assignment-select {
-    min-width: 170px;
-    max-width: 240px;
+    width: 187px;
+    min-width: 187px;
+    max-width: 187px;
 }
 
 .conversation-assignment-status {
@@ -580,8 +596,9 @@
 
 .employee-assignment-picker {
     position: relative;
-    min-width: 170px;
-    max-width: 240px;
+    width: 187px;
+    min-width: 187px;
+    max-width: 187px;
 }
 
 .employee-assignment-trigger {
@@ -707,6 +724,10 @@
 }
 
 @media (max-width: 760px) {
+    .conversation-header-client {
+        flex: 0 0 auto;
+    }
+
     .conversation-header-main {
         flex-direction: column;
         align-items: stretch;
@@ -815,4 +836,24 @@
         left: 0;
         bottom: calc(100% + 6px);
     }
+}
+
+/* Keep account information and assignment actions on the same header row. */
+@media (min-width: 761px) {
+    .conversation-header-main { flex-wrap: nowrap; align-items: center; gap: 12px; }
+    .conversation-header-client { flex: 1 1 0; }
+    .conversation-header-actions { flex: 0 1 auto; min-width: 0; max-width: 65%; justify-content: flex-end; align-items: center; }
+    .conversation-header-actions .conversation-assignment { min-width: 0; flex-wrap: wrap; justify-content: flex-end; }
+    .conversation-header-actions .employee-assignment-picker { width: 187px; min-width: 187px; max-width: 187px; flex: 0 0 187px; }
+}
+.conversation-header-actions .employee-assignment-picker {
+    width: 187px;
+    min-width: 187px;
+    max-width: 187px;
+    flex: 0 0 187px;
+}
+.employee-assignment-trigger,
+.employee-assignment-menu {
+    width: 100%;
+    box-sizing: border-box;
 }

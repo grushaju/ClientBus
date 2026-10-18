@@ -38,6 +38,39 @@ class ClientAccountServiceTest {
     private ClientAccountService clientAccountService;
 
     @Test
+    void workspaceAccounts_requiresWorkspaceAccessBeforeReadingAccounts() {
+        UUID workspaceId = UUID.randomUUID();
+        when(clientAccountRepository.findAllByWorkspaceId(workspaceId)).thenReturn(java.util.List.of());
+        assertTrue(clientAccountService.getWorkspaceAccounts(workspaceId).isEmpty());
+        var order = inOrder(currentUserService, clientAccountRepository);
+        order.verify(currentUserService).requireWorkspaceAccess(workspaceId);
+        order.verify(clientAccountRepository).findAllByWorkspaceId(workspaceId);
+    }
+
+    @Test
+    void workspaceAccounts_filtersBySpecificChannelAccounts() {
+        UUID workspaceId = UUID.randomUUID();
+        var channelIds = java.util.List.of(UUID.randomUUID(), UUID.randomUUID());
+        when(clientAccountRepository.findAllByWorkspaceIdAndChannelAccountIds(workspaceId, channelIds))
+                .thenReturn(java.util.List.of());
+        assertTrue(clientAccountService.getWorkspaceAccounts(workspaceId, channelIds).isEmpty());
+        var order = inOrder(currentUserService, clientAccountRepository);
+        order.verify(currentUserService).requireWorkspaceAccess(workspaceId);
+        order.verify(clientAccountRepository).findAllByWorkspaceIdAndChannelAccountIds(workspaceId, channelIds);
+        verify(clientAccountRepository, never()).findAllByWorkspaceId(any());
+    }
+
+    @Test
+    void workspaceAccounts_doesNotReadAnInaccessibleWorkspace() {
+        UUID workspaceId = UUID.randomUUID();
+        doThrow(new org.springframework.security.access.AccessDeniedException("Forbidden"))
+                .when(currentUserService).requireWorkspaceAccess(workspaceId);
+        assertThrows(org.springframework.security.access.AccessDeniedException.class,
+                () -> clientAccountService.getWorkspaceAccounts(workspaceId));
+        verifyNoInteractions(clientAccountRepository);
+    }
+
+    @Test
     void getOrCreateForInbound_shouldCreateAccountWithTelegramProfile() {
 
         String externalId = "123456789";

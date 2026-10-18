@@ -207,9 +207,9 @@ class SavedConversationFilterServiceTest {
         Instant to = Instant.parse("2026-10-17T20:59:59.999999Z");
         ConversationSearchRequest definition = new ConversationSearchRequest(
                 ConversationView.MINE, null, "alice", List.of(UUID.randomUUID()),
-                List.of(UUID.randomUUID()), ConversationClientLinkFilter.WITHOUT_CLIENT,
+                List.of(UUID.randomUUID()), ConversationClientLinkFilter.WITH_CLIENT,
                 ConversationUnreadFilter.HAS_UNREAD, from, to,
-                ConversationSort.LAST_MESSAGE_ASC, null, null
+                ConversationSort.LAST_MESSAGE_ASC, null, null, List.of(UUID.randomUUID())
         );
         when(workspaceRepository.findById(workspaceId)).thenReturn(Optional.of(workspace));
         when(currentUserService.getCurrentEmployeeId()).thenReturn(employeeId);

@@ -30,6 +30,7 @@ function AppLayout({
         currentOrganization,
         isSuperAdmin,
         isEmployee,
+        employeeWorkspaces,
     } = useAuth()
 
     const {
@@ -55,7 +56,9 @@ function AppLayout({
         isSuperAdmin
             ? 'Администратор'
             : isEmployee
-                ? 'Сотрудник'
+                ? employeeWorkspaces.some(membership => membership.workspaceId === currentWorkspace?.id && membership.isSupervisor)
+                    ? 'Супервизор'
+                    : 'Сотрудник'
                 : ''
 
     const [workspaceMenuOpen, setWorkspaceMenuOpen]
@@ -152,7 +155,7 @@ function AppLayout({
                             </span>
 
                             {roleLabel && (
-                                <span className="app-user-role">
+                            <span className={`app-user-role${isSuperAdmin ? ' app-user-role-admin' : roleLabel === 'Супервизор' ? ' app-user-role-supervisor' : ''}`}>
                                     {roleLabel}
                                 </span>
                             )}

@@ -315,13 +315,37 @@
     accent-color: #111827;
 }
 
-.workspace-employee-picker-item > span {
+.workspace-employee-picker-member > span {
     min-width: 0;
 
     display: flex;
     flex-direction: column;
 
     gap: 2px;
+}
+
+.workspace-employee-picker-member {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    flex: 1;
+    cursor: pointer;
+}
+
+.workspace-employee-picker-supervisor {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    margin-left: auto;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.workspace-employee-picker-supervisor:has(input:disabled) {
+    opacity: 0.5;
+    cursor: default;
 }
 
 .workspace-employee-picker-item strong {

@@ -61,6 +61,7 @@ export function WorkspaceEmployeesDialog({
 
     const [selectedIds, setSelectedIds] =
         useState<string[]>([])
+    const [supervisorIds, setSupervisorIds] = useState<string[]>([])
 
     const [search, setSearch] =
         useState('')
@@ -81,6 +82,7 @@ export function WorkspaceEmployeesDialog({
 
         setSearch('')
         setSelectedIds([])
+        setSupervisorIds([])
         setError(null)
 
         setLoading(true)
@@ -219,6 +221,7 @@ export function WorkspaceEmployeesDialog({
                         assignEmployeeWorkspace(
                             employeeId,
                             workspaceId,
+                            supervisorIds.includes(employeeId),
                         ),
                 ),
             )
@@ -319,7 +322,7 @@ export function WorkspaceEmployeesDialog({
                                         )
 
                                     return (
-                                        <label
+                                        <div
                                             key={
                                                 employee.id
                                             }
@@ -329,7 +332,7 @@ export function WorkspaceEmployeesDialog({
                                                     : ''
                                             }`}
                                         >
-                                            <input
+                                            <label className="workspace-employee-picker-member"><input
                                                 type="checkbox"
                                                 checked={
                                                     selected
@@ -363,8 +366,15 @@ export function WorkspaceEmployeesDialog({
                                                         employee.email
                                                     }
                                                 </small>
-                                            </span>
-                                        </label>
+                                            </span></label>
+                                            <label className="workspace-employee-picker-supervisor">
+                                                <input type="checkbox" checked={selected && supervisorIds.includes(employee.id)}
+                                                    disabled={saving || !selected} aria-label={`Супервизор: ${getEmployeeName(employee)}`}
+                                                    onChange={event => setSupervisorIds(current => event.target.checked
+                                                        ? [...current, employee.id] : current.filter(id => id !== employee.id))} />
+                                                <span>Супервизор</span>
+                                            </label>
+                                        </div>
                                     )
                                 },
                             )}

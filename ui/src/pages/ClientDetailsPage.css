@@ -262,7 +262,7 @@
     gap: var(--ui-space-2);
 }
 
-.client-details-actions button {
+.client-details-actions button:not(.ui-button) {
     min-height: var(--ui-control-height);
 
     display: inline-flex;
@@ -286,22 +286,11 @@
     transition: var(--ui-transition-fast);
 }
 
-.client-details-actions button:hover {
+.client-details-actions button:not(.ui-button):hover {
     background: var(--ui-color-background-muted);
     border-color: var(--ui-color-border-focus);
 }
 
-.client-details-actions .client-danger-button {
-    border-color: var(--ui-color-danger-border);
-
-    background: var(--ui-color-background);
-    color: var(--ui-color-danger);
-}
-
-.client-details-actions .client-danger-button:hover {
-    border-color: var(--ui-color-danger-border);
-    background: var(--ui-color-danger-background);
-}
 
 
 /* =========================================================

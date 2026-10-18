@@ -3,8 +3,8 @@
    ========================================================= */
 
 .sidebar {
-    width: 220px;
-    min-width: 220px;
+    width: 146.667px;
+    min-width: 146.667px;
     min-height: 100vh;
 
     display: flex;
@@ -113,8 +113,8 @@
 
 @media (max-width: 900px) {
     .sidebar {
-        width: 180px;
-        min-width: 180px;
+        width: 120px;
+        min-width: 120px;
     }
 
     .sidebar-nav {

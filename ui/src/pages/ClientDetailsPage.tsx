@@ -488,7 +488,7 @@ function ClientDetailsPage() {
 
                     <button
                         type="button"
-                        className="client-danger-button"
+                        className="ui-button ui-button-danger"
                         onClick={
                             handleDelete
                         }

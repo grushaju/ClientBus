@@ -47,8 +47,9 @@ module.exports = function focusDom() {
             if (element.props.type === 'search') return search
             return null
         },
-        key: (key, shiftKey = false) => {
+        key: (key, shiftKey = false, target = document.activeElement) => {
             const event = Object.assign(new Event('keydown', { cancelable: true }), { key, shiftKey })
+            Object.defineProperty(event, 'target', { value: target })
             document.dispatchEvent(event)
             return event
         },

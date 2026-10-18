@@ -107,13 +107,23 @@
     text-overflow: ellipsis;
 }
 
+.app-user-role-admin {
+    --app-role-background: #ede9fe;
+    --app-role-color: #6d28d9;
+}
+
+.app-user-role-supervisor {
+    --app-role-background: #dcfce7;
+    --app-role-color: #166534;
+}
+
 .app-user-role {
     padding: 3px 7px;
 
     border-radius: 5px;
 
-    background: var(--ui-color-background-subtle);
-    color: var(--ui-color-text-muted);
+    background: var(--app-role-background, var(--ui-color-background-subtle));
+    color: var(--app-role-color, var(--ui-color-text-muted));
 
     font-size: 10px;
     font-weight: var(--ui-font-weight-medium);

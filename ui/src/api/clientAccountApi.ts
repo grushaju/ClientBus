@@ -4,6 +4,13 @@ import type {
     UpdateClientAccountRequest,
 } from './types/clientAccount'
 
+export async function getWorkspaceClientAccounts(workspaceId: string, channelAccountIds: string[] = []): Promise<ClientAccountDto[]> {
+    const params = new URLSearchParams()
+    channelAccountIds.forEach(id => params.append('channelAccountIds', id))
+    const response = await apiFetch(`/api/clientaccounts/workspace/${workspaceId}${params.size ? `?${params}` : ''}`)
+    return response.json()
+}
+
 export async function getClientAccount(
     id: string,
 ): Promise<ClientAccountDto> {

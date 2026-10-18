@@ -90,6 +90,7 @@ export interface ConversationSearchRequest {
     search?: string | null
     channelAccountIds?: string[]
     clientAccountIds?: string[]
+    clientIds?: string[]
     clientLink?: ConversationClientLinkFilter | null
     unread?: ConversationUnreadFilter | null
     activityFrom?: string | null

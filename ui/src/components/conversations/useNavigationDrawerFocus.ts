@@ -35,6 +35,7 @@ export function useNavigationDrawerFocus(
         const keyDown = (event: KeyboardEvent) => {
             if (event.isComposing) return
             if (event.key === 'Escape') {
+                if ((event.target as HTMLElement | null)?.closest?.('[data-inbox-escape-layer="true"]')) return
                 event.preventDefault()
                 event.stopPropagation()
                 onClose()

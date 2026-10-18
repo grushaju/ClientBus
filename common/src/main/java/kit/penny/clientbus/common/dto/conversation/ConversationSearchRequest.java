@@ -35,7 +35,16 @@ public record ConversationSearchRequest(
 
         Integer page,
 
-        Integer size
+        Integer size,
+
+        List<UUID> clientIds
 
 ) {
+    public ConversationSearchRequest(ConversationView view, UUID groupId, String search,
+            List<UUID> channelAccountIds, List<UUID> clientAccountIds,
+            ConversationClientLinkFilter clientLink, ConversationUnreadFilter unread,
+            Instant activityFrom, Instant activityTo, ConversationSort sort, Integer page, Integer size) {
+        this(view, groupId, search, channelAccountIds, clientAccountIds, clientLink, unread,
+                activityFrom, activityTo, sort, page, size, null);
+    }
 }

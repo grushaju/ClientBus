@@ -734,14 +734,6 @@ function ConversationClientPanel({
                                     currentAccount.externalId}
                             </strong>
 
-                            <span>
-                                <PlatformName
-                                    type={
-                                        currentAccount.channelType
-                                    }
-                                />
-                            </span>
-
                             {currentAccount.username && (
                                 <span>
                                     @{currentAccount.username}
@@ -834,14 +826,6 @@ function ConversationClientPanel({
                                                         account.phone ||
                                                         account.externalId}
                                                 </strong>
-
-                                                <span>
-                                                    <PlatformName
-                                                        type={
-                                                            account.channelType
-                                                        }
-                                                    />
-                                                </span>
 
                                                 {account.username && (
                                                     <span>

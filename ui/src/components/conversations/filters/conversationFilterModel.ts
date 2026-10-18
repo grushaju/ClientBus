@@ -6,6 +6,7 @@ export interface ConversationFilterDraft {
     search: string
     channelAccountIds: string[]
     clientAccountIds: string[]
+    clientIds?: string[]
     clientLink: NonNullable<ConversationSearchRequest['clientLink']>
     unread: NonNullable<ConversationSearchRequest['unread']>
     activityFrom: string
@@ -25,12 +26,22 @@ export function criteriaFromDefinition(definition: ConversationSearchRequest): C
         search: definition.search ?? '',
         channelAccountIds: [...(definition.channelAccountIds ?? [])],
         clientAccountIds: [...(definition.clientAccountIds ?? [])],
+        ...(definition.clientLink !== 'WITHOUT_CLIENT' && definition.clientIds?.length ? { clientIds: [...definition.clientIds] } : {}),
         clientLink: definition.clientLink ?? 'ANY',
         unread: definition.unread ?? 'ANY',
         activityFrom: toLocalDateInput(definition.activityFrom ?? ''),
         activityTo: toLocalDateInput(definition.activityTo ?? ''),
         sort: definition.sort ?? 'LAST_MESSAGE_DESC',
     }
+}
+
+export function sameFilterCriteria(left: ConversationFilterDraft, right: ConversationFilterDraft): boolean {
+    const key = (criteria: ConversationFilterDraft) => JSON.stringify([
+        criteria.search.trim(), [...criteria.channelAccountIds].sort(), [...criteria.clientAccountIds].sort(),
+        criteria.clientLink === 'WITHOUT_CLIENT' ? [] : [...(criteria.clientIds ?? [])].sort(),
+        criteria.clientLink, criteria.unread, criteria.activityFrom, criteria.activityTo, criteria.sort,
+    ])
+    return key(left) === key(right)
 }
 
 // The editor shows calendar dates; the applied definition keeps the exact
@@ -60,6 +71,7 @@ export function buildSavedDefinition(selection: InboxSelection, criteria: Conver
         search: criteria.search.trim() || null,
         channelAccountIds: [...criteria.channelAccountIds],
         clientAccountIds: [...criteria.clientAccountIds],
+        ...(criteria.clientLink !== 'WITHOUT_CLIENT' && criteria.clientIds?.length ? { clientIds: [...criteria.clientIds] } : {}),
         clientLink: criteria.clientLink,
         unread: criteria.unread,
         activityFrom: toFilterInstant(criteria.activityFrom),

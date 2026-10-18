@@ -374,7 +374,6 @@ public class ConversationGroupService {
             "notifications.svg",
             "pin.svg",
             "restore.svg",
-            "speaker.svg",
             "speech.svg",
             "tag.svg",
             "target.svg",

@@ -28,6 +28,7 @@
 
 .conversation-list-header-top {
     display: flex;
+    flex-wrap: wrap;
     align-items: flex-start;
     justify-content: space-between;
 
@@ -36,6 +37,7 @@
 
 .conversation-list-header-top > div {
     min-width: 0;
+    flex: 1 1 220px;
 }
 
 .conversation-list-header-top .ui-button {
@@ -156,6 +158,47 @@
 .conversation-list-error {
     color: var(--ui-color-danger-hover);
     gap: var(--ui-space-2);
+}
+
+.conversation-list-scope,
+.conversation-list-filter {
+    display: flex;
+    align-items: center;
+    gap: var(--ui-space-2);
+    min-width: 0;
+}
+
+.conversation-list-scope img,
+.conversation-list-filter img {
+    width: 22px;
+    height: 22px;
+    flex: 0 0 22px;
+    object-fit: contain;
+}
+
+.conversation-list-scope h2 {
+    margin: 0;
+}
+
+.conversation-list-filter {
+    margin-top: var(--ui-space-1);
+    color: var(--ui-color-text-muted);
+    font-size: var(--ui-font-size-sm);
+}
+
+.conversation-list-filter span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.conversation-list-filter-row {
+    margin-top: var(--ui-space-1);
+}
+
+.conversation-list-filter-row .conversation-list-filter {
+    margin-top: 0;
 }
 
 .conversation-list-refresh-error {
@@ -410,8 +453,8 @@
 }
 .conversation-list-item-group-icon {
     flex-shrink: 0;
-    width: 16px;
-    height: 16px;
+    width: 22px;
+    height: 22px;
     object-fit: contain;
     opacity: 0.8;
 }
@@ -433,6 +476,8 @@
 
 .conversation-list-item-group-option span {
     min-width: 0;
+    padding: 0;
+    margin-left: -3px;
     overflow-wrap: anywhere;
 }
 
@@ -633,8 +678,8 @@
 
 .conversation-list-group-icon-option img {
     display: block;
-    width: 24px;
-    height: 24px;
+    width: 22px;
+    height: 22px;
     object-fit: contain;
 }
 
@@ -654,6 +699,10 @@
 }
 
 @media (max-width: 640px) {
+    .conversation-list-header-top > div {
+        flex: 0 0 auto;
+    }
+
     .conversation-list-group-icon-picker {
         grid-template-columns: repeat(6, minmax(32px, 1fr));
     }
@@ -693,9 +742,9 @@
 }
 
 .conversation-list-saved-filter img {
-    width: 16px;
-    height: 16px;
-    flex: 0 0 16px;
+    width: 22px;
+    height: 22px;
+    flex: 0 0 22px;
 }
 
 .conversation-list-saved-filter span {
@@ -737,4 +786,53 @@
     .conversation-list-item {
         padding: 11px 14px;
     }
+}
+
+.conversation-client-fields {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ui-space-3);
+    min-width: 0;
+}
+
+.conversation-client-fields fieldset,
+.conversation-filter-channel-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ui-space-2);
+    min-width: 0;
+    margin: 0;
+    padding: var(--ui-space-2);
+    border: 1px solid var(--ui-color-border);
+    border-radius: var(--ui-radius-md);
+}
+
+.conversation-filter-channel-field .conversation-filter-options {
+    max-height: 100px;
+}
+
+.conversation-filter-options {
+    max-height: 180px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--ui-space-2);
+}
+
+.conversation-filter-conditions .conversation-filter-options label {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: var(--ui-space-2);
+    overflow-wrap: anywhere;
+}
+
+.conversation-filter-options input[type="checkbox"] {
+    flex: 0 0 auto;
+    width: auto;
+}
+
+.conversation-filter-save-panel {
+    padding: var(--ui-space-3);
+    border-bottom: 1px solid var(--ui-color-border);
 }

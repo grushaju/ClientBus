@@ -68,6 +68,35 @@ class ConversationServiceSearchInboxTest {
             Instant.parse("2026-10-10T12:00:00Z");
 
     @Test
+    void clientFilter_matchesAllClientAccountsAndIntersectsExplicitAccountSelection() {
+        givenEmployeeAccess();
+        UUID clientId = UUID.randomUUID();
+        ConversationEntity first = conversation(channelId, UUID.randomUUID(), employeeId,
+                true, "Alice", "alice", "1", "Hello", 0, from);
+        ConversationEntity second = conversation(channelId, UUID.randomUUID(), employeeId,
+                true, "Alice 2", "alice2", "2", "Hello", 0, to);
+        ConversationEntity other = conversation(channelId, UUID.randomUUID(), employeeId,
+                true, "Bob", "bob", "3", "Hello", 0, to);
+        ConversationEntity orphan = conversation(channelId, UUID.randomUUID(), employeeId,
+                false, "Orphan", "orphan", "4", "Hello", 0, to);
+        when(first.getClientAccount().getClient().getId()).thenReturn(clientId);
+        when(second.getClientAccount().getClient().getId()).thenReturn(clientId);
+        when(other.getClientAccount().getClient().getId()).thenReturn(UUID.randomUUID());
+        givenConversations(first, second, other, orphan);
+        givenMapper();
+        ConversationSearchResponse allAccounts = service.searchInbox(workspaceId,
+                new ConversationSearchRequest(ConversationView.MINE, null, null, null, null,
+                        null, null, null, null, ConversationSort.LAST_MESSAGE_ASC, 0, 20, List.of(clientId)));
+        assertThat(allAccounts.content()).extracting(ConversationDto::id)
+                .containsExactly(first.getId(), second.getId());
+        ConversationSearchResponse oneAccount = service.searchInbox(workspaceId,
+                new ConversationSearchRequest(ConversationView.MINE, null, null, null,
+                        List.of(second.getClientAccount().getId()), null, null, null, null,
+                        ConversationSort.LAST_MESSAGE_ASC, 0, 20, List.of(clientId)));
+        assertThat(oneAccount.content()).extracting(ConversationDto::id).containsExactly(second.getId());
+    }
+
+    @Test
     void mineView_returnsOnlyConversationsAssignedToCurrentEmployee() {
         givenEmployeeAccess();
 

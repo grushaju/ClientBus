@@ -43,13 +43,21 @@ public class ClientAccountController {
     }
 
     /**
-     * Получить ClientAccount по списку идентификаторов.
+     * Получить аккаунты диалогов доступного Workspace для условий Inbox.
      *
      * Доступ:
      * EMPLOYEE или SUPER_ADMIN.
      *
      * Фактический scope проверяется в Service.
      */
+    @GetMapping("/workspace/{workspaceId}")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SUPER_ADMIN')")
+    public ResponseEntity<List<ClientAccountDto>> getWorkspaceAccounts(@PathVariable UUID workspaceId,
+            @RequestParam(required = false) List<UUID> channelAccountIds) {
+        return ResponseEntity.ok(clientAccountService.getWorkspaceAccounts(workspaceId, channelAccountIds));
+    }
+
+    /** Получить ClientAccount по списку идентификаторов. Scope проверяется в Service. */
     @GetMapping("/by-ids")
     @PreAuthorize("hasAnyRole('EMPLOYEE', 'SUPER_ADMIN')")
     public ResponseEntity<List<ClientAccountDto>> getClientAccountsByIds(

@@ -667,7 +667,6 @@
 - `ui/public/assets/group/notifications.svg`
 - `ui/public/assets/group/pin.svg`
 - `ui/public/assets/group/restore.svg`
-- `ui/public/assets/group/speaker.svg`
 - `ui/public/assets/group/speech.svg`
 - `ui/public/assets/group/tag.svg`
 - `ui/public/assets/group/target.svg`

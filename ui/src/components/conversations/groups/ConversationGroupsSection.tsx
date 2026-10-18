@@ -1,106 +1,73 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { ConversationGroupsModel } from './useConversationGroups'
-import GroupIcon from './GroupIcon'
 import ConversationGroupForm from './ConversationGroupForm'
-import type { InboxSelection } from '../list/inboxSelection'
+import IconOptionPicker from '../IconOptionPicker'
+import { resolveGroupIcon } from './groupIcons'
 
 type Editor = { mode: 'closed' } | { mode: 'create' } | { mode: 'edit'; groupId: string }
-
 interface Props {
     model: ConversationGroupsModel
-    selection: InboxSelection
-    onSelect: (id: string) => void
     onDeleted: (id: string) => void
     onActionError: (message: string | null) => void
 }
 
-export default function ConversationGroupsSection({ model, selection, onSelect, onDeleted, onActionError }: Props) {
+export default function ConversationGroupsSection({ model, onDeleted, onActionError }: Props) {
+    const [managedId, setManagedId] = useState<string | null>(null)
     const [editor, setEditor] = useState<Editor>({ mode: 'closed' })
-    const [deletingId, setDeletingId] = useState<string | null>(null)
-    const [saving, setSaving] = useState(false)
+    const [busy, setBusy] = useState(false)
+    const [expanded, setExpanded] = useState(true)
+    const panelId = useId()
     const mounted = useRef(false)
-    useEffect(() => {
-        mounted.current = true
-        return () => { mounted.current = false }
-    }, [])
-    const selectedGroupId = selection.view === 'GROUP' ? selection.groupId : null
-    const selectedGroup = model.groups.find(group => group.id === selectedGroupId)
-    const editedGroup = editor.mode === 'edit' && editor.groupId === selectedGroupId ? selectedGroup : undefined
-    useEffect(() => {
-        setEditor(current => current.mode === 'edit' && current.groupId !== selectedGroupId
-            ? { mode: 'closed' } : current)
-    }, [selectedGroupId])
-
+    const selected = model.groups.find(group => group.id === managedId)
+    const edited = editor.mode === 'edit' ? model.groups.find(group => group.id === editor.groupId) : undefined
+    useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
     const save = async (id: string | null, name: string, icon: string) => {
-        setSaving(true)
+        setBusy(true)
         onActionError(null)
         try {
-            if (id) await model.rename(id, name, icon)
-            else await model.create(name, icon)
-            if (mounted.current) setEditor({ mode: 'closed' })
+            const saved = id ? await model.rename(id, name, icon) : await model.create(name, icon)
+            if (mounted.current) { setManagedId(saved.id); setEditor({ mode: 'closed' }) }
         } catch (err) {
             if (mounted.current) onActionError(`Не удалось сохранить группу «${name}»: ${err instanceof Error ? err.message : 'ошибка сервера.'}`)
-        } finally {
-            if (mounted.current) setSaving(false)
-        }
+        } finally { if (mounted.current) setBusy(false) }
     }
-
     const remove = async () => {
-        if (!selectedGroup || deletingId) return
-        if (!window.confirm(`Удалить группу «${selectedGroup.name}»? Диалоги останутся без изменений.`)) return
-        setDeletingId(selectedGroup.id)
-        onActionError(null)
+        if (!selected || busy || !window.confirm(`Удалить группу «${selected.name}»? Диалоги останутся без изменений.`)) return
+        setBusy(true); onActionError(null)
         try {
-            await model.remove(selectedGroup.id)
-            if (!mounted.current) return
-            setEditor({ mode: 'closed' })
-            onDeleted(selectedGroup.id)
+            await model.remove(selected.id)
+            if (mounted.current) { setEditor({ mode: 'closed' }); setManagedId(null); onDeleted(selected.id) }
         } catch (err) {
-            if (mounted.current) onActionError(`Не удалось удалить группу «${selectedGroup.name}»: ${err instanceof Error ? err.message : 'ошибка сервера.'}`)
-        } finally {
-            if (mounted.current) setDeletingId(null)
-        }
+            if (mounted.current) onActionError(`Не удалось удалить группу «${selected.name}»: ${err instanceof Error ? err.message : 'ошибка сервера.'}`)
+        } finally { if (mounted.current) setBusy(false) }
     }
-
-    return (
-        <div className="conversation-list-groups">
-            <div className="inbox-navigation-section-head">
-                <h3>Мои группы</h3>
-                <button type="button" className="ui-button ui-button-secondary" disabled={deletingId !== null || saving}
-                    aria-expanded={editor.mode === 'create'}
-                    onClick={() => { onActionError(null); setEditor(editor.mode === 'create' ? { mode: 'closed' } : { mode: 'create' }) }}>
-                    {editor.mode === 'create' ? 'Отмена' : '+ Группа'}
-                </button>
-            </div>
-            {model.groups.length > 0 && (
-                <div className="conversation-list-tabs">
-                    {model.groups.map(group => (
-                        <button key={group.id} type="button"
-                            className={selection.view === 'GROUP' && selection.groupId === group.id ? 'active' : ''}
-                            aria-pressed={selection.view === 'GROUP' && selection.groupId === group.id} title={group.name}
-                            onClick={() => onSelect(group.id)}>
-                            <GroupIcon icon={group.icon} /><span>{group.name}</span>
-                        </button>
-                    ))}
-                </div>
-            )}
-            {selectedGroup && <div className="conversation-list-group-actions">
-                    <button type="button" className="ui-button ui-button-secondary" disabled={deletingId !== null || saving}
-                        onClick={() => { onActionError(null); setEditor(editedGroup ? { mode: 'closed' } : { mode: 'edit', groupId: selectedGroup.id }) }}>
-                        Переименовать
-                    </button>
-                    <button type="button" className="ui-button ui-button-secondary" disabled={deletingId !== null || saving} onClick={() => void remove()}>
-                        {deletingId === selectedGroup.id ? 'Удаление…' : 'Удалить'}
-                    </button>
-            </div>}
-            {editor.mode === 'create' && <ConversationGroupForm key="create" editing={false}
-                onCancel={() => setEditor({ mode: 'closed' })}
-                onSubmit={(name, icon) => save(null, name, icon)} />}
-            {editedGroup && <ConversationGroupForm key={editedGroup.id} editing
-                initialName={editedGroup.name} initialIcon={editedGroup.icon}
-                onCancel={() => setEditor({ mode: 'closed' })}
-                onSubmit={(name, icon) => save(editedGroup.id, name, icon)} />}
-            {model.error && <div className="ui-form-error" role="alert">{model.error}</div>}
+    return <section className="conversation-list-groups" aria-label="Управление группами">
+        <div className="inbox-navigation-section-head"><h3><button type="button" className="inbox-section-toggle"
+            aria-expanded={expanded} aria-controls={panelId} onClick={() => setExpanded(current => !current)}>
+            Группы <span aria-hidden="true">{expanded ? '▴' : '▾'}</span>
+        </button></h3>
+            <button type="button" className="ui-button ui-button-primary" disabled={busy}
+                onClick={() => { onActionError(null); setExpanded(true); setEditor(editor.mode === 'create' ? { mode: 'closed' } : { mode: 'create' }) }}>
+                + Группа
+            </button>
         </div>
-    )
+        <div id={panelId} className="inbox-groups-panel" hidden={!expanded}>
+        <IconOptionPicker label="Управлять группой" placeholder={model.groups.length ? 'Выбрать группу' : 'Нет групп'} value={selected?.id ?? null}
+            disabled={busy || !model.groups.length} searchable={false}
+            options={model.groups.map(group => ({ value: group.id, label: group.name, icon: `/assets/group/${resolveGroupIcon(group.icon)}` }))}
+            onChange={id => { setManagedId(id); setEditor({ mode: 'closed' }); onActionError(null) }} />
+        {editor.mode === 'closed' && <div className="conversation-list-group-actions">
+            <button type="button" className="ui-button ui-button-secondary" disabled={!selected || busy}
+                onClick={() => { onActionError(null); if (selected) setEditor({ mode: 'edit', groupId: selected.id }) }}>Изменить</button>
+            <button type="button" className="ui-button ui-button-danger" disabled={!selected || busy} onClick={() => void remove()}>Удалить</button>
+        </div>}
+        <div className="inbox-group-editor-slot">
+        {editor.mode === 'create' && <ConversationGroupForm key="create" editing={false} onCancel={() => setEditor({ mode: 'closed' })}
+            onSubmit={(name, icon) => save(null, name, icon)} />}
+        {edited && <ConversationGroupForm key={edited.id} editing initialName={edited.name} initialIcon={edited.icon}
+            onCancel={() => setEditor({ mode: 'closed' })} onSubmit={(name, icon) => save(edited.id, name, icon)} />}
+        </div>
+        {model.error && <div className="ui-form-error" role="alert">{model.error}</div>}
+        </div>
+    </section>
 }
