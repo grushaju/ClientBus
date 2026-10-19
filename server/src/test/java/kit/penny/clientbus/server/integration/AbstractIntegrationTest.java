@@ -1,11 +1,17 @@
 package kit.penny.clientbus.server.integration;
 
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.Network;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.kafka.KafkaContainer;
 
+// Close Kafka clients while the shared broker is still running, rather than
+// racing cached Spring contexts against container cleanup at JVM shutdown.
+@ActiveProfiles("test")
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 public abstract class AbstractIntegrationTest {
 
     protected static final PostgreSQLContainer<?> postgres =

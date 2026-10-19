@@ -9,18 +9,25 @@ import kit.penny.clientbus.server.service.MessageService;
 import kit.penny.clientbus.server.service.RecentChatsSyncCoordinator;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.listener.CommonErrorHandler;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.MessageListenerContainer;
+import org.springframework.kafka.support.KafkaHeaders;
 
+import java.nio.ByteBuffer;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -105,6 +112,27 @@ class KafkaErrorHandlerConfigTest {
                         any(TopicPartition.class),
                         any(Long.class)
                 );
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1, 2})
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void shouldPublishEverySourcePartitionToSinglePartitionDlq(int sourcePartition) {
+        KafkaTemplate<String, Object> template = mock(KafkaTemplate.class);
+        when(template.send(any(ProducerRecord.class))).thenReturn(CompletableFuture.completedFuture(null));
+        DeadLetterPublishingRecoverer recoverer = config.kafkaDeadLetterPublishingRecoverer(template);
+        ConsumerRecord<String, Object> record = new ConsumerRecord<>(TOPIC, sourcePartition, OFFSET, "key", "payload");
+
+        recoverer.accept(record, new IllegalStateException("Delivery failure"));
+
+        ArgumentCaptor<ProducerRecord<String, Object>> sent = ArgumentCaptor.forClass(ProducerRecord.class);
+        verify(template).send(sent.capture());
+        assertEquals(TOPIC + ".dlq", sent.getValue().topic());
+        assertEquals(0, sent.getValue().partition());
+        assertEquals(record.key(), sent.getValue().key());
+        assertEquals(record.value(), sent.getValue().value());
+        assertEquals(sourcePartition, ByteBuffer.wrap(sent.getValue().headers()
+                .lastHeader(KafkaHeaders.DLT_ORIGINAL_PARTITION).value()).getInt());
     }
 
     @Test

@@ -48,9 +48,14 @@ export function useInboxConversations(workspaceId: string, request: Conversation
             if (updated?.id && updated.workspaceId === workspaceId) reload()
         }
         const onUnavailable = (event: Event) => {
-            // The first read can fail before its workspace is known. Re-query
-            // the active scope, including any still pending initial response.
-            if ((event as CustomEvent<{ id: string }>).detail?.id) reload()
+            const id = (event as CustomEvent<{ id: string }>).detail?.id
+            if (!id) return
+            // A confirmed denial must hide the card even if reconciliation
+            // fails. Invalidate pending reads before requesting a fresh list.
+            setResult(current => current && ({ ...current, data: { ...current.data,
+                items: current.data.items.filter(item => item.conversation.id !== id),
+            } }))
+            reload()
         }
         window.addEventListener('clientbus:conversation-updated', onUpdated)
         window.addEventListener('clientbus:conversation-unavailable', onUnavailable)

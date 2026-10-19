@@ -33,3 +33,9 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Playwright output and local authentication state
+/playwright-report/
+/test-results/
+/playwright/.auth/
+/.env.e2e.local

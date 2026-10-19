@@ -331,6 +331,8 @@ class KafkaOutboundMessageFailureIntegrationTest
         Map<TopicPartition, Long> dlqOffsetsBefore =
                 getEndOffsets(DLQ_TOPIC);
 
+        assertEquals(1, dlqOffsetsBefore.size());
+
         doThrow(
                 new IllegalStateException(
                         "Permanent Telegram failure"
@@ -348,6 +350,7 @@ class KafkaOutboundMessageFailureIntegrationTest
         kafkaTemplate
                 .send(
                         TOPIC,
+                        2,
                         channelAccountId.toString(),
                         event
                 )
@@ -397,6 +400,8 @@ class KafkaOutboundMessageFailureIntegrationTest
 
         ConsumerRecord<String, Object> dlqRecord =
                 dlqRecords.get(0);
+
+        assertEquals(0, dlqRecord.partition());
 
         assertEquals(
                 DLQ_TOPIC,
@@ -795,7 +800,7 @@ class KafkaOutboundMessageFailureIntegrationTest
                 topics.add(
                         new NewTopic(
                                 DLQ_TOPIC,
-                                3,
+                                1,
                                 (short) 1
                         )
                 );

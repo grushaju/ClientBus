@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getConversationMessages, getMessage, retryOutboundMessage, syncConversationHistory } from '../../api/messageApi'
+import { getApiErrorStatus } from '../../api/apiClient'
 import type { MessageDto } from '../../api/types/message'
 
 const PAGE_SIZE = 100
@@ -23,7 +24,7 @@ function newestStableMessage(items: MessageDto[]): string | null {
 }
 
 function createSession(conversationId: string | undefined) {
-    return { conversationId, active: true, generation: 0, initialPending: false, olderPending: false,
+    return { conversationId, active: true, unavailable: false, generation: 0, initialPending: false, olderPending: false,
         refreshPending: false, localPage: 0, localHasMore: true, refreshAnchor: null as string | null,
         retrying: new Set<string>(), messageVersions: new Map<string, number>() }
 }
@@ -35,8 +36,12 @@ function emptyState(session: Session) {
 }
 type State = ReturnType<typeof emptyState>
 
-export function useConversationMessages(conversationId: string | undefined, visible = true) {
+export function useConversationMessages(conversationId: string | undefined, visible = true, onUnavailable?: (error: unknown) => void) {
     const session = useMemo(() => createSession(conversationId), [conversationId])
+    const currentSession = useRef(session)
+    currentSession.current = session
+    const unavailableHandler = useRef(onUnavailable)
+    unavailableHandler.current = onUnavailable
     const [state, setState] = useState(() => emptyState(session))
     const current = state.session === session ? state : emptyState(session)
     const latest = useRef(current)
@@ -45,10 +50,21 @@ export function useConversationMessages(conversationId: string | undefined, visi
         if (!session.active) return
         setState(previous => session.active ? change(previous.session === session ? previous : emptyState(session)) : previous)
     }, [session])
-    const isCurrent = (generation: number) => session.active && session.generation === generation
+    const isCurrent = (generation: number) => session.active && currentSession.current === session && session.generation === generation
+    const handleUnavailable = useCallback((error: unknown, generation: number) => {
+        if (!isCurrent(generation) || ![403, 404].includes(getApiErrorStatus(error) ?? 0)) return false
+        session.unavailable = true
+        session.generation += 1
+        session.initialPending = session.olderPending = session.refreshPending = false
+        update(() => ({ ...emptyState(session), loading: false, hasMore: false,
+            error: error instanceof Error ? error.message : 'Диалог недоступен' }))
+        unavailableHandler.current?.(error)
+        return true
+    }, [session, update])
 
     const reloadMessages = useCallback(async () => {
         if (!conversationId) return
+        session.unavailable = false
         const generation = ++session.generation
         const versions = new Map(session.messageVersions)
         session.initialPending = true
@@ -75,6 +91,7 @@ export function useConversationMessages(conversationId: string | undefined, visi
                 (session.messageVersions.get(message.id) ?? 0) !== (versions.get(message.id) ?? 0))), hasMore: !historyStartReached,
                 historyStartReached, error: null }))
         } catch (error) {
+            if (handleUnavailable(error, generation)) return
             if (isCurrent(generation)) update(previous => ({ ...previous,
                 error: error instanceof Error ? error.message : 'Не удалось загрузить сообщения' }))
         } finally {
@@ -83,11 +100,11 @@ export function useConversationMessages(conversationId: string | undefined, visi
                 update(previous => ({ ...previous, loading: false }))
             }
         }
-    }, [session, conversationId, update])
+    }, [session, conversationId, update, handleUnavailable])
 
     const loadOlder = useCallback(async (manual = false, onStart?: () => void) => {
         const snapshot = latest.current
-        if (!conversationId || session.initialPending || session.olderPending || session.refreshPending
+        if (!conversationId || session.unavailable || session.initialPending || session.olderPending || session.refreshPending
             || snapshot.historyStartReached || (!manual && (!snapshot.hasMore || !!snapshot.error))) return
         const generation = session.generation
         const versions = new Map(session.messageVersions)
@@ -117,6 +134,7 @@ export function useConversationMessages(conversationId: string | undefined, visi
             update(previous => ({ ...previous, messages: mergeMessages(previous.messages, incoming),
                 historyStartReached, hasMore }))
         } catch (error) {
+            if (handleUnavailable(error, generation)) return
             if (isCurrent(generation)) update(previous => ({ ...previous,
                 error: error instanceof Error ? error.message : 'Не удалось загрузить старые сообщения' }))
         } finally {
@@ -125,10 +143,10 @@ export function useConversationMessages(conversationId: string | undefined, visi
                 update(previous => ({ ...previous, loadingOlder: false }))
             }
         }
-    }, [session, conversationId, update])
+    }, [session, conversationId, update, handleUnavailable])
 
     const refreshMessages = useCallback(async () => {
-        if (!conversationId || session.initialPending || session.refreshPending || session.olderPending) return
+        if (!conversationId || session.unavailable || session.initialPending || session.refreshPending || session.olderPending) return
         const generation = session.generation
         const versions = new Map(session.messageVersions)
         const snapshot = latest.current
@@ -178,7 +196,10 @@ export function useConversationMessages(conversationId: string | undefined, visi
                 while (next < pending.length && isCurrent(generation) && !statusError) {
                     const message = pending[next++]
                     try { olderStatuses.push(await getMessage(message.id)) }
-                    catch (err) { statusError = err instanceof Error ? err : new Error('Не удалось обновить статус сообщения') }
+                    catch (err) {
+                        if (handleUnavailable(err, generation)) return
+                        statusError = err instanceof Error ? err : new Error('Не удалось обновить статус сообщения')
+                    }
                 }
             }))
             if (!isCurrent(generation)) return
@@ -186,12 +207,13 @@ export function useConversationMessages(conversationId: string | undefined, visi
                 messages: mergeMessages(previous.messages, olderStatuses.filter(unchangedVersion)) }))
             if (statusError) throw statusError
         } catch (error) {
+            if (handleUnavailable(error, generation)) return
             if (isCurrent(generation)) update(previous => ({ ...previous,
                 refreshError: error instanceof Error ? error.message : 'Не удалось обновить сообщения' }))
         } finally {
             if (isCurrent(generation)) session.refreshPending = false
         }
-    }, [session, conversationId, update])
+    }, [session, conversationId, update, handleUnavailable])
 
     const acceptMessage = useCallback((message: MessageDto) => {
         if (message.conversationId !== conversationId) return
@@ -200,7 +222,7 @@ export function useConversationMessages(conversationId: string | undefined, visi
     }, [session, conversationId, update])
 
     const retryMessage = useCallback(async (messageId: string) => {
-        if (!conversationId || session.retrying.has(messageId)) return
+        if (!conversationId || session.unavailable || session.retrying.has(messageId)) return
         const generation = session.generation
         session.retrying.add(messageId)
         session.messageVersions.set(messageId, (session.messageVersions.get(messageId) ?? 0) + 1)
@@ -208,11 +230,14 @@ export function useConversationMessages(conversationId: string | undefined, visi
         try {
             const message = await retryOutboundMessage(messageId)
             if (isCurrent(generation)) acceptMessage(message)
+        } catch (error) {
+            handleUnavailable(error, generation)
+            throw error
         } finally {
             session.retrying.delete(messageId)
             if (session.active) update(previous => ({ ...previous, retryingIds: [...session.retrying] }))
         }
-    }, [session, conversationId, acceptMessage, update])
+    }, [session, conversationId, acceptMessage, update, handleUnavailable])
 
     useEffect(() => {
         session.active = true
@@ -225,8 +250,9 @@ export function useConversationMessages(conversationId: string | undefined, visi
         let timer: ReturnType<typeof setTimeout>
         let cancelled = false
         const tick = async () => {
+            if (session.unavailable) return
             if (typeof document === 'undefined' || !document.hidden) await refreshMessages()
-            if (!cancelled) timer = setTimeout(tick, REFRESH_INTERVAL)
+            if (!cancelled && !session.unavailable) timer = setTimeout(tick, REFRESH_INTERVAL)
         }
         timer = setTimeout(tick, REFRESH_INTERVAL)
         return () => { cancelled = true; clearTimeout(timer) }

@@ -18,6 +18,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -98,6 +99,7 @@ class ClientAccountRepositoryTest
 
     @Test
     void findAllByClientIsNull_shouldReturnUnassignedAccounts() {
+        List<ClientAccountEntity> expected = new ArrayList<>(repository.findAllByClientIsNull());
 
         ClientAccountEntity assigned =
                 TestDataFactory.clientAccount(client);
@@ -107,17 +109,21 @@ class ClientAccountRepositoryTest
 
         repository.save(assigned);
         repository.save(unassigned);
+        expected.add(unassigned);
 
         List<ClientAccountEntity> result =
                 repository.findAllByClientIsNull();
 
         assertThat(result)
-                .containsExactly(unassigned)
-                .doesNotContain(assigned);
+                .containsExactlyInAnyOrderElementsOf(expected)
+                .doesNotContain(assigned)
+                .allMatch(account -> account.getClient() == null);
     }
 
     @Test
     void findAllByClientIsNullAndChannelType_shouldFilterByType() {
+        List<ClientAccountEntity> expected = new ArrayList<>(
+                repository.findAllByClientIsNullAndChannelType(ChannelType.TELEGRAM));
 
         ClientAccountEntity telegram =
                 TestDataFactory.clientAccount(
@@ -135,6 +141,7 @@ class ClientAccountRepositoryTest
 
         repository.save(telegram);
         repository.save(whatsapp);
+        expected.add(telegram);
 
         List<ClientAccountEntity> result =
                 repository.findAllByClientIsNullAndChannelType(
@@ -142,7 +149,9 @@ class ClientAccountRepositoryTest
                 );
 
         assertThat(result)
-                .containsExactly(telegram);
+                .containsExactlyInAnyOrderElementsOf(expected)
+                .doesNotContain(whatsapp)
+                .allMatch(account -> account.getClient() == null && account.getChannelType() == ChannelType.TELEGRAM);
     }
 
     @Test

@@ -153,6 +153,47 @@ test('a refresh error retains the visible messages and clears on the next succes
     assert.equal(ui.model.refreshError, null)
 })
 
+for (const source of ['initial', 'refresh', 'local history', 'remote history', 'status', 'retry']) {
+    test(`access denial from ${source} clears cached messages and invalidates the message session`, async t => {
+        const denial = Object.assign(Error('No access'), { status: 403 })
+        let reads = 0, notifications = 0
+        const api = {
+            getConversationMessages: async () => {
+                reads++
+                if ((source === 'initial' && reads === 1) || (source === 'refresh' && reads === 2)
+                    || (source === 'local history' && reads === 2)) throw denial
+                return page([message(reads)], source !== 'local history')
+            },
+            syncConversationHistory: async () => { throw denial },
+            getMessage: async () => { throw denial },
+            retryOutboundMessage: async () => { throw denial },
+        }
+        const { useConversationMessages } = load('useConversationMessages.ts', { '../../api/messageApi': api })
+        let state, renderer
+        function Probe() {
+            state = useConversationMessages('a', false, failure => { assert.equal(failure, denial); notifications++ })
+            return null
+        }
+        await act(async () => { renderer = create(React.createElement(Probe)) })
+        t.after(() => act(() => renderer.unmount()))
+        if (source === 'status') {
+            await act(async () => state.acceptMessage(message(0)))
+        }
+        if (['refresh', 'status'].includes(source)) await act(async () => state.refreshMessages())
+        if (source.includes('history')) await act(async () => state.loadOlderMessages())
+        if (source === 'retry') await act(async () => assert.rejects(state.retryMessage(1), denial))
+        assert.equal(notifications, 1)
+        assert.deepEqual(state.messages, [])
+        assert.equal(state.loading, false)
+        assert.equal(state.loadingOlder, false)
+        assert.equal(state.hasMore, false)
+        const before = reads
+        await act(async () => { await state.refreshMessages(); await state.retryOlderMessages(); await state.retryMessage(1) })
+        assert.equal(reads, before)
+        assert.equal(notifications, 1)
+    })
+}
+
 async function composer(t, send, onSent = () => {}) {
     const Composer = load('MessageComposer.tsx', { '../../api/messageApi': { sendOutboundMessage: send } }).default
     let renderer
@@ -250,13 +291,16 @@ test('a refresh started before retry cannot restore the old failed state', async
     assert.equal(ui.model.messages[0].deliveryStatus, 'PENDING')
 })
 
-async function thread(t, operations = {}, visible = false) {
+async function thread(t, operations = {}, visible = false, messageApi) {
     let id = 'a', renderer
+    const reloadMessages = () => {}
     const navigations = []
     const updates = []
+    const unavailable = []
     const originalWindow = global.window
     global.window = new EventTarget()
     global.window.addEventListener('clientbus:conversation-updated', event => updates.push(event.detail))
+    global.window.addEventListener('clientbus:conversation-unavailable', event => unavailable.push(event.detail))
     const view = load('ConversationView.tsx', {
         'react-router-dom': { useParams: () => ({ conversationId: id }), useNavigate: () => path => navigations.push(path) },
         '../../auth/AuthContext': { useAuth: () => ({ currentEmployee: { id: 'employee' }, isEmployee: true, isSuperAdmin: false, employeeWorkspaces: [] }) },
@@ -268,7 +312,10 @@ async function thread(t, operations = {}, visible = false) {
         '../../api/clientAccountApi': { getClientAccount: async () => ({ id: 'account' }) },
         '../../api/channelApi': { getWorkspaceChannels: async () => [] },
         '../../api/employeeApi': { getWorkspaceEmployees: async () => [] },
-        './useConversationMessages': { useConversationMessages: () => ({ messages: [], loading: false, hasMore: false, error: null, acceptMessage() {} }) },
+        ...(messageApi ? { '../../api/messageApi': messageApi } : {
+            './useConversationMessages': { useConversationMessages: () => ({ messages: [], loading: false, hasMore: false,
+                error: null, acceptMessage() {}, reloadMessages }) },
+        }),
         './ConversationHeader': { default: props => React.createElement('header', props) },
         './ConversationClientPanel': { default: () => null },
         './MessageList': { default: () => null },
@@ -276,7 +323,7 @@ async function thread(t, operations = {}, visible = false) {
     }).default
     await act(async () => { renderer = create(React.createElement(view, { visible })) })
     t.after(() => { act(() => renderer.unmount()); global.window = originalWindow })
-    return { renderer, navigations, updates, get header() { return renderer.root.findByType('header').props },
+    return { renderer, navigations, updates, unavailable, get header() { return renderer.root.findByType('header').props },
         switch: next => act(async () => { id = next; renderer.update(React.createElement(view, { visible })) }) }
 }
 
@@ -351,11 +398,68 @@ for (const status of [403, 404]) {
         assert.equal(ui.renderer.root.findAllByType('header').length, 0)
         assert.equal(ui.renderer.root.findAllByType('textarea').length, 0)
         assert.match(ui.renderer.root.findByProps({ className: 'conversation-state conversation-error' }).children.join(''), /Conversation unavailable/)
-        assert.ok(ui.updates.length >= 2)
+        assert.deepEqual(ui.unavailable, [{ id: 'a' }])
         await act(async () => t.mock.timers.tick(30000))
         assert.equal(reads, 2)
     })
 }
+
+for (const status of [403, 404]) {
+    test(`message polling HTTP ${status} closes the thread, stops both polls and supports recovery`, async t => {
+        t.mock.timers.enable({ apis: ['setTimeout'] })
+        let messageReads = 0, metadataReads = 0, restored = false
+        const ui = await thread(t, {
+            getConversation: async id => {
+                metadataReads++
+                return { id, workspaceId: 'workspace', clientAccountId: 'account', unreadCount: 0, assignedEmployeeId: 'employee' }
+            },
+        }, true, { getConversationMessages: async () => {
+            if (++messageReads > 1 && !restored) throw Object.assign(Error('Access revoked'), { status })
+            return page([message(1)])
+        } })
+        assert.equal(ui.renderer.root.findAllByType('textarea').length, 1)
+        await act(async () => t.mock.timers.tick(5000))
+        assert.equal(ui.renderer.root.findAllByType('header').length, 0)
+        assert.equal(ui.renderer.root.findAllByType('textarea').length, 0)
+        assert.deepEqual(ui.unavailable, [{ id: 'a' }])
+        await act(async () => t.mock.timers.tick(30000))
+        assert.equal(messageReads, 2)
+        assert.equal(metadataReads, 1)
+        restored = true
+        await act(async () => ui.renderer.root.findByType('button').props.onClick())
+        assert.equal(messageReads, 3)
+        assert.equal(metadataReads, 2)
+        assert.equal(ui.renderer.root.findAllByType('textarea').length, 1)
+        await act(async () => t.mock.timers.tick(5000))
+        assert.equal(messageReads, 4)
+    })
+}
+
+test('message access denial invalidates a pending metadata response', async t => {
+    const metadata = deferred()
+    const ui = await thread(t, { getConversation: () => metadata.promise }, true, {
+        getConversationMessages: async () => { throw Object.assign(Error('No access'), { status: 403 }) },
+    })
+    await act(async () => metadata.resolve({ id: 'a', workspaceId: 'workspace', assignedEmployeeId: 'employee' }))
+    assert.equal(ui.renderer.root.findAllByType('header').length, 0)
+    assert.equal(ui.renderer.root.findAllByProps({ className: 'conversation-state conversation-error' }).length, 1)
+    assert.deepEqual(ui.unavailable, [{ id: 'a' }])
+})
+
+test('a late message denial cannot close a newer conversation', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout'] })
+    const obsolete = deferred()
+    let reads = 0
+    const ui = await thread(t, {}, true, { getConversationMessages: async () => {
+        if (++reads === 2) return obsolete.promise
+        return page([message(1)])
+    } })
+    await act(async () => t.mock.timers.tick(5000))
+    await ui.switch('b')
+    await act(async () => obsolete.reject(Object.assign(Error('Old denial'), { status: 403 })))
+    assert.equal(ui.header.conversation.id, 'b')
+    assert.deepEqual(ui.unavailable, [])
+})
 
 test('access loss during initial metadata loading shows an error and ignores the late initial response', async t => {
     t.mock.timers.enable({ apis: ['setTimeout'] })

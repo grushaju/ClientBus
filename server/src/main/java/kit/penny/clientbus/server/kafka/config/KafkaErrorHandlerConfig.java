@@ -43,7 +43,8 @@ public class KafkaErrorHandlerConfig {
                                 KafkaTopicNames.dlq(
                                         record.topic()
                                 ),
-                                record.partition()
+                                // KafkaTopicConfiguration creates every DLQ with one partition.
+                                0
                         )
         );
     }

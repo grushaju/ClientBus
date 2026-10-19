@@ -119,12 +119,33 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
 
     const [error, setError] =
         useState<string | null>(null)
+    const latestReadError = useRef(error)
+    latestReadError.current = error
 
     const [employees, setEmployees] =
         useState<EmployeeDto[]>([])
 
     const [actionError, setActionError] =
         useState<string | null>(null)
+
+    const handleReadError = useCallback((failure: unknown) => {
+        const message = failure instanceof Error ? failure.message : 'Не удалось обновить диалог'
+        const status = getApiErrorStatus(failure)
+        if (status === 403 || status === 404) {
+            window.dispatchEvent(new CustomEvent('clientbus:conversation-unavailable', { detail: { id: currentConversationId.current } }))
+            loadGeneration.current += 1
+            detailsRequest.current += 1
+            setLoading(false)
+            setRefreshingDetails(false)
+            setError(message)
+            setConversation(null)
+            setClientAccount(null)
+            setChannel(null)
+            setEmployees([])
+        } else {
+            setActionError(message)
+        }
+    }, [])
 
     const {
         messages,
@@ -141,26 +162,7 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
         retryingIds,
         retryOlderMessages,
         loadOlderMessages,
-    } = useConversationMessages(conversationId, visible && !error)
-
-    const handleReadError = useCallback((failure: unknown) => {
-        const message = failure instanceof Error ? failure.message : 'Не удалось обновить диалог'
-        const status = getApiErrorStatus(failure)
-        if (status === 403 || status === 404) {
-            if (latestConversation.current) publishConversationUpdate(latestConversation.current)
-            loadGeneration.current += 1
-            detailsRequest.current += 1
-            setLoading(false)
-            setRefreshingDetails(false)
-            setError(message)
-            setConversation(null)
-            setClientAccount(null)
-            setChannel(null)
-            setEmployees([])
-        } else {
-            setActionError(message)
-        }
-    }, [])
+    } = useConversationMessages(conversationId, visible && !error, handleReadError)
 
     const loadDetails = useCallback(async (target: ConversationDto, notifyList = false) => {
         const generation = loadGeneration.current
@@ -213,6 +215,7 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
                 }
 
                 if (!background) setLoading(true)
+                const retryingRead = !!latestReadError.current
                 setError(null)
 
                 try {
@@ -226,6 +229,9 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
                     )
 
                     setConversation(result)
+                    // Resume a denied message session only after access to the
+                    // conversation has been confirmed by the explicit retry.
+                    if (retryingRead) void reloadMessages()
 
                     publishConversationUpdate(
                         result,
@@ -294,6 +300,7 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
                 isSuperAdmin,
                 membershipKey,
                 loadDetails,
+                reloadMessages,
             ],
         )
 

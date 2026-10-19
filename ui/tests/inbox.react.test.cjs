@@ -80,6 +80,7 @@ async function inbox(t, options = {}) {
     let workspace = { id: 'workspace', name: 'Workspace' }
     let renderer, location, navigate
     let threadMounts = 0
+    const reloadMessages = () => {}
 
     function Thread() {
         const [draft, setDraft] = React.useState('')
@@ -200,7 +201,7 @@ async function inbox(t, options = {}) {
             '../../api/employeeApi': { getWorkspaceEmployees: async () => [] },
             '../../api/messageApi': { sendOutboundMessage: async () => {} },
             './useConversationMessages': { useConversationMessages: () => ({ messages: [], loading: false,
-                loadingOlder: false, hasMore: false, historyStartReached: true, error: null }) },
+                loadingOlder: false, hasMore: false, historyStartReached: true, error: null, reloadMessages }) },
             './ConversationHeader': { default: () => null },
             './ConversationClientPanel': { default: () => null },
             './MessageList': { default: () => null },
@@ -352,6 +353,44 @@ test('initial access denial invalidates a still pending stale list response', as
     })
     await act(async () => firstSearch.resolve(response()))
     assert.ok(searches >= 2)
+    assert.equal(ui.renderer.root.findAllByType('article').length, 0)
+})
+
+for (const status of [403, 404]) {
+    test(`conversation HTTP ${status} evicts only its card before a failing list refresh`, async t => {
+        const pending = deferred(), refresh = deferred()
+        let searches = 0, reads = 0
+        const ui = await inbox(t, {
+            realThread: true,
+            loadConversation: id => ++reads === 1 ? pending.promise : Promise.resolve(conversation(id)),
+            search: () => ++searches === 1
+                ? Promise.resolve(response([conversation(), conversation('conversation-2')])) : refresh.promise,
+        })
+        assert.ok(ui.row())
+        await act(async () => pending.reject(Object.assign(Error('Access revoked'), { status })))
+        assert.ok(searches >= 2)
+        assert.deepEqual(ui.renderer.root.findAllByType('article').map(row => row.props['data-id']), ['conversation-2'])
+        await act(async () => refresh.reject(Object.assign(Error('Search temporarily unavailable'), { status: 503 })))
+        assert.deepEqual(ui.renderer.root.findAllByType('article').map(row => row.props['data-id']), ['conversation-2'])
+        // A later successful server response can restore access to the card.
+        ui.setSearch(async () => response())
+        await ui.click('Повторить загрузку диалога')
+        assert.ok(ui.row())
+    })
+}
+
+test('access denial plus a failed reconciliation cannot revive a pending stale list response', async t => {
+    const initial = deferred()
+    let searches = 0
+    const ui = await inbox(t, {
+        realThread: true,
+        loadConversation: async () => { throw Object.assign(Error('No access'), { status: 403 }) },
+        search: () => {
+            if (++searches === 1) return initial.promise
+            return Promise.reject(Object.assign(Error('Search unavailable'), { status: 503 }))
+        },
+    })
+    await act(async () => initial.resolve(response()))
     assert.equal(ui.renderer.root.findAllByType('article').length, 0)
 })
 

@@ -467,7 +467,7 @@ class MessageProcessingServiceIntegrationTest
 
         assertEquals(
                 1,
-                messageRepository.count()
+                messageRepository.countByConversationId(first.conversationId())
         );
     }
 
@@ -570,7 +570,7 @@ class MessageProcessingServiceIntegrationTest
 
         assertEquals(
                 1,
-                messageRepository.count()
+                messageRepository.countByConversationId(realtimeResult.conversationId())
         );
 
         MessageEntity message =
@@ -689,7 +689,7 @@ class MessageProcessingServiceIntegrationTest
 
         assertEquals(
                 1,
-                messageRepository.count()
+                messageRepository.countByConversationId(historyResult.conversationId())
         );
 
         MessageEntity message =
@@ -710,6 +710,9 @@ class MessageProcessingServiceIntegrationTest
 
     @Test
     void processPlatformMessage_missingChannelAccount_throwsException() {
+        long accountsBefore = clientAccountRepository.count();
+        long conversationsBefore = conversationRepository.count();
+        long messagesBefore = messageRepository.count();
 
         UUID unknownChannelAccountId =
                 UUID.randomUUID();
@@ -746,17 +749,17 @@ class MessageProcessingServiceIntegrationTest
         );
 
         assertEquals(
-                0,
+                accountsBefore,
                 clientAccountRepository.count()
         );
 
         assertEquals(
-                0,
+                conversationsBefore,
                 conversationRepository.count()
         );
 
         assertEquals(
-                0,
+                messagesBefore,
                 messageRepository.count()
         );
     }
