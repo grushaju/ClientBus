@@ -83,6 +83,7 @@ public class ConversationGroupService {
             String rawIcon
     ) {
         currentUserService.requireWorkspaceAccess(workspaceId);
+        requireEmployee();
 
         EmployeeEntity employee = currentUserService.getCurrentEmployee();
         String name = normalizeName(rawName);
@@ -176,7 +177,7 @@ public class ConversationGroupService {
                 requireOwnedGroup(workspaceId, groupId);
 
         ConversationEntity conversation = conversationRepository
-                .findById(conversationId)
+                .findByIdForUpdate(conversationId)
                 .orElseThrow(() -> new EntityNotFoundException(
                         "Conversation not found: " + conversationId
                 ));
@@ -224,6 +225,13 @@ public class ConversationGroupService {
     ) {
         ConversationGroupEntity group =
                 requireOwnedGroup(workspaceId, groupId);
+
+        ConversationEntity conversation = conversationRepository.findByIdForUpdate(conversationId)
+                .orElseThrow(() -> new EntityNotFoundException("Conversation not found: " + conversationId));
+        if (!conversation.getWorkspace().getId().equals(workspaceId)) {
+            throw new EntityNotFoundException("Conversation not found in workspace: " + conversationId);
+        }
+        currentUserService.requireConversationAccess(conversation);
 
         membershipRepository
                 .findByGroupIdAndConversationId(

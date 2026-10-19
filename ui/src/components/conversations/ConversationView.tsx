@@ -20,6 +20,7 @@ import {
 } from '../../api/conversationApi'
 
 import { getClientAccount } from '../../api/clientAccountApi'
+import { getApiErrorStatus } from '../../api/apiClient'
 
 import { getWorkspaceChannels } from '../../api/channelApi'
 
@@ -140,7 +141,26 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
         retryingIds,
         retryOlderMessages,
         loadOlderMessages,
-    } = useConversationMessages(conversationId, visible)
+    } = useConversationMessages(conversationId, visible && !error)
+
+    const handleReadError = useCallback((failure: unknown) => {
+        const message = failure instanceof Error ? failure.message : 'Не удалось обновить диалог'
+        const status = getApiErrorStatus(failure)
+        if (status === 403 || status === 404) {
+            if (latestConversation.current) publishConversationUpdate(latestConversation.current)
+            loadGeneration.current += 1
+            detailsRequest.current += 1
+            setLoading(false)
+            setRefreshingDetails(false)
+            setError(message)
+            setConversation(null)
+            setClientAccount(null)
+            setChannel(null)
+            setEmployees([])
+        } else {
+            setActionError(message)
+        }
+    }, [])
 
     const loadDetails = useCallback(async (target: ConversationDto, notifyList = false) => {
         const generation = loadGeneration.current
@@ -250,6 +270,10 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
                     }
                 } catch (err) {
                     if (!isCurrent()) return
+                    if ([403, 404].includes(getApiErrorStatus(err) ?? 0)) {
+                        // No DTO (and therefore no workspace) may have loaded yet.
+                        window.dispatchEvent(new CustomEvent('clientbus:conversation-unavailable', { detail: { id: conversationId } }))
+                    }
                     setError(
                         err instanceof Error
                             ? err.message
@@ -295,13 +319,13 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
         } catch (err) {
             if (currentConversationId.current === conversationId && loadGeneration.current === generation
                 && assignmentRequest.current === command && refreshRequest.current === request) {
-                setActionError(err instanceof Error ? err.message : 'Не удалось обновить диалог')
+                handleReadError(err)
             }
         }
-    }, [conversationId])
+    }, [conversationId, handleReadError])
 
     useEffect(() => {
-        if (!conversationId || !visible) return
+        if (!conversationId || !visible || error) return
         let stopped = false
         let timer: ReturnType<typeof setTimeout>
         const tick = async () => {
@@ -310,7 +334,7 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
         }
         timer = setTimeout(tick, 10000)
         return () => { stopped = true; clearTimeout(timer) }
-    }, [conversationId, visible, refreshConversation])
+    }, [conversationId, visible, error, refreshConversation])
 
     // Loading metadata and retaining the composer do not imply that the
     // operator can see the thread. In particular the mobile list hides it.
@@ -383,6 +407,7 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
         } catch (err) {
             if (currentConversationId.current !== id || assignmentRequest.current !== request || loadGeneration.current !== generation) return
             setActionError(err instanceof Error ? err.message : 'Не удалось изменить ответственного')
+            publishConversationUpdate(conversation)
             // The server may have rejected a concurrent assignment. Re-read its
             // state without clearing the draft or hiding the operation error.
             try {
@@ -391,7 +416,12 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
                     setConversation(updated)
                     publishConversationUpdate(updated)
                 }
-            } catch { /* Keep the original operation error visible. */ }
+            } catch (failure) {
+                if (currentConversationId.current === id && assignmentRequest.current === request && loadGeneration.current === generation
+                    && [403, 404].includes(getApiErrorStatus(failure) ?? 0)) {
+                    handleReadError(failure)
+                }
+            }
         } finally {
             if (assignmentRequest.current === request) assignmentPending.current = null
         }

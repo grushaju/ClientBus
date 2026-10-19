@@ -131,13 +131,15 @@ async function inbox(t, options = {}) {
             return groups.find(group => group.id === id)
         },
         deleteGroup: async (workspaceId, id) => { groups = groups.filter(group => group.id !== id) },
-        getConversationGroupIds: async () => [...membership],
+        getConversationGroupIds: async (...args) => options.loadMembership ? options.loadMembership(...args) : [...membership],
         addConversationToGroup: async (workspaceId, groupId, conversationId) => {
             membershipCalls.push(['add', workspaceId, groupId, conversationId])
+            if (options.addMembership) return options.addMembership(workspaceId, groupId, conversationId)
             membership.add(groupId)
         },
         removeConversationFromGroup: async (workspaceId, groupId, conversationId) => {
             membershipCalls.push(['remove', workspaceId, groupId, conversationId])
+            if (options.removeMembership) return options.removeMembership(workspaceId, groupId, conversationId)
             membership.delete(groupId)
         },
     }
@@ -326,6 +328,71 @@ test('background failure keeps cards mounted; Retry replaces data in place', asy
     assert.equal(ui.renderer.root.findAllByProps({ role: 'alert' }).length, 0)
 })
 
+for (const status of [403, 404]) {
+    test(`initial conversation HTTP ${status} refreshes a stale list without a loaded DTO`, async t => {
+        let searches = 0
+        const ui = await inbox(t, {
+            realThread: true,
+            loadConversation: async () => { throw Object.assign(Error('Conversation unavailable'), { status }) },
+            search: async () => ++searches === 1 ? response() : response([]),
+        })
+        assert.equal(ui.renderer.root.findAllByProps({ className: 'conversation-state conversation-error' }).length, 1)
+        assert.equal(ui.renderer.root.findAllByType('article').length, 0)
+        assert.ok(searches >= 2)
+    })
+}
+
+test('initial access denial invalidates a still pending stale list response', async t => {
+    const firstSearch = deferred()
+    let searches = 0
+    const ui = await inbox(t, {
+        realThread: true,
+        loadConversation: async () => { throw Object.assign(Error('No access'), { status: 403 }) },
+        search: () => ++searches === 1 ? firstSearch.promise : Promise.resolve(response([])),
+    })
+    await act(async () => firstSearch.resolve(response()))
+    assert.ok(searches >= 2)
+    assert.equal(ui.renderer.root.findAllByType('article').length, 0)
+})
+
+test('an initial transient conversation failure preserves the accessible list', async t => {
+    const ui = await inbox(t, {
+        realThread: true,
+        loadConversation: async () => { throw Object.assign(Error('Temporary failure'), { status: 503 }) },
+    })
+    assert.ok(ui.row())
+    assert.equal(ui.calls.length, 1)
+    assert.ok(text(ui.renderer.toJSON()).includes('Temporary failure'))
+})
+
+test('late initial access denial cannot invalidate a newer conversation', async t => {
+    const firstConversation = deferred()
+    const ui = await inbox(t, {
+        realThread: true,
+        loadConversation: id => id === 'conversation-1' ? firstConversation.promise : Promise.resolve(conversation(id)),
+    })
+    await ui.navigate('/inbox/conversation-2?tab=mine')
+    const searches = ui.calls.length
+    await act(async () => firstConversation.reject(Object.assign(Error('Old denial'), { status: 403 })))
+    assert.equal(ui.calls.length, searches)
+    assert.equal(ui.renderer.root.findAllByProps({ className: 'conversation-state conversation-error' }).length, 0)
+    assert.ok(!text(ui.renderer.toJSON()).includes('Old denial'))
+})
+
+for (const status of [403, 404]) {
+    test(`HTTP ${status} during refresh clears previously visible conversation cards`, async t => {
+        const ui = await inbox(t)
+        assert.ok(ui.row())
+        ui.setSearch(async () => { throw Object.assign(Error('Workspace or view is unavailable'), { status }) })
+        await ui.emit()
+        assert.equal(ui.renderer.root.findAllByType('article').length, 0)
+        assert.equal(ui.renderer.root.findAllByProps({ role: 'alert' }).length, 1)
+        ui.setSearch(async () => response())
+        await ui.click('Повторить')
+        assert.ok(ui.row())
+    })
+}
+
 test('changing conditions hides previous cards and ignores an obsolete refresh result', async t => {
     const ui = await inbox(t)
     const obsolete = deferred()
@@ -477,6 +544,58 @@ test('real membership menu keeps selection and stays mounted after add and remov
         ['add', 'workspace', 'g', 'conversation-1'],
         ['remove', 'workspace', 'g', 'conversation-1'],
     ])
+})
+
+for (const status of [403, 404, 409]) for (const add of [false, true]) {
+    test(`membership ${add ? 'add' : 'remove'} HTTP ${status} reconciles the list and preserves the error`, async t => {
+        const deny = async () => { throw Object.assign(Error('Membership rejected'), { status }) }
+        const ui = await inbox(t, {
+            realRows: true, initialEntries: ['/inbox?tab=mine'],
+            groups: [{ id: 'g', name: 'Group', icon: 'users.svg' }], groupIds: add ? [] : ['g'],
+            addMembership: deny, removeMembership: deny,
+        })
+        await ui.click('В группу')
+        const checkbox = ui.renderer.root.findByProps({ type: 'checkbox' })
+        assert.equal(checkbox.props.checked, !add)
+        ui.setSearch(async () => response([]))
+        await act(async () => checkbox.props.onChange({ target: { checked: add } }))
+        assert.equal(ui.membershipCalls.length, 1)
+        assert.equal(ui.renderer.root.findAllByProps({ className: 'conversation-list-item-row' }).length, 0)
+        const header = ui.renderer.root.findByProps({ className: 'conversation-list-header' })
+        assert.ok(header.findAllByProps({ role: 'alert' }).some(node => text(node).includes('Membership rejected')))
+    })
+}
+
+test('a rejected membership closes stale checkboxes and reopening reads current membership', async t => {
+    let groupIds = ['g']
+    const ui = await inbox(t, {
+        realRows: true, groups: [{ id: 'g', name: 'Group', icon: 'users.svg' }],
+        loadMembership: async () => groupIds,
+        removeMembership: async () => { throw Object.assign(Error('Membership changed'), { status: 409 }) },
+    })
+    await ui.click('В группу')
+    const checkbox = ui.renderer.root.findByProps({ type: 'checkbox' })
+    assert.equal(checkbox.props.checked, true)
+    groupIds = []
+    await act(async () => checkbox.props.onChange({ target: { checked: false } }))
+    assert.equal(ui.renderer.root.findAllByProps({ className: 'conversation-list-item-group-menu' }).length, 0)
+    await ui.click('В группу')
+    assert.equal(ui.renderer.root.findByProps({ type: 'checkbox' }).props.checked, false)
+})
+
+test('late membership rejection does not refresh or show an error in a different Workspace', async t => {
+    const command = deferred()
+    const ui = await inbox(t, {
+        realRows: true, groups: [{ id: 'g', name: 'Group', icon: 'users.svg' }], groupIds: ['g'],
+        removeMembership: () => command.promise,
+    })
+    await ui.click('В группу')
+    await act(async () => ui.renderer.root.findByProps({ type: 'checkbox' }).props.onChange({ target: { checked: false } }))
+    await ui.switchWorkspace({ id: 'workspace-2', name: 'Next Workspace' })
+    const searches = ui.calls.length
+    await act(async () => command.reject(Object.assign(Error('Old membership denial'), { status: 403 })))
+    assert.equal(ui.calls.length, searches)
+    assert.ok(!text(ui.renderer.toJSON()).includes('Old membership denial'))
 })
 
 test('removing from the active group removes the row when the server excludes it', async t => {

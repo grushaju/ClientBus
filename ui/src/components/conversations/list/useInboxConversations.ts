@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ConversationDto, ConversationSearchRequest } from '../../../api/types/conversation'
 import { loadInboxConversations } from './inboxData'
+import { getApiErrorStatus } from '../../../api/apiClient'
 
 type InboxData = NonNullable<Awaited<ReturnType<typeof loadInboxConversations>>>
 
@@ -30,7 +31,10 @@ export function useInboxConversations(workspaceId: string, request: Conversation
                 if (isCurrent() && data) setResult({ key: queryKey, data })
             })
             .catch(err => {
-                if (isCurrent()) setFailure({ key: queryKey, message: err instanceof Error ? err.message : 'Не удалось загрузить диалоги' })
+                if (isCurrent()) {
+                    if ([403, 404].includes(getApiErrorStatus(err) ?? 0)) setResult(null)
+                    setFailure({ key: queryKey, message: err instanceof Error ? err.message : 'Не удалось загрузить диалоги' })
+                }
             })
             .finally(() => {
                 if (isCurrent()) setPending(false)
@@ -43,8 +47,17 @@ export function useInboxConversations(workspaceId: string, request: Conversation
             const updated = (event as CustomEvent<ConversationDto>).detail
             if (updated?.id && updated.workspaceId === workspaceId) reload()
         }
+        const onUnavailable = (event: Event) => {
+            // The first read can fail before its workspace is known. Re-query
+            // the active scope, including any still pending initial response.
+            if ((event as CustomEvent<{ id: string }>).detail?.id) reload()
+        }
         window.addEventListener('clientbus:conversation-updated', onUpdated)
-        return () => window.removeEventListener('clientbus:conversation-updated', onUpdated)
+        window.addEventListener('clientbus:conversation-unavailable', onUnavailable)
+        return () => {
+            window.removeEventListener('clientbus:conversation-updated', onUpdated)
+            window.removeEventListener('clientbus:conversation-unavailable', onUnavailable)
+        }
     }, [workspaceId, reload])
 
     const error = enabled && failure?.key === queryKey ? failure.message : null

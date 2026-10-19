@@ -5,6 +5,8 @@ import kit.penny.clientbus.server.persistence.entity.EmployeeEntity;
 import kit.penny.clientbus.server.persistence.entity.OrganizationEntity;
 import kit.penny.clientbus.server.persistence.entity.UserEntity;
 import kit.penny.clientbus.server.persistence.entity.WorkspaceEntity;
+import kit.penny.clientbus.server.persistence.entity.ConversationEntity;
+import kit.penny.clientbus.server.persistence.entity.EmployeeWorkspaceEntity;
 import kit.penny.clientbus.server.persistence.repository.EmployeeRepository;
 import kit.penny.clientbus.server.persistence.repository.EmployeeWorkspaceRepository;
 import kit.penny.clientbus.server.persistence.repository.WorkspaceRepository;
@@ -370,6 +372,48 @@ class CurrentUserServiceTest {
     // =========================================================
     // HELPERS
     // =========================================================
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("conversationAccessCases")
+    void conversationAccessUsesWorkspaceRoleAndCurrentOwner(String name, boolean supervisor, String owner, boolean allowed) {
+        authenticate(employeeA1);
+        when(employeeWorkspaceRepository.existsByEmployeeIdAndWorkspaceId(employeeA1.getId(), workspaceA1.getId())).thenReturn(true);
+        EmployeeWorkspaceEntity membership = new EmployeeWorkspaceEntity(employeeA1, workspaceA1);
+        membership.setSupervisor(supervisor);
+        when(employeeWorkspaceRepository.findByEmployeeIdAndWorkspaceId(employeeA1.getId(), workspaceA1.getId())).thenReturn(Optional.of(membership));
+        ConversationEntity conversation = new ConversationEntity();
+        conversation.setWorkspace(workspaceA1);
+        if (!owner.equals("free")) conversation.setAssignedEmployee(owner.equals("self") ? employeeA1
+                : createEmployee("other", UserRole.EMPLOYEE, organizationA));
+        if (allowed) assertDoesNotThrow(() -> currentUserService.requireConversationAccess(conversation));
+        else assertThrows(AccessDeniedException.class, () -> currentUserService.requireConversationAccess(conversation));
+    }
+
+    Stream<Arguments> conversationAccessCases() {
+        return Stream.of(
+                Arguments.of("Employee: free", false, "free", true),
+                Arguments.of("Employee: own", false, "self", true),
+                Arguments.of("Employee: other", false, "other", false),
+                Arguments.of("Supervisor: other", true, "other", true),
+                Arguments.of("Supervisor: free", true, "free", true));
+    }
+
+    @Test
+    void owningAConversationDoesNotBypassWorkspaceAccess() {
+        authenticate(employeeA1);
+        ConversationEntity conversation = new ConversationEntity();
+        conversation.setWorkspace(workspaceA2);
+        conversation.setAssignedEmployee(employeeA1);
+        assertThrows(AccessDeniedException.class, () -> currentUserService.requireConversationAccess(conversation));
+    }
+
+    @Test
+    void superAdminCannotOpenAConversationFromAnotherOrganization() {
+        authenticate(superAdminA);
+        ConversationEntity conversation = new ConversationEntity();
+        conversation.setWorkspace(workspaceB1);
+        assertThrows(AccessDeniedException.class, () -> currentUserService.requireConversationAccess(conversation));
+    }
 
     private void authenticate(EmployeeEntity employee) {
 

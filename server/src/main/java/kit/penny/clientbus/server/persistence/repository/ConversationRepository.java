@@ -3,6 +3,8 @@ package kit.penny.clientbus.server.persistence.repository;
 import kit.penny.clientbus.server.persistence.entity.ConversationEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.Lock;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.repository.query.Param;
 
 import kit.penny.clientbus.common.dto.conversation.ConversationClientLinkFilter;
@@ -18,6 +20,10 @@ import java.util.UUID;
 
 public interface ConversationRepository
         extends JpaRepository<ConversationEntity, UUID> {
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT c FROM ConversationEntity c WHERE c.id = :conversationId")
+    Optional<ConversationEntity> findByIdForUpdate(@Param("conversationId") UUID conversationId);
 
     /*
      * ---------------------------------------------------------

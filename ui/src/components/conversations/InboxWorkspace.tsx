@@ -63,6 +63,7 @@ function InboxWorkspaceContent({ workspace, access, onOpenConversation, visible 
     const isDrawer = useMediaQuery(INBOX_DRAWER_QUERY)
     const drawerOpen = isDrawer && navigationOpen && visible
     const [groupActionError, setGroupActionError] = useState<string | null>(null)
+    const [membershipError, setMembershipError] = useState<string | null>(null)
     const [filterEditor, setFilterEditor] = useState<'create' | 'update' | null>(null)
     const filterEditorSession = useRef(0)
     const [filterEditorRevision, setFilterEditorRevision] = useState(0)
@@ -114,8 +115,16 @@ function InboxWorkspaceContent({ workspace, access, onOpenConversation, visible 
         } else configureFilters()
     }
     const changeMembership = async (conversationId: string, groupId: string, add: boolean) => {
-        await (add ? groups.addConversation : groups.removeConversation)(conversationId, groupId)
-        if (mounted.current) conversations.reload()
+        setMembershipError(null)
+        try {
+            await (add ? groups.addConversation : groups.removeConversation)(conversationId, groupId)
+        } catch (err) {
+            // Keep the error visible even if reconciliation removes its row.
+            if (mounted.current) setMembershipError(err instanceof Error ? err.message : 'Не удалось изменить состав группы.')
+            throw err
+        } finally {
+            if (mounted.current) conversations.reload()
+        }
     }
     const selectedFilter = [...savedFilters.privateFilters, ...savedFilters.systemFilters]
         .find(filter => filter.id === filters.selectedId)
@@ -188,6 +197,11 @@ function InboxWorkspaceContent({ workspace, access, onOpenConversation, visible 
                     onApply={applyFilters} onReset={resetFilters} />} />
         <aside className="inbox-sidebar" aria-label="Список диалогов">
             <ConversationList
+                notice={membershipError && <div className="conversation-list-action-error" role="alert">
+                    <span>{membershipError}</span>
+                    <button type="button" className="ui-button ui-button-secondary ui-button-sm" aria-label="Закрыть ошибку состава группы"
+                        onClick={() => setMembershipError(null)}>Скрыть</button>
+                </div>}
                 toolbar={<ConversationListToolbar access={access} selection={route.selection} groups={groups.groups} onSelect={select}
                     onResetFilter={resetFilters}
                     filterName={selectedFilter?.name ?? 'Без фильтра'}

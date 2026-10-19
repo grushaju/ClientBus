@@ -3,6 +3,7 @@ package kit.penny.clientbus.server.service;
 
 import jakarta.persistence.EntityNotFoundException;
 import kit.penny.clientbus.server.mapper.ConversationMapper;
+import kit.penny.clientbus.server.exception.ConversationAssignmentConflictException;
 import kit.penny.clientbus.server.persistence.entity.*;
 import kit.penny.clientbus.server.persistence.repository.*;
 import kit.penny.clientbus.server.security.service.CurrentUserService;
@@ -71,7 +72,7 @@ class ConversationServiceAssignmentTest {
     }
 
     private void givenConversation(ConversationEntity conversation) {
-        when(conversationRepository.findById(conversationId))
+        when(conversationRepository.findByIdForUpdate(conversationId))
                 .thenReturn(Optional.of(conversation));
     }
 
@@ -250,7 +251,7 @@ class ConversationServiceAssignmentTest {
         givenConversation(conversation);
         when(currentUserService.getCurrentEmployee()).thenReturn(another);
 
-        assertThrows(AccessDeniedException.class, () -> service.assignmentToMe(conversationId));
+        assertThrows(ConversationAssignmentConflictException.class, () -> service.assignmentToMe(conversationId));
         assertThrows(AccessDeniedException.class, () -> service.unassignmentFromMe(conversationId));
 
         assertSame(owner, conversation.getAssignedEmployee());

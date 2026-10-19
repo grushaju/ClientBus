@@ -19,8 +19,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.Optional;
+import jakarta.persistence.EntityNotFoundException;
+import org.springframework.security.access.AccessDeniedException;
+import kit.penny.clientbus.server.persistence.entity.WorkspaceEntity;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -145,5 +152,65 @@ class ConversationGroupServiceTest {
 
         assertEquals(List.of(), result);
         verifyNoInteractions(conversationMapper);
+    }
+
+    @Test
+    void superAdminCannotCreatePersonalGroups() {
+        assertThrows(AccessDeniedException.class, () -> service.createGroup(UUID.randomUUID(), "Group", "users.svg"));
+        verifyNoInteractions(groupRepository, membershipRepository, workspaceRepository);
+        verify(currentUserService, never()).getCurrentEmployee();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"read", "rename", "delete", "add", "remove"})
+    void everyGroupOperationRequiresTheOwnerInTheRequestedWorkspace(String operation) {
+        UUID workspaceId = UUID.randomUUID(), groupId = UUID.randomUUID(), employeeId = UUID.randomUUID();
+        when(currentUserService.isEmployee()).thenReturn(true);
+        when(currentUserService.getCurrentEmployeeId()).thenReturn(employeeId);
+        // An inaccessible owner/workspace combination has no matching group.
+        when(groupRepository.findByIdAndWorkspaceIdAndOwnerEmployeeId(groupId, workspaceId, employeeId))
+                .thenReturn(Optional.empty());
+        assertThrows(EntityNotFoundException.class, () -> {
+            switch (operation) {
+                case "read" -> service.getGroupConversations(workspaceId, groupId);
+                case "rename" -> service.renameGroup(workspaceId, groupId, "New");
+                case "delete" -> service.deleteGroup(workspaceId, groupId);
+                case "add" -> service.addConversation(workspaceId, groupId, UUID.randomUUID());
+                case "remove" -> service.removeConversation(workspaceId, groupId, UUID.randomUUID());
+            }
+        });
+        verify(currentUserService).requireWorkspaceAccess(workspaceId);
+        verifyNoInteractions(conversationRepository, membershipRepository);
+        verify(groupRepository, never()).delete(any());
+        verify(groupRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void workspaceDenialStopsGroupAccessBeforeRepositoryLookup() {
+        UUID workspaceId = UUID.randomUUID();
+        doThrow(new AccessDeniedException("No workspace access")).when(currentUserService).requireWorkspaceAccess(workspaceId);
+        assertThrows(AccessDeniedException.class, () -> service.getGroups(workspaceId));
+        verifyNoInteractions(groupRepository, membershipRepository);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void membershipCommandsRejectConversationsFromAnotherWorkspace(boolean remove) {
+        UUID workspaceId = UUID.randomUUID(), groupId = UUID.randomUUID(), employeeId = UUID.randomUUID(), conversationId = UUID.randomUUID();
+        when(currentUserService.isEmployee()).thenReturn(true);
+        when(currentUserService.getCurrentEmployeeId()).thenReturn(employeeId);
+        ConversationGroupEntity group = new ConversationGroupEntity();
+        group.setId(groupId);
+        when(groupRepository.findByIdAndWorkspaceIdAndOwnerEmployeeId(groupId, workspaceId, employeeId)).thenReturn(Optional.of(group));
+        WorkspaceEntity other = new WorkspaceEntity();
+        other.setId(UUID.randomUUID());
+        ConversationEntity conversation = new ConversationEntity();
+        conversation.setWorkspace(other);
+        when(conversationRepository.findByIdForUpdate(conversationId)).thenReturn(Optional.of(conversation));
+        assertThrows(EntityNotFoundException.class, () -> {
+            if (remove) service.removeConversation(workspaceId, groupId, conversationId);
+            else service.addConversation(workspaceId, groupId, conversationId);
+        });
+        verifyNoInteractions(membershipRepository);
     }
 }

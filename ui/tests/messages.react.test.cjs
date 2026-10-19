@@ -319,6 +319,71 @@ test('successful take and release update ownership and navigate to the correspon
     assert.deepEqual(ui.navigations, ['/inbox/a?tab=mine', '/inbox/a?tab=unassigned'])
 })
 
+test('a take conflict refreshes the list even when the winner makes the conversation inaccessible', async t => {
+    let reads = 0
+    const ui = await thread(t, {
+        getConversation: async id => {
+            if (++reads > 1) throw Object.assign(Error('Assigned to another employee'), { status: 403 })
+            return { id, workspaceId: 'workspace', clientAccountId: 'account', unreadCount: 0, assignedEmployeeId: null }
+        },
+        assignConversationToMe: async () => { throw Object.assign(Error('Already assigned'), { status: 409, code: 'CONVERSATION_ASSIGNMENT_CONFLICT' }) },
+    })
+    const before = ui.updates.length
+    await act(async () => ui.header.onTake())
+    assert.ok(ui.updates.length > before)
+    assert.equal(ui.updates.at(-1).workspaceId, 'workspace')
+    assert.equal(ui.renderer.root.findAllByType('header').length, 0)
+    assert.equal(ui.renderer.root.findAllByType('textarea').length, 0)
+    assert.match(ui.renderer.root.findByProps({ className: 'conversation-state conversation-error' }).children.join(''), /Assigned to another employee/)
+    assert.deepEqual(ui.navigations, [])
+})
+
+for (const status of [403, 404]) {
+    test(`metadata polling hides a previously visible thread after HTTP ${status}`, async t => {
+        t.mock.timers.enable({ apis: ['setTimeout'] })
+        let reads = 0
+        const ui = await thread(t, { getConversation: async id => {
+            if (++reads > 1) throw Object.assign(Error('Conversation unavailable'), { status })
+            return { id, workspaceId: 'workspace', clientAccountId: 'account', unreadCount: 0, assignedEmployeeId: 'employee' }
+        } }, true)
+        assert.equal(ui.renderer.root.findAllByType('textarea').length, 1)
+        await act(async () => t.mock.timers.tick(10000))
+        assert.equal(ui.renderer.root.findAllByType('header').length, 0)
+        assert.equal(ui.renderer.root.findAllByType('textarea').length, 0)
+        assert.match(ui.renderer.root.findByProps({ className: 'conversation-state conversation-error' }).children.join(''), /Conversation unavailable/)
+        assert.ok(ui.updates.length >= 2)
+        await act(async () => t.mock.timers.tick(30000))
+        assert.equal(reads, 2)
+    })
+}
+
+test('access loss during initial metadata loading shows an error and ignores the late initial response', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout'] })
+    const initial = deferred()
+    let reads = 0
+    const ui = await thread(t, { getConversation: async id => {
+        if (++reads === 1) return initial.promise
+        throw Object.assign(Error('Access revoked'), { status: 403 })
+    } }, true)
+    await act(async () => t.mock.timers.tick(10000))
+    assert.equal(ui.renderer.root.findAllByProps({ className: 'conversation-state conversation-error' }).length, 1)
+    await act(async () => initial.resolve({ id: 'a', workspaceId: 'workspace', clientAccountId: 'account', assignedEmployeeId: 'employee' }))
+    assert.equal(ui.renderer.root.findAllByType('header').length, 0)
+    assert.equal(ui.renderer.root.findAllByProps({ className: 'conversation-state conversation-error' }).length, 1)
+})
+
+test('temporary metadata errors keep the thread and sending controls available', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout'] })
+    let reads = 0
+    const ui = await thread(t, { getConversation: async id => {
+        if (++reads > 1) throw Object.assign(Error('Server unavailable'), { status: 503 })
+        return { id, workspaceId: 'workspace', clientAccountId: 'account', unreadCount: 0, assignedEmployeeId: 'employee' }
+    } }, true)
+    await act(async () => t.mock.timers.tick(10000))
+    assert.equal(ui.renderer.root.findAllByType('textarea').length, 1)
+    assert.equal(ui.header.actionError, 'Server unavailable')
+})
+
 test('message list follows appended messages only while the operator is at the bottom', async t => {
     const List = load('MessageList.tsx', { './MessageBubble': { default: () => null } }).default
     const container = { scrollTop: 0, scrollHeight: 1000, clientHeight: 300 }

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { getConversationGroupIds } from '../../../api/conversationApi'
+import { getApiErrorStatus } from '../../../api/apiClient'
 import type { ConversationGroupDto } from '../../../api/types/conversation'
 import GroupIcon from './GroupIcon'
 
@@ -70,6 +71,10 @@ export default function ConversationGroupMenu({ workspaceId, conversationId, gro
                 )
             }
         } catch (err) {
+            if ([403, 404, 409].includes(getApiErrorStatus(err) ?? 0)) {
+                setShowGroupMenu(false)
+                setSelectedGroupIds([])
+            }
             setActionError(
                 err instanceof Error
                     ? err.message

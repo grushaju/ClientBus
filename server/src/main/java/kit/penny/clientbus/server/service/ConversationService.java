@@ -8,6 +8,7 @@ import kit.penny.clientbus.common.enums.ClientAccountState;
 import kit.penny.clientbus.common.enums.MessageDirection;
 import kit.penny.clientbus.common.kafka.ChannelReadKafkaCommand;
 import kit.penny.clientbus.server.exception.ChannelUnavailableException;
+import kit.penny.clientbus.server.exception.ConversationAssignmentConflictException;
 import kit.penny.clientbus.server.kafka.producer.IChannelReadPublisher;
 import kit.penny.clientbus.server.mapper.ConversationMapper;
 import kit.penny.clientbus.server.persistence.entity.*;
@@ -405,13 +406,8 @@ public class ConversationService {
                 workspaceId
         );
 
-        return conversationRepository
-                .findAllByWorkspaceIdOrderByLastMessageAtDesc(
-                        workspaceId
-                )
-                .stream()
-                .map(conversationMapper::toDto)
-                .toList();
+        return accessibleConversationDtos(conversationRepository
+                .findAllByWorkspaceIdOrderByLastMessageAtDesc(workspaceId));
     }
 
     @Transactional(readOnly = true)
@@ -538,10 +534,7 @@ public class ConversationService {
                             );
         }
 
-        return conversations
-                .stream()
-                .map(conversationMapper::toDto)
-                .toList();
+        return accessibleConversationDtos(conversations);
     }
 
     @Transactional(readOnly = true)
@@ -581,10 +574,7 @@ public class ConversationService {
                             );
         }
 
-        return conversations
-                .stream()
-                .map(conversationMapper::toDto)
-                .toList();
+        return accessibleConversationDtos(conversations);
     }
 
 
@@ -1035,7 +1025,7 @@ public class ConversationService {
             UUID employeeId
     ) {
         ConversationEntity conversation =
-                getConversationEntity(conversationId);
+                getConversationForUpdate(conversationId);
 
         requireAssignmentManagement(conversation);
 
@@ -1083,7 +1073,7 @@ public class ConversationService {
             UUID conversationId
     ) {
         ConversationEntity conversation =
-                getConversationEntity(conversationId);
+                getConversationForUpdate(conversationId);
 
         requireAssignmentManagement(conversation);
 
@@ -1103,7 +1093,7 @@ public class ConversationService {
         }
 
         ConversationEntity conversation =
-                getConversationEntity(conversationId);
+                getConversationForUpdate(conversationId);
 
         currentUserService.requireWorkspaceAccess(conversation.getWorkspace().getId());
 
@@ -1117,10 +1107,7 @@ public class ConversationService {
                 && !assignedEmployee.getId()
                 .equals(currentEmployee.getId())) {
 
-            throw new AccessDeniedException(
-                    "Conversation is already assigned "
-                            + "to another employee"
-            );
+            throw new ConversationAssignmentConflictException();
         }
 
         changeAssignment(conversation, currentEmployee);
@@ -1139,7 +1126,7 @@ public class ConversationService {
         }
 
         ConversationEntity conversation =
-                getConversationEntity(conversationId);
+                getConversationForUpdate(conversationId);
 
         currentUserService.requireWorkspaceAccess(conversation.getWorkspace().getId());
 
@@ -1181,10 +1168,6 @@ public class ConversationService {
                 );
 
         currentUserService.requireConversationAccess(
-                conversation
-        );
-
-        requireConversationAccess(
                 conversation
         );
 
@@ -1475,11 +1458,26 @@ public class ConversationService {
             ConversationEntity conversation
     ) {
 
-        currentUserService.requireWorkspaceAccess(
-                conversation
-                        .getWorkspace()
-                        .getId()
-        );
+        currentUserService.requireConversationAccess(conversation);
+    }
+
+    private List<ConversationDto> accessibleConversationDtos(List<ConversationEntity> conversations) {
+        if (currentUserService.isSuperAdmin()) {
+            return conversations.stream().map(conversationMapper::toDto).toList();
+        }
+        UUID employeeId = currentUserService.getCurrentEmployeeId();
+        Map<UUID, Boolean> supervisors = new HashMap<>();
+        return conversations.stream()
+                .filter(conversation -> conversation.getAssignedEmployee() == null
+                        || conversation.getAssignedEmployee().getId().equals(employeeId)
+                        || supervisors.computeIfAbsent(conversation.getWorkspace().getId(), currentUserService::isSupervisor))
+                .map(conversationMapper::toDto)
+                .toList();
+    }
+
+    private ConversationEntity getConversationForUpdate(UUID conversationId) {
+        return conversationRepository.findByIdForUpdate(conversationId)
+                .orElseThrow(() -> new EntityNotFoundException("Conversation not found: " + conversationId));
     }
 
     private WorkspaceEntity getWorkspace(
