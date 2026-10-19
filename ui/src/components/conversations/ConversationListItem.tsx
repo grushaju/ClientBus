@@ -96,6 +96,14 @@ function ConversationListItemComponent({
                         <PlatformName type={platform} />
                     </div>
 
+                    {clientAccount && (
+                        <div className="conversation-list-client-link">
+                            <span className={`ui-status ${clientAccount.clientId ? 'conversation-client-linked' : 'conversation-client-unlinked'}`}>
+                                {clientAccount.clientId ? 'Клиент есть' : 'Без клиента'}
+                            </span>
+                        </div>
+                    )}
+
                     <div className="conversation-list-item-bottom">
                         <span>
                             {conversation.lastMessagePreview ?? 'Нет сообщений'}

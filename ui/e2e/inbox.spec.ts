@@ -108,6 +108,7 @@ test('создание клиента обновляет панель и сох�
     await page.goto('/inbox?tab=mine')
     const draft = page.getByPlaceholder('Введите сообщение...')
     await draft.fill('Сохранённый черновик')
+    await expect(page.locator('.conversation-list-client-link')).toHaveText('Без клиента')
     const panel = page.locator('.conversation-client-panel')
     await panel.getByRole('button', { name: 'Создать клиента', exact: true }).click()
     await panel.getByLabel('Имя', { exact: true }).fill('Проверка')
@@ -115,7 +116,50 @@ test('создание клиента обновляет панель и сох�
     await panel.getByRole('button', { name: 'Создать и привязать', exact: true }).click()
     await expect(panel.getByText('Проверка Клиент', { exact: true })).toBeVisible()
     await expect(draft).toHaveValue('Сохранённый черновик')
+    await expect(page.locator('.conversation-list-client-link')).toHaveText('Клиент есть')
     expect(api.calls.filter(call => call.path === '/api/clients/from-conversation/conversation-1')).toHaveLength(1)
+})
+
+test.describe('быстрые периоды активности', () => {
+    test.use({ timezoneId: 'Europe/Moscow' })
+
+    test('выбор, применение, сохранение и ручное изменение периода', async ({ page, api }) => {
+        await page.clock.setFixedTime(new Date('2026-10-19T12:00:00Z'))
+        await page.goto('/inbox?tab=mine')
+        await showWorkbench(page)
+        const editor = page.getByRole('region', { name: 'Редактор фильтра' })
+        await page.getByRole('button', { name: '+ Фильтр', exact: true }).click()
+        for (const [label, start] of [
+            ['Сегодня', '2026-10-19'], ['Последние 7 дней', '2026-10-13'], ['Последние 30 дней', '2026-09-20'],
+        ]) {
+            const searches = api.searches.length
+            await editor.getByRole('button', { name: label, exact: true }).click()
+            await expect(editor.getByLabel('Активность с', { exact: true })).toHaveValue(start)
+            await expect(editor.getByLabel('Активность по', { exact: true })).toHaveValue('2026-10-19')
+            expect(api.searches).toHaveLength(searches)
+            await editor.getByRole('button', { name: 'Применить', exact: true }).click()
+            const from = new Date(`${start}T00:00:00+03:00`).toISOString()
+            await expect.poll(() => api.searches.at(-1)?.activityFrom).toBe(from)
+            expect(api.searches.at(-1)?.activityTo).toBe('2026-10-19T20:59:59.999999Z')
+            await showWorkbench(page)
+        }
+        const applied = api.searches.at(-1)!
+        await editor.getByLabel('Название фильтра', { exact: true }).fill('Период активности')
+        await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
+        await expect.poll(() => api.filters.find(filter => filter.name === 'Период активности')?.filterDefinition.activityFrom).toBe(applied.activityFrom)
+        expect(api.filters.find(filter => filter.name === 'Период активности')?.filterDefinition.activityTo).toBe(applied.activityTo)
+        await editor.getByRole('button', { name: 'Сбросить', exact: true }).click()
+        await expect.poll(() => api.searches.at(-1)?.activityFrom).toBeNull()
+        await expect(editor.getByLabel('Активность с', { exact: true })).toHaveValue('')
+        await page.getByRole('button', { name: 'Период активности', exact: true }).click()
+        await expect.poll(() => api.searches.at(-1)?.activityFrom).toBe(applied.activityFrom)
+        await showWorkbench(page)
+        await editor.getByLabel('Активность с', { exact: true }).fill('2026-10-01')
+        await editor.getByLabel('Активность по', { exact: true }).fill('2026-10-05')
+        await editor.getByRole('button', { name: 'Применить', exact: true }).click()
+        await expect.poll(() => api.searches.at(-1)?.activityFrom).toBe('2026-09-30T21:00:00.000Z')
+        expect(api.searches.at(-1)?.activityTo).toBe('2026-10-05T20:59:59.999999Z')
+    })
 })
 
 for (const role of ['employee', 'supervisor', 'admin'] as const) {

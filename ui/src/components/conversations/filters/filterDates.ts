@@ -1,6 +1,16 @@
 const TIME_ZONE_SUFFIX = /(?:Z|[+-]\d{2}:\d{2})$/i
 const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/
 
+export function activityPreset(days: 1 | 7 | 30, now = new Date()): { activityFrom: string; activityTo: string } {
+    const start = new Date(now)
+    // Include today and the preceding calendar days, even across DST/month/year.
+    start.setDate(start.getDate() - days + 1)
+    return {
+        activityFrom: toFilterInstant(toLocalDateInput(start.toISOString()))!,
+        activityTo: toFilterInstant(toLocalDateInput(now.toISOString()), 'end')!,
+    }
+}
+
 // A calendar day is local to the browser. The API uses inclusive Instant bounds.
 export function toFilterInstant(value: string, boundary: 'start' | 'end' = 'start'): string | null {
     if (!value) return null

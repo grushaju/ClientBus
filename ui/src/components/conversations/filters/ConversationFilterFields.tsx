@@ -1,7 +1,7 @@
 import type { Dispatch, SetStateAction } from 'react'
 import type { ChannelDto } from '../../../api/types/channel'
 import type { ConversationFilterDraft } from './conversationFilterModel'
-import { toLocalDateInput } from './filterDates'
+import ConversationActivityFields from './ConversationActivityFields'
 import ConversationClientFields from './ConversationClientFields'
 import ConversationChannelFields from './ConversationChannelFields'
 
@@ -59,37 +59,7 @@ export default function ConversationFilterFields({ filterDraft, setFilterDraft, 
                 </select>
             </label>
 
-            <div className="conversation-filter-date-range">
-                <label>
-                    Активность с
-                    <input
-                        className="ui-input"
-                        type="date"
-                        value={toLocalDateInput(filterDraft.activityFrom)}
-                        onChange={event =>
-                            setFilterDraft(current => ({
-                                ...current,
-                                activityFrom: event.target.value,
-                            }))
-                        }
-                    />
-                </label>
-
-                <label>
-                    Активность по
-                    <input
-                        className="ui-input"
-                        type="date"
-                        value={toLocalDateInput(filterDraft.activityTo)}
-                        onChange={event =>
-                            setFilterDraft(current => ({
-                                ...current,
-                                activityTo: event.target.value,
-                            }))
-                        }
-                    />
-                </label>
-            </div>
+            <ConversationActivityFields draft={filterDraft} setDraft={setFilterDraft} />
 
             <ConversationClientFields draft={filterDraft} setDraft={setFilterDraft} workspaceId={workspaceId} />
             {filterDraft.clientAccountIds.length > 0 && <div className="conversation-filter-account-restriction">

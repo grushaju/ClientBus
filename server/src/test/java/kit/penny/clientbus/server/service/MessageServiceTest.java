@@ -2727,8 +2727,23 @@ class MessageServiceTest {
     }
 
     @Test
+    void syncConversationHistory_completedHistory_doesNotRequireExternalChannel() {
+        conversation.setHistoryStartReached(true);
+        when(conversationRepository.findById(conversationId)).thenReturn(Optional.of(conversation));
+
+        var result = messageService.syncConversationHistory(conversationId, "1", 50);
+
+        assertTrue(result.historyStartReached());
+        assertEquals(List.of(), result.messages());
+        verify(currentUserService).requireConversationAccess(conversation);
+        verify(currentUserService).requireWorkspaceAccess(workspace.getId());
+        verifyNoInteractions(conversationService, syncConversationHistoryCommandPublisher);
+    }
+
+    @Test
     void syncConversationHistory_conversationAccessDenied_doesNotPublish() {
 
+        conversation.setHistoryStartReached(true);
         when(conversationRepository.findById(conversationId))
                 .thenReturn(Optional.of(conversation));
 

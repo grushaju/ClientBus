@@ -150,6 +150,40 @@ test('API errors propagate and non-advancing pagination cannot loop forever', as
     await assert.rejects(repeating('w', { view: 'MINE' }, () => true), /пагинация/)
 })
 
+test('activity shortcuts include today, cross calendar boundaries and respect DST', () => {
+    const originalZone = process.env.TZ
+    try {
+        process.env.TZ = 'Europe/Moscow'
+        const now = new Date('2026-01-02T22:30:00Z') // January 3 locally
+        assert.deepEqual(dates.activityPreset(1, now), {
+            activityFrom: '2026-01-02T21:00:00.000Z', activityTo: '2026-01-03T20:59:59.999999Z',
+        })
+        assert.equal(dates.activityPreset(7, now).activityFrom, '2025-12-27T21:00:00.000Z')
+        assert.equal(dates.activityPreset(30, now).activityFrom, '2025-12-04T21:00:00.000Z')
+        assert.equal(now.toISOString(), '2026-01-02T22:30:00.000Z')
+        process.env.TZ = 'America/New_York'
+        assert.deepEqual(dates.activityPreset(7, new Date('2026-03-09T03:30:00Z')), {
+            activityFrom: '2026-03-02T05:00:00.000Z', activityTo: '2026-03-09T03:59:59.999999Z',
+        })
+        assert.deepEqual(dates.activityPreset(1, new Date('2026-11-01T12:00:00Z')), {
+            activityFrom: '2026-11-01T04:00:00.000Z', activityTo: '2026-11-02T04:59:59.999999Z',
+        })
+    } finally {
+        if (originalZone === undefined) delete process.env.TZ
+        else process.env.TZ = originalZone
+    }
+})
+
+test('choosing an activity shortcut replaces saved partial days even if the displayed dates match', () => {
+    const preset = dates.activityPreset(1, new Date('2026-10-19T12:00:00Z'))
+    const applied = filters.appliedCriteriaFromDefinition({ view: 'MINE',
+        activityFrom: '2026-10-19T11:00:00Z', activityTo: '2026-10-19T13:00:00Z' })
+    const draft = { ...filters.criteriaFromDefinition({ view: 'MINE' }), ...preset }
+    const definition = filters.buildSavedDefinition({ view: 'MINE' }, filters.criteriaToApply(draft, applied))
+    assert.equal(definition.activityFrom, preset.activityFrom)
+    assert.equal(definition.activityTo, preset.activityTo)
+})
+
 test('calendar date bounds respect local zones and reject impossible dates', () => {
     const originalZone = process.env.TZ
     try {

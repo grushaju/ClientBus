@@ -1233,6 +1233,9 @@ public class MessageService {
                                             .getId()
                             );
 
+                    // All platform history is already cached. Reading its end
+                    // must also work while the channel is disconnected.
+                    if (conversation.isHistoryStartReached()) return null;
 
                     conversationService.requireExternalOperationsAvailable(
                             conversation
@@ -1259,6 +1262,10 @@ public class MessageService {
                             )
                     );
                 });
+
+        if (request == null) {
+            return new SyncConversationHistoryKafkaCommand.Result(java.util.List.of(), true);
+        }
 
         UUID correlationId =
                 UUID.randomUUID();

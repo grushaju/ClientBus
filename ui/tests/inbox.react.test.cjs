@@ -7,6 +7,25 @@ const load = require('./loadInboxModule.cjs')
 const focusDom = require('./inboxFocusDom.cjs')
 process.env.TZ = 'Europe/Moscow'
 
+test('conversation cards show the current client link and omit it when account data is unavailable', async t => {
+    const Row = load('ConversationListItem.tsx').default
+    let renderer
+    t.after(async () => { if (renderer) await act(async () => renderer.unmount()) })
+    const render = account => React.createElement(MemoryRouter, null, React.createElement(Row, {
+        item: { conversation: conversation(), clientAccount: account, channel: null },
+        active: false, tab: 'mine', groups: [], workspaceId: 'workspace', canManageGroups: false,
+    }))
+    const account = { id: 'account', displayName: 'Contact', clientId: null, avatarUrl: null }
+    await act(async () => { renderer = create(render(account)) })
+    assert.equal(text(renderer.root.findByProps({ className: 'conversation-list-client-link' })), 'Без клиента')
+    await act(async () => renderer.update(render({ ...account, clientId: 'client' })))
+    assert.equal(text(renderer.root.findByProps({ className: 'conversation-list-client-link' })), 'Клиент есть')
+    await act(async () => renderer.update(render(account)))
+    assert.equal(text(renderer.root.findByProps({ className: 'conversation-list-client-link' })), 'Без клиента')
+    await act(async () => renderer.update(render(null)))
+    assert.equal(renderer.root.findAllByProps({ className: 'conversation-list-client-link' }).length, 0)
+})
+
 function deferred() {
     let resolve, reject
     const promise = new Promise((res, rej) => { resolve = res; reject = rej })
