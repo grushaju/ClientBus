@@ -35,6 +35,10 @@ public class SecurityConfig {
         http
                 .csrf(AbstractHttpConfigurer::disable)
 
+                .exceptionHandling(errors -> errors.defaultAuthenticationEntryPointFor(
+                        (request,response,exception) -> JwtAuthenticationFilter.writeStreamUnauthorized(response),
+                        request -> request.getRequestURI().equals(request.getContextPath()+"/api/events")))
+
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(
                                 SessionCreationPolicy.STATELESS
@@ -42,6 +46,10 @@ public class SecurityConfig {
                 )
 
                 .authorizeHttpRequests(auth -> auth
+
+                        // Only continuation of the already authenticated SSE request may bypass JWT re-auth.
+                        .requestMatchers(request -> request.getDispatcherType() == jakarta.servlet.DispatcherType.ASYNC
+                                && request.getRequestURI().equals(request.getContextPath() + "/api/events")).permitAll()
 
                         // React SPA
                         .requestMatchers(

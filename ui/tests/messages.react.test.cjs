@@ -461,7 +461,7 @@ test('a late message denial cannot close a newer conversation', async t => {
     assert.deepEqual(ui.unavailable, [])
 })
 
-test('access loss during initial metadata loading shows an error and ignores the late initial response', async t => {
+test('stalled initial metadata expires; a denied retry cannot be revived by its late response', async t => {
     t.mock.timers.enable({ apis: ['setTimeout'] })
     const initial = deferred()
     let reads = 0
@@ -469,8 +469,9 @@ test('access loss during initial metadata loading shows an error and ignores the
         if (++reads === 1) return initial.promise
         throw Object.assign(Error('Access revoked'), { status: 403 })
     } }, true)
-    await act(async () => t.mock.timers.tick(10000))
+    await act(async () => t.mock.timers.tick(30001))
     assert.equal(ui.renderer.root.findAllByProps({ className: 'conversation-state conversation-error' }).length, 1)
+    await act(async () => ui.renderer.root.findByProps({ className: 'ui-button ui-button-secondary' }).props.onClick())
     await act(async () => initial.resolve({ id: 'a', workspaceId: 'workspace', clientAccountId: 'account', assignedEmployeeId: 'employee' }))
     assert.equal(ui.renderer.root.findAllByType('header').length, 0)
     assert.equal(ui.renderer.root.findAllByProps({ className: 'conversation-state conversation-error' }).length, 1)
@@ -600,6 +601,31 @@ test('old outgoing statuses advance through SENT and DELIVERED to READ and then 
     await act(async () => ui.model.refreshMessages())
     assert.equal(loads, 3)
     assert.equal(ui.model.refreshError, null)
+})
+
+test('an older status response cannot overwrite a newer local message while its status pass continues', async t => {
+    const first = deferred(), second = deferred()
+    const ui = await history(t, {
+        getConversationMessages: async () => page([orderedMessage(200)]),
+        getMessage: id => id === '1' ? first.promise : second.promise,
+    })
+    await act(async () => {
+        ui.model.acceptMessage(orderedMessage(1, { direction: 'OUTBOUND', deliveryStatus: 'SENT' }))
+        ui.model.acceptMessage(orderedMessage(2, { direction: 'OUTBOUND', deliveryStatus: 'SENT' }))
+    })
+    let refresh
+    await act(async () => { refresh = ui.model.refreshMessages() })
+    await act(async () => {
+        ui.model.acceptMessage(orderedMessage(1, { direction: 'OUTBOUND', deliveryStatus: 'READ' }))
+        first.resolve(orderedMessage(1, { direction: 'OUTBOUND', deliveryStatus: 'DELIVERED' }))
+    })
+    assert.equal(ui.model.messages.find(item => item.id === '1').deliveryStatus, 'READ')
+    await act(async () => {
+        second.resolve(orderedMessage(2, { direction: 'OUTBOUND', deliveryStatus: 'READ' }))
+        await refresh
+    })
+    assert.equal(ui.model.messages.find(item => item.id === '1').deliveryStatus, 'READ')
+    assert.equal(ui.model.messages.find(item => item.id === '2').deliveryStatus, 'READ')
 })
 
 test('skipped history loading leaves no scroll snapshot to corrupt the next live update', async t => {

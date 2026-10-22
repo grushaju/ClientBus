@@ -1,19 +1,24 @@
 import { getAccessToken } from '../auth/authStorage'
+import { budgetedFetch } from './events/requestBudget'
+import { retryAfterDelay } from './events/retryAfter'
 
 export class ApiError extends Error {
     readonly status: number
     readonly code?: string
+    readonly retryAfterMs: number
 
     constructor(
         status: number,
         message: string,
-        code?: string
+        code?: string,
+        retryAfterMs = 0,
     ) {
         super(message)
 
         this.name = 'ApiError'
         this.status = status
         this.code = code
+        this.retryAfterMs = retryAfterMs
     }
 }
 
@@ -68,7 +73,7 @@ export async function apiFetch(
         )
     }
 
-    const response = await fetch(
+    const response = await budgetedFetch(
         input,
         {
             ...init,
@@ -77,6 +82,10 @@ export async function apiFetch(
     )
 
     if (!response.ok) {
+        if (response.status === 401 && !init.signal?.aborted && token && token === getAccessToken()
+            && String(input) !== '/api/auth/login' && typeof window !== 'undefined') {
+            window.dispatchEvent(new Event('clientbus:session-expired'))
+        }
         let message =
             `Request failed with status ${response.status}`
 
@@ -98,7 +107,8 @@ export async function apiFetch(
         throw new ApiError(
             response.status,
             message,
-            code
+            code,
+            retryAfterDelay(response.headers.get('Retry-After')),
         )
     }
 

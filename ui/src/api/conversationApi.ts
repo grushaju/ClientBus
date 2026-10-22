@@ -1,4 +1,5 @@
 import { apiFetch } from './apiClient'
+import { withCancellation } from './events/requestScope'
 
 import type {
     ConversationDto,
@@ -9,10 +10,11 @@ import type {
 } from './types/conversation'
 
 export async function getConversation(
-    conversationId: string
+    conversationId: string,
+    signal?: AbortSignal,
 ): Promise<ConversationDto> {
     const response = await apiFetch(
-        `/api/conversations/${conversationId}`
+        `/api/conversations/${conversationId}`, { signal },
     )
 
     return response.json()
@@ -142,16 +144,20 @@ export async function markConversationAsRead(
 export async function searchInbox(
     workspaceId: string,
     request: ConversationSearchRequest,
+    signal?: AbortSignal,
 ): Promise<ConversationSearchResponse> {
-    const response = await apiFetch(
-        `/api/conversations/workspace/${workspaceId}/search`,
-        {
-            method: 'POST',
-            body: JSON.stringify(request),
-        },
-    )
+    return withCancellation(async requestSignal => {
+        const response = await apiFetch(
+            `/api/conversations/workspace/${workspaceId}/search`,
+            {
+                method: 'POST',
+                body: JSON.stringify(request),
+                signal: requestSignal,
+            },
+        )
 
-    return response.json()
+        return response.json()
+    }, signal ? [signal] : [])
 }
 
 export async function createGroup(
@@ -203,9 +209,11 @@ export async function deleteGroup(
 
 export async function getGroups(
     workspaceId: string,
+    signal?: AbortSignal,
 ): Promise<ConversationGroupDto[]> {
     const response = await apiFetch(
         `/api/conversations/workspace/${workspaceId}/groups`,
+        { signal },
     )
 
     return response.json()

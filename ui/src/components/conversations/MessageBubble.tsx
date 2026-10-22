@@ -7,6 +7,7 @@ import {
     getMessageAttachmentBlob,
     getMessageAttachments,
 } from '../../api/messageApi'
+import { useUiLifetime } from '../../api/events/useUiLifetime'
 
 import type {
     MessageAttachmentDto,
@@ -111,48 +112,34 @@ interface MessageAttachmentsProps {
 function MessageAttachments({
                                 message,
                             }: MessageAttachmentsProps) {
-    const [
-        attachments,
-        setAttachments,
-    ] = useState<MessageAttachmentDto[]>([])
-
-    const [
-        loading,
-        setLoading,
-    ] = useState(true)
-
-    const [
-        error,
-        setError,
-    ] = useState<string | null>(null)
+    const lifetime = useUiLifetime('message-attachments:' + message.id)
+    const [result, setResult] = useState(() => ({ owner: lifetime,
+        attachments: [] as MessageAttachmentDto[], loading: true, error: null as string | null }))
+    const { attachments, loading, error } = result.owner === lifetime ? result
+        : { attachments: [], loading: true, error: null }
 
     useEffect(() => {
         let cancelled = false
+        const controller = new AbortController()
+        const allowed = lifetime.capture()
 
         async function loadAttachments() {
-            setLoading(true)
-            setError(null)
+            setResult({ owner: lifetime, attachments: [], loading: true, error: null })
 
             try {
                 const result =
-                    await getMessageAttachments(
-                        message.id,
-                    )
+                    await lifetime.read(signal => getMessageAttachments(message.id, signal), controller.signal)
 
-                if (!cancelled) {
-                    setAttachments(result)
+                if (!cancelled && allowed()) {
+                    setResult({ owner: lifetime, attachments: result, loading: false, error: null })
                 }
             } catch (err) {
-                if (!cancelled) {
-                    setError(
-                        err instanceof Error
+                if (!cancelled && allowed()) {
+                    setResult({ owner: lifetime, attachments: [], loading: false,
+                        error: err instanceof Error
                             ? err.message
                             : 'Не удалось загрузить вложения',
-                    )
-                }
-            } finally {
-                if (!cancelled) {
-                    setLoading(false)
+                    })
                 }
             }
         }
@@ -161,8 +148,9 @@ function MessageAttachments({
 
         return () => {
             cancelled = true
+            controller.abort()
         }
-    }, [message.id])
+    }, [message.id, lifetime])
 
     if (loading) {
         return (
@@ -206,15 +194,9 @@ function MessageAttachment({
                                messageId,
                                attachment,
                            }: MessageAttachmentProps) {
-    const [
-        url,
-        setUrl,
-    ] = useState<string | null>(null)
-
-    const [
-        error,
-        setError,
-    ] = useState(false)
+    const lifetime = useUiLifetime('message-attachment:' + messageId + ':' + attachment.id)
+    const [result, setResult] = useState(() => ({ owner: lifetime, url: null as string | null, error: false }))
+    const { url, error } = result.owner === lifetime ? result : { url: null, error: false }
 
     const [
         viewerOpen,
@@ -223,27 +205,28 @@ function MessageAttachment({
 
     useEffect(() => {
         let cancelled = false
+        const controller = new AbortController()
+        const allowed = lifetime.capture()
         let objectUrl: string | null = null
+        setResult({ owner: lifetime, url: null, error: false })
+        setViewerOpen(false)
 
         async function loadAttachment() {
             try {
                 const blob =
-                    await getMessageAttachmentBlob(
-                        messageId,
-                        attachment.id,
-                    )
+                    await lifetime.read(signal => getMessageAttachmentBlob(messageId, attachment.id, signal), controller.signal)
 
-                if (cancelled) {
+                if (cancelled || !allowed()) {
                     return
                 }
 
                 objectUrl =
                     URL.createObjectURL(blob)
 
-                setUrl(objectUrl)
+                setResult({ owner: lifetime, url: objectUrl, error: false })
             } catch {
-                if (!cancelled) {
-                    setError(true)
+                if (!cancelled && allowed()) {
+                    setResult({ owner: lifetime, url: null, error: true })
                 }
             }
         }
@@ -252,6 +235,7 @@ function MessageAttachment({
 
         return () => {
             cancelled = true
+            controller.abort()
 
             if (objectUrl) {
                 URL.revokeObjectURL(objectUrl)
@@ -260,6 +244,7 @@ function MessageAttachment({
     }, [
         messageId,
         attachment.id,
+        lifetime,
     ])
 
     if (error) {

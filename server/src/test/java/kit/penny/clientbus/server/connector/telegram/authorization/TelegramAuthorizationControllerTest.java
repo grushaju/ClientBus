@@ -19,6 +19,9 @@ class TelegramAuthorizationControllerTest {
     @Mock
     private TelegramAuthorizationService authorizationService;
 
+    @Mock
+    private kit.penny.clientbus.server.security.policy.HttpAccessPolicy accessPolicy;
+
     private TelegramAuthorizationController controller;
 
     private UUID channelAccountId;
@@ -26,7 +29,7 @@ class TelegramAuthorizationControllerTest {
     @BeforeEach
     void setUp() {
         controller = new TelegramAuthorizationController(
-                authorizationService
+                authorizationService, accessPolicy
         );
 
         channelAccountId = UUID.randomUUID();
@@ -50,6 +53,22 @@ class TelegramAuthorizationControllerTest {
 
         verify(authorizationService)
                 .getStatus(channelAccountId);
+    }
+
+    @Test
+    void everyHttpCommandChecksPolicyBeforeCallingConnectorFlow() {
+        var actions = java.util.List.<org.junit.jupiter.api.function.Executable>of(
+                () -> controller.startAuthorization(channelAccountId),
+                () -> controller.getStatus(channelAccountId),
+                () -> controller.submitCode(channelAccountId, new TelegramAuthorizationController.AuthenticationCodeRequest("code")),
+                () -> controller.submitPassword(channelAccountId, new TelegramAuthorizationController.AuthenticationPasswordRequest("password")),
+                () -> controller.submitEmail(channelAccountId, new TelegramAuthorizationController.EmailAddressRequest("email")),
+                () -> controller.disable(channelAccountId), () -> controller.enable(channelAccountId),
+                () -> controller.disconnect(channelAccountId), () -> controller.find(channelAccountId,"phone",null));
+        org.mockito.Mockito.doThrow(new org.springframework.security.access.AccessDeniedException("denied"))
+                .when(accessPolicy).require(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(channelAccountId));
+        for (var action : actions) org.junit.jupiter.api.Assertions.assertThrows(org.springframework.security.access.AccessDeniedException.class, action);
+        org.mockito.Mockito.verifyNoInteractions(authorizationService);
     }
 
     @Test

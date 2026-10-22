@@ -1,4 +1,5 @@
 import { apiFetch } from './apiClient'
+import { withCancellation } from './events/requestScope'
 
 import type {
     ChannelDto,
@@ -9,12 +10,16 @@ import type {
 
 export async function getWorkspaceChannels(
     workspaceId: string,
+    signal?: AbortSignal,
 ): Promise<ChannelDto[]> {
-    const response = await apiFetch(
-        `/api/channels/workspace/${workspaceId}`,
-    )
+    return withCancellation(async requestSignal => {
+        const response = await apiFetch(
+            `/api/channels/workspace/${workspaceId}`,
+            { signal: requestSignal },
+        )
 
-    return response.json()
+        return response.json()
+    }, signal ? [signal] : [])
 }
 
 export async function getChannel(

@@ -34,9 +34,17 @@ public abstract class AbstractIntegrationTest {
             new KafkaContainer("apache/kafka-native:3.8.0")
                     .withCreateContainerCmdModifier(cmd ->
                             cmd.withName("clientbus-kafka-test")
+                                    // Docker must retain the advertised endpoint across stop/start.
+                                    .getHostConfig().withPortBindings(com.github.dockerjava.api.model.PortBinding.parse(
+                                            availableKafkaPort() + ":9092"))
                     )
                     .withNetwork(Network.SHARED)
                     .withListener("kafka:39092");
+
+    private static int availableKafkaPort() {
+        try (var socket=new java.net.ServerSocket(0)) { return socket.getLocalPort(); }
+        catch(java.io.IOException error) { throw new java.io.UncheckedIOException(error); }
+    }
 
     static {
         postgres.start();

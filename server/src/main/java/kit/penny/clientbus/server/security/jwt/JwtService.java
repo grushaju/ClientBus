@@ -59,6 +59,11 @@ public class JwtService {
         return UUID.fromString(subject);
     }
 
+    /** Verified expiry for a long-lived SSE session; never retain the raw token. */
+    public java.time.Instant getExpiresAt(String token) {
+        return getClaims(token).getExpiration().toInstant();
+    }
+
     /**
      * Получение username из JWT.
      */

@@ -54,10 +54,10 @@ function InboxWorkspaceContent({ workspace, access, onOpenConversation, visible 
 }) {
     const route = useInboxSelection(access)
     const filters = useConversationFilters(route.selection)
-    const groups = useConversationGroups(workspace.id, access.isEmployee && !!access.employeeId)
-    const savedFilters = useSavedConversationFilters(workspace.id, access)
+    const groups = useConversationGroups(workspace.id, access.isEmployee && !!access.employeeId, visible)
+    const savedFilters = useSavedConversationFilters(workspace.id, access, visible)
     const request = buildSearchRequest(route.selection, filters.applied)
-    const conversations = useInboxConversations(workspace.id, request, access.isSuperAdmin || (access.isEmployee && !!access.employeeId))
+    const conversations = useInboxConversations(workspace.id, request, access.isSuperAdmin || (access.isEmployee && !!access.employeeId), visible)
     const [showNewConversation, setShowNewConversation] = useState(false)
     const [navigationOpen, setNavigationOpen] = useState(false)
     const isDrawer = useMediaQuery(INBOX_DRAWER_QUERY)

@@ -3,6 +3,8 @@ package kit.penny.clientbus.server.connector.telegram.authorization;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import kit.penny.clientbus.common.dto.channel.ClientAccountDiscoveryDto;
+import kit.penny.clientbus.server.security.policy.HttpAccessPolicy;
+import static kit.penny.clientbus.server.security.policy.AccessPolicy.Resource.*;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
@@ -14,17 +16,20 @@ import java.util.UUID;
 public class TelegramAuthorizationController {
 
     private final TelegramAuthorizationService authorizationService;
+    private final HttpAccessPolicy accessPolicy;
 
     public TelegramAuthorizationController(
-            TelegramAuthorizationService authorizationService
+            TelegramAuthorizationService authorizationService, HttpAccessPolicy accessPolicy
     ) {
         this.authorizationService = authorizationService;
+        this.accessPolicy = accessPolicy;
     }
 
     @PostMapping("/start")
     public void startAuthorization(
             @PathVariable UUID channelAccountId
     ) {
+        accessPolicy.require(CHANNEL_ACCOUNT_MANAGEMENT, channelAccountId);
         authorizationService.startAuthorization(channelAccountId);
     }
 
@@ -32,6 +37,7 @@ public class TelegramAuthorizationController {
     public TelegramAuthorizationStatus getStatus(
             @PathVariable UUID channelAccountId
     ) {
+        accessPolicy.require(CHANNEL_ACCOUNT_MANAGEMENT, channelAccountId);
         return authorizationService.getStatus(channelAccountId);
     }
 
@@ -40,6 +46,7 @@ public class TelegramAuthorizationController {
             @PathVariable UUID channelAccountId,
             @RequestBody AuthenticationCodeRequest request
     ) {
+        accessPolicy.require(CHANNEL_ACCOUNT_MANAGEMENT, channelAccountId);
         authorizationService.submitCode(
                 channelAccountId,
                 request.code()
@@ -51,6 +58,7 @@ public class TelegramAuthorizationController {
             @PathVariable UUID channelAccountId,
             @RequestBody AuthenticationPasswordRequest request
     ) {
+        accessPolicy.require(CHANNEL_ACCOUNT_MANAGEMENT, channelAccountId);
         authorizationService.submitPassword(
                 channelAccountId,
                 request.password()
@@ -62,6 +70,7 @@ public class TelegramAuthorizationController {
             @PathVariable UUID channelAccountId,
             @RequestBody EmailAddressRequest request
     ) {
+        accessPolicy.require(CHANNEL_ACCOUNT_MANAGEMENT, channelAccountId);
         authorizationService.submitEmail(
                 channelAccountId,
                 request.email()
@@ -72,6 +81,7 @@ public class TelegramAuthorizationController {
     public void disable(
             @PathVariable UUID channelAccountId
     ) {
+        accessPolicy.require(CHANNEL_ACCOUNT_MANAGEMENT, channelAccountId);
         authorizationService.disable(channelAccountId);
     }
 
@@ -79,6 +89,7 @@ public class TelegramAuthorizationController {
     public void enable(
             @PathVariable UUID channelAccountId
     ) {
+        accessPolicy.require(CHANNEL_ACCOUNT_MANAGEMENT, channelAccountId);
         authorizationService.enable(channelAccountId);
     }
 
@@ -86,6 +97,7 @@ public class TelegramAuthorizationController {
     public void disconnect(
             @PathVariable UUID channelAccountId
     ) {
+        accessPolicy.require(CHANNEL_ACCOUNT_MANAGEMENT, channelAccountId);
         authorizationService.disconnect(channelAccountId);
     }
 
@@ -95,6 +107,7 @@ public class TelegramAuthorizationController {
             @RequestParam(required = false) String phone,
             @RequestParam(required = false) String username
     ) {
+        accessPolicy.require(CHANNEL_ACCOUNT, channelAccountId);
         return authorizationService.find(
                 channelAccountId,
                 phone,

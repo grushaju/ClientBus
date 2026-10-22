@@ -2,6 +2,7 @@ import {
     useCallback,
     useEffect,
     useRef,
+    useMemo,
     useState,
 } from 'react'
 
@@ -33,6 +34,10 @@ import type {
 } from '../../api/types/conversation'
 
 import { useAuth } from '../../auth/AuthContext'
+import { useUiInvalidation } from '../../api/events/InvalidationContext'
+import { useUiLifetime } from '../../api/events/useUiLifetime'
+import { useUiScope, affectsConversation, isAccessEvent } from '../../api/events/uiScope'
+import { singleFlightRead } from '../../api/events/singleFlightRead'
 
 import type { EmployeeDto } from '../../auth/types'
 
@@ -56,6 +61,12 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
         conversationId,
     } = useParams()
 
+    const scope = useUiScope()
+    const accessVersion = scope?.accessVersion
+    const lifetime = useUiLifetime(conversationId ?? '')
+    const metadata = useMemo(() => singleFlightRead(signal => lifetime.read(
+        requestSignal => getConversation(conversationId!, requestSignal), signal)), [lifetime, conversationId])
+    useEffect(() => () => metadata.cancel(), [metadata])
     const navigate =
         useNavigate()
     const loadGeneration = useRef(0)
@@ -64,7 +75,13 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
     const assignmentRequest = useRef(0)
     const refreshRequest = useRef(0)
     const assignmentPending = useRef<string | null>(null)
+    const assignmentFlight = useRef<{ id: string; promise: Promise<void> }>()
     const detailsRequest = useRef(0)
+    const previousLifetime = useRef(lifetime)
+    if (previousLifetime.current !== lifetime) {
+        loadGeneration.current++; detailsRequest.current++; assignmentRequest.current++
+        assignmentPending.current = null; assignmentFlight.current = undefined; previousLifetime.current = lifetime
+    }
 
     const {
         currentEmployee,
@@ -79,6 +96,7 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
         )
     const latestConversation = useRef(conversation)
     latestConversation.current = conversation
+    const loadedLifetime = useRef(lifetime)
 
     const canManageAssignments =
         isSuperAdmin ||
@@ -112,7 +130,8 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
     workspaceSelector.current = setCurrentWorkspaceId
     const memberships = useRef(employeeWorkspaces)
     memberships.current = employeeWorkspaces
-    const membershipKey = employeeWorkspaces.map(item => `${item.workspaceId}:${item.isSupervisor}`).sort().join(',')
+    const conversationWorkspaceId = conversation?.workspaceId ?? scope?.workspaceId
+    const membershipKey = !!employeeWorkspaces.find(item => item.workspaceId === conversationWorkspaceId)?.isSupervisor
 
     const [loading, setLoading] =
         useState(false)
@@ -133,6 +152,8 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
         const status = getApiErrorStatus(failure)
         if (status === 403 || status === 404) {
             window.dispatchEvent(new CustomEvent('clientbus:conversation-unavailable', { detail: { id: currentConversationId.current } }))
+            lifetime.reset()
+            metadata.cancel()
             loadGeneration.current += 1
             detailsRequest.current += 1
             setLoading(false)
@@ -145,7 +166,7 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
         } else {
             setActionError(message)
         }
-    }, [])
+    }, [lifetime, metadata])
 
     const {
         messages,
@@ -162,32 +183,46 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
         retryingIds,
         retryOlderMessages,
         loadOlderMessages,
-    } = useConversationMessages(conversationId, visible && !error, handleReadError)
+    } = useConversationMessages(conversationId, visible && !error, handleReadError, conversation?.workspaceId)
 
-    const loadDetails = useCallback(async (target: ConversationDto, notifyList = false) => {
+    const loadDetails = useCallback(async (target: ConversationDto, notifyList = false, parentSignal?: AbortSignal) => {
         const generation = loadGeneration.current
+        const allowed = lifetime.capture()
         const request = ++detailsRequest.current
-        const isCurrent = () => currentConversationId.current === target.id
+        const isCurrent = () => allowed() && !parentSignal?.aborted && currentConversationId.current === target.id
             && generation === loadGeneration.current && request === detailsRequest.current
         if (!isCurrent()) return
         setRefreshingDetails(true)
-        const [accountResult, channelsResult] = await Promise.allSettled([
-            getClientAccount(target.clientAccountId),
-            getWorkspaceChannels(target.workspaceId),
-        ])
+        let results: [PromiseSettledResult<Awaited<ReturnType<typeof getClientAccount>>>,
+            PromiseSettledResult<Awaited<ReturnType<typeof getWorkspaceChannels>>>]
+        try { results = await lifetime.read(signal => Promise.allSettled([
+            getClientAccount(target.clientAccountId, signal),
+            getWorkspaceChannels(target.workspaceId, signal),
+        ] as const), parentSignal) }
+        catch (err) {
+            if (allowed() && generation === loadGeneration.current && request === detailsRequest.current) {
+                setRefreshingDetails(false)
+                if (!parentSignal?.aborted) setAccountError(err instanceof Error ? err.message : 'Не удалось обновить сведения')
+            }
+            if (parentSignal) throw err
+            return
+        }
+        const [accountResult, channelsResult] = results
         if (!isCurrent()) return
         if (accountResult.status === 'fulfilled') {
             setClientAccount(accountResult.value)
             setAccountError(null)
         } else {
-            setClientAccount(previous => previous?.id === target.clientAccountId ? previous : null)
+            const denied = [403,404].includes(getApiErrorStatus(accountResult.reason) ?? 0)
+            setClientAccount(previous => !denied && previous?.id === target.clientAccountId ? previous : null)
             setAccountError(accountResult.reason instanceof Error ? accountResult.reason.message : 'Не удалось загрузить аккаунт')
         }
         if (channelsResult.status === 'fulfilled') {
             setChannel(channelsResult.value.find(item => item.account?.id === target.channelAccountId) ?? null)
             setChannelError(null)
         } else {
-            setChannel(previous => previous?.workspaceId === target.workspaceId
+            const denied = [403,404].includes(getApiErrorStatus(channelsResult.reason) ?? 0)
+            setChannel(previous => !denied && previous?.workspaceId === target.workspaceId
                 && previous.account?.id === target.channelAccountId ? previous : null)
             setChannelError(channelsResult.reason instanceof Error ? channelsResult.reason.message : 'Не удалось загрузить канал')
         }
@@ -197,14 +232,19 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
         if (notifyList && accountResult.status === 'fulfilled') {
             publishConversationUpdate(latestConversation.current ?? target)
         }
-    }, [])
+        if (parentSignal) {
+            if (accountResult.status === 'rejected' && ![403,404].includes(getApiErrorStatus(accountResult.reason) ?? 0)) throw accountResult.reason
+            if (channelsResult.status === 'rejected' && ![403,404].includes(getApiErrorStatus(channelsResult.reason) ?? 0)) throw channelsResult.reason
+        }
+    }, [lifetime])
 
     const loadConversation =
         useCallback(
-            async (background = false) => {
+            async (background = false, signal?: AbortSignal, propagateFailure = false) => {
+                const allowed = lifetime.capture()
                 if (conversationId !== currentConversationId.current) return
                 const generation = ++loadGeneration.current
-                const isCurrent = () => generation === loadGeneration.current
+                const isCurrent = () => allowed() && !signal?.aborted && generation === loadGeneration.current
                     && currentConversationId.current === conversationId
                 if (!conversationId) {
                     setConversation(null)
@@ -220,14 +260,13 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
 
                 try {
                     const result =
-                        await getConversation(
-                            conversationId,
-                        )
+                        await metadata.read(signal)
                     if (!isCurrent()) return
                     workspaceSelector.current(
                         result.workspaceId,
                     )
 
+                    loadedLifetime.current = lifetime
                     setConversation(result)
                     // Resume a denied message session only after access to the
                     // conversation has been confirmed by the explicit retry.
@@ -237,7 +276,7 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
                         result,
                     )
 
-                    await loadDetails(result)
+                    await loadDetails(result, false, signal)
                     if (!isCurrent()) return
 
                     const canManageWorkspaceAssignments =
@@ -255,9 +294,7 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
                     if (canManageWorkspaceAssignments) {
                         try {
                             const workspaceEmployees =
-                                await getWorkspaceEmployees(
-                                    result.workspaceId,
-                                )
+                                await lifetime.read(signal => getWorkspaceEmployees(result.workspaceId, signal))
                             if (!isCurrent()) return
 
                             setEmployees(workspaceEmployees)
@@ -290,6 +327,7 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
                     setClientAccount(null)
                     setChannel(null)
                     setEmployees([])
+                    if (propagateFailure && ![403,404].includes(getApiErrorStatus(err) ?? 0)) throw err
                 } finally {
                     if (isCurrent()) setLoading(false)
                 }
@@ -301,6 +339,7 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
                 membershipKey,
                 loadDetails,
                 reloadMessages,
+                lifetime, metadata,
             ],
         )
 
@@ -310,43 +349,68 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
         return () => { loadGeneration.current += 1 }
     }, [loadConversation])
 
-    const refreshConversation = useCallback(async () => {
-        if (!conversationId || assignmentPending.current === conversationId) return
+    const refreshConversation = useCallback(async (signal?: AbortSignal) => {
+        const allowed = lifetime.capture()
+        if (!conversationId) return
+        // Keep the invalidation pending until the command has settled. Its
+        // response alone cannot reconcile changes made by another operator.
+        while (assignmentFlight.current?.id === conversationId) {
+            const pending = assignmentFlight.current.promise
+            await lifetime.read(() => pending, signal)
+            if (!allowed() || signal?.aborted) return
+        }
         const generation = loadGeneration.current
         const command = assignmentRequest.current
         const request = ++refreshRequest.current
         try {
-            const updated = await getConversation(conversationId)
-            if (currentConversationId.current !== conversationId || loadGeneration.current !== generation
+            const updated = await metadata.read(signal, true)
+            if (!allowed() || signal?.aborted || currentConversationId.current !== conversationId || loadGeneration.current !== generation
                 || assignmentRequest.current !== command || refreshRequest.current !== request) return
             if (latestConversation.current?.id === conversationId && JSON.stringify(latestConversation.current) !== JSON.stringify(updated)) {
                 setConversation(updated)
                 publishConversationUpdate(updated)
             }
         } catch (err) {
-            if (currentConversationId.current === conversationId && loadGeneration.current === generation
+            if (allowed() && !signal?.aborted && currentConversationId.current === conversationId && loadGeneration.current === generation
                 && assignmentRequest.current === command && refreshRequest.current === request) {
                 handleReadError(err)
+                throw err
             }
         }
-    }, [conversationId, handleReadError])
+    }, [conversationId, handleReadError, lifetime, metadata])
 
     useEffect(() => {
-        if (!conversationId || !visible || error) return
+        if (!conversationId || !visible || error || scope?.managedPolling) return
         let stopped = false
         let timer: ReturnType<typeof setTimeout>
         const tick = async () => {
-            if (typeof document === 'undefined' || !document.hidden) await refreshConversation()
+            if (typeof document === 'undefined' || !document.hidden) await refreshConversation().catch(() => {})
             if (!stopped) timer = setTimeout(tick, 10000)
         }
         timer = setTimeout(tick, 10000)
         return () => { stopped = true; clearTimeout(timer) }
-    }, [conversationId, visible, error, refreshConversation])
+    }, [conversationId, visible, error, refreshConversation, scope?.managedPolling])
+
+    useUiInvalidation('conversation:' + (conversationId ?? ''), !!conversationId,
+        event => affectsConversation(event, conversationId, conversation?.workspaceId)
+            && (isAccessEvent(event) || ['inbox.invalidated', 'messages.invalidated', 'clients.invalidated',
+                'channels.invalidated', 'employees.invalidated', 'workspace.invalidated'].includes(event.type)),
+        async signal => {
+            if (error) { await loadConversation(false, signal, true); return }
+            await refreshConversation(signal)
+            const target = latestConversation.current
+            if (!signal.aborted && target) await loadDetails(target, false, signal)
+            if (!signal.aborted && target && canManageAssignments) {
+                const allowed = lifetime.capture()
+                const items = await lifetime.read(requestSignal => getWorkspaceEmployees(target.workspaceId, requestSignal), signal)
+                if (allowed() && !signal.aborted) setEmployees(items)
+            }
+        }, () => handleReadError(Object.assign(new Error('Проверка доступа к диалогу'), { status: 403 })), visible)
 
     // Loading metadata and retaining the composer do not imply that the
     // operator can see the thread. In particular the mobile list hides it.
     useEffect(() => {
-        if (!visible || loading || messagesLoading || messagesError || !isEmployee
+        if (!visible || loading || messagesLoading || messagesError || !isEmployee || loadedLifetime.current !== lifetime
             || !conversation || conversation.id !== conversationId || conversation.unreadCount <= 0) return
         let active = true
         const id = conversation.id
@@ -358,7 +422,7 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
             if (active) console.error('Conversation read failed:', id, err)
         })
         return () => { active = false }
-    }, [visible, loading, messagesLoading, messagesError, isEmployee, conversationId, conversation?.id, conversation?.unreadCount])
+    }, [visible, loading, messagesLoading, messagesError, isEmployee, conversationId, conversation?.id, conversation?.unreadCount, lifetime])
 
     if (!conversationId) {
         return (
@@ -368,7 +432,7 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
         )
     }
 
-    if (loading || (conversation && conversation.id !== conversationId)) {
+    if (loading || (conversation && (conversation.id !== conversationId || loadedLifetime.current !== lifetime))) {
         return (
             <div className="conversation-state">
                 Загрузка диалога…
@@ -401,13 +465,20 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
     const runAssignment = async (operation: () => Promise<ConversationDto>, tab?: 'mine' | 'unassigned') => {
         const id = conversation.id
         const generation = loadGeneration.current
+        const allowed = lifetime.capture()
+        const canNotify = () => !scope || (scope.isCurrent() && scope.accessVersion === accessVersion)
         if (assignmentPending.current === id) return
         assignmentPending.current = id
+        let complete!: () => void
+        const pending = { id, promise: new Promise<void>(resolve => { complete = resolve }) }
+        assignmentFlight.current = pending
         const request = ++assignmentRequest.current
         setActionError(null)
         try {
             const updated = await operation()
+            if (!canNotify()) return
             publishConversationUpdate(updated)
+            if (!allowed()) return
             if (currentConversationId.current !== id || assignmentRequest.current !== request || loadGeneration.current !== generation) return
             setConversation(updated)
             if (tab) navigate(`/inbox/${id}?tab=${tab}`, { replace: true })
@@ -418,7 +489,7 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
             // The server may have rejected a concurrent assignment. Re-read its
             // state without clearing the draft or hiding the operation error.
             try {
-                const updated = await getConversation(id)
+                const updated = await metadata.read(undefined, true)
                 if (currentConversationId.current === id && assignmentRequest.current === request && loadGeneration.current === generation) {
                     setConversation(updated)
                     publishConversationUpdate(updated)
@@ -431,6 +502,8 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
             }
         } finally {
             if (assignmentRequest.current === request) assignmentPending.current = null
+            if (assignmentFlight.current === pending) assignmentFlight.current = undefined
+            complete()
         }
     }
     const handleTake = async () => {
@@ -446,7 +519,7 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
         if (canManageAssignments) await runAssignment(() => unassignConversation(conversation.id))
     }
     const handleMessageSent = async (message: MessageDto) => {
-        if (currentConversationId.current !== conversation.id) return
+        if (!lifetime.isCurrent() || currentConversationId.current !== conversation.id) return
         if (message) acceptMessage(message)
         await refreshConversation()
     }
@@ -454,6 +527,7 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
     const handleClientChanged = (account: ClientAccountSummary) => {
         // A confirmed command invalidates the original workspace list even
         // after this view has navigated elsewhere or has been unmounted.
+        if (scope && (!scope.isCurrent() || scope.accessVersion !== accessVersion)) return
         publishConversationUpdate(conversation)
         if (currentConversationId.current !== conversation.id || detailsGeneration !== loadGeneration.current) return
         // Invalidate a read started before this successful change of relationship.
@@ -528,6 +602,7 @@ function ConversationView({ visible = true }: { visible?: boolean }) {
             </div>
 
             <ConversationClientPanel
+                visible={visible}
                 conversation={
                     conversation
                 }

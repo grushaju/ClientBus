@@ -1,4 +1,5 @@
 import { apiFetch } from './apiClient'
+import { withCancellation } from './events/requestScope'
 import type {
     ClientAccountDto,
     UpdateClientAccountRequest,
@@ -13,13 +14,15 @@ export async function getWorkspaceClientAccounts(workspaceId: string, channelAcc
 
 export async function getClientAccount(
     id: string,
+    signal?: AbortSignal,
 ): Promise<ClientAccountDto> {
-    const response = await apiFetch(`/api/clientaccounts/${id}`)
+    const response = await apiFetch(`/api/clientaccounts/${id}`, { signal })
     return response.json()
 }
 
 export async function getClientAccountsByIds(
     ids: string[],
+    signal?: AbortSignal,
 ): Promise<ClientAccountDto[]> {
     if (ids.length === 0) {
         return []
@@ -31,11 +34,14 @@ export async function getClientAccountsByIds(
         params.append('ids', id)
     }
 
-    const response = await apiFetch(
-        `/api/clientaccounts/by-ids?${params.toString()}`,
-    )
+    return withCancellation(async requestSignal => {
+        const response = await apiFetch(
+            `/api/clientaccounts/by-ids?${params.toString()}`,
+            { signal: requestSignal },
+        )
 
-    return response.json()
+        return response.json()
+    }, signal ? [signal] : [])
 }
 
 export async function getClientAccountsByClient(
@@ -78,9 +84,11 @@ export async function updateClientAccount(
 
 export async function getClientAccountAvatarContent(
     accountId: string,
+    signal?: AbortSignal,
 ): Promise<Blob> {
     const response = await apiFetch(
         `/api/clientaccounts/${accountId}/avatar/content`,
+        { signal },
     )
 
     return response.blob()

@@ -17,6 +17,8 @@ import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepositor
 import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
 import kit.penny.clientbus.server.persistence.repository.WorkspaceRepository;
 import kit.penny.clientbus.server.security.service.CurrentUserService;
+import kit.penny.clientbus.server.security.policy.HttpAccessPolicy;
+import static kit.penny.clientbus.server.security.policy.AccessPolicy.Resource.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,6 +33,7 @@ public class ChannelService {
     private final WorkspaceRepository workspaceRepository;
     private final ChannelMapper channelMapper;
     private final CurrentUserService currentUserService;
+    private final HttpAccessPolicy accessPolicy;
     private final ChannelAccountLifecycleRegistry
             channelAccountLifecycleRegistry;
 
@@ -40,7 +43,8 @@ public class ChannelService {
             WorkspaceRepository workspaceRepository,
             ChannelMapper channelMapper,
             CurrentUserService currentUserService,
-            ChannelAccountLifecycleRegistry channelAccountLifecycleRegistry
+            ChannelAccountLifecycleRegistry channelAccountLifecycleRegistry,
+            HttpAccessPolicy accessPolicy
     ) {
         this.channelRepository = channelRepository;
         this.channelAccountRepository = channelAccountRepository;
@@ -48,6 +52,7 @@ public class ChannelService {
         this.channelMapper = channelMapper;
         this.currentUserService = currentUserService;
         this.channelAccountLifecycleRegistry = channelAccountLifecycleRegistry;
+        this.accessPolicy = accessPolicy;
     }
 
     @Transactional
@@ -55,6 +60,8 @@ public class ChannelService {
             CreateChannelRequest request
     ) {
         currentUserService.requireSuperAdmin();
+
+        accessPolicy.require(WORKSPACE_ADMIN, request.workspaceId());
 
         currentUserService.requireWorkspaceAccess(
                 request.workspaceId()
@@ -96,6 +103,8 @@ public class ChannelService {
     @Transactional
     public ChannelDto getChannel(UUID id) {
 
+        accessPolicy.require(CHANNEL, id);
+
         ChannelEntity channel =
                 findChannel(id);
 
@@ -108,6 +117,7 @@ public class ChannelService {
     public List<ChannelDto> getChannelsByWorkspace(
             UUID workspaceId
     ) {
+        accessPolicy.require(WORKSPACE, workspaceId);
 
         currentUserService.requireWorkspaceAccess(
                 workspaceId
@@ -125,6 +135,7 @@ public class ChannelService {
             UUID workspaceId,
             ChannelType type
     ) {
+        accessPolicy.require(WORKSPACE, workspaceId);
 
         currentUserService.requireWorkspaceAccess(
                 workspaceId
@@ -145,6 +156,7 @@ public class ChannelService {
             UUID id,
             UpdateChannelRequest request
     ) {
+        accessPolicy.require(CHANNEL_MANAGEMENT, id);
 
         ChannelEntity channel =
                 findChannel(id);
@@ -163,6 +175,8 @@ public class ChannelService {
 
     @Transactional
     public void deleteChannel(UUID id) {
+
+        accessPolicy.require(CHANNEL_MANAGEMENT, id);
 
         ChannelEntity channel =
                 findChannel(id);
@@ -185,6 +199,7 @@ public class ChannelService {
     public ChannelAccountDto getChannelAccount(
             UUID channelId
     ) {
+        accessPolicy.require(CHANNEL, channelId);
 
         ChannelEntity channel =
                 findChannel(channelId);
@@ -202,6 +217,7 @@ public class ChannelService {
             UUID channelId,
             UpdateChannelAccountRequest request
     ) {
+        accessPolicy.require(CHANNEL_MANAGEMENT, channelId);
 
         ChannelEntity channel =
                 findChannel(channelId);
@@ -225,6 +241,7 @@ public class ChannelService {
     public void disconnectChannelAccount(
             UUID channelId
     ) {
+        accessPolicy.require(CHANNEL_MANAGEMENT, channelId);
 
         ChannelEntity channel =
                 findChannel(channelId);

@@ -37,7 +37,25 @@ public record PlatformMessageRequest(
 
         Instant sentAt,
 
-        List<PlatformMessageAttachment> attachments
+        List<PlatformMessageAttachment> attachments,
+
+        kit.penny.clientbus.common.notification.EventOrigin origin
 
 ) {
+    public PlatformMessageRequest {
+        // Legacy records without provenance must never acquire LIVE alert semantics.
+        if (origin == null) origin = kit.penny.clientbus.common.notification.EventOrigin.SYNC;
+    }
+
+    public PlatformMessageRequest(UUID channelAccountId, String clientExternalId, String clientUsername,
+            String clientPhone, String clientDisplayName, String senderExternalId, String externalId,
+            MessageType type, String content, String metadata, Instant sentAt, List<PlatformMessageAttachment> attachments) {
+        this(channelAccountId,clientExternalId,clientUsername,clientPhone,clientDisplayName,senderExternalId,
+                externalId,type,content,metadata,sentAt,attachments,kit.penny.clientbus.common.notification.EventOrigin.SYNC);
+    }
+
+    public PlatformMessageRequest withOrigin(kit.penny.clientbus.common.notification.EventOrigin value) {
+        return new PlatformMessageRequest(channelAccountId,clientExternalId,clientUsername,clientPhone,clientDisplayName,
+                senderExternalId,externalId,type,content,metadata,sentAt,attachments,value);
+    }
 }

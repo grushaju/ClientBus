@@ -3,6 +3,7 @@ import type {
 } from 'react'
 
 import { useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 
 import {
     useAuth,
@@ -25,6 +26,8 @@ interface AppLayoutProps {
 function AppLayout({
                        children,
                    }: AppLayoutProps) {
+    const navigate = useNavigate()
+    const location = useLocation()
     const {
         currentEmployee,
         currentOrganization,
@@ -117,6 +120,9 @@ function AppLayout({
                                                     : 'workspace-switcher-option'
                                             }
                                             onClick={() => {
+                                                if (workspace.id !== currentWorkspace?.id && location.pathname.startsWith('/inbox/')) {
+                                                    navigate('/inbox?tab=mine', { replace: true })
+                                                }
                                                 setCurrentWorkspaceId(workspace.id)
                                                 setWorkspaceMenuOpen(false)
                                             }}

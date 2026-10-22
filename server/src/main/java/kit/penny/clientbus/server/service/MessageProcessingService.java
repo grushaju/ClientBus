@@ -124,7 +124,7 @@ public class MessageProcessingService
                                 request.metadata(),
                                 request.sentAt(),
                                 outbound
-                        )
+                        ), request.origin()
                 );
 
         if (!result.existed()) {

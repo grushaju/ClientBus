@@ -1,4 +1,5 @@
 import { apiFetch } from './apiClient'
+import { withCancellation } from './events/requestScope'
 
 import type {
     MessageAttachmentDto,
@@ -15,50 +16,62 @@ export interface SyncConversationHistoryResult {
 export async function getConversationMessages(
     conversationId: string,
     page = 0,
-    size = 50
+    size = 50,
+    signal?: AbortSignal,
 ): Promise<MessagePage> {
-    const response = await apiFetch(
-        `/api/messages/conversation/${conversationId}?page=${page}&size=${size}`
-    )
+    return withCancellation(async requestSignal => {
+        const response = await apiFetch(
+            `/api/messages/conversation/${conversationId}?page=${page}&size=${size}`,
+            { signal: requestSignal },
+        )
 
-    // Spring's PagedModel exposes metadata under `page`; older responses
-    // expose Page fields at the top level. Keep one UI contract for both.
-    const result = await response.json()
-    const metadata = result.page ?? result
-    const number = metadata.number ?? page
-    const totalPages = metadata.totalPages ?? 0
-    return {
-        content: result.content ?? [],
-        totalElements: metadata.totalElements ?? 0,
-        totalPages,
-        size: metadata.size ?? size,
-        number,
-        first: result.first ?? number === 0,
-        last: result.last ?? number + 1 >= totalPages,
-        numberOfElements: result.content?.length ?? 0,
-        empty: !result.content?.length,
-    }
+        // Spring's PagedModel exposes metadata under `page`; older responses
+        // expose Page fields at the top level. Keep one UI contract for both.
+        const result = await response.json()
+        const metadata = result.page ?? result
+        const number = metadata.number ?? page
+        const totalPages = metadata.totalPages ?? 0
+        return {
+            content: result.content ?? [],
+            totalElements: metadata.totalElements ?? 0,
+            totalPages,
+            size: metadata.size ?? size,
+            number,
+            first: result.first ?? number === 0,
+            last: result.last ?? number + 1 >= totalPages,
+            numberOfElements: result.content?.length ?? 0,
+            empty: !result.content?.length,
+        }
+    }, signal ? [signal] : [])
 }
 
 export async function getMessageAttachments(
-    messageId: string
+    messageId: string,
+    signal?: AbortSignal,
 ): Promise<MessageAttachmentDto[]> {
-    const response = await apiFetch(
-        `/api/messages/${messageId}/attachments`
-    )
+    return withCancellation(async requestSignal => {
+        const response = await apiFetch(
+            `/api/messages/${messageId}/attachments`,
+            { signal: requestSignal },
+        )
 
-    return response.json()
+        return response.json()
+    }, signal ? [signal] : [])
 }
 
 export async function getMessageAttachmentBlob(
     messageId: string,
-    attachmentId: string
+    attachmentId: string,
+    signal?: AbortSignal,
 ): Promise<Blob> {
-    const response = await apiFetch(
-        `/api/messages/${messageId}/attachments/${attachmentId}`
-    )
+    return withCancellation(async requestSignal => {
+        const response = await apiFetch(
+            `/api/messages/${messageId}/attachments/${attachmentId}`,
+            { signal: requestSignal },
+        )
 
-    return response.blob()
+        return response.blob()
+    }, signal ? [signal] : [])
 }
 
 export async function sendOutboundMessage(
@@ -123,6 +136,7 @@ export async function syncConversationHistory(
     conversationId: string,
     beforeExternalId: string | null,
     limit = 50,
+    signal?: AbortSignal,
 ): Promise<SyncConversationHistoryResult> {
     const params = new URLSearchParams()
 
@@ -138,17 +152,22 @@ export async function syncConversationHistory(
         String(limit),
     )
 
-    const response = await apiFetch(
-        `/api/messages/conversation/${conversationId}/history/sync?${params.toString()}`,
-        {
-            method: 'POST',
-        },
-    )
+    return withCancellation(async requestSignal => {
+        const response = await apiFetch(
+            `/api/messages/conversation/${conversationId}/history/sync?${params.toString()}`,
+            {
+                method: 'POST',
+                signal: requestSignal,
+            },
+        )
 
-    return response.json()
+        return response.json()
+    }, signal ? [signal] : [], 35_000)
 }
 
-export async function getMessage(messageId: string): Promise<MessageDto> {
-    const response = await apiFetch(`/api/messages/${messageId}`)
-    return response.json()
+export async function getMessage(messageId: string, signal?: AbortSignal): Promise<MessageDto> {
+    return withCancellation(async requestSignal => {
+        const response = await apiFetch(`/api/messages/${messageId}`, { signal: requestSignal })
+        return response.json()
+    }, signal ? [signal] : [])
 }

@@ -1,0 +1,2065 @@
+{
+  "openapi": "3.1.1",
+  "info": {
+    "title": "ClientBus Notification Contract",
+    "version": "1.0.0",
+    "description": "Target contract. Stage 11.4 implements GET /api/events behind clientbus.notifications.sse-enabled=false by default; other endpoints remain contract-only. Bearer token only, never URL. Private REST/SSE must use Cache-Control: no-store."
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/events": {
+      "get": {
+        "operationId": "notificationEvents",
+        "summary": "Authenticated SSE invalidations",
+        "tags": [
+          "Notifications Stage 11"
+        ],
+        "x-implementation-status": "feature-flagged",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE event equals type; data is UiEventEnvelope. No replay/id cursor. ready precedes live data; auth error before opening is HTTP.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                },
+                "x-event-schema": {
+                  "$ref": "#/components/schemas/UiEventEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request/cursor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token missing/expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Command forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Absent/inaccessible; no target disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Idempotency/installation/binding conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Unavailable; no policy bypass.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notifications": {
+      "get": {
+        "operationId": "listNotifications",
+        "summary": "List own currently accessible notifications",
+        "tags": [
+          "Notifications Stage 11"
+        ],
+        "x-implementation-status": "contract-only",
+        "parameters": [
+          {
+            "name": "unreadOnly",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/PageCursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPageDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request/cursor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token missing/expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Command forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Absent/inaccessible; no target disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Idempotency/installation/binding conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Unavailable; no policy bypass.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notifications/summary": {
+      "get": {
+        "operationId": "notificationSummary",
+        "summary": "Count own accessible unread notifications",
+        "tags": [
+          "Notifications Stage 11"
+        ],
+        "x-implementation-status": "contract-only",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationSummaryDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request/cursor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token missing/expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Command forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Absent/inaccessible; no target disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Idempotency/installation/binding conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Unavailable; no policy bypass.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notifications/{id}": {
+      "get": {
+        "operationId": "getNotification",
+        "summary": "Resolve own accessible notification",
+        "tags": [
+          "Notifications Stage 11"
+        ],
+        "x-implementation-status": "contract-only",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request/cursor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token missing/expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Command forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Absent/inaccessible; no target disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Idempotency/installation/binding conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Unavailable; no policy bypass.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notifications/{id}/read": {
+      "put": {
+        "operationId": "readNotification",
+        "summary": "Idempotent single read; unchanged readAt on repeat",
+        "tags": [
+          "Notifications Stage 11"
+        ],
+        "x-implementation-status": "contract-only",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request/cursor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token missing/expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Command forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Absent/inaccessible; no target disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Idempotency/installation/binding conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Unavailable; no policy bypass.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notifications/read-all": {
+      "put": {
+        "operationId": "readAllNotifications",
+        "summary": "Read own ALL_ACCESSIBLE records",
+        "tags": [
+          "Notifications Stage 11"
+        ],
+        "x-implementation-status": "contract-only",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationReadAllResultDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request/cursor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token missing/expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Command forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Absent/inaccessible; no target disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Idempotency/installation/binding conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Unavailable; no policy bypass.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          }
+        },
+        "description": "No body. One UPDATE snapshot. Repeat key returns stored result without reading new arrivals."
+      }
+    },
+    "/api/push/installations/{installationId}": {
+      "put": {
+        "operationId": "registerPushInstallation",
+        "summary": "Register/update an owned installation",
+        "tags": [
+          "Notifications Stage 11"
+        ],
+        "x-implementation-status": "contract-only",
+        "parameters": [
+          {
+            "name": "installationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushInstallationDto"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "description": "Quoted registrationVersion.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request/cursor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token missing/expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Command forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Absent/inaccessible; no target disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Idempotency/installation/binding conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "description": "Current quoted registrationVersion, only after valid installation proof. Use only for a fresh action in the current account session, never to replay a stale mutation.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Unavailable; no policy bypass.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushInstallationRequest"
+              }
+            }
+          }
+        },
+        "description": "Creation requires expectedRegistrationVersion=0 and an absent installation. Update and explicit account rebind require proof and current registrationVersion. Every mutation increments registrationVersion atomically; stale requests return 409 INSTALLATION_CONFLICT without mutation. Rebind uses the authenticated new owner. Never automatically retry an old mutation with a refreshed version."
+      },
+      "delete": {
+        "operationId": "unbindPushInstallation",
+        "summary": "Unbind own installation with proof and matching binding",
+        "tags": [
+          "Notifications Stage 11"
+        ],
+        "x-implementation-status": "contract-only",
+        "parameters": [
+          {
+            "name": "installationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/InstallationSecret"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful response."
+          },
+          "400": {
+            "description": "Invalid request/cursor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token missing/expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Command forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Absent/inaccessible; no target disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Idempotency/installation/binding conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Unavailable; no policy bypass.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/conversations/{id}/history-sync": {
+      "post": {
+        "operationId": "startHistorySync",
+        "summary": "Accept/recover one persisted operation",
+        "tags": [
+          "Notifications Stage 11"
+        ],
+        "x-implementation-status": "contract-only",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistorySyncOperationDto"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Operation status URL.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request/cursor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token missing/expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Command forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Absent/inaccessible; no target disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Idempotency/installation/binding conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Unavailable; no policy bypass.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HistorySyncRequest"
+              }
+            }
+          }
+        },
+        "description": "202 only after commit. Same key and parameters return original operation including terminal, within 7 days. Persist key before sending; no automatic retry after window."
+      }
+    },
+    "/api/history-sync-operations/{id}": {
+      "get": {
+        "operationId": "getHistorySyncOperation",
+        "summary": "Own operation and current conversation ACL",
+        "tags": [
+          "Notifications Stage 11"
+        ],
+        "x-implementation-status": "contract-only",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistorySyncOperationDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request/cursor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token missing/expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Command forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Absent/inaccessible; no target disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Idempotency/installation/binding conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Unavailable; no policy bypass.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/conversations/{id}/history-sync-operations": {
+      "get": {
+        "operationId": "listHistorySyncOperations",
+        "summary": "Discover own operations",
+        "tags": [
+          "Notifications Stage 11"
+        ],
+        "x-implementation-status": "contract-only",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "activeOnly",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/PageCursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistorySyncOperationPageDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request/cursor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token missing/expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Command forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Absent/inaccessible; no target disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Idempotency/installation/binding conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Unavailable; no policy bypass.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          }
+        },
+        "description": "Active-only discovery supplements idempotent POST recovery; completed operations can be absent."
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "parameters": {
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "description": "Client UUID persisted before request; actor/command-scoped, 7 day safe retry window."
+      },
+      "PageCursor": {
+        "name": "pageCursor",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "description": "Opaque keyset cursor bound to actor, organization and query."
+      },
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 30
+        }
+      },
+      "IfMatch": {
+        "name": "If-Match",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "pattern": "^\"[1-9][0-9]*\"$"
+        },
+        "description": "Quoted registrationVersion; DELETE requires current owner and proof, increments registrationVersion and disables the installation. Stale requests return 409 INSTALLATION_CONFLICT."
+      },
+      "InstallationSecret": {
+        "name": "X-Installation-Secret",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43,128}$",
+          "writeOnly": true
+        },
+        "description": "Ownership proof; redact in logs."
+      }
+    },
+    "schemas": {
+      "NotificationType": {
+        "type": "string",
+        "enum": [
+          "ASSIGNMENT",
+          "INCOMING_MESSAGE",
+          "OUTBOUND_FAILED",
+          "CHANNEL_ACTION_REQUIRED",
+          "MANUAL_OPERATION_RESULT"
+        ]
+      },
+      "NotificationTargetKind": {
+        "type": "string",
+        "enum": [
+          "CONVERSATION",
+          "CHANNEL_ACCOUNT",
+          "HISTORY_OPERATION"
+        ]
+      },
+      "HistoryOperationStatus": {
+        "type": "string",
+        "enum": [
+          "PENDING",
+          "RUNNING",
+          "SUCCEEDED",
+          "FAILED"
+        ]
+      },
+      "PushPlatform": {
+        "type": "string",
+        "enum": [
+          "ANDROID",
+          "IOS"
+        ]
+      },
+      "PushProviderType": {
+        "type": "string",
+        "enum": [
+          "FCM",
+          "APNS"
+        ]
+      },
+      "PushEnvironment": {
+        "type": "string",
+        "enum": [
+          "PRODUCTION",
+          "SANDBOX"
+        ]
+      },
+      "PushPermission": {
+        "type": "string",
+        "enum": [
+          "UNKNOWN",
+          "GRANTED",
+          "DENIED",
+          "PROVISIONAL"
+        ]
+      },
+      "NotificationTargetDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "id"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/NotificationTargetKind"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "NotificationDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "type",
+          "workspaceId",
+          "target",
+          "templateArgs",
+          "createdAt",
+          "readAt",
+          "alertExpiresAt",
+          "alertActive"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "$ref": "#/components/schemas/NotificationType"
+          },
+          "workspaceId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target": {
+            "$ref": "#/components/schemas/NotificationTargetDto"
+          },
+          "templateArgs": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 128
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "readAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "alertExpiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "alertActive": {
+            "type": "boolean"
+          }
+        }
+      },
+      "NotificationPageDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NotificationDto"
+            }
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1024
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "NotificationSummaryDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "unreadCount"
+        ],
+        "properties": {
+          "unreadCount": {
+            "type": "integer",
+            "minimum": 0,
+            "format": "int64",
+            "maximum": 9007199254740991
+          }
+        }
+      },
+      "NotificationReadAllResultDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "readAt",
+          "updatedCount"
+        ],
+        "properties": {
+          "readAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedCount": {
+            "type": "integer",
+            "minimum": 0,
+            "format": "int64",
+            "maximum": 9007199254740991
+          }
+        }
+      },
+      "NotificationApiErrorDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "correlationId"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "INVALID_REQUEST",
+              "UNAUTHENTICATED",
+              "FORBIDDEN",
+              "NOT_FOUND",
+              "IDEMPOTENCY_CONFLICT",
+              "IDEMPOTENCY_EXPIRED",
+              "INSTALLATION_CONFLICT",
+              "BINDING_CHANGED",
+              "CONNECTOR_UNAVAILABLE",
+              "RATE_LIMITED",
+              "UNAVAILABLE",
+              "INVALID_CURSOR"
+            ]
+          },
+          "correlationId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "UiResourceRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "id"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "conversation",
+              "notification",
+              "client",
+              "channel",
+              "workspace",
+              "employee",
+              "group",
+              "filter",
+              "history-operation"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "StreamReadyDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "streamId",
+          "alertsAfter",
+          "heartbeatSeconds"
+        ],
+        "properties": {
+          "streamId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "alertsAfter": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "heartbeatSeconds": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "UiEventEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "eventId",
+          "schemaVersion",
+          "type",
+          "occurredAt",
+          "workspaceId",
+          "resource",
+          "correlationId",
+          "stream"
+        ],
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "schemaVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "type": {
+            "type": "string",
+            "description": "Unknown types trigger bounded reconciliation.",
+            "x-known-values": [
+              "stream.ready",
+              "stream.heartbeat",
+              "stream.resync-required",
+              "messages.invalidated",
+              "inbox.invalidated",
+              "groups.invalidated",
+              "filters.invalidated",
+              "clients.invalidated",
+              "channels.invalidated",
+              "workspace.invalidated",
+              "employees.invalidated",
+              "identity.invalidated",
+              "access.invalidated",
+              "notifications.created",
+              "notifications.invalidated",
+              "history-operation.invalidated"
+            ]
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "workspaceId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UiResourceRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "correlationId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stream": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StreamReadyDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "HistorySyncRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "beforeExternalId",
+          "limit"
+        ],
+        "properties": {
+          "beforeExternalId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        }
+      },
+      "HistorySyncResultDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "importedCount",
+          "historyStartReached"
+        ],
+        "properties": {
+          "importedCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "historyStartReached": {
+            "type": "boolean"
+          }
+        }
+      },
+      "HistorySyncOperationDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "conversationId",
+          "status",
+          "createdAt",
+          "updatedAt",
+          "deadlineAt",
+          "result",
+          "errorCode"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "$ref": "#/components/schemas/HistoryOperationStatus"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deadlineAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HistorySyncResultDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errorCode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "CONNECTOR_UNAVAILABLE",
+                  "ACCESS_REVOKED",
+                  "DEADLINE_EXCEEDED",
+                  "PUBLICATION_FAILED",
+                  "IMPORT_FAILED"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "HistorySyncOperationPageDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HistorySyncOperationDto"
+            }
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1024
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "PushInstallationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "platform",
+          "provider",
+          "appId",
+          "environment",
+          "registrationReference",
+          "installationSecret",
+          "enabled",
+          "reportedPermission",
+          "expectedRegistrationVersion"
+        ],
+        "properties": {
+          "platform": {
+            "$ref": "#/components/schemas/PushPlatform"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/PushProviderType"
+          },
+          "appId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "environment": {
+            "$ref": "#/components/schemas/PushEnvironment"
+          },
+          "registrationReference": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "writeOnly": true
+          },
+          "installationSecret": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43,128}$",
+            "writeOnly": true
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "reportedPermission": {
+            "$ref": "#/components/schemas/PushPermission"
+          },
+          "expectedRegistrationVersion": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "PushInstallationDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "installationId",
+          "bindingVersion",
+          "endpointVersion",
+          "enabled",
+          "reportedPermission",
+          "lastSeenAt",
+          "registrationVersion"
+        ],
+        "properties": {
+          "installationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "bindingVersion": {
+            "type": "integer",
+            "minimum": 1,
+            "format": "int64",
+            "maximum": 9007199254740991
+          },
+          "endpointVersion": {
+            "type": "integer",
+            "minimum": 1,
+            "format": "int64",
+            "maximum": 9007199254740991
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "reportedPermission": {
+            "$ref": "#/components/schemas/PushPermission"
+          },
+          "lastSeenAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "registrationVersion": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        }
+      }
+    }
+  }
+}

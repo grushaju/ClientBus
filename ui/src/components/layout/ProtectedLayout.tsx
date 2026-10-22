@@ -6,6 +6,7 @@ import {
 
 import { useAuth } from '../../auth/AuthContext'
 import AppLayout from './AppLayout'
+import { UiEventsProvider } from '../../api/events/UiEventsProvider'
 
 function ProtectedLayout() {
     const {
@@ -36,9 +37,9 @@ function ProtectedLayout() {
     }
 
     return (
-        <AppLayout>
+        <UiEventsProvider><AppLayout>
             <Outlet />
-        </AppLayout>
+        </AppLayout></UiEventsProvider>
     )
 }
 

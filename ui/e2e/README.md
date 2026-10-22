@@ -158,3 +158,11 @@ mvn process-resources
 
 Node/React-тесты из `ui/tests` и браузерные сценарии из `ui/e2e` запускаются
 отдельными командами. Перед переносом ресурсов UI уже собран основным набором.
+
+## Notification vertical (11.5)
+
+Изолированный реальный Kafka/PostgreSQL/SSE/browser E2E: mvn -o -pl server -am '-Dtest=NotificationBrowserAcceptance' '-Dsurefire.failIfNoSpecifiedTests=false' test-compile surefire:test. Перед запуском проверить TypeScript и собрать Vite. Отдельный конфиг — playwright.notifications.config.ts; test-only manifest создаёт и удаляет Java harness. Сценарии/ограничения — [NOTIFICATION_OUTBOX.md](../../NOTIFICATION_OUTBOX.md). Основной mock-набор явно отвечает 404 на optional /api/events и исключает папку notifications из discovery.
+
+В 11.6 набор расширен до 4 desktop/mobile проверок: смена аккаунта и storage logout между вкладками, очистка старой переписки, сохранение черновика и обновление мобильного списка при возвращении. Ожидание SSE привязано к ready выбранного Workspace. Протокол — [NOTIFICATION_UI.md](../../NOTIFICATION_UI.md).
+
+В 11.7 набор расширен до 8 проверок: добавлены SSE 404 с REST fallback и остановленный publisher relay при живом heartbeat. Последний сценарий на каждой платформе ждёт настоящую контрольную сверку 120–144 секунд и проверяет отсутствие нового messages.invalidated, сохранение черновика и ограниченное число GET. Общий прогон занимает около 5–6 минут; один такой тест имеет timeout 180 секунд, Java harness — 10 минут. Профиль notification-browser включает test-only publisher gate; runtime artifact этих контролов не содержит. Политика, конфигурация и результаты — [NOTIFICATION_RECOVERY.md](../../NOTIFICATION_RECOVERY.md).

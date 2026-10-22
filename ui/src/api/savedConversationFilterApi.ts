@@ -12,9 +12,11 @@ const getBaseUrl = (workspaceId: string) =>
 export async function getSavedConversationFilters(
     workspaceId: string,
     filterType: SavedFilterType,
+    signal?: AbortSignal,
 ): Promise<SavedConversationFilterDto[]> {
     const response = await apiFetch(
         `${getBaseUrl(workspaceId)}?filterType=${filterType}`,
+        { signal },
     )
 
     return response.json()

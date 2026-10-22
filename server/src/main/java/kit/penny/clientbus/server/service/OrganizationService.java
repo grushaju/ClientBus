@@ -8,6 +8,8 @@ import kit.penny.clientbus.server.mapper.OrganizationMapper;
 import kit.penny.clientbus.server.persistence.entity.OrganizationEntity;
 import kit.penny.clientbus.server.persistence.repository.OrganizationRepository;
 import kit.penny.clientbus.server.security.service.CurrentUserService;
+import kit.penny.clientbus.server.security.policy.AccessPolicy;
+import kit.penny.clientbus.server.security.policy.HttpAccessPolicy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,15 +23,18 @@ public class OrganizationService {
     private final OrganizationRepository organizationRepository;
     private final OrganizationMapper organizationMapper;
     private final CurrentUserService currentUserService;
+    private final HttpAccessPolicy accessPolicy;
 
     public OrganizationService(
             OrganizationRepository organizationRepository,
             OrganizationMapper organizationMapper,
-            CurrentUserService currentUserService
+            CurrentUserService currentUserService,
+            HttpAccessPolicy accessPolicy
     ) {
         this.organizationRepository = organizationRepository;
         this.organizationMapper = organizationMapper;
         this.currentUserService = currentUserService;
+        this.accessPolicy = accessPolicy;
     }
 
     /**
@@ -80,10 +85,7 @@ public class OrganizationService {
     @Transactional(readOnly = true)
     public OrganizationDto getOrganization(UUID id) {
 
-        currentUserService
-                .requireEmployeeInCurrentOrganization(
-                        currentUserService.getCurrentEmployeeId()
-                );
+        accessPolicy.require(AccessPolicy.Resource.ORGANIZATION, id);
 
         return organizationMapper.toDto(
                 getOrganizationEntity(id)

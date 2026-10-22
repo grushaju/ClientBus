@@ -8,11 +8,12 @@ export async function loadInboxConversations(
     workspaceId: string,
     request: ConversationSearchRequest,
     isCurrent: () => boolean,
+    signal?: AbortSignal,
 ) {
     const conversations: ConversationDto[] = []
     let page = 0
     while (isCurrent()) {
-        const result = await searchInbox(workspaceId, { ...request, page, size: 10 })
+        const result = await searchInbox(workspaceId, { ...request, page, size: 10 }, signal)
         if (!isCurrent()) return null
         conversations.push(...result.content)
         if (!result.hasNext) break
@@ -20,10 +21,10 @@ export async function loadInboxConversations(
         page = result.page + 1
     }
     if (!isCurrent()) return null
-    const channels = await getWorkspaceChannels(workspaceId)
+    const channels = await getWorkspaceChannels(workspaceId, signal)
     if (!isCurrent()) return null
     const ids = [...new Set(conversations.map(conversation => conversation.clientAccountId))]
-    const accounts = ids.length ? await getClientAccountsByIds(ids) : []
+    const accounts = ids.length ? await getClientAccountsByIds(ids, signal) : []
     if (!isCurrent()) return null
     const channelByAccount = new Map(channels.filter(channel => channel.account).map(channel => [channel.account!.id, channel]))
     const accountById = new Map(accounts.map(account => [account.id, account]))

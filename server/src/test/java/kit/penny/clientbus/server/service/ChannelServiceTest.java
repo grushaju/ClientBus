@@ -62,7 +62,8 @@ class ChannelServiceTest {
                 workspaceRepository,
                 channelMapper,
                 currentUserService,
-                lifecycleRegistry
+                lifecycleRegistry,
+                mock(kit.penny.clientbus.server.security.policy.HttpAccessPolicy.class)
         );
     }
 

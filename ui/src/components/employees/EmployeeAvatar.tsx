@@ -5,6 +5,7 @@ import {
     getCurrentEmployeeAvatarContent,
     getEmployeeAvatarContent,
 } from '../../api/employeeApi'
+import { useUiLifetime } from '../../api/events/useUiLifetime'
 
 interface EmployeeAvatarProps {
     employeeId: string
@@ -27,6 +28,7 @@ function EmployeeAvatar({
                             className = '',
                             isCurrentEmployee = false,
                         }: EmployeeAvatarProps) {
+    const lifetime = useUiLifetime('employee-avatar:' + employeeId)
     const [imageSrc, setImageSrc] = useState<string | null>(null)
 
     useEffect(() => {
@@ -36,15 +38,16 @@ function EmployeeAvatar({
         }
 
         let active = true
+        const controller = new AbortController()
         let objectUrl: string | null = null
 
         setImageSrc(null)
 
-        void (
+        void lifetime.read(signal => (
             isCurrentEmployee
-                ? getCurrentEmployeeAvatarContent()
-                : getEmployeeAvatarContent(employeeId)
-        ).then(blob => {
+                ? getCurrentEmployeeAvatarContent(signal)
+                : getEmployeeAvatarContent(employeeId, signal)
+        ), controller.signal).then(blob => {
                 if (!active) {
                     return
                 }
@@ -60,12 +63,13 @@ function EmployeeAvatar({
 
         return () => {
             active = false
+            controller.abort()
 
             if (objectUrl) {
                 URL.revokeObjectURL(objectUrl)
             }
         }
-    }, [employeeId, avatarUrl, isCurrentEmployee])
+    }, [employeeId, avatarUrl, isCurrentEmployee, lifetime])
 
     const initials =
         `${firstName?.[0] ?? ''}${lastName?.[0] ?? ''}`.toUpperCase()

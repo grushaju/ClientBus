@@ -315,7 +315,7 @@ class TelegramInboundMessageListenerTest {
         );
 
         verify(platformMessagePublisher)
-                .publish(platformMessage);
+                .publish(platformMessage.withOrigin(kit.penny.clientbus.common.notification.EventOrigin.LIVE));
     }
 
     private TdApi.Message createTextMessage(

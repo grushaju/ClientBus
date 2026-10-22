@@ -4,11 +4,12 @@ import type {
     EmployeeWorkspaceDto,
 } from '../auth/types'
 
-export async function getCurrentEmployeeWorkspaces(): Promise<
+export async function getCurrentEmployeeWorkspaces(signal?: AbortSignal): Promise<
     EmployeeWorkspaceDto[]
 > {
     const response = await apiFetch(
         '/api/employees/me/workspaces',
+        { signal },
     )
 
     return response.json()

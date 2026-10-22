@@ -6,6 +6,7 @@ import {
 import {
     apiFetch,
 } from '../../api/apiClient'
+import { useUiLifetime } from '../../api/events/useUiLifetime'
 
 interface ChannelAccountAvatarProps {
     channelId: string
@@ -18,11 +19,13 @@ export function ChannelAccountAvatar({
                                          avatarUrl,
                                          displayName,
                                      }: ChannelAccountAvatarProps) {
+    const lifetime = useUiLifetime('channel-account-avatar:' + channelId)
     const [imageUrl, setImageUrl] =
         useState<string | null>(null)
 
     useEffect(() => {
         let cancelled = false
+        const controller = new AbortController()
         let objectUrl: string | null = null
 
         setImageUrl(null)
@@ -33,10 +36,10 @@ export function ChannelAccountAvatar({
             }
         }
 
-        apiFetch(
-            `/api/channels/${channelId}/account/avatar`,
-        )
-            .then(response => response.blob())
+        lifetime.read(async signal => {
+            const response = await apiFetch(`/api/channels/${channelId}/account/avatar`, { signal })
+            return response.blob()
+        }, controller.signal)
             .then(blob => {
                 const url = URL.createObjectURL(blob)
 
@@ -56,6 +59,7 @@ export function ChannelAccountAvatar({
 
         return () => {
             cancelled = true
+            controller.abort()
 
             if (objectUrl) {
                 URL.revokeObjectURL(objectUrl)
@@ -64,6 +68,7 @@ export function ChannelAccountAvatar({
     }, [
         channelId,
         avatarUrl,
+        lifetime,
     ])
 
     const initial =

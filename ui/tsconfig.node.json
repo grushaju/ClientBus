@@ -4,9 +4,11 @@
     "skipLibCheck": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    "outDir": "./node_modules/.tmp/vite-config"
   },
   "include": [
-    "vite.config.ts"
+    "vite.config.ts",
+    "src/api/events/recoveryPolicy.ts"
   ]
 }

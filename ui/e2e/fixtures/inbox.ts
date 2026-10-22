@@ -41,6 +41,8 @@ export class InboxApi {
         this.calls.push({ method, path, body })
         const reply = (value: unknown, status = 200) => this.reply(route, value, status)
         const error = (status: number, message: string) => reply({ code: status === 403 ? 'ACCESS_DENIED' : 'TEST_ERROR', message }, status)
+        // These fixtures exercise Inbox with the optional backend transport disabled.
+        if (path === '/api/events') return reply({}, 404)
 
         if (path === '/api/auth/login') return reply({ accessToken: 'browser-fixture-token', tokenType: 'Bearer' })
         if (path === '/api/employees/me') return reply({ ...employee, role: this.role === 'admin' ? 'SUPER_ADMIN' : 'EMPLOYEE' })

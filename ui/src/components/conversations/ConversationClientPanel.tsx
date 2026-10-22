@@ -11,6 +11,10 @@ import {
 import type { ClientDto, ClientListItemDto } from '../../api/types/client'
 import type { ChannelSummary, ClientAccountSummary, ConversationDto } from '../../api/types/conversation'
 import type { ClientAccountDto } from '../../api/types/clientAccount'
+import type { UiEventEnvelope } from '../../api/types/uiEvent'
+import { useUiResource } from '../../api/events/useUiResource'
+import { useUiLifetime } from '../../api/events/useUiLifetime'
+import { affectsConversation, isAccessEvent } from '../../api/events/uiScope'
 import PlatformIcon from '../common/platform/PlatformIcon'
 import PlatformName from '../common/platform/PlatformName'
 import ClientAccountPicker from '../clients/ClientAccountPicker'
@@ -24,6 +28,7 @@ interface Props {
     accountError?: string | null
     channelError?: string | null
     refreshingDetails?: boolean
+    visible?: boolean
     onRetryDetails: () => void
     onChanged: (account: ClientAccountSummary) => void
 }
@@ -48,7 +53,7 @@ function AccountCard({ account }: { account: ClientAccountSummary }) {
 
 function ConversationClientDetails({
     conversation, clientAccount, channel, accountError, channelError,
-    refreshingDetails = false, onRetryDetails, onChanged,
+    refreshingDetails = false, visible = true, onRetryDetails, onChanged,
 }: Props) {
     const alive = useRef(true)
     const actionPending = useRef(false)
@@ -60,8 +65,6 @@ function ConversationClientDetails({
     const [loadingAccounts, setLoadingAccounts] = useState(!!clientAccount?.clientId)
     const [clientError, setClientError] = useState<string | null>(null)
     const [accountsError, setAccountsError] = useState<string | null>(null)
-    const [clientReload, setClientReload] = useState(0)
-    const [accountsReload, setAccountsReload] = useState(0)
     const [actionLoading, setActionLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [form, setForm] = useState<'create' | 'link' | null>(null)
@@ -77,60 +80,52 @@ function ConversationClientDetails({
     const [clientsReload, setClientsReload] = useState(0)
     const [selectedClientId, setSelectedClientId] = useState('')
     const clientId = clientAccount?.clientId
+    const avatarLifetime = useUiLifetime('client-avatar:' + (clientId ?? ''))
 
     useEffect(() => {
         alive.current = true
         return () => { alive.current = false }
     }, [])
 
-    // These requests are independent: unavailable accounts must not hide the client.
-    useEffect(() => {
-        if (!clientId) return
-        let active = true
-        setLoadingClient(true)
-        setClientError(null)
-        void getClient(clientId).then(result => {
-            if (active) setClient(result)
-        }).catch(err => {
-            if (active) setClientError(errorMessage(err, 'Не удалось загрузить клиента'))
-        }).finally(() => {
-            if (active) setLoadingClient(false)
-        })
-        return () => { active = false }
-    }, [clientId, clientReload])
-
-    useEffect(() => {
-        if (!clientId) return
-        let active = true
-        const request = ++accountsRequest.current
-        const isCurrent = () => active && request === accountsRequest.current
-        setLoadingAccounts(true)
-        setAccountsError(null)
-        void getClientAccountsByClient(clientId).then(result => {
-            if (isCurrent()) setClientAccounts(result)
-        }).catch(err => {
-            if (isCurrent()) setAccountsError(errorMessage(err, 'Не удалось загрузить аккаунты клиента'))
-        }).finally(() => {
-            if (isCurrent()) setLoadingAccounts(false)
-        })
-        return () => { active = false }
-    }, [clientId, accountsReload])
+    const matchesClient = (event: UiEventEnvelope) => isAccessEvent(event)
+        ? affectsConversation(event, conversation.id, conversation.workspaceId)
+        : event.type === 'clients.invalidated' && (event.resource?.kind === 'client'
+            ? event.resource.id === clientId : affectsConversation(event, conversation.id, conversation.workspaceId))
+    // Profile and accounts reconcile independently, without closing the form.
+    const profile = useUiResource('client-profile:' + (clientId ?? ''), !!clientId, matchesClient,
+        signal => getClient(clientId!, signal),
+        value => { setClient(value); setClientError(null) },
+        err => setClientError(errorMessage(err, 'Не удалось загрузить клиента')),
+        () => { setClient(null); setClientAvatarSrc(null) },
+        value => { setLoadingClient(value); if (value) setClientError(null) }, visible)
+    const accounts = useUiResource('client-accounts:' + (clientId ?? ''), !!clientId, matchesClient,
+        async signal => {
+            const request = accountsRequest.current
+            return { request, items: await getClientAccountsByClient(clientId!, signal) }
+        }, result => {
+            if (result.request === accountsRequest.current) setClientAccounts(result.items)
+            setAccountsError(null)
+        }, err => setAccountsError(errorMessage(err, 'Не удалось загрузить аккаунты клиента')),
+        () => { accountsRequest.current++; setClientAccounts([]) },
+        value => { setLoadingAccounts(value); if (value) setAccountsError(null) }, visible)
 
     useEffect(() => {
         setClientAvatarSrc(null)
         if (!client?.avatarUrl) return
         let active = true
+        const controller = new AbortController()
         let objectUrl: string | undefined
-        void getClientAvatarContent(client.id).then(blob => {
+        void avatarLifetime.read(signal => getClientAvatarContent(client.id, signal), controller.signal).then(blob => {
             if (!active) return
             objectUrl = URL.createObjectURL(blob)
             setClientAvatarSrc(objectUrl)
         }).catch(() => { /* Fall back to the initial when the avatar is unavailable. */ })
         return () => {
             active = false
+            controller.abort()
             if (objectUrl) URL.revokeObjectURL(objectUrl)
         }
-    }, [client?.id, client?.avatarUrl])
+    }, [client?.id, client?.avatarUrl, avatarLifetime])
 
     useEffect(() => {
         if (form !== 'link') return
@@ -199,13 +194,14 @@ function ConversationClientDetails({
 
     function handleAssignAnotherAccount(account: ClientAccountDto) {
         if (!clientId || !clientAccount || account.clientId !== null) return
+        const isCurrent = accounts.capture()
         void mutate(async () => {
             const updated = await assignClientAccount(clientId, account.id)
-            if (alive.current) {
+            if (alive.current && isCurrent()) {
                 accountsRequest.current += 1
                 setClientAccounts(previous => [...previous.filter(item => item.id !== updated.id), updated])
                 // Re-read the list if its earlier request failed or is still in flight.
-                setAccountsReload(value => value + 1)
+                accounts.reload()
             }
             return clientAccount
         }, 'Не удалось привязать аккаунт')
@@ -228,7 +224,7 @@ function ConversationClientDetails({
                         {loadingClient && !client && <div className="conversation-client-panel-state">Загрузка клиента…</div>}
                         {clientError && <div className="conversation-client-panel-error" role="alert">
                             {clientError}
-                            <button type="button" className="ui-button ui-button-sm ui-button-secondary" disabled={loadingClient} onClick={() => setClientReload(value => value + 1)}>Повторить загрузку клиента</button>
+                            <button type="button" className="ui-button ui-button-sm ui-button-secondary" disabled={loadingClient} onClick={profile.reload}>Повторить загрузку клиента</button>
                         </div>}
                         {client && <>
                             <div className="conversation-client-card">
@@ -292,7 +288,7 @@ function ConversationClientDetails({
                         {otherAccounts.length > 0 && <button type="button" className="ui-button ui-button-sm ui-button-secondary ui-button-block" aria-expanded={showOtherAccounts} onClick={() => setShowOtherAccounts(value => !value)}>{showOtherAccounts ? 'Скрыть другие аккаунты' : `Другие аккаунты (${otherAccounts.length})`}</button>}
                     </div>
                     {loadingAccounts && <div className="conversation-client-panel-state">Загрузка аккаунтов…</div>}
-                    {accountsError && <div className="conversation-client-panel-error" role="alert">{accountsError}<button type="button" className="ui-button ui-button-sm ui-button-secondary" disabled={loadingAccounts || actionLoading} onClick={() => setAccountsReload(value => value + 1)}>Повторить загрузку аккаунтов</button></div>}
+                    {accountsError && <div className="conversation-client-panel-error" role="alert">{accountsError}<button type="button" className="ui-button ui-button-sm ui-button-secondary" disabled={loadingAccounts || actionLoading} onClick={accounts.reload}>Повторить загрузку аккаунтов</button></div>}
                     {showOtherAccounts && <div className="conversation-client-other-accounts">{otherAccounts.map(account => <AccountCard key={account.id} account={account} />)}</div>}
                 </>}
             </div>}

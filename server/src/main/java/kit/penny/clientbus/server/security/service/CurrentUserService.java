@@ -7,6 +7,8 @@ import kit.penny.clientbus.server.persistence.repository.EmployeeWorkspaceReposi
 import kit.penny.clientbus.server.persistence.repository.WorkspaceRepository;
 import kit.penny.clientbus.server.persistence.entity.EmployeeWorkspaceEntity;
 import kit.penny.clientbus.server.security.UserPrincipal;
+import kit.penny.clientbus.server.security.policy.AccessPolicy;
+import kit.penny.clientbus.server.security.policy.AccessSubject;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.core.Authentication;
@@ -21,16 +23,19 @@ public class CurrentUserService {
     private final EmployeeRepository employeeRepository;
     private final EmployeeWorkspaceRepository employeeWorkspaceRepository;
     private final WorkspaceRepository workspaceRepository;
+    private final AccessPolicy accessPolicy;
 
     public CurrentUserService(
             EmployeeRepository employeeRepository,
             EmployeeWorkspaceRepository employeeWorkspaceRepository,
-            WorkspaceRepository workspaceRepository
+            WorkspaceRepository workspaceRepository,
+            AccessPolicy accessPolicy
     ) {
         this.employeeRepository = employeeRepository;
         this.employeeWorkspaceRepository =
                 employeeWorkspaceRepository;
         this.workspaceRepository = workspaceRepository;
+        this.accessPolicy = accessPolicy;
     }
 
     public UserPrincipal getCurrentUser() {
@@ -203,14 +208,7 @@ public class CurrentUserService {
     public UUID requireWorkspaceAccess(
             UUID workspaceId
     ) {
-
-        if (!hasWorkspaceAccess(workspaceId)) {
-
-            throw new AccessDeniedException(
-                    "Access denied for workspace: "
-                            + workspaceId
-            );
-        }
+        accessPolicy.require(AccessSubject.recipient(getCurrentEmployeeId()), AccessPolicy.Resource.WORKSPACE, workspaceId);
 
         return workspaceId;
     }
@@ -218,27 +216,7 @@ public class CurrentUserService {
     public void requireConversationAccess(
             ConversationEntity conversation
     ) {
-        requireWorkspaceAccess(
-                conversation.getWorkspace().getId()
-        );
-
-        UUID workspaceId =
-                conversation.getWorkspace().getId();
-
-        if (isSuperAdmin() || isSupervisor(workspaceId)) {
-            return;
-        }
-
-        EmployeeEntity assigned =
-                conversation.getAssignedEmployee();
-
-        if (assigned != null
-                && !assigned.getId().equals(
-                getCurrentEmployeeId())
-        ) {
-
-            throw new AccessDeniedException("Conversation is assigned to another employee");
-        }
+        accessPolicy.require(AccessSubject.recipient(getCurrentEmployeeId()), AccessPolicy.Resource.CONVERSATION, conversation.getId());
     }
 
     public boolean isAuthenticated() {

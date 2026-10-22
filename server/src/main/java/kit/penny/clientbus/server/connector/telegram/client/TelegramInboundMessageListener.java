@@ -108,7 +108,8 @@ public class TelegramInboundMessageListener
                         return;
                     }
 
-                    platformMessagePublisher.publish(platformMessage);
+                    platformMessagePublisher.publish(platformMessage.withOrigin(
+                            kit.penny.clientbus.common.notification.EventOrigin.LIVE));
                 })
                 .exceptionally(error -> {
 

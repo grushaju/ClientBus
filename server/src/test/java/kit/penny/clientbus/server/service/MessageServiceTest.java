@@ -36,6 +36,7 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class MessageServiceTest {
+    @Mock private kit.penny.clientbus.server.notification.outbox.UiOutboxWriter uiOutbox;
 
     @Mock
     private MessageRepository messageRepository;

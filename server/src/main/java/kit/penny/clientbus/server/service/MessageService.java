@@ -43,6 +43,7 @@ public class MessageService {
     private final MessageMapper messageMapper;
     private final CurrentUserService currentUserService;
     private final ISyncConversationHistoryCommandPublisher syncConversationHistoryCommandPublisher;
+    private final kit.penny.clientbus.server.notification.outbox.UiOutboxWriter uiOutbox;
 
     private static final Duration HISTORY_SYNC_TIMEOUT =
             Duration.ofSeconds(30);
@@ -62,9 +63,11 @@ public class MessageService {
             MessageMapper messageMapper,
             CurrentUserService currentUserService,
             ISyncConversationHistoryCommandPublisher syncConversationHistoryCommandPublisher,
-            PlatformTransactionManager transactionManager
+            PlatformTransactionManager transactionManager,
+            kit.penny.clientbus.server.notification.outbox.UiOutboxWriter uiOutbox
     ) {
         this.messageRepository = messageRepository;
+        this.uiOutbox = uiOutbox;
         this.conversationRepository = conversationRepository;
         this.conversationService = conversationService;
         this.messageMapper = messageMapper;
@@ -145,6 +148,12 @@ public class MessageService {
     public MessageCreationResult createPlatformMessage(
             CreatePlatformMessageRequest request
     ) {
+        return createPlatformMessage(request, kit.penny.clientbus.common.notification.EventOrigin.SYNC);
+    }
+
+    @Transactional
+    public MessageCreationResult createPlatformMessage(CreatePlatformMessageRequest request,
+            kit.penny.clientbus.common.notification.EventOrigin origin) {
 
         ConversationEntity conversation =
                 getConversation(
@@ -253,10 +262,8 @@ public class MessageService {
             );
         }
 
-        return new MessageCreationResult(
-                messageMapper.toDto(message),
-                false
-        );
+        uiOutbox.messageSaved(conversation, origin);
+        return new MessageCreationResult(messageMapper.toDto(message), false);
     }
 
     /**

@@ -40,6 +40,12 @@ public class JwtAuthenticationFilter
             FilterChain filterChain
     ) throws ServletException, IOException {
 
+        boolean stream=request.getRequestURI().equals(request.getContextPath()+"/api/events");
+        if (stream) {
+            response.setHeader("Cache-Control","no-store");
+            response.setHeader("X-Accel-Buffering","no");
+        }
+
         String authorization =
                 request.getHeader(HttpHeaders.AUTHORIZATION);
 
@@ -61,6 +67,7 @@ public class JwtAuthenticationFilter
          * Проверяем Bearer.
          */
         if (!authorization.startsWith("Bearer ")) {
+            if (stream) { writeStreamUnauthorized(response); return; }
 
             response.setStatus(
                     HttpServletResponse.SC_UNAUTHORIZED
@@ -82,6 +89,7 @@ public class JwtAuthenticationFilter
                 authorization.substring(7).trim();
 
         if (token.isEmpty()) {
+            if (stream) { writeStreamUnauthorized(response); return; }
 
             response.setStatus(
                     HttpServletResponse.SC_UNAUTHORIZED
@@ -96,6 +104,7 @@ public class JwtAuthenticationFilter
              * Проверяем JWT.
              */
             if (!jwtService.isTokenValid(token)) {
+                if (stream) { writeStreamUnauthorized(response); return; }
 
                 response.setStatus(
                         HttpServletResponse.SC_UNAUTHORIZED
@@ -127,6 +136,7 @@ public class JwtAuthenticationFilter
                             .orElse(null);
 
             if (user == null) {
+                if (stream) { writeStreamUnauthorized(response); return; }
 
                 response.setStatus(
                         HttpServletResponse.SC_UNAUTHORIZED
@@ -148,6 +158,7 @@ public class JwtAuthenticationFilter
              * Проверяем, что пользователь активен.
              */
             if (!user.isEnabled()) {
+                if (stream) { writeStreamUnauthorized(response); return; }
 
                 response.setStatus(
                         HttpServletResponse.SC_UNAUTHORIZED
@@ -178,6 +189,8 @@ public class JwtAuthenticationFilter
                             principal.getAuthorities()
                     );
 
+            authentication.setDetails(new VerifiedSession(jwtService.getExpiresAt(token)));
+
             /*
              * Записываем Authentication
              * в текущий SecurityContext.
@@ -194,6 +207,8 @@ public class JwtAuthenticationFilter
              */
             SecurityContextHolder
                     .clearContext();
+
+            if (stream) { writeStreamUnauthorized(response); return; }
 
             response.setStatus(
                     HttpServletResponse.SC_UNAUTHORIZED
@@ -215,5 +230,14 @@ public class JwtAuthenticationFilter
          * Передаём запрос следующему фильтру.
          */
         filterChain.doFilter(request, response);
+    }
+
+    public record VerifiedSession(java.time.Instant expiresAt) {}
+
+    public static void writeStreamUnauthorized(HttpServletResponse response) throws IOException {
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        response.setHeader("Cache-Control","no-store");
+        response.setContentType("application/json");
+        response.getWriter().write("{\"code\":\"UNAUTHENTICATED\",\"correlationId\":\""+UUID.randomUUID()+"\"}");
     }
 }

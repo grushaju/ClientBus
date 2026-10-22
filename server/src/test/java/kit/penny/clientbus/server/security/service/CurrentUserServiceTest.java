@@ -11,6 +11,8 @@ import kit.penny.clientbus.server.persistence.repository.EmployeeRepository;
 import kit.penny.clientbus.server.persistence.repository.EmployeeWorkspaceRepository;
 import kit.penny.clientbus.server.persistence.repository.WorkspaceRepository;
 import kit.penny.clientbus.server.security.UserPrincipal;
+import kit.penny.clientbus.server.security.policy.AccessPolicy;
+import kit.penny.clientbus.server.security.policy.AccessSubject;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -50,6 +52,9 @@ class CurrentUserServiceTest {
     @Mock
     private WorkspaceRepository workspaceRepository;
 
+    @Mock
+    private AccessPolicy accessPolicy;
+
     private CurrentUserService currentUserService;
 
     private OrganizationEntity organizationA;
@@ -68,7 +73,8 @@ class CurrentUserServiceTest {
         currentUserService = new CurrentUserService(
                 employeeRepository,
                 employeeWorkspaceRepository,
-                workspaceRepository
+                workspaceRepository,
+                accessPolicy
         );
 
         organizationA = createOrganization(
@@ -241,101 +247,20 @@ class CurrentUserServiceTest {
     // =========================================================
 
     @Test
-    void employeeA1_requireWorkspaceAccess_allowsAssignedWorkspace() {
-
+    void workspaceAccessUsesAuthoritativePolicyOnly() {
         authenticate(employeeA1);
-
-        when(employeeWorkspaceRepository
-                .existsByEmployeeIdAndWorkspaceId(
-                        employeeA1.getId(),
-                        workspaceA1.getId()
-                ))
-                .thenReturn(true);
-
-        assertDoesNotThrow(() ->
-                currentUserService.requireWorkspaceAccess(
-                        workspaceA1.getId()
-                )
-        );
+        assertEquals(workspaceA1.getId(), currentUserService.requireWorkspaceAccess(workspaceA1.getId()));
+        verify(accessPolicy).require(AccessSubject.recipient(employeeA1.getId()), AccessPolicy.Resource.WORKSPACE, workspaceA1.getId());
+        verifyNoInteractions(employeeWorkspaceRepository, workspaceRepository);
     }
 
     @Test
-    void employeeA1_requireWorkspaceAccess_deniesUnassignedWorkspace() {
-
+    void workspacePolicyDenialIsPropagated() {
         authenticate(employeeA1);
-
-        when(employeeWorkspaceRepository
-                .existsByEmployeeIdAndWorkspaceId(
-                        employeeA1.getId(),
-                        workspaceA2.getId()
-                ))
-                .thenReturn(false);
-
-        assertThrows(
-                AccessDeniedException.class,
-                () -> currentUserService.requireWorkspaceAccess(
-                        workspaceA2.getId()
-                )
-        );
-    }
-
-    @Test
-    void employeeA1_requireWorkspaceAccess_deniesOtherOrganization() {
-
-        authenticate(employeeA1);
-
-        when(employeeWorkspaceRepository
-                .existsByEmployeeIdAndWorkspaceId(
-                        employeeA1.getId(),
-                        workspaceB1.getId()
-                ))
-                .thenReturn(false);
-
-        assertThrows(
-                AccessDeniedException.class,
-                () -> currentUserService.requireWorkspaceAccess(
-                        workspaceB1.getId()
-                )
-        );
-    }
-
-    @Test
-    void superAdminA_requireWorkspaceAccess_allowsOwnOrganizationWorkspace() {
-
-        authenticate(superAdminA);
-
-        when(workspaceRepository
-                .existsByIdAndOrganizationId(
-                        workspaceA2.getId(),
-                        organizationA.getId()
-                ))
-                .thenReturn(true);
-
-        assertDoesNotThrow(() ->
-                currentUserService.requireWorkspaceAccess(
-                        workspaceA2.getId()
-                )
-        );
-    }
-
-    @Test
-    void superAdminA_requireWorkspaceAccess_deniesOtherOrganization() {
-
-        authenticate(superAdminA);
-
-        when(workspaceRepository
-                .existsByIdAndOrganizationId(
-                        workspaceB1.getId(),
-                        organizationA.getId()
-                ))
-                .thenReturn(false);
-
-        assertThrows(
-                AccessDeniedException.class,
-                () -> currentUserService.requireWorkspaceAccess(
-                        workspaceB1.getId()
-                )
-        );
+        org.mockito.Mockito.doThrow(new AccessDeniedException("denied")).when(accessPolicy)
+                .require(AccessSubject.recipient(employeeA1.getId()), AccessPolicy.Resource.WORKSPACE, workspaceB1.getId());
+        assertThrows(AccessDeniedException.class, () -> currentUserService.requireWorkspaceAccess(workspaceB1.getId()));
+        verifyNoInteractions(employeeWorkspaceRepository, workspaceRepository);
     }
 
     // =========================================================
@@ -373,45 +298,25 @@ class CurrentUserServiceTest {
     // HELPERS
     // =========================================================
 
-    @ParameterizedTest(name = "{0}")
-    @MethodSource("conversationAccessCases")
-    void conversationAccessUsesWorkspaceRoleAndCurrentOwner(String name, boolean supervisor, String owner, boolean allowed) {
+    @Test
+    void conversationAccessUsesIdentityWithoutReadingCachedAssignment() {
         authenticate(employeeA1);
-        when(employeeWorkspaceRepository.existsByEmployeeIdAndWorkspaceId(employeeA1.getId(), workspaceA1.getId())).thenReturn(true);
-        EmployeeWorkspaceEntity membership = new EmployeeWorkspaceEntity(employeeA1, workspaceA1);
-        membership.setSupervisor(supervisor);
-        when(employeeWorkspaceRepository.findByEmployeeIdAndWorkspaceId(employeeA1.getId(), workspaceA1.getId())).thenReturn(Optional.of(membership));
         ConversationEntity conversation = new ConversationEntity();
-        conversation.setWorkspace(workspaceA1);
-        if (!owner.equals("free")) conversation.setAssignedEmployee(owner.equals("self") ? employeeA1
-                : createEmployee("other", UserRole.EMPLOYEE, organizationA));
-        if (allowed) assertDoesNotThrow(() -> currentUserService.requireConversationAccess(conversation));
-        else assertThrows(AccessDeniedException.class, () -> currentUserService.requireConversationAccess(conversation));
-    }
-
-    Stream<Arguments> conversationAccessCases() {
-        return Stream.of(
-                Arguments.of("Employee: free", false, "free", true),
-                Arguments.of("Employee: own", false, "self", true),
-                Arguments.of("Employee: other", false, "other", false),
-                Arguments.of("Supervisor: other", true, "other", true),
-                Arguments.of("Supervisor: free", true, "free", true));
+        conversation.setId(UUID.randomUUID());
+        conversation.setAssignedEmployee(createEmployee("old-owner", UserRole.EMPLOYEE, organizationA));
+        assertDoesNotThrow(() -> currentUserService.requireConversationAccess(conversation));
+        verify(accessPolicy).require(AccessSubject.recipient(employeeA1.getId()), AccessPolicy.Resource.CONVERSATION, conversation.getId());
+        verifyNoInteractions(employeeWorkspaceRepository, workspaceRepository);
     }
 
     @Test
-    void owningAConversationDoesNotBypassWorkspaceAccess() {
+    void conversationPolicyDenialIsPropagated() {
         authenticate(employeeA1);
         ConversationEntity conversation = new ConversationEntity();
-        conversation.setWorkspace(workspaceA2);
+        conversation.setId(UUID.randomUUID());
         conversation.setAssignedEmployee(employeeA1);
-        assertThrows(AccessDeniedException.class, () -> currentUserService.requireConversationAccess(conversation));
-    }
-
-    @Test
-    void superAdminCannotOpenAConversationFromAnotherOrganization() {
-        authenticate(superAdminA);
-        ConversationEntity conversation = new ConversationEntity();
-        conversation.setWorkspace(workspaceB1);
+        org.mockito.Mockito.doThrow(new AccessDeniedException("denied")).when(accessPolicy)
+                .require(AccessSubject.recipient(employeeA1.getId()), AccessPolicy.Resource.CONVERSATION, conversation.getId());
         assertThrows(AccessDeniedException.class, () -> currentUserService.requireConversationAccess(conversation));
     }
 

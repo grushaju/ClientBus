@@ -12,10 +12,12 @@ export interface UpdateOrganizationRequest {
 
 export async function getOrganization(
     organizationId: string,
+    signal?: AbortSignal,
 ): Promise<OrganizationDto> {
     const response =
         await apiFetch(
             `/api/organizations/${organizationId}`,
+            { signal },
         )
 
     return response.json()

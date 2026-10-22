@@ -40,9 +40,10 @@ export interface ResetEmployeePasswordRequest {
  * =========================
  */
 
-export async function getCurrentEmployee(): Promise<EmployeeDto> {
+export async function getCurrentEmployee(signal?: AbortSignal): Promise<EmployeeDto> {
     const response = await apiFetch(
         '/api/employees/me',
+        { signal },
     )
 
     return response.json()
@@ -109,9 +110,10 @@ export async function getCurrentEmployeeWorkspaces(): Promise<
 }
 
 
-export async function getCurrentEmployeeAvatarContent(): Promise<Blob> {
+export async function getCurrentEmployeeAvatarContent(signal?: AbortSignal): Promise<Blob> {
     const response = await apiFetch(
         '/api/employees/me/avatar/content',
+        { signal },
     )
 
     return response.blob()
@@ -188,9 +190,11 @@ export async function getEmployeesByOrganization(
 
 export async function getWorkspaceEmployees(
     workspaceId: string,
+    signal?: AbortSignal,
 ): Promise<EmployeeDto[]> {
     const response = await apiFetch(
         `/api/employees/workspace/${workspaceId}`,
+        { signal },
     )
 
     return response.json()
@@ -324,9 +328,11 @@ export async function getEmployeeWorkspaces(
 
 export async function getEmployeeAvatarContent(
     employeeId: string,
+    signal?: AbortSignal,
 ): Promise<Blob> {
     const response = await apiFetch(
         `/api/employees/${employeeId}/avatar/content`,
+        { signal },
     )
 
     return response.blob()

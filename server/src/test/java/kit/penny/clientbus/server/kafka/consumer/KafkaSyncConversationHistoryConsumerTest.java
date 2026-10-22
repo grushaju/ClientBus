@@ -133,8 +133,8 @@ class KafkaSyncConversationHistoryConsumerTest {
                 )
         );
 
-        verify(publisher).publish(first);
-        verify(publisher).publish(second);
+        verify(publisher).publish(first.withOrigin(kit.penny.clientbus.common.notification.EventOrigin.HISTORY_IMPORT));
+        verify(publisher).publish(second.withOrigin(kit.penny.clientbus.common.notification.EventOrigin.HISTORY_IMPORT));
 
         verifyNoMoreInteractions(publisher);
         verifyNoInteractions(conversationService);
@@ -163,7 +163,7 @@ class KafkaSyncConversationHistoryConsumerTest {
                 TELEGRAM_TOPIC
         );
 
-        verify(publisher).publish(message);
+        verify(publisher).publish(message.withOrigin(kit.penny.clientbus.common.notification.EventOrigin.HISTORY_IMPORT));
         verifyNoMoreInteractions(publisher);
         verifyNoInteractions(conversationService);
     }
@@ -247,7 +247,7 @@ class KafkaSyncConversationHistoryConsumerTest {
                 TELEGRAM_TOPIC
         );
 
-        verify(publisher).publish(message);
+        verify(publisher).publish(message.withOrigin(kit.penny.clientbus.common.notification.EventOrigin.HISTORY_IMPORT));
 
         verify(conversationService).markHistoryStartReached(
                 ACCOUNT_ID,
@@ -357,10 +357,10 @@ class KafkaSyncConversationHistoryConsumerTest {
                 ChannelType.TELEGRAM
         )).thenReturn(connector);
 
-        when(messageProcessingService.processPlatformMessage(first))
+        when(messageProcessingService.processPlatformMessage(first.withOrigin(kit.penny.clientbus.common.notification.EventOrigin.HISTORY_IMPORT)))
                 .thenReturn(firstDto);
 
-        when(messageProcessingService.processPlatformMessage(second))
+        when(messageProcessingService.processPlatformMessage(second.withOrigin(kit.penny.clientbus.common.notification.EventOrigin.HISTORY_IMPORT)))
                 .thenReturn(secondDto);
 
         consumer.consume(
@@ -369,10 +369,10 @@ class KafkaSyncConversationHistoryConsumerTest {
         );
 
         verify(messageProcessingService)
-                .processPlatformMessage(first);
+                .processPlatformMessage(first.withOrigin(kit.penny.clientbus.common.notification.EventOrigin.HISTORY_IMPORT));
 
         verify(messageProcessingService)
-                .processPlatformMessage(second);
+                .processPlatformMessage(second.withOrigin(kit.penny.clientbus.common.notification.EventOrigin.HISTORY_IMPORT));
 
         verifyNoInteractions(publisher);
         verifyNoInteractions(conversationService);
@@ -401,7 +401,7 @@ class KafkaSyncConversationHistoryConsumerTest {
                 ChannelType.TELEGRAM
         )).thenReturn(connector);
 
-        when(messageProcessingService.processPlatformMessage(message))
+        when(messageProcessingService.processPlatformMessage(message.withOrigin(kit.penny.clientbus.common.notification.EventOrigin.HISTORY_IMPORT)))
                 .thenReturn(messageDto);
 
         consumer.consume(
@@ -439,7 +439,7 @@ class KafkaSyncConversationHistoryConsumerTest {
         assertNotNull(resultEvent.payload());
 
         verify(messageProcessingService)
-                .processPlatformMessage(message);
+                .processPlatformMessage(message.withOrigin(kit.penny.clientbus.common.notification.EventOrigin.HISTORY_IMPORT));
 
         verify(conversationService)
                 .markHistoryStartReached(

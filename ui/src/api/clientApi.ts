@@ -40,9 +40,11 @@ export async function searchClients(
 
 export async function getClient(
     clientId: string,
+    signal?: AbortSignal,
 ): Promise<ClientDto> {
     const response = await apiFetch(
         `/api/clients/${clientId}`,
+        { signal },
     )
 
     return response.json()
@@ -115,9 +117,11 @@ export async function createClientFromConversation(
 
 export async function getClientAccountsByClient(
     clientId: string,
+    signal?: AbortSignal,
 ): Promise<ClientAccountDto[]> {
     const response = await apiFetch(
         `/api/clients/${clientId}/clientaccounts`,
+        { signal },
     )
 
     return response.json()
@@ -196,9 +200,11 @@ export async function getClientsWithoutAccounts(): Promise<ClientDto[]> {
 
 export async function getClientAvatarContent(
     clientId: string,
+    signal?: AbortSignal,
 ): Promise<Blob> {
     const response = await apiFetch(
         `/api/clients/${clientId}/avatar/content`,
+        { signal },
     )
 
     return response.blob()

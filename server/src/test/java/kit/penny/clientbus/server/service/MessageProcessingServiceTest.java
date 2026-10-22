@@ -279,7 +279,7 @@ class MessageProcessingServiceTest {
         );
 
         when(messageService.createPlatformMessage(
-                any(CreatePlatformMessageRequest.class)
+                any(CreatePlatformMessageRequest.class), eq(kit.penny.clientbus.common.notification.EventOrigin.SYNC)
         )).thenReturn(
                 creationResult
         );
@@ -330,7 +330,7 @@ class MessageProcessingServiceTest {
 
         verify(messageService)
                 .createPlatformMessage(
-                        requestCaptor.capture()
+                        requestCaptor.capture(), eq(kit.penny.clientbus.common.notification.EventOrigin.SYNC)
                 );
 
         CreatePlatformMessageRequest
@@ -437,7 +437,7 @@ class MessageProcessingServiceTest {
         );
 
         when(messageService.createPlatformMessage(
-                any(CreatePlatformMessageRequest.class)
+                any(CreatePlatformMessageRequest.class), eq(kit.penny.clientbus.common.notification.EventOrigin.SYNC)
         )).thenReturn(
                 creationResult
         );
@@ -454,7 +454,7 @@ class MessageProcessingServiceTest {
 
         verify(messageService)
                 .createPlatformMessage(
-                        any(CreatePlatformMessageRequest.class)
+                        any(CreatePlatformMessageRequest.class), eq(kit.penny.clientbus.common.notification.EventOrigin.SYNC)
                 );
 
         verify(
@@ -561,7 +561,7 @@ class MessageProcessingServiceTest {
         );
 
         when(messageService.createPlatformMessage(
-                any(CreatePlatformMessageRequest.class)
+                any(CreatePlatformMessageRequest.class), eq(kit.penny.clientbus.common.notification.EventOrigin.SYNC)
         )).thenReturn(
                 creationResult
         );

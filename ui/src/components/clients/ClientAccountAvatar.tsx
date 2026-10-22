@@ -7,6 +7,7 @@ import {
 import {
     getClientAccountAvatarContent,
 } from '../../api/clientAccountApi'
+import { useUiLifetime } from '../../api/events/useUiLifetime'
 
 interface ClientAccountAvatarProps {
     accountId: string
@@ -21,11 +22,13 @@ export default function ClientAccountAvatar({
                                                 displayName,
                                                 size = 36,
                                             }: ClientAccountAvatarProps) {
+    const lifetime = useUiLifetime('client-account-avatar:' + accountId)
     const [imageUrl, setImageUrl] =
         useState<string | null>(null)
 
     useEffect(() => {
         let cancelled = false
+        const controller = new AbortController()
         let objectUrl: string | null = null
 
         setImageUrl(null)
@@ -36,7 +39,7 @@ export default function ClientAccountAvatar({
             }
         }
 
-        getClientAccountAvatarContent(accountId)
+        lifetime.read(signal => getClientAccountAvatarContent(accountId, signal), controller.signal)
             .then(blob => {
                 const url = URL.createObjectURL(blob)
 
@@ -56,12 +59,13 @@ export default function ClientAccountAvatar({
 
         return () => {
             cancelled = true
+            controller.abort()
 
             if (objectUrl) {
                 URL.revokeObjectURL(objectUrl)
             }
         }
-    }, [accountId, avatarUrl])
+    }, [accountId, avatarUrl, lifetime])
 
     const initial =
         displayName?.trim().charAt(0).toUpperCase() || '•'

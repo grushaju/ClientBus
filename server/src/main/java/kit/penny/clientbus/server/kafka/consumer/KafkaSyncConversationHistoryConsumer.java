@@ -159,7 +159,7 @@ public class KafkaSyncConversationHistoryConsumer {
                 }
 
                 platformMessagePublisher.publish(
-                        message
+                        message.withOrigin(kit.penny.clientbus.common.notification.EventOrigin.HISTORY_IMPORT)
                 );
             }
         }
@@ -192,7 +192,7 @@ public class KafkaSyncConversationHistoryConsumer {
 
                 messages.add(
                         messageProcessingService
-                                .processPlatformMessage(message)
+                                .processPlatformMessage(message.withOrigin(kit.penny.clientbus.common.notification.EventOrigin.HISTORY_IMPORT))
                 );
             }
         }
