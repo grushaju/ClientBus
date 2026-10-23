@@ -80,6 +80,8 @@ function viewport(events, initialWidth = 1024) {
 
 async function inbox(t, options = {}) {
     const previousWindow = global.window
+    const previousStorage = global.localStorage
+    if (options.storage) global.localStorage = options.storage
     const events = new EventTarget()
     const resize = viewport(events, options.width ?? 1024)
     events.confirm = () => true
@@ -97,6 +99,7 @@ async function inbox(t, options = {}) {
     const readCalls = [], conversationLoads = [], workspaceSelections = []
     let groups = [...(options.groups ?? [])]
     let workspace = { id: 'workspace', name: 'Workspace' }
+    let employeeId = options.employeeId ?? 'employee'
     let renderer, location, navigate
     let threadMounts = 0
     const reloadMessages = () => {}
@@ -166,7 +169,7 @@ async function inbox(t, options = {}) {
     const Workspace = load('InboxWorkspace.tsx', {
         '../../auth/AuthContext': {
             useAuth: () => ({
-                currentEmployee: { id: 'employee' }, employeeWorkspaces: options.employeeWorkspaces ?? [],
+                currentEmployee: { id: employeeId }, employeeWorkspaces: options.employeeWorkspaces ?? [],
                 isEmployee: !options.superAdmin, isSuperAdmin: !!options.superAdmin,
             }),
         },
@@ -232,6 +235,7 @@ async function inbox(t, options = {}) {
     t.after(async () => {
         if (renderer) await act(async () => renderer.unmount())
         global.window = previousWindow
+        global.localStorage = previousStorage
     })
     const tree = () => React.createElement(MemoryRouter, {
         initialEntries: options.initialEntries ?? ['/inbox/conversation-1?tab=mine'],
@@ -239,7 +243,7 @@ async function inbox(t, options = {}) {
         React.createElement(Route, { path: '/inbox/:conversationId?', element: React.createElement(Workspace) })),
     React.createElement(RouteProbe))
     await act(async () => { renderer = create(tree(), { createNodeMock: options.createNodeMock }) })
-    const button = label => renderer.root.findAllByType('button').find(node => text(node) === label)
+    const button = label => renderer.root.findAllByType('button').find(node => text(node) === label || node.props['aria-label'] === label)
     const pickerButton = label => renderer.root.findAllByType('button').find(node => node.props['aria-label'] === label)
     const chooseGroup = async (picker, name) => {
         await act(async () => pickerButton(picker).props.onClick())
@@ -286,6 +290,7 @@ async function inbox(t, options = {}) {
         }),
         navigate: async value => act(async () => navigate(value)),
         switchWorkspace: async next => act(async () => { workspace = next; renderer.update(tree()) }),
+        switchEmployee: async next => act(async () => { employeeId = next; renderer.update(tree()) }),
         resize: async width => act(async () => resize(width)),
         get location() { return location },
         get threadMounts() { return threadMounts },
@@ -1171,7 +1176,7 @@ for (const width of [600, 1366]) test(`group management and the filter editor st
     assert.ok(editor.findByProps({ className: 'inbox-filter-editor-scroll' }))
     assert.deepEqual(editor.findByProps({ className: 'conversation-filter-actions' }).findAllByType('button').map(text), ['Применить', 'Сбросить'])
     assert.equal(ui.button('⋯'), undefined)
-    if (width === 600) await ui.click('Меню Inbox')
+    if (width === 600) await ui.click('Фильтры и группы')
     await ui.click('Применить')
     if (width === 600) assert.equal(left.props['data-open'], false)
     await ui.click('Очистить фильтр')
@@ -1181,12 +1186,77 @@ for (const width of [600, 1366]) test(`group management and the filter editor st
     assert.equal(ui.calls.at(-1).groupId, 'a')
 })
 
+test('desktop edge preserves the selected filter, search and unfinished group when collapsed', async t => {
+    const ui = await inbox(t, { width: 1366, savedFilters: [{ id: 'f', name: 'My unread', filterType: 'PRIVATE',
+        filterDefinition: { view: 'MINE', unread: 'HAS_UNREAD' } }] })
+    const panel = () => ui.renderer.root.findByProps({ className: 'inbox-navigation-content' })
+    const edge = () => ui.renderer.root.findByProps({ className: 'inbox-navigation-toggle' })
+    const search = () => ui.renderer.root.findByProps({ 'aria-label': 'Поиск по диалогам' })
+    const composer = () => ui.renderer.root.findByProps({ 'aria-label': 'Черновик сообщения' })
+    assert.equal(panel().props.hidden, true)
+    assert.equal(text(edge().findByProps({ className: 'inbox-navigation-arrow' })), '▸')
+    await ui.click('Фильтры и группы')
+    await ui.click('My unread')
+    await act(async () => search().props.onChange({ target: { value: 'Unfinished search' } }))
+    await act(async () => composer().props.onChange({ target: { value: 'Unsent message' } }))
+    await ui.click('+ Группа')
+    await act(async () => ui.renderer.root.findByProps({ placeholder: 'Название группы' }).props.onChange({ target: { value: 'Unfinished group' } }))
+    const requests = ui.calls.length, loads = ui.filterLoads.length
+    await ui.click('Фильтры и группы')
+    assert.equal(panel().props.hidden, true)
+    assert.equal(text(ui.renderer.root.findByProps({ 'aria-label': 'Выбранный фильтр' })), 'My unread')
+    await ui.click('Фильтры и группы')
+    assert.equal(panel().props.hidden, false)
+    assert.equal(text(edge().findByProps({ className: 'inbox-navigation-arrow' })), '◂')
+    assert.equal(search().props.value, 'Unfinished search')
+    assert.equal(composer().props.value, 'Unsent message')
+    assert.equal(ui.renderer.root.findByProps({ placeholder: 'Название группы' }).props.value, 'Unfinished group')
+    assert.equal(ui.threadMounts, 1)
+    assert.equal(ui.calls.length, requests)
+    assert.equal(ui.filterLoads.length, loads)
+})
+
+test('desktop panel preference is isolated by user and workspace and survives mobile disclosure', async t => {
+    const values = new Map()
+    const storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) }
+    const ui = await inbox(t, { width: 1366, storage })
+    const expanded = () => ui.renderer.root.findByProps({ className: 'inbox-navigation-toggle' }).props['aria-expanded']
+    await ui.click('Фильтры и группы')
+    assert.equal(expanded(), true)
+    await ui.switchWorkspace({ id: 'another-workspace', name: 'Another' })
+    assert.equal(expanded(), false)
+    await ui.click('Фильтры и группы')
+    await ui.switchEmployee('another-employee')
+    assert.equal(expanded(), false)
+    await ui.switchEmployee('employee')
+    assert.equal(expanded(), true)
+    await ui.switchWorkspace({ id: 'workspace', name: 'Workspace' })
+    assert.equal(expanded(), true)
+    await ui.resize(600)
+    assert.equal(expanded(), false)
+    await ui.click('Фильтры и группы')
+    await ui.click('Закрыть меню')
+    await ui.resize(1366)
+    assert.equal(expanded(), true)
+    await ui.click('Фильтры и группы')
+    await ui.switchWorkspace({ id: 'another-workspace', name: 'Another' })
+    await ui.switchWorkspace({ id: 'workspace', name: 'Workspace' })
+    assert.equal(expanded(), false)
+    storage.getItem = storage.setItem = () => { throw Error('Storage blocked') }
+    await ui.switchWorkspace({ id: 'blocked-storage', name: 'Blocked storage' })
+    assert.equal(expanded(), false)
+    await ui.click('Фильтры и группы')
+    assert.equal(expanded(), true)
+    await ui.click('Фильтры и группы')
+    assert.equal(expanded(), false)
+})
+
 test('navigation disclosure and representation changes keep the conversation draft mounted', async t => {
     const ui = await inbox(t, { groups: [{ id: 'g', name: 'My group', icon: 'users.svg' }] })
     const composer = () => ui.renderer.root.findByProps({ 'aria-label': 'Черновик сообщения' })
     const navigation = () => ui.renderer.root.findByProps({ className: 'inbox-navigation' })
     await act(async () => composer().props.onChange({ target: { value: 'Unsent message' } }))
-    await ui.click('Меню Inbox')
+    await ui.click('Фильтры и группы')
     assert.equal(navigation().props['data-open'], true)
     await ui.click('My group')
     assert.equal(navigation().props['data-open'], false)
@@ -1225,7 +1295,7 @@ test('mobile return to the list keeps filters and the open thread; selecting the
     const before = ui.calls.length
     await ui.click('К списку диалогов')
     assert.equal(layout().props['data-mobile-list'], true)
-    await ui.click('Меню Inbox')
+    await ui.click('Фильтры и группы')
     await ui.click('Закрыть меню')
     assert.equal(ui.renderer.root.findByProps({ 'aria-label': 'Поиск по диалогам' }).props.value, 'filter text')
     const link = ui.renderer.root.findAllByType('a').find(node => node.props.className.includes('conversation-list-item'))
@@ -1241,7 +1311,7 @@ test('invalid saved dates keep navigation open at the conditions without replaci
         view: 'UNASSIGNED', activityFrom: '2026-10-18', activityTo: '2026-10-17',
     } }] })
     const before = ui.calls.length
-    await ui.click('Меню Inbox')
+    await ui.click('Фильтры и группы')
     await ui.click('Invalid period')
     assert.equal(ui.calls.length, before)
     assert.equal(ui.calls.at(-1).view, 'MINE')
@@ -1343,7 +1413,7 @@ for (const width of [1024, 1366]) test(`a late rename error survives group navig
     ], renameGroup: () => pending.promise })
     await ui.click('Group A')
     await ui.manageGroup('Group A')
-    if (width <= 1100) await ui.click('Меню Inbox')
+    if (width <= 1100) await ui.click('Фильтры и группы')
     await ui.click('Изменить')
     await act(async () => ui.renderer.root.findByProps({ placeholder: 'Название группы' }).props.onChange({ target: { value: 'Renamed A' } }))
     await ui.submit()
@@ -1354,7 +1424,7 @@ for (const width of [1024, 1366]) test(`a late rename error survives group navig
     assert.ok(text(left.findByProps({ role: 'alert' })).includes('Rename conflict'))
     assert.ok(text(left.findByProps({ role: 'alert' })).includes('Renamed A'))
     if (width <= 1100) {
-        await ui.click('Меню Inbox')
+        await ui.click('Фильтры и группы')
         const navigation = ui.renderer.root.findByProps({ className: 'inbox-navigation' })
         assert.ok(text(navigation.findByProps({ role: 'alert' })).includes('Rename conflict'))
         assert.equal(list.findAllByProps({ role: 'alert' }).length, 0)
@@ -1383,7 +1453,7 @@ test('Escape closes a nested group picker before the drawer', async t => {
     const dom = focusDom()
     const ui = await inbox(t, { createNodeMock: dom.createNodeMock,
         groups: [{ id: 'a', name: 'Group A', icon: 'heart.svg' }] })
-    await ui.click('Меню Inbox')
+    await ui.click('Фильтры и группы')
     await ui.click('+ Группа')
     const manager = () => ui.renderer.root.findAllByType('button').find(node => node.props['aria-label'] === 'Значок группы')
     await act(async () => manager().props.onClick())
@@ -1402,17 +1472,17 @@ test('Escape closes a nested group picker before the drawer', async t => {
 test('drawer contains focus, makes the background inert and handles Escape outside the panel', async t => {
     const dom = focusDom()
     const ui = await inbox(t, { createNodeMock: dom.createNodeMock })
-    await ui.click('Меню Inbox')
+    await ui.click('Фильтры и группы')
     assert.equal(dom.document.activeElement, dom.close)
     assert.equal(ui.renderer.root.findByProps({ className: 'inbox-navigation' }).props.role, 'dialog')
     assert.equal(ui.renderer.root.findByProps({ className: 'inbox-navigation' }).props['aria-modal'], true)
     for (const element of [dom.list, dom.thread, dom.chrome]) assert.equal(element.hasAttribute('inert'), true)
     assert.equal(dom.backdrop.hasAttribute('inert'), false)
-    dom.last.focus()
+    dom.opener.focus()
     assert.equal(dom.key('Tab').defaultPrevented, true)
     assert.equal(dom.document.activeElement, dom.close)
     assert.equal(dom.key('Tab', true).defaultPrevented, true)
-    assert.equal(dom.document.activeElement, dom.last)
+    assert.equal(dom.document.activeElement, dom.opener)
     dom.search.focus()
     assert.equal(dom.document.activeElement, dom.close)
     // Even an externally moved focus must not make Escape stop working.
@@ -1422,29 +1492,29 @@ test('drawer contains focus, makes the background inert and handles Escape outsi
     assert.equal(dom.document.activeElement, dom.opener)
     for (const element of [dom.list, dom.thread, dom.chrome]) assert.equal(element.hasAttribute('inert'), false)
     assert.equal(dom.existing.getAttribute('inert'), 'existing')
-    await ui.click('Меню Inbox')
+    await ui.click('Фильтры и группы')
     assert.equal(ui.button('Настроить фильтры'), undefined)
     await ui.click('Закрыть меню')
     assert.equal(dom.document.activeElement, dom.opener)
 })
 
-test('drawer cleanup releases focus and inert when resizing to a permanent navigation column', async t => {
+test('drawer cleanup releases inert and restores the edge when resizing to desktop', async t => {
     const dom = focusDom()
     const ui = await inbox(t, { createNodeMock: dom.createNodeMock })
-    await ui.click('Меню Inbox')
+    await ui.click('Фильтры и группы')
     dom.close.visible = false
-    dom.opener.visible = false
     await ui.resize(1366)
     assert.equal(ui.renderer.root.findByProps({ className: 'inbox-navigation' }).props['data-open'], false)
     assert.equal(dom.list.hasAttribute('inert'), false)
-    assert.equal(dom.document.activeElement, dom.first)
+    assert.equal(ui.renderer.root.findByProps({ className: 'inbox-navigation' }).props['data-expanded'], false)
+    assert.equal(dom.document.activeElement, dom.opener)
 })
 
 test('automatic mobile conversation selection closes a hidden drawer and releases its background', async t => {
     const dom = focusDom(), pending = deferred()
     const ui = await inbox(t, { width: 600, initialEntries: ['/inbox?tab=mine'],
         createNodeMock: dom.createNodeMock, search: () => pending.promise })
-    await ui.click('Меню Inbox')
+    await ui.click('Фильтры и группы')
     assert.equal(dom.thread.hasAttribute('inert'), true)
     dom.panel.visible = false
     dom.opener.visible = false

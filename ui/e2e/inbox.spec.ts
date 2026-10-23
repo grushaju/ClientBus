@@ -1,5 +1,72 @@
 import { test, expect, showList, showWorkbench } from './fixtures/inbox'
 
+test('боковая кнопка сохраняет фильтры и черновики, состояние панели восстанавливается', async ({ page, api }, info) => {
+    await page.goto('/inbox?tab=mine')
+    const message = page.getByPlaceholder('Введите сообщение...')
+    await message.fill('Несохранённое сообщение')
+    await showList(page)
+    const toggle = page.getByRole('button', { name: 'Фильтры и группы', exact: true })
+    const panel = page.locator('.inbox-navigation-content')
+    const arrow = toggle.locator('.inbox-navigation-arrow')
+    const list = page.getByRole('complementary', { name: 'Список диалогов' })
+    const desktop = page.viewportSize()!.width > 1100
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    await expect(arrow).toHaveText('▸')
+    await expect(panel).toBeHidden()
+    const edgeBox = (await page.locator('.inbox-navigation-edge').boundingBox())!
+    const toggleBox = (await toggle.boundingBox())!
+    expect(toggleBox.y - edgeBox.y).toBeGreaterThanOrEqual(0)
+    expect(toggleBox.y - edgeBox.y).toBeLessThanOrEqual(12)
+    const collapsedX = (await list.boundingBox())!.x
+    await toggle.click()
+    await expect(arrow).toHaveText('◂')
+    await expect(panel).toBeVisible()
+    if (desktop) await expect.poll(async () => Math.round((await list.boundingBox())!.x - collapsedX)).toBe(353)
+    await page.getByRole('button', { name: 'Мой фильтр', exact: true }).click()
+    if (!desktop) await expect(panel).toBeHidden()
+    else await toggle.click()
+    await page.getByRole('button', { name: 'Выбрать группу диалогов', exact: true }).click()
+    await page.getByRole('group', { name: 'Выбрать группу диалогов', exact: true }).getByRole('button', { name: 'Важные', exact: true }).click()
+    await expect(page.getByLabel('Выбранный фильтр')).toHaveText('Мой фильтр')
+    await page.getByRole('searchbox', { name: 'Поиск по диалогам', exact: true }).fill('Незавершённый поиск')
+    await showWorkbench(page)
+    await page.getByRole('button', { name: '+ Группа', exact: true }).click()
+    await page.getByPlaceholder('Название группы').fill('Несохранённая группа')
+    const searches = api.searches.length
+    const filterLoads = api.calls.filter(call => call.method === 'GET' && call.path.endsWith('/conversation-filters')).length
+    await page.locator('.inbox-navigation').evaluate(element => Promise.all(element.getAnimations().map(animation => animation.finished)))
+    expect(await page.locator('.inbox-navigation').evaluate(element => element.scrollLeft)).toBe(0)
+    await page.screenshot({ path: info.outputPath('navigation-expanded.png') })
+    await toggle.click()
+    await expect(panel).toBeHidden()
+    await expect(arrow).toHaveText('▸')
+    if (desktop) await expect.poll(async () => Math.round((await list.boundingBox())!.x)).toBe(Math.round(collapsedX))
+    await expect(page.getByLabel('Выбранный фильтр')).toHaveText('Мой фильтр')
+    await expect(page.getByRole('button', { name: 'Выбрать группу диалогов', exact: true })).toContainText('Важные')
+    await expect(page.getByRole('searchbox', { name: 'Поиск по диалогам', exact: true })).toHaveValue('Незавершённый поиск')
+    await page.screenshot({ path: info.outputPath('navigation-collapsed.png') })
+    await toggle.click()
+    await expect(page.getByPlaceholder('Название группы')).toHaveValue('Несохранённая группа')
+    expect(api.searches).toHaveLength(searches)
+    expect(api.calls.filter(call => call.method === 'GET' && call.path.endsWith('/conversation-filters'))).toHaveLength(filterLoads)
+    await page.keyboard.press('Escape')
+    await expect(panel).toBeHidden()
+    await expect(toggle).toBeFocused()
+    await page.locator('a.conversation-list-item').first().click()
+    await expect(message).toHaveValue('Несохранённое сообщение')
+    if (desktop) {
+        await toggle.click()
+        await page.reload()
+        await expect(panel).toBeVisible()
+        await expect(arrow).toHaveText('◂')
+        await toggle.click()
+        await page.reload()
+        await expect(panel).toBeHidden()
+        await expect(arrow).toHaveText('▸')
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+})
+
 test('выбранный фильтр сохраняется при смене области и очищается отдельной кнопкой', async ({ page, api }) => {
     await page.goto('/inbox?tab=mine')
     await expect(page.getByPlaceholder('Введите сообщение...')).toBeVisible()
@@ -116,7 +183,10 @@ test('создание клиента обновляет панель и сох�
     await panel.getByRole('button', { name: 'Создать и привязать', exact: true }).click()
     await expect(panel.getByText('Проверка Клиент', { exact: true })).toBeVisible()
     await expect(draft).toHaveValue('Сохранённый черновик')
+    await showList(page)
     await expect(page.locator('.conversation-list-client-link')).toHaveText('Клиент есть')
+    await page.locator('a.conversation-list-item').first().click()
+    await expect(draft).toHaveValue('Сохранённый черновик')
     expect(api.calls.filter(call => call.path === '/api/clients/from-conversation/conversation-1')).toHaveLength(1)
 })
 
@@ -124,7 +194,8 @@ test.describe('быстрые периоды активности', () => {
     test.use({ timezoneId: 'Europe/Moscow' })
 
     test('выбор, применение, сохранение и ручное изменение периода', async ({ page, api }) => {
-        await page.clock.setFixedTime(new Date('2026-10-19T12:00:00Z'))
+        // Keep the calendar date deterministic while request-budget time advances.
+        await page.clock.install({ time: new Date('2026-10-19T12:00:00Z') })
         await page.goto('/inbox?tab=mine')
         await showWorkbench(page)
         const editor = page.getByRole('region', { name: 'Редактор фильтра' })
@@ -193,11 +264,11 @@ test('редактор помещается на экране, меню закр
     const box = await editor.boundingBox()
     expect(box).not.toBeNull()
     expect(box!.y + box!.height).toBeLessThanOrEqual(page.viewportSize()!.height + 1)
-    const dialog = page.getByRole('dialog', { name: 'Меню Inbox' })
+    const dialog = page.getByRole('dialog', { name: 'Фильтры и группы' })
     if (await dialog.isVisible()) {
         await page.keyboard.press('Escape')
         await expect(dialog).toBeHidden()
-        await expect(page.getByRole('button', { name: 'Меню Inbox', exact: true })).toBeFocused()
+        await expect(page.getByRole('button', { name: 'Фильтры и группы', exact: true })).toBeFocused()
     }
     await page.locator('a.conversation-list-item').first().click()
     await expect(draft).toHaveValue('Черновик при смене области')

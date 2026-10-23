@@ -43,6 +43,7 @@ export class InboxApi {
         const error = (status: number, message: string) => reply({ code: status === 403 ? 'ACCESS_DENIED' : 'TEST_ERROR', message }, status)
         // These fixtures exercise Inbox with the optional backend transport disabled.
         if (path === '/api/events') return reply({}, 404)
+        if (path === '/api/notifications/summary' && method === 'GET') return reply({ unreadCount: 0 })
 
         if (path === '/api/auth/login') return reply({ accessToken: 'browser-fixture-token', tokenType: 'Bearer' })
         if (path === '/api/employees/me') return reply({ ...employee, role: this.role === 'admin' ? 'SUPER_ADMIN' : 'EMPLOYEE' })
@@ -141,7 +142,7 @@ export const test = base.extend<{ api: InboxApi }>({
 export { expect }
 
 export async function showList(page: Page) {
-    if (await page.getByRole('dialog', { name: 'Меню Inbox' }).isVisible()) return
+    if (await page.getByRole('dialog', { name: 'Фильтры и группы' }).isVisible()) return
     // Initial auto-selection can switch mobile from the list to the thread.
     // Wait for that selection before deciding whether to press Back.
     await expect(page.locator('.conversation-header, .conversation-error').first()).toBeAttached()
@@ -151,9 +152,9 @@ export async function showList(page: Page) {
 }
 
 export async function showWorkbench(page: Page) {
-    if (await page.getByRole('dialog', { name: 'Меню Inbox' }).isVisible()) return
+    if (await page.getByRole('dialog', { name: 'Фильтры и группы' }).isVisible()) return
     await showList(page)
-    const menu = page.getByRole('button', { name: 'Меню Inbox', exact: true })
+    const menu = page.getByRole('button', { name: 'Фильтры и группы', exact: true })
     if (await menu.isVisible() && await menu.getAttribute('aria-expanded') !== 'true') await menu.click()
     await expect(page.getByRole('region', { name: 'Редактор фильтра' })).toBeVisible()
 }

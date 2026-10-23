@@ -34,9 +34,9 @@ module.exports = function focusDom() {
     attach(app, chrome, existing, layout)
     attach(layout, browser, thread)
     attach(browser, backdrop, panel, list)
-    attach(panel, close, disabled, first, last)
-    attach(list, opener, search)
-    panel.querySelectorAll = () => [close, disabled, first, last]
+    attach(panel, close, disabled, first, last, opener)
+    attach(list, search)
+    panel.querySelectorAll = () => [close, disabled, first, last, opener]
     document.body = body
     document.activeElement = opener
     return {

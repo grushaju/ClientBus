@@ -60,8 +60,19 @@ function InboxWorkspaceContent({ workspace, access, onOpenConversation, visible 
     const conversations = useInboxConversations(workspace.id, request, access.isSuperAdmin || (access.isEmployee && !!access.employeeId), visible)
     const [showNewConversation, setShowNewConversation] = useState(false)
     const [navigationOpen, setNavigationOpen] = useState(false)
+    const navigationPreference = `clientbus.inbox.navigation:${access.employeeId}:${workspace.id}`
+    const [desktopNavigationOpen, setDesktopNavigationOpen] = useState(() => {
+        try { return !!access.employeeId && localStorage.getItem(navigationPreference) === 'expanded' }
+        catch { return false }
+    })
     const isDrawer = useMediaQuery(INBOX_DRAWER_QUERY)
     const drawerOpen = isDrawer && navigationOpen && visible
+    const navigationExpanded = isDrawer ? drawerOpen : desktopNavigationOpen
+    const changeDesktopNavigation = (expanded: boolean) => {
+        setDesktopNavigationOpen(expanded)
+        try { if (access.employeeId) localStorage.setItem(navigationPreference, expanded ? 'expanded' : 'collapsed') }
+        catch { /* The panel still works when browser storage is unavailable. */ }
+    }
     const [groupActionError, setGroupActionError] = useState<string | null>(null)
     const [membershipError, setMembershipError] = useState<string | null>(null)
     const [filterEditor, setFilterEditor] = useState<'create' | 'update' | null>(null)
@@ -96,7 +107,8 @@ function InboxWorkspaceContent({ workspace, access, onOpenConversation, visible 
     const returnNavigationFocus = useCallback(() => focusAfterClose.current === 'search'
         ? searchInput.current : navigationButton.current, [])
     const configureFilters = () => {
-        setNavigationOpen(true)
+        if (isDrawer) setNavigationOpen(true)
+        else changeDesktopNavigation(true)
     }
     const applyFilters = () => {
         if (filters.apply()) { conversations.reload(); closeNavigation() }
@@ -179,8 +191,13 @@ function InboxWorkspaceContent({ workspace, access, onOpenConversation, visible 
     return (<>
         {drawerOpen && <button type="button" className="inbox-navigation-backdrop" data-inbox-backdrop="" aria-hidden="true" tabIndex={-1}
             onClick={closeNavigation} />}
-        <InboxNavigation id={navigationId} open={drawerOpen} access={access}
+        <InboxNavigation id={navigationId} open={drawerOpen} expanded={navigationExpanded} access={access}
                 returnFocus={returnNavigationFocus} notice={groupNotice} onGroupActionError={setGroupActionError}
+                toggleRef={navigationButton} onToggle={() => {
+                    focusAfterClose.current = 'navigation'
+                    if (isDrawer) setNavigationOpen(value => !value)
+                    else changeDesktopNavigation(!desktopNavigationOpen)
+                }}
                 groups={groups}
                 onClose={closeNavigation}
                 onGroupDeleted={id => {
@@ -206,12 +223,7 @@ function InboxWorkspaceContent({ workspace, access, onOpenConversation, visible 
                     onResetFilter={resetFilters}
                     filterName={selectedFilter?.name ?? 'Без фильтра'}
                     filterIcon={selectedFilter ? selectedFilter.filterType === 'SYSTEM' ? 'system.svg' : 'private.svg' : 'nofilter.svg'}
-                    onNewConversation={() => setShowNewConversation(true)} navigationId={navigationId}
-                    navigationButtonRef={navigationButton}
-                    navigationOpen={drawerOpen} onToggleNavigation={() => {
-                        focusAfterClose.current = 'navigation'
-                        setNavigationOpen(value => !value)
-                    }} />}
+                    onNewConversation={() => setShowNewConversation(true)} />}
                 filters={<><ConversationFilters area="list" model={filters} channels={conversations.channels} workspaceId={workspace.id}
                     searchInputRef={searchInput}
                     onApply={applyFilters}
