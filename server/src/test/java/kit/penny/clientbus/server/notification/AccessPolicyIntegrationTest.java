@@ -138,16 +138,16 @@ class AccessPolicyIntegrationTest extends AbstractIntegrationTest {
 
     private UUID notification() {
         UUID occurrence=UUID.randomUUID(), dedup=UUID.randomUUID(), id=UUID.randomUUID();
-        jdbc.update("insert into dbo.notification_occurrence (id,organization_id,occurrence_key,origin,recipient_employee_ids,dedup_until) values (?,?,'key','LIVE',ARRAY[?]::uuid[],clock_timestamp()+interval '90 days')",occurrence,org.getId(),owner.getId());
-        jdbc.update("insert into dbo.notification_dedup (id,occurrence_id,organization_id,recipient_employee_id,deduplication_key,dedup_until) values (?,?,?,?,'key',clock_timestamp()+interval '90 days')",dedup,occurrence,org.getId(),owner.getId());
-        jdbc.update("insert into dbo.notification (id,dedup_id,organization_id,recipient_employee_id,workspace_id,type,target_kind,target_id,template_args,alert_expires_at,retain_until) values (?,?,?,?,?,'INCOMING_MESSAGE','CONVERSATION',?,'{}',clock_timestamp()+interval '5 minutes',clock_timestamp()+interval '30 days')",id,dedup,org.getId(),owner.getId(),workspace.getId(),conversation.getId());
+        jdbc.update("insert into dbo.notificationoccurrence (id,organizationid,occurrencekey,origin,recipientemployeeids,dedupuntil) values (?,?,'key','LIVE',ARRAY[?]::uuid[],clock_timestamp()+interval '90 days')",occurrence,org.getId(),owner.getId());
+        jdbc.update("insert into dbo.notificationdedup (id,occurrenceid,organizationid,recipientemployeeid,deduplicationkey,dedupuntil) values (?,?,?,?,'key',clock_timestamp()+interval '90 days')",dedup,occurrence,org.getId(),owner.getId());
+        jdbc.update("insert into dbo.notification (id,dedupid,organizationid,recipientemployeeid,workspaceid,type,targetkind,targetid,templateargs,alertexpiresat,retainuntil) values (?,?,?,?,?,'INCOMING_MESSAGE','CONVERSATION',?,'{}',clock_timestamp()+interval '5 minutes',clock_timestamp()+interval '30 days')",id,dedup,org.getId(),owner.getId(),workspace.getId(),conversation.getId());
         return id;
     }
     private UUID operation() {
         UUID id=UUID.randomUUID();
         jdbc.update("""
-                insert into dbo.history_sync_operation (id,organization_id,workspace_id,conversation_id,channel_account_id,
-                initiator_employee_id,idempotency_key,request_hash,request_limit,status,attempts,claim_version,deadline_at,updated_at,retain_until)
+                insert into dbo.historysyncoperation (id,organizationid,workspaceid,conversationid,channelaccountid,
+                initiatoremployeeid,idempotencykey,requesthash,requestlimit,status,attempts,claimversion,deadlineat,updatedat,retainuntil)
                 values (?,?,?,?,?,?,'request','hash',50,'PENDING',0,0,clock_timestamp()+interval '2 minutes',clock_timestamp(),clock_timestamp()+interval '7 days')
                 """,id,org.getId(),workspace.getId(),conversation.getId(),channel.getId(),owner.getId());
         return id;
@@ -168,21 +168,21 @@ class AccessPolicyIntegrationTest extends AbstractIntegrationTest {
     @Test void pushAuthorizationRejectsReadInvalidatedAndStaleInstallation() {
         UUID id=notification(), installation=UUID.randomUUID(), delivery=UUID.randomUUID();
         jdbc.update("""
-                insert into dbo.push_installation (id,organization_id,recipient_employee_id,platform,provider,app_id,environment,
-                encrypted_endpoint,endpoint_fingerprint,active_endpoint_fingerprint,ownership_secret_hash,binding_version,endpoint_version,
-                enabled,reported_permission,last_seen_at,active_until) values (?,?,?,'IOS','APNS','test','SANDBOX',?, ?, ?, ?,1,1,true,'GRANTED',clock_timestamp(),clock_timestamp()+interval '1 day')
+                insert into dbo.pushinstallation (id,organizationid,recipientemployeeid,platform,provider,appid,environment,
+                encryptedendpoint,endpointfingerprint,activeendpointfingerprint,ownershipsecrethash,bindingversion,endpointversion,
+                enabled,reportedpermission,lastseenat,activeuntil) values (?,?,?,'IOS','APNS','test','SANDBOX',?, ?, ?, ?,1,1,true,'GRANTED',clock_timestamp(),clock_timestamp()+interval '1 day')
                 """,installation,org.getId(),owner.getId(),new byte[]{1},"b".repeat(64),"b".repeat(64),new byte[32]);
         jdbc.update("""
-                insert into dbo.notification_delivery (id,notification_id,registration_id,binding_version,channel,status,attempts,
-                claim_version,attempt_endpoint_version,lease_until,next_attempt_at,expires_at)
+                insert into dbo.notificationdelivery (id,notificationid,registrationid,bindingversion,channel,status,attempts,
+                claimversion,attemptendpointversion,leaseuntil,nextattemptat,expiresat)
                 values (?,?,?,1,'MOBILE_PUSH','IN_FLIGHT',1,1,1,clock_timestamp()+interval '30 seconds',clock_timestamp(),clock_timestamp()+interval '5 minutes')
                 """,delivery,id,installation);
         assertTrue(policy.allowsPush(delivery));
-        jdbc.update("update dbo.push_installation set endpoint_version=2,registration_version=2 where id=?",installation);
+        jdbc.update("update dbo.pushinstallation set endpointversion=2,registrationversion=2 where id=?",installation);
         assertFalse(policy.allowsPush(delivery));
-        jdbc.update("update dbo.notification_delivery set attempt_endpoint_version=2 where id=?",delivery);
+        jdbc.update("update dbo.notificationdelivery set attemptendpointversion=2 where id=?",delivery);
         assertTrue(policy.allowsPush(delivery));
-        jdbc.update("update dbo.notification set alert_invalidated_at=clock_timestamp() where id=?",id);
+        jdbc.update("update dbo.notification set alertinvalidatedat=clock_timestamp() where id=?",id);
         assertFalse(policy.allowsPush(delivery));
         assertTrue(policy.allows(subject(owner),NOTIFICATION,id));
     }
@@ -244,9 +244,9 @@ class AccessPolicyIntegrationTest extends AbstractIntegrationTest {
         UUID id=UUID.randomUUID(); String secret="a".repeat(43);
         byte[] proof=java.security.MessageDigest.getInstance("SHA-256").digest(secret.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         jdbc.update("""
-                insert into dbo.push_installation (id,organization_id,recipient_employee_id,platform,provider,app_id,environment,
-                encrypted_endpoint,endpoint_fingerprint,active_endpoint_fingerprint,ownership_secret_hash,binding_version,endpoint_version,
-                enabled,reported_permission,last_seen_at,active_until) values (?,?,?,'IOS','APNS','test','SANDBOX',?, ?, ?, ?,1,1,true,'GRANTED',clock_timestamp(),clock_timestamp()+interval '1 day')
+                insert into dbo.pushinstallation (id,organizationid,recipientemployeeid,platform,provider,appid,environment,
+                encryptedendpoint,endpointfingerprint,activeendpointfingerprint,ownershipsecrethash,bindingversion,endpointversion,
+                enabled,reportedpermission,lastseenat,activeuntil) values (?,?,?,'IOS','APNS','test','SANDBOX',?, ?, ?, ?,1,1,true,'GRANTED',clock_timestamp(),clock_timestamp()+interval '1 day')
                 """,id,org.getId(),owner.getId(),new byte[]{1},"a".repeat(64),"a".repeat(64),proof);
         var creationConflict=assertThrows(InstallationAccessPolicy.VersionConflict.class,
                 ()->installations.requireMutation(subject(owner),id,secret,0,InstallationAccessPolicy.Mutation.CREATE));
@@ -257,13 +257,13 @@ class AccessPolicyIntegrationTest extends AbstractIntegrationTest {
         assertThrows(AccessDeniedException.class,()->installations.requireMutation(subject(other),id,secret,1,InstallationAccessPolicy.Mutation.DELETE));
         assertThrows(AccessDeniedException.class,()->installations.requireMutation(subject(owner),id,"b".repeat(43),1,InstallationAccessPolicy.Mutation.UPDATE));
         assertNotNull(installations.requireMutation(subject(other),id,secret,1,InstallationAccessPolicy.Mutation.REBIND));
-        jdbc.update("update dbo.push_installation set recipient_employee_id=?,binding_version=2,registration_version=2 where id=?",other.getId(),id);
+        jdbc.update("update dbo.pushinstallation set recipientemployeeid=?,bindingversion=2,registrationversion=2 where id=?",other.getId(),id);
         var staleConflict=assertThrows(InstallationAccessPolicy.VersionConflict.class,()->installations.requireMutation(subject(owner),id,secret,1,InstallationAccessPolicy.Mutation.REBIND));
         assertEquals(2,staleConflict.currentVersion());
         var lostCreateResponse=assertThrows(InstallationAccessPolicy.VersionConflict.class,()->installations.requireMutation(subject(owner),id,secret,0,InstallationAccessPolicy.Mutation.CREATE));
         assertEquals("\"2\"",lostCreateResponse.etag());
         assertThrows(AccessDeniedException.class,()->installations.requireMutation(subject(owner),id,"b".repeat(43),0,InstallationAccessPolicy.Mutation.CREATE));
-        assertEquals(other.getId(),jdbc.queryForObject("select recipient_employee_id from dbo.push_installation where id=?",UUID.class,id));
+        assertEquals(other.getId(),jdbc.queryForObject("select recipientemployeeid from dbo.pushinstallation where id=?",UUID.class,id));
         assertThrows(AccessDeniedException.class,()->installations.requireMutation(subject(owner),id,secret,2,InstallationAccessPolicy.Mutation.DELETE));
         assertFalse(policy.allows(subject(admin),INSTALLATION,id));
     }

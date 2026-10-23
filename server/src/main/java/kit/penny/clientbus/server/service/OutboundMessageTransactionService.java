@@ -145,7 +145,8 @@ public class OutboundMessageTransactionService {
                                     .getExternalId(),
                             message.type(),
                             message.content(),
-                            outboundAttachments
+                            outboundAttachments,
+                            messageService.getMessageEntityForProcessing(messageId).getSendAttemptId()
                     );
 
             /*
@@ -338,7 +339,8 @@ public class OutboundMessageTransactionService {
                             clientAccountExternalId,
                             messageType,
                             messageContent,
-                            outboundAttachments
+                            outboundAttachments,
+                            messageService.getMessageEntityForProcessing(messageId).getSendAttemptId()
                     );
 
             /*

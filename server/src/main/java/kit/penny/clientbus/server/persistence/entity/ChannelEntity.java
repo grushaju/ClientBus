@@ -37,6 +37,30 @@ public class ChannelEntity {
     @Column(nullable = false)
     private ChannelConnectionStatus status;
 
+    @Column(name = "notificationincidentid")
+    private UUID notificationIncidentId;
+
+    @Column(name = "notificationincidentstartedat")
+    private java.time.Instant notificationIncidentStartedAt;
+
+    @Column(name = "notificationincidentreason", length = 64)
+    private String notificationIncidentReason;
+
+    @Column(name = "notificationexpecteddisconnect")
+    private Boolean notificationExpectedDisconnect;
+
+    public UUID getNotificationIncidentId() { return notificationIncidentId; }
+    public java.time.Instant getNotificationIncidentStartedAt() { return notificationIncidentStartedAt; }
+    public void setNotificationIncidentId(UUID value) {
+        if (!java.util.Objects.equals(notificationIncidentId, value))
+            notificationIncidentStartedAt = value == null ? null : java.time.Instant.now();
+        notificationIncidentId = value;
+    }
+    public String getNotificationIncidentReason() { return notificationIncidentReason; }
+    public void setNotificationIncidentReason(String value) { notificationIncidentReason = value; }
+    public boolean isNotificationExpectedDisconnect() { return Boolean.TRUE.equals(notificationExpectedDisconnect); }
+    public void setNotificationExpectedDisconnect(boolean value) { notificationExpectedDisconnect = value; }
+
     @Column(nullable = false, length = 100)
     private String name;
 

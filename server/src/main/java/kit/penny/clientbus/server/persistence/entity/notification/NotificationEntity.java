@@ -12,29 +12,30 @@ import java.util.Map;
 @Entity
 @Table(name = "notification", schema = "dbo",
     uniqueConstraints = {
-        @UniqueConstraint(name = "notification_dedup_row_uq", columnNames = {"dedup_id"})
+        @UniqueConstraint(name = "notificationpk", columnNames = {"id"}),
+        @UniqueConstraint(name = "notificationdeduprowuq", columnNames = {"dedupid"})
     },
     indexes = {
-        @Index(name = "notification_recipient_page_idx", columnList = "organization_id, recipient_employee_id, created_at DESC, id DESC"),
-        @Index(name = "notification_unread_idx", columnList = "organization_id, recipient_employee_id, read_at"),
-        @Index(name = "notification_workspace_idx", columnList = "workspace_id"),
-        @Index(name = "notification_retention_idx", columnList = "retain_until")
+        @Index(name = "notificationrecipientpageidx", columnList = "organizationid, recipientemployeeid, createdat DESC, id DESC"),
+        @Index(name = "notificationunreadidx", columnList = "organizationid, recipientemployeeid, readat"),
+        @Index(name = "notificationworkspaceidx", columnList = "workspaceid"),
+        @Index(name = "notificationretentionidx", columnList = "retainuntil")
     },
-    check = @CheckConstraint(name = "notification_ck", constraint =
-            "(alert_invalidated_at is null or alert_invalidated_at >= created_at) and alert_expires_at > created_at and retain_until >= alert_expires_at and (read_at is null or read_at >= created_at) and jsonb_typeof(template_args) = 'object'"))
+    check = @CheckConstraint(name = "notificationck", constraint =
+            "(alertinvalidatedat is null or alertinvalidatedat >= createdat) and alertexpiresat > createdat and retainuntil >= alertexpiresat and (readat is null or readat >= createdat) and jsonb_typeof(templateargs) = 'object'"))
 public class NotificationEntity extends NotificationRecord {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "dedup_id", nullable = false, updatable = false,
-            foreignKey = @ForeignKey(name = "notification_dedup_id_fk"))
+    @JoinColumn(name = "dedupid", nullable = false, updatable = false,
+            foreignKey = @ForeignKey(name = "notificationdedupidfk"))
     private NotificationDedupEntity dedup;
 
-    @Column(name = "organization_id", nullable = false, updatable = false)
+    @Column(name = "organizationid", nullable = false, updatable = false)
     private UUID organizationId;
 
-    @Column(name = "recipient_employee_id", nullable = false, updatable = false)
+    @Column(name = "recipientemployeeid", nullable = false, updatable = false)
     private UUID recipientEmployeeId;
 
-    @Column(name = "workspace_id", updatable = false)
+    @Column(name = "workspaceid", updatable = false)
     private UUID workspaceId;
 
     @Enumerated(EnumType.STRING)
@@ -42,20 +43,20 @@ public class NotificationEntity extends NotificationRecord {
     private NotificationType type;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "target_kind", nullable = false, updatable = false, length = 32)
+    @Column(name = "targetkind", nullable = false, updatable = false, length = 32)
     private NotificationTargetKind targetKind;
 
-    @Column(name = "target_id", nullable = false, updatable = false)
+    @Column(name = "targetid", nullable = false, updatable = false)
     private UUID targetId;
 
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "template_args", nullable = false, updatable = false, columnDefinition = "jsonb")
+    @Column(name = "templateargs", nullable = false, updatable = false, columnDefinition = "jsonb")
     private Map<String, String> templateArgs;
 
-    @Column(name = "read_at")
+    @Column(name = "readat")
     private Instant readAt;
 
-    @Column(name = "alert_invalidated_at")
+    @Column(name = "alertinvalidatedat")
     private Instant alertInvalidatedAt;
 
     public Instant getAlertInvalidatedAt() { return alertInvalidatedAt; }
@@ -66,10 +67,10 @@ public class NotificationEntity extends NotificationRecord {
         if (alertInvalidatedAt == null) alertInvalidatedAt = at;
     }
 
-    @Column(name = "alert_expires_at", nullable = false, updatable = false)
+    @Column(name = "alertexpiresat", nullable = false, updatable = false)
     private Instant alertExpiresAt;
 
-    @Column(name = "retain_until", nullable = false)
+    @Column(name = "retainuntil", nullable = false)
     private Instant retainUntil;
 
     public NotificationEntity() {}

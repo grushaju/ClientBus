@@ -128,6 +128,24 @@ test('SSE unauthorized ends local authentication; forbidden refreshes identity a
     assert.equal(ui.counters.logout,1)
 })
 
+test('an authenticated stream disabled by the backend keeps the UI session',async t=>{
+    const {startUiEventStream}=load('../../api/events/uiEventStream.ts')
+    let calls=0,done
+    const ui=provider(t,{'./uiEventStream':{startUiEventStream:options=>{
+        const handle=startUiEventStream({...options,fetcher:async(_url,init)=>{
+            calls++
+            assert.equal(init.headers.Authorization,'Bearer A')
+            return new Response(JSON.stringify({code:'SSE_DISABLED'}),{status:404,headers:{'Content-Type':'application/json'}})
+        }})
+        done=handle.done;return handle
+    }}})
+    await ui.mount(()=>null)
+    await act(async()=>{await done})
+    assert.equal(calls,1)
+    assert.equal(ui.counters.logout,0)
+    assert.equal(ui.auth.accessToken,'A')
+})
+
 test('access invalidation cancels the initial Inbox read before ready and rejects its late response',async t=>{
     const ui=provider(t),old=deferred();let calls=0,signal,state
     const {useInboxConversations}=ui.load('list/useInboxConversations.ts',{

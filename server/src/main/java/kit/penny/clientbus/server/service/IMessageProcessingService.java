@@ -16,6 +16,9 @@ public interface IMessageProcessingService {
             PlatformMessageRequest request
     );
 
+    MessageDto processPlatformMessage(PlatformMessageRequest request,
+            kit.penny.clientbus.server.notification.contract.NotificationSourceContext source);
+
     /**
      * Обрабатывает snapshot Conversation,
      * полученный от ChannelConnector.

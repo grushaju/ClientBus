@@ -10,31 +10,32 @@ import java.util.UUID;
 import java.util.Map;
 
 @Entity
-@Table(name = "notification_outbox", schema = "dbo",
+@Table(name = "notificationoutbox", schema = "dbo",
     uniqueConstraints = {
-        @UniqueConstraint(name = "notification_outbox_event_uq", columnNames = {"event_id"})
+        @UniqueConstraint(name = "notificationoutboxpk", columnNames = {"id"}),
+        @UniqueConstraint(name = "notificationoutboxeventuq", columnNames = {"eventid"})
     },
     indexes = {
-        @Index(name = "notification_outbox_poll_idx", columnList = "status, next_attempt_at, created_at"),
-        @Index(name = "notification_outbox_lease_idx", columnList = "status, lease_until"),
-        @Index(name = "notification_outbox_published_idx", columnList = "published_at")
+        @Index(name = "notificationoutboxpollidx", columnList = "status, nextattemptat, createdat"),
+        @Index(name = "notificationoutboxleaseidx", columnList = "status, leaseuntil"),
+        @Index(name = "notificationoutboxpublishedidx", columnList = "publishedat")
     },
-    check = @CheckConstraint(name = "notification_outbox_ck", constraint =
-            "schema_version > 0 and attempts >= 0 and claim_version >= 0 and jsonb_typeof(payload) = 'object' and octet_length(payload::text) <= 65536 and ((status = 'IN_FLIGHT' and lease_until is not null) or (status <> 'IN_FLIGHT' and lease_until is null)) and ((status = 'PUBLISHED' and published_at is not null) or (status <> 'PUBLISHED' and published_at is null))"))
+    check = @CheckConstraint(name = "notificationoutboxck", constraint =
+            "schemaversion > 0 and attempts >= 0 and claimversion >= 0 and jsonb_typeof(payload) = 'object' and octet_length(payload::text) <= 65536 and ((status = 'IN_FLIGHT' and leaseuntil is not null) or (status <> 'IN_FLIGHT' and leaseuntil is null)) and ((status = 'PUBLISHED' and publishedat is not null) or (status <> 'PUBLISHED' and publishedat is null))"))
 public class NotificationOutboxEntity extends NotificationRecord {
-    @Column(name = "event_id", nullable = false, updatable = false)
+    @Column(name = "eventid", nullable = false, updatable = false)
     private UUID eventId;
 
-    @Column(name = "organization_id", nullable = false, updatable = false)
+    @Column(name = "organizationid", nullable = false, updatable = false)
     private UUID organizationId;
 
     @Column(name = "destination", nullable = false, updatable = false, length = 128)
     private String destination;
 
-    @Column(name = "event_type", nullable = false, updatable = false, length = 64)
+    @Column(name = "eventtype", nullable = false, updatable = false, length = 64)
     private String eventType;
 
-    @Column(name = "schema_version", nullable = false, updatable = false)
+    @Column(name = "schemaversion", nullable = false, updatable = false)
     private int schemaVersion;
 
     @JdbcTypeCode(SqlTypes.JSON)
@@ -48,22 +49,22 @@ public class NotificationOutboxEntity extends NotificationRecord {
     @Column(name = "attempts", nullable = false)
     private int attempts;
 
-    @Column(name = "claim_version", nullable = false)
+    @Column(name = "claimversion", nullable = false)
     private long claimVersion;
 
-    @Column(name = "next_attempt_at", nullable = false)
+    @Column(name = "nextattemptat", nullable = false)
     private Instant nextAttemptAt;
 
-    @Column(name = "lease_until")
+    @Column(name = "leaseuntil")
     private Instant leaseUntil;
 
-    @Column(name = "published_at")
+    @Column(name = "publishedat")
     private Instant publishedAt;
 
-    @Column(name = "error_code", length = 64)
+    @Column(name = "errorcode", length = 64)
     private String errorCode;
 
-    @Column(name = "operation_id", updatable = false)
+    @Column(name = "operationid", updatable = false)
     private UUID operationId;
 
     public NotificationOutboxEntity() {}

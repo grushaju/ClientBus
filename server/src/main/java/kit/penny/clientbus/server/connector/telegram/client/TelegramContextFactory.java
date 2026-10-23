@@ -7,7 +7,6 @@ import kit.penny.clientbus.server.kafka.producer.IPlatformMessagePublisher;
 import kit.penny.clientbus.server.kafka.producer.KafkaPlatformMessagePublisher;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
-import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
 import kit.penny.clientbus.server.persistence.repository.ConversationRepository;
 import kit.penny.clientbus.server.persistence.repository.MessageRepository;
 import kit.penny.clientbus.server.service.MessageService;
@@ -23,6 +22,7 @@ import org.springframework.beans.factory.support.RootBeanDefinition;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.core.env.MapPropertySource;
 
+import kit.penny.clientbus.server.service.ChannelStatusService;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
@@ -54,7 +54,7 @@ public class TelegramContextFactory {
 
     private final TelegramProperties globalProperties;
 
-    private final ChannelRepository channelRepository;
+    private final ChannelStatusService channelStatus;
 
     private final ChannelAccountRepository channelAccountRepository;
 
@@ -75,7 +75,7 @@ public class TelegramContextFactory {
     public TelegramContextFactory(
             TelegramProperties globalProperties,
             ChannelAccountRepository channelAccountRepository,
-            ChannelRepository channelRepository,
+            ChannelStatusService channelStatus,
             ConversationRepository conversationRepository,
             MessageService messageService,
             MessageRepository messageRepository,
@@ -91,8 +91,8 @@ public class TelegramContextFactory {
         this.channelAccountRepository =
                 channelAccountRepository;
 
-        this.channelRepository =
-                channelRepository;
+        this.channelStatus =
+                channelStatus;
 
         this.conversationRepository =
                 conversationRepository;
@@ -370,7 +370,7 @@ public class TelegramContextFactory {
         return new TelegramAuthorizationStateListener(
                 channelId,
                 channelAccountId,
-                channelRepository,
+                channelStatus,
                 profileSynchronizer,
                 properties,
                 authorizationManager,

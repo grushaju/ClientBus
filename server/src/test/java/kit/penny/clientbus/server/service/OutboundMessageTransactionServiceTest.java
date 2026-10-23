@@ -49,6 +49,7 @@ class OutboundMessageTransactionServiceTest {
     private UUID conversationId;
     private UUID messageId;
     private UUID channelAccountId;
+    private UUID sendAttemptId;
 
     private OutboundMessageRequest request;
     private MessageDto messageDto;
@@ -63,6 +64,7 @@ class OutboundMessageTransactionServiceTest {
         conversationId = UUID.randomUUID();
         messageId = UUID.randomUUID();
         channelAccountId = UUID.randomUUID();
+        sendAttemptId = UUID.randomUUID();
 
         request = new OutboundMessageRequest(
                 conversationId,
@@ -168,6 +170,7 @@ class OutboundMessageTransactionServiceTest {
 
         when(messageService.getMessageEntityForProcessing(messageId))
                 .thenReturn(messageEntity);
+        when(messageEntity.getSendAttemptId()).thenReturn(sendAttemptId);
 
         when(messageAttachmentService.getAttachmentsForProcessing(messageId))
                 .thenReturn(List.of());
@@ -185,6 +188,7 @@ class OutboundMessageTransactionServiceTest {
 
         OutboundMessageKafkaCommand command = result.command();
         assertNotNull(command);
+        assertEquals(sendAttemptId, command.sendAttemptId());
 
         verify(conversationService)
                 .requireExternalOperationsAvailable(conversation);

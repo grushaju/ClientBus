@@ -37,7 +37,7 @@ public class SecurityConfig {
 
                 .exceptionHandling(errors -> errors.defaultAuthenticationEntryPointFor(
                         (request,response,exception) -> JwtAuthenticationFilter.writeStreamUnauthorized(response),
-                        request -> request.getRequestURI().equals(request.getContextPath()+"/api/events")))
+                        JwtAuthenticationFilter::isNotificationRequest))
 
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(

@@ -41,7 +41,8 @@ public class KafkaPlatformEventConsumer
                         payload.externalId(),
                         payload.type(),
                         event.occurredAt(),
-                        payload.metadata()
+                        payload.metadata(),
+                        payload.sendAttemptId()
                 );
 
         messageProcessingService.processPlatformEvent(

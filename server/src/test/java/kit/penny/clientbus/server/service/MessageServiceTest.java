@@ -120,6 +120,26 @@ class MessageServiceTest {
                 .thenReturn(Optional.of(message));
     }
 
+    @Test
+    void oldOrUnidentifiedFailureCannotChangeTheCurrentSendAttempt() {
+        message.setDirection(MessageDirection.OUTBOUND);
+        message.setProcessingStatus(MessageProcessingStatus.PROCESSING);
+        message.setDeliveryStatus(MessageDeliveryStatus.PENDING);
+        UUID currentAttempt = UUID.randomUUID();
+        message.setSendAttemptId(currentAttempt);
+        when(messageRepository.findByIdForUpdate(messageId)).thenReturn(Optional.of(message));
+        when(messageMapper.toDto(message)).thenReturn(expectedDto);
+
+        assertSame(expectedDto, messageService.markDeliveryFailed(messageId, UUID.randomUUID()));
+        assertSame(expectedDto, messageService.markDeliveryFailed(messageId, null));
+
+        assertEquals(currentAttempt, message.getSendAttemptId());
+        assertEquals(MessageProcessingStatus.PROCESSING, message.getProcessingStatus());
+        assertEquals(MessageDeliveryStatus.PENDING, message.getDeliveryStatus());
+        verify(messageRepository, never()).save(any());
+        verify(messageRepository, never()).flush();
+    }
+
     // ============================================================
     // CREATE PLATFORM MESSAGE
     // ============================================================
@@ -2200,6 +2220,7 @@ class MessageServiceTest {
         );
 
         stubMessageFound();
+        when(messageRepository.findByIdForUpdate(messageId)).thenReturn(Optional.of(message));
 
         when(messageRepository.retryDelivery(
                 messageId,
@@ -2300,6 +2321,7 @@ class MessageServiceTest {
         );
 
         stubMessageFound();
+        when(messageRepository.findByIdForUpdate(messageId)).thenReturn(Optional.of(message));
 
         assertThrows(
                 IllegalArgumentException.class,
@@ -2330,6 +2352,7 @@ class MessageServiceTest {
         );
 
         stubMessageFound();
+        when(messageRepository.findByIdForUpdate(messageId)).thenReturn(Optional.of(message));
 
         assertThrows(
                 IllegalStateException.class,
@@ -2360,6 +2383,7 @@ class MessageServiceTest {
         );
 
         stubMessageFound();
+        when(messageRepository.findByIdForUpdate(messageId)).thenReturn(Optional.of(message));
 
         assertThrows(
                 IllegalStateException.class,
@@ -2390,6 +2414,7 @@ class MessageServiceTest {
         );
 
         stubMessageFound();
+        when(messageRepository.findByIdForUpdate(messageId)).thenReturn(Optional.of(message));
 
         assertThrows(
                 IllegalStateException.class,
@@ -2420,6 +2445,7 @@ class MessageServiceTest {
         );
 
         stubMessageFound();
+        when(messageRepository.findByIdForUpdate(messageId)).thenReturn(Optional.of(message));
 
         assertThrows(
                 IllegalStateException.class,
@@ -2450,6 +2476,7 @@ class MessageServiceTest {
         );
 
         stubMessageFound();
+        when(messageRepository.findByIdForUpdate(messageId)).thenReturn(Optional.of(message));
 
         assertThrows(
                 IllegalStateException.class,
@@ -2480,6 +2507,7 @@ class MessageServiceTest {
         );
 
         stubMessageFound();
+        when(messageRepository.findByIdForUpdate(messageId)).thenReturn(Optional.of(message));
 
         assertThrows(
                 IllegalStateException.class,
@@ -2510,6 +2538,7 @@ class MessageServiceTest {
         );
 
         stubMessageFound();
+        when(messageRepository.findByIdForUpdate(messageId)).thenReturn(Optional.of(message));
 
         assertThrows(
                 IllegalStateException.class,
@@ -2815,6 +2844,7 @@ class MessageServiceTest {
         MessageEntity message =
                 new MessageEntity();
 
+        message.setId(UUID.randomUUID());
         message.setConversation(conversation);
         message.setExternalId(externalId);
         message.setDirection(direction);
@@ -2822,6 +2852,7 @@ class MessageServiceTest {
         message.setProcessingStatus(
                 MessageProcessingStatus.PROCESSED
         );
+        when(messageRepository.findByIdForUpdate(message.getId())).thenReturn(Optional.of(message));
 
         return message;
     }

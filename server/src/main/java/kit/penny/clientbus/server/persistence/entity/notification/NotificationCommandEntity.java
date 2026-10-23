@@ -7,38 +7,39 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "notification_command", schema = "dbo",
+@Table(name = "notificationcommand", schema = "dbo",
     uniqueConstraints = {
-        @UniqueConstraint(name = "notification_command_key_uq", columnNames = {"organization_id", "recipient_employee_id", "idempotency_key"})
+        @UniqueConstraint(name = "notificationcommandpk", columnNames = {"id"}),
+        @UniqueConstraint(name = "notificationcommandkeyuq", columnNames = {"organizationid", "recipientemployeeid", "idempotencykey"})
     },
     indexes = {
-        @Index(name = "notification_command_retention_idx", columnList = "retain_until")
+        @Index(name = "notificationcommandretentionidx", columnList = "retainuntil")
     },
-    check = @CheckConstraint(name = "notification_command_ck", constraint =
-            "updated_count >= 0 and retain_until > created_at"))
+    check = @CheckConstraint(name = "notificationcommandck", constraint =
+            "updatedcount >= 0 and retainuntil > createdat"))
 public class NotificationCommandEntity extends NotificationRecord {
-    @Column(name = "organization_id", nullable = false, updatable = false)
+    @Column(name = "organizationid", nullable = false, updatable = false)
     private UUID organizationId;
 
-    @Column(name = "recipient_employee_id", nullable = false, updatable = false)
+    @Column(name = "recipientemployeeid", nullable = false, updatable = false)
     private UUID recipientEmployeeId;
 
-    @Column(name = "idempotency_key", nullable = false, updatable = false, length = 128)
+    @Column(name = "idempotencykey", nullable = false, updatable = false, length = 128)
     private String idempotencyKey;
 
-    @Column(name = "request_hash", nullable = false, updatable = false, length = 64)
+    @Column(name = "requesthash", nullable = false, updatable = false, length = 64)
     private String requestHash;
 
     @Column(name = "scope", nullable = false, updatable = false, length = 32)
     private String scope;
 
-    @Column(name = "read_at", nullable = false)
+    @Column(name = "readat", nullable = false)
     private Instant readAt;
 
-    @Column(name = "updated_count", nullable = false)
+    @Column(name = "updatedcount", nullable = false)
     private long updatedCount;
 
-    @Column(name = "retain_until", nullable = false)
+    @Column(name = "retainuntil", nullable = false)
     private Instant retainUntil;
 
     public NotificationCommandEntity() {}

@@ -37,6 +37,7 @@ class OutboundMessageKafkaCommandMapperTest {
     void shouldMapMessageFields() {
         UUID messageId = UUID.randomUUID();
         UUID channelAccountId = UUID.randomUUID();
+        UUID attemptId = UUID.randomUUID();
 
         OutboundMessageKafkaCommand command =
                 new OutboundMessageKafkaCommand(
@@ -45,13 +46,14 @@ class OutboundMessageKafkaCommandMapperTest {
                         "recipient-123",
                         MessageType.TEXT,
                         "Hello",
-                        List.of()
+                        List.of(), attemptId
                 );
 
         SendMessageCommand result =
                 mapper.toCommand(command);
 
         assertEquals(messageId, result.messageId());
+        assertEquals(attemptId, result.sendAttemptId());
         assertEquals(
                 channelAccountId,
                 result.channelAccountId()
@@ -91,6 +93,7 @@ class OutboundMessageKafkaCommandMapperTest {
 
         assertNotNull(result.attachments());
         assertTrue(result.attachments().isEmpty());
+        assertNull(result.sendAttemptId());
 
         verifyNoInteractions(attachmentStorage);
     }

@@ -8,6 +8,7 @@ import { getApiErrorStatus } from '../api/apiClient'
 import { abortError, withCancellation } from '../api/events/requestScope'
 import type { OrganizationDto } from '../api/types/organization'
 import type { EmployeeDto, EmployeeWorkspaceDto } from './types'
+import { clearNotificationAlertDedup, notificationAccount } from '../components/notifications/notificationStorage'
 
 interface AuthContextValue {
     accessToken: string | null
@@ -38,8 +39,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const identityVersion = useRef(0)
     const flight = useRef<{ owner: typeof session.current; version: number; controller: AbortController; promise: Promise<void> }>()
     const loginVersion = useRef(0)
+    const notificationOwner = useRef<string | null>(null)
+    if (currentEmployee) notificationOwner.current = notificationAccount(currentEmployee.organizationId, currentEmployee.id)
 
     const replaceSession = useCallback((token: string | null) => {
+        if (notificationOwner.current) clearNotificationAlertDedup(notificationOwner.current)
+        notificationOwner.current = null
         loginVersion.current++
         session.current.controller.abort()
         session.current = { epoch: session.current.epoch + 1, token, controller: new AbortController() }

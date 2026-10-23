@@ -4,7 +4,7 @@
 
 ## Рабочий путь
 
-Входящий PlatformMessageRequest → MessageProcessingService → MessageService → сообщение, состояние диалога, вложения и notification_outbox в общей бизнес-транзакции → relay → clientbus.ui.invalidations.v1 → каждый SSE gateway → UiEventsProvider → REST Inbox/переписки.
+Входящий PlatformMessageRequest → MessageProcessingService → MessageService → сообщение, состояние диалога, вложения и notificationoutbox в общей бизнес-транзакции → relay → clientbus.ui.invalidations.v1 → каждый SSE gateway → UiEventsProvider → REST Inbox/переписки.
 
 При первой вставке сообщения сохраняются два минимальных события: messages.invalidated и inbox.invalidated с conversation resource и текущим origin. В Kafka/SSE не передаются текст сообщения и вложения. Gateway повторно проверяет текущий ACL, UI получает содержимое из обычного REST. Повтор того же externalId возвращает существующее сообщение и не создаёт новые outbox records. При rollback откатываются сообщение и outbox; внешнего publish внутри бизнес-транзакции нет.
 
@@ -12,17 +12,17 @@ Writer включается существующим clientbus.notifications.sse
 
 ## Relay и устойчивость
 
-- UiOutboxStore захватывает по одной due записи короткой транзакцией: FOR UPDATE SKIP LOCKED → IN_FLIGHT, attempts/claim_version увеличиваются, lease_until задаётся DB clock. Захват одного задания непосредственно перед отправкой не расходует lease большого batch в ожидании предыдущих ack.
+- UiOutboxStore захватывает по одной due записи короткой транзакцией: FOR UPDATE SKIP LOCKED → IN_FLIGHT, attempts/claimversion увеличиваются, leaseuntil задаётся DB clock. Захват одного задания непосредственно перед отправкой не расходует lease большого batch в ожидании предыдущих ack.
 - KafkaUiOutboxPublisher — отдельный String/String producer с общими TLS/SASL настройками KafkaProperties, acks=all и idempotence. На UI topic не попадают business serializer/type headers. max.block=2 секунды, request timeout=5 секунд, delivery timeout/ожидание ack=10 секунд. Приём брокером не означает чтение пользователем.
-- Вызов Kafka выполняется после commit claim. PUBLISHED/published_at устанавливаются только после ack и только для совпавших id/claimVersion/IN_FLIGHT. Просроченный IN_FLIGHT может получить новый claim; поздний результат прежнего владельца не перезаписывает новый.
+- Вызов Kafka выполняется после commit claim. PUBLISHED/publishedat устанавливаются только после ack и только для совпавших id/claimVersion/IN_FLIGHT. Просроченный IN_FLIGHT может получить новый claim; поздний результат прежнего владельца не перезаписывает новый.
 - Timeout/неоднозначный сетевой результат → RETRY с exponential backoff 1–256 секунд и прежними eventId/payload. Пропажа процесса после Kafka ack до DB ack допускает повтор той же записи. Это at-least-once публикация; UI invalidation безопасна при повторе.
-- Невалидный/несовместимый payload, неверные envelope identity, неподдерживаемый destination/operation, постоянная ошибка serialization/authorization/configuration/topic/size → QUARANTINED. Такая запись не выбирается обычным poll и не блокирует следующую. Сохраняется безопасный error_code, тела и credentials не логируются.
+- Невалидный/несовместимый payload, неверные envelope identity, неподдерживаемый destination/operation, постоянная ошибка serialization/authorization/configuration/topic/size → QUARANTINED. Такая запись не выбирается обычным poll и не блокирует следующую. Сохраняется безопасный errorcode, тела и credentials не логируются.
 - Нынешний dispatcher обслуживает UI invalidation. History command routing и проверка terminal outcome/deadline добавляются совместно в 11.10; команды нельзя включать через этот частичный relay.
 - У relay выделенный scheduler uiOutboxScheduler с одним потоком. После ревью явно создан отдельный default taskScheduler для unqualified бизнес-задач и uiOutboxMetricsScheduler для статистики; Recent Chats не использует поток relay. outbox-poll-ms=500 задаёт fixed delay после прохода; outboxBatchSize=100 ограничивает число отправок за проход. lease по общим контрактам — 30 секунд. SQL-переходы обеспечивают fencing также между несколькими процессами relay.
 
 Метрики Micrometer: clientbus.notification.outbox.pending, .quarantined, .oldest.seconds, .attempts с ограниченным result=published/retry/quarantined, .errors со stage=database. Gauges обновляются отдельным sampler каждые 2 секунды (outbox-metrics-poll-ms), а не выполняют SQL при scrape и не ждут Kafka batch. До первого снимка значения NaN; sample.valid отражает результат последней завершённой попытки, sample.age.seconds растёт от последнего успешного снимка. Возраст старейшей pending записи также растёт между снимками. При ошибке БД сохраняется последний снимок с valid=0 и продолжающим расти возрастом; свежесть проверяется по age, в том числе если SQL sampler завис. pending/oldest учитывают PENDING/RETRY/IN_FLIGHT; карантин наблюдается отдельно. uiPipeline продолжает отражать Kafka-подписку, а не успешность outbox relay. Дашборды/алерты/retention cleanup относятся к 11.11; неопубликованные и карантинные записи по published retention не удаляются.
 
-Ручной повтор реализован как UiOutboxStore.retryQuarantined(id): условный QUARANTINED → RETRY только для UI topic и operation_id IS NULL. eventId, payload и первоначальный смысл не изменяются; PUBLISHED не повторяется. Общедоступного HTTP endpoint этой операции нет. Оператор сначала устраняет причину ошибки; некорректный payload при простом повторе снова попадёт в карантин. Редактирование payload произвольным UPDATE не является штатной процедурой retry.
+Ручной повтор реализован как UiOutboxStore.retryQuarantined(id): условный QUARANTINED → RETRY только для UI topic и operationid IS NULL. eventId, payload и первоначальный смысл не изменяются; PUBLISHED не повторяется. Общедоступного HTTP endpoint этой операции нет. Оператор сначала устраняет причину ошибки; некорректный payload при простом повторе снова попадёт в карантин. Редактирование payload произвольным UPDATE не является штатной процедурой retry.
 
 ## Origin
 

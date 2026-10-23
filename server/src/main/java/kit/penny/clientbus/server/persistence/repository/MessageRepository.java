@@ -18,11 +18,18 @@ import java.util.UUID;
 public interface MessageRepository
         extends JpaRepository<MessageEntity, UUID> {
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select m from MessageEntity m where m.id=:messageId")
+    Optional<MessageEntity> findByIdForUpdate(@org.springframework.data.repository.query.Param("messageId") UUID messageId);
+
     Optional<MessageEntity>
     findByConversationIdAndExternalId(
             UUID conversationId,
             String externalId
     );
+
+    Optional<MessageEntity> findBySendAttemptIdAndConversationChannelAccountIdAndExternalId(
+            UUID sendAttemptId, UUID channelAccountId, String externalId);
 
     boolean existsByConversationIdAndExternalId(
             UUID conversationId,

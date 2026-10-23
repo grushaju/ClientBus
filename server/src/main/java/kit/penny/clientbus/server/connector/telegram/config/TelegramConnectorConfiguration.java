@@ -6,7 +6,6 @@ import kit.penny.clientbus.server.connector.telegram.client.TelegramClientManage
 import kit.penny.clientbus.server.connector.telegram.client.TelegramContextFactory;
 import kit.penny.clientbus.server.kafka.producer.IPlatformMessagePublisher;
 import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
-import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
 import kit.penny.clientbus.server.persistence.repository.ConversationRepository;
 import kit.penny.clientbus.server.persistence.repository.MessageRepository;
 import kit.penny.clientbus.server.service.MessageService;
@@ -15,6 +14,7 @@ import kit.penny.tdlib.properties.TelegramProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import kit.penny.clientbus.server.service.ChannelStatusService;
 import java.util.List;
 
 @Configuration
@@ -24,7 +24,7 @@ public class TelegramConnectorConfiguration {
     public TelegramContextFactory telegramContextFactory(
             TelegramProperties properties,
             ChannelAccountRepository channelAccountRepository,
-            ChannelRepository channelRepository,
+            ChannelStatusService channelStatus,
             ConversationRepository conversationRepository,
             MessageService messageService,
             MessageRepository messageRepository,
@@ -36,7 +36,7 @@ public class TelegramConnectorConfiguration {
         return new TelegramContextFactory(
                 properties,
                 channelAccountRepository,
-                channelRepository,
+                channelStatus,
                 conversationRepository,
                 messageService,
                 messageRepository,

@@ -217,11 +217,8 @@ class KafkaOutboundMessageFailureIntegrationTest
                                 "Temporary Telegram failure #2"
                         )
                 )
-                .thenReturn(
-                        new ConnectorSendResult(
-                                EXTERNAL_MESSAGE_ID
-                        )
-                );
+                .thenAnswer(invocation -> new ConnectorSendResult(EXTERNAL_MESSAGE_ID,
+                        ((SendMessageCommand) invocation.getArgument(0)).sendAttemptId()));
 
         KafkaEvent<OutboundMessageKafkaCommand> event =
                 createOutboundEvent(
@@ -307,6 +304,7 @@ class KafkaOutboundMessageFailureIntegrationTest
                 awaitNewDlqRecords(
                         DLQ_TOPIC,
                         dlqOffsetsBefore,
+                        messageId,
                         2_000
                 ).isEmpty()
         );
@@ -390,6 +388,7 @@ class KafkaOutboundMessageFailureIntegrationTest
                 awaitNewDlqRecords(
                         DLQ_TOPIC,
                         dlqOffsetsBefore,
+                        messageId,
                         15_000
                 );
 
@@ -470,11 +469,8 @@ class KafkaOutboundMessageFailureIntegrationTest
                 channelConnector.handle(
                         (SendMessageCommand) any()
                 )
-        ).thenReturn(
-                new ConnectorSendResult(
-                        EXTERNAL_MESSAGE_ID
-                )
-        );
+        ).thenAnswer(invocation -> new ConnectorSendResult(EXTERNAL_MESSAGE_ID,
+                        ((SendMessageCommand) invocation.getArgument(0)).sendAttemptId()));
 
         KafkaEvent<OutboundMessageKafkaCommand> event =
                 createOutboundEvent(
@@ -863,6 +859,7 @@ class KafkaOutboundMessageFailureIntegrationTest
     awaitNewDlqRecords(
             String topic,
             Map<TopicPartition, Long> offsetsBefore,
+            UUID messageId,
             long timeoutMillis
     ) {
 
@@ -934,7 +931,10 @@ class KafkaOutboundMessageFailureIntegrationTest
                             );
 
                     if (offsetBefore != null
-                            && record.offset() >= offsetBefore) {
+                            && record.offset() >= offsetBefore
+                            && record.value() instanceof KafkaEvent<?> event
+                            && event.payload() instanceof OutboundMessageKafkaCommand command
+                            && messageId.equals(command.messageId())) {
 
                         records.add(record);
                     }

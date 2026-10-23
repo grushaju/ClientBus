@@ -3,6 +3,7 @@ import {
     useEffect,
     useState,
 } from 'react'
+import { useSearchParams } from 'react-router-dom'
 
 import {
     deleteChannel,
@@ -116,6 +117,8 @@ function sortChannels(
 }
 
 function ChannelsPage() {
+    const [searchParams, setSearchParams] = useSearchParams()
+    const requestedAccount = searchParams.get('accountId')
     const {
         currentWorkspace,
     } = useWorkspace()
@@ -185,6 +188,16 @@ function ChannelsPage() {
     }, [
         loadChannels,
     ])
+
+    useEffect(() => {
+        if (!requestedAccount || loading || !currentWorkspace) return
+        const target = channels.find(channel => channel.workspaceId === currentWorkspace.id && channel.account?.id === requestedAccount)
+        if (!target) return
+        setSelectedChannel(target)
+        const query = new URLSearchParams(searchParams)
+        query.delete('accountId')
+        setSearchParams(query, { replace: true })
+    }, [requestedAccount, channels, loading, currentWorkspace?.id, searchParams, setSearchParams])
 
     function handleCreated(
         channel: ChannelDto,

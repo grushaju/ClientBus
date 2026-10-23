@@ -17,7 +17,13 @@ public record OutboundMessageKafkaCommand(
 
         String content,
 
-        List<PlatformOutboundAttachment> attachments
+        List<PlatformOutboundAttachment> attachments,
+
+        UUID sendAttemptId
 
 ) {
+    public OutboundMessageKafkaCommand(UUID messageId, UUID channelAccountId, String recipientExternalId,
+            MessageType type, String content, List<PlatformOutboundAttachment> attachments) {
+        this(messageId, channelAccountId, recipientExternalId, type, content, attachments, null);
+    }
 }

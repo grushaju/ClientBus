@@ -27,6 +27,9 @@ import java.util.stream.Collectors;
 @Transactional
 public class ConversationService {
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private kit.penny.clientbus.server.notification.center.PersonalNotificationWriter personalNotifications;
+
     private final ConversationRepository conversationRepository;
     private final WorkspaceRepository workspaceRepository;
     private final ChannelAccountRepository channelAccountRepository;
@@ -1443,6 +1446,13 @@ public class ConversationService {
         if (!Objects.equals(currentEmployeeId, newEmployeeId)) {
             conversationGroupMembershipRepository
                     .deleteAllByConversation_Id(conversation.getId());
+            conversation.setAssignmentOccurrenceId(UUID.randomUUID());
+            conversation.setAssignedEmployee(newEmployee);
+            if (personalNotifications != null) {
+                conversationRepository.flush();
+                personalNotifications.assignmentChanged(conversation.getId(), conversation.getAssignmentOccurrenceId(),
+                        currentUserService.getCurrentEmployeeId());
+            }
         }
 
         conversation.setAssignedEmployee(newEmployee);

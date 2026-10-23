@@ -135,11 +135,8 @@ class KafkaOutboundMessageConsumerIntegrationTest
                 channelConnector.handle(
                         any(SendMessageCommand.class)
                 )
-        ).thenReturn(
-                new ConnectorSendResult(
-                        "telegram-external-message-123"
-                )
-        );
+        ).thenAnswer(invocation -> new ConnectorSendResult("telegram-external-message-123",
+                        ((SendMessageCommand) invocation.getArgument(0)).sendAttemptId()));
 
         createTopicIfNeeded();
     }

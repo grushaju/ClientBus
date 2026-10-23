@@ -38,6 +38,8 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class MessageProcessingServiceTest {
 
+    private static final UUID ATTEMPT_ID = UUID.randomUUID();
+
     @Mock
     private ChannelAccountRepository channelAccountRepository;
 
@@ -950,9 +952,7 @@ class MessageProcessingServiceTest {
                         Optional.of(messageEntity)
                 );
 
-        when(messageService.markDelivered(
-                messageId
-        )).thenReturn(
+        when(messageService.markDelivered(messageId, null)).thenReturn(
                 messageDto
         );
 
@@ -973,13 +973,13 @@ class MessageProcessingServiceTest {
                 );
 
         verify(messageService)
-                .markDelivered(messageId);
+                .markDelivered(messageId, null);
 
         verify(messageService, never())
-                .markRead(any());
+                .markRead(any(), any());
 
         verify(messageService, never())
-                .markDeliveryFailed(any());
+                .markDeliveryFailed(any(), any());
     }
 
     @Test
@@ -1005,9 +1005,7 @@ class MessageProcessingServiceTest {
                         Optional.of(messageEntity)
                 );
 
-        when(messageService.markRead(
-                messageId
-        )).thenReturn(
+        when(messageService.markRead(messageId, null)).thenReturn(
                 messageDto
         );
 
@@ -1028,13 +1026,27 @@ class MessageProcessingServiceTest {
                 );
 
         verify(messageService)
-                .markRead(messageId);
+                .markRead(messageId, null);
 
         verify(messageService, never())
-                .markDelivered(any());
+                .markDelivered(any(), any());
 
         verify(messageService, never())
-                .markDeliveryFailed(any());
+                .markDeliveryFailed(any(), any());
+    }
+
+    @Test
+    void processPlatformEvent_identifiedFailureUsesTheTrustedAttemptAndScopedLookup() {
+        var event = new PlatformMessageEvent(channelAccountId, "platform-result", PlatformMessageEventType.FAILED,
+                Instant.now(), null, ATTEMPT_ID);
+        when(messageRepository.findBySendAttemptIdAndConversationChannelAccountIdAndExternalId(
+                ATTEMPT_ID, channelAccountId, "platform-result")).thenReturn(Optional.of(messageEntity));
+        when(messageService.markDeliveryFailed(messageId, ATTEMPT_ID)).thenReturn(messageDto);
+
+        assertSame(messageDto, messageProcessingService.processPlatformEvent(event));
+
+        verify(messageService).markDeliveryFailed(messageId, ATTEMPT_ID);
+        verify(messageRepository, never()).findByConversationChannelAccountIdAndExternalId(any(), any());
     }
 
     @Test
@@ -1060,9 +1072,7 @@ class MessageProcessingServiceTest {
                         Optional.of(messageEntity)
                 );
 
-        when(messageService.markDeliveryFailed(
-                messageId
-        )).thenReturn(
+        when(messageService.markDeliveryFailed(messageId, null)).thenReturn(
                 messageDto
         );
 
@@ -1083,13 +1093,13 @@ class MessageProcessingServiceTest {
                 );
 
         verify(messageService)
-                .markDeliveryFailed(messageId);
+                .markDeliveryFailed(messageId, null);
 
         verify(messageService, never())
-                .markDelivered(any());
+                .markDelivered(any(), any());
 
         verify(messageService, never())
-                .markRead(any());
+                .markRead(any(), any());
     }
 
     @Test
@@ -1136,13 +1146,13 @@ class MessageProcessingServiceTest {
                 );
 
         verify(messageService, never())
-                .markDelivered(any());
+                .markDelivered(any(), any());
 
         verify(messageService, never())
-                .markRead(any());
+                .markRead(any(), any());
 
         verify(messageService, never())
-                .markDeliveryFailed(any());
+                .markDeliveryFailed(any(), any());
     }
 
     @Test
@@ -1369,7 +1379,7 @@ class MessageProcessingServiceTest {
                         any(OutboundMessageKafkaCommand.class)
                 );
 
-        when(messageService.markDeliveryFailed(messageId))
+        when(messageService.markDeliveryFailed(messageId, ATTEMPT_ID))
                 .thenReturn(messageDto);
 
         assertThrows(
@@ -1393,7 +1403,7 @@ class MessageProcessingServiceTest {
                 );
 
         verify(messageService)
-                .markDeliveryFailed(messageId);
+                .markDeliveryFailed(messageId, ATTEMPT_ID);
 
         verify(messageService, never())
                 .markProcessingFailed(messageId);
@@ -1509,7 +1519,7 @@ class MessageProcessingServiceTest {
                         any(OutboundMessageKafkaCommand.class)
                 );
 
-        when(messageService.markDeliveryFailed(messageId))
+        when(messageService.markDeliveryFailed(messageId, ATTEMPT_ID))
                 .thenReturn(retriedMessage);
 
         assertThrows(
@@ -1527,7 +1537,7 @@ class MessageProcessingServiceTest {
                 );
 
         verify(messageService)
-                .markDeliveryFailed(messageId);
+                .markDeliveryFailed(messageId, ATTEMPT_ID);
 
         verify(messageService, never())
                 .markProcessingFailed(messageId);
@@ -1558,7 +1568,7 @@ class MessageProcessingServiceTest {
                 .publish(any(), any());
 
         verify(messageService, never())
-                .markDeliveryFailed(messageId);
+                .markDeliveryFailed(messageId, ATTEMPT_ID);
 
         verify(messageService, never())
                 .markProcessingFailed(messageId);
@@ -1618,7 +1628,7 @@ class MessageProcessingServiceTest {
                 .publish(any(), any());
 
         verify(messageService, never())
-                .markDeliveryFailed(messageId);
+                .markDeliveryFailed(messageId, ATTEMPT_ID);
     }
 
     private OutboundMessageTransactionService.OutboundMessageTransactionResult
@@ -1626,7 +1636,7 @@ class MessageProcessingServiceTest {
             MessageDto message
     ) {
         OutboundMessageKafkaCommand command =
-                mock(OutboundMessageKafkaCommand.class);
+                new OutboundMessageKafkaCommand(message.id(), channelAccountId, "client-123", MessageType.TEXT, "Hello", List.of(), ATTEMPT_ID);
 
         return new OutboundMessageTransactionService.OutboundMessageTransactionResult(
                 message,

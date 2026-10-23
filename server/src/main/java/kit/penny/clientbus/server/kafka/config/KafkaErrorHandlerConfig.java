@@ -140,8 +140,11 @@ public class KafkaErrorHandlerConfig {
             return;
         }
 
-        messageService.markDeliveryFailed(
-                command.messageId()
-        );
+        try {
+            messageService.markDeliveryFailed(command.messageId(), command.sendAttemptId());
+        } catch (EntityNotFoundException removed) {
+            // A removed target cannot be failed. Still publish the original command to DLQ;
+            // otherwise a stale command permanently blocks its partition during recovery.
+        }
     }
 }

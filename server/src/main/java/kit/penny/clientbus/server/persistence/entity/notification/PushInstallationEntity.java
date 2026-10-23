@@ -7,28 +7,29 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "push_installation", schema = "dbo",
+@Table(name = "pushinstallation", schema = "dbo",
     uniqueConstraints = {
-        @UniqueConstraint(name = "push_installation_active_endpoint_uq", columnNames = {"provider", "app_id", "environment", "active_endpoint_fingerprint"})
+        @UniqueConstraint(name = "pushinstallationpk", columnNames = {"id"}),
+        @UniqueConstraint(name = "pushinstallationactiveendpointuq", columnNames = {"provider", "appid", "environment", "activeendpointfingerprint"})
     },
     indexes = {
-        @Index(name = "push_installation_recipient_idx", columnList = "organization_id, recipient_employee_id, enabled"),
-        @Index(name = "push_installation_activity_idx", columnList = "active_until")
+        @Index(name = "pushinstallationrecipientidx", columnList = "organizationid, recipientemployeeid, enabled"),
+        @Index(name = "pushinstallationactivityidx", columnList = "activeuntil")
     },
-    check = @CheckConstraint(name = "push_installation_ck", constraint =
-            "registration_version > 0 and binding_version > 0 and endpoint_version > 0 and octet_length(ownership_secret_hash) = 32 and endpoint_fingerprint ~ '^[0-9a-f]{64}$' and ((enabled and active_endpoint_fingerprint is not null and active_endpoint_fingerprint = endpoint_fingerprint) or (not enabled and active_endpoint_fingerprint is null)) and active_until > last_seen_at and ((platform = 'IOS') or provider <> 'APNS')"))
+    check = @CheckConstraint(name = "pushinstallationck", constraint =
+            "registrationversion > 0 and bindingversion > 0 and endpointversion > 0 and octet_length(ownershipsecrethash) = 32 and endpointfingerprint ~ '^[0-9a-f]{64}$' and ((enabled and activeendpointfingerprint is not null and activeendpointfingerprint = endpointfingerprint) or (not enabled and activeendpointfingerprint is null)) and activeuntil > lastseenat and ((platform = 'IOS') or provider <> 'APNS')"))
 public class PushInstallationEntity extends NotificationRecord {
     @Version
     @org.hibernate.annotations.ColumnDefault("1")
-    @Column(name = "registration_version", nullable = false)
+    @Column(name = "registrationversion", nullable = false)
     private long registrationVersion = 1;
 
     public long getRegistrationVersion() { return registrationVersion; }
 
-    @Column(name = "organization_id", nullable = false)
+    @Column(name = "organizationid", nullable = false)
     private UUID organizationId;
 
-    @Column(name = "recipient_employee_id", nullable = false)
+    @Column(name = "recipientemployeeid", nullable = false)
     private UUID recipientEmployeeId;
 
     @Enumerated(EnumType.STRING)
@@ -39,42 +40,42 @@ public class PushInstallationEntity extends NotificationRecord {
     @Column(name = "provider", nullable = false, length = 16)
     private PushProviderType provider;
 
-    @Column(name = "app_id", nullable = false, length = 128)
+    @Column(name = "appid", nullable = false, length = 128)
     private String appId;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "environment", nullable = false, length = 16)
     private PushEnvironment environment;
 
-    @Column(name = "encrypted_endpoint", nullable = false)
+    @Column(name = "encryptedendpoint", nullable = false)
     private byte[] encryptedEndpoint;
 
-    @Column(name = "endpoint_fingerprint", nullable = false, length = 64)
+    @Column(name = "endpointfingerprint", nullable = false, length = 64)
     private String endpointFingerprint;
 
-    @Column(name = "active_endpoint_fingerprint", length = 64)
+    @Column(name = "activeendpointfingerprint", length = 64)
     private String activeEndpointFingerprint;
 
-    @Column(name = "ownership_secret_hash", nullable = false)
+    @Column(name = "ownershipsecrethash", nullable = false)
     private byte[] ownershipSecretHash;
 
-    @Column(name = "binding_version", nullable = false)
+    @Column(name = "bindingversion", nullable = false)
     private long bindingVersion;
 
-    @Column(name = "endpoint_version", nullable = false)
+    @Column(name = "endpointversion", nullable = false)
     private long endpointVersion;
 
     @Column(name = "enabled", nullable = false)
     private boolean enabled;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "reported_permission", nullable = false, length = 24)
+    @Column(name = "reportedpermission", nullable = false, length = 24)
     private PushPermission reportedPermission;
 
-    @Column(name = "last_seen_at", nullable = false)
+    @Column(name = "lastseenat", nullable = false)
     private Instant lastSeenAt;
 
-    @Column(name = "active_until", nullable = false)
+    @Column(name = "activeuntil", nullable = false)
     private Instant activeUntil;
 
     public PushInstallationEntity() {}

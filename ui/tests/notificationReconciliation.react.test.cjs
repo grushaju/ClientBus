@@ -55,6 +55,9 @@ test('aborting Inbox reconciliation cancels its pending initial request and igno
 })
 
 test('attempt cancellation releases message refresh and a late old response cannot overwrite reconnect', async t => {
+    // Keep the scheduled retry from racing the explicit reconnect under parallel test load.
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+    const flush = async () => { for (let i = 0; i < 60; i++) await Promise.resolve() }
     const blocked = deferred(), manager = new InvalidationCoordinator(() => true, 1, 1)
     const message = id => ({ id, conversationId: 'conversation', sentAt: '2026-10-22T08:00:00Z', createdAt: '2026-10-22T08:00:00Z', direction: 'INBOUND' })
     const page = id => ({ content: [message(id)], last: true })
@@ -68,17 +71,19 @@ test('attempt cancellation releases message refresh and a late old response cann
     })
     function Probe() { state = useConversationMessages('conversation'); return null }
     t.after(async () => { manager.close(); await act(async () => renderer?.unmount()) })
-    await act(async () => { renderer = create(React.createElement(Probe)); await pause(1) })
+    await act(async () => { renderer = create(React.createElement(Probe)); await flush() })
     manager.subscribe(() => true, s => refresh(s))
     const attempt = new AbortController(), first = manager.reconcile(attempt.signal)
     const rejected = assert.rejects(first, error => error.name === 'AbortError')
-    await act(async () => { await pause(1) }); const abortedSignal = signal
+    await act(async () => { await flush() }); const abortedSignal = signal
     await act(async () => { attempt.abort(); await rejected })
     assert.equal(abortedSignal.aborted, true)
     await act(async () => { await manager.reconcile() })
     assert.equal(calls, 3); assert.ok(state.messages.some(value => value.id === 'reconnected'))
-    await act(async () => { blocked.resolve(page('obsolete')); await pause(1) })
+    await act(async () => { blocked.resolve(page('obsolete')); await flush() })
     assert.ok(!state.messages.some(value => value.id === 'obsolete'))
+    await act(async () => { t.mock.timers.tick(250); await flush() })
+    assert.equal(calls, 3, 'Successful explicit reconnect clears the cancelled attempt retry')
 })
 
 test('read API cancellation remains active while response.json is blocked', async () => {

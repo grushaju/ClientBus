@@ -7,7 +7,10 @@ import org.hibernate.generator.EventType;
 import java.time.Instant;
 import java.util.UUID;
 
-/** DB clock is shared with stream.ready; createdAt is not a commit/replay cursor. */
+/**
+ * DB clock is shared with stream.ready; createdAt is not a commit/replay cursor.
+ * Each table explicitly names unique(id): Hibernate uses that name for the PK without creating a duplicate index.
+ */
 @MappedSuperclass
 public abstract class NotificationRecord {
     @Id
@@ -15,7 +18,7 @@ public abstract class NotificationRecord {
     @Column(name = "id", nullable = false, updatable = false)
     private UUID id;
 
-    @Column(name = "created_at", nullable = false, updatable = false, insertable = false)
+    @Column(name = "createdat", nullable = false, updatable = false, insertable = false)
     @ColumnDefault("clock_timestamp()")
     @Generated(event = EventType.INSERT)
     private Instant createdAt;

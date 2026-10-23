@@ -6,8 +6,6 @@ import kit.penny.clientbus.server.connector.ChannelEvent;
 import kit.penny.clientbus.server.connector.IChannelListener;
 import kit.penny.clientbus.server.connector.telegram.account.TelegramAccountProfileSynchronizer;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
-import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
-import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
 import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.properties.TelegramProperties;
 import kit.penny.tdlib.updates.ITdlibUpdateListener;
@@ -18,6 +16,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 
+import kit.penny.clientbus.server.service.ChannelStatusService;
 import java.util.List;
 import java.util.UUID;
 
@@ -32,7 +31,7 @@ public class TelegramAuthorizationStateListener
 
     private final UUID channelId;
     private final UUID channelAccountId;
-    private final ChannelRepository channelRepository;
+    private final ChannelStatusService channelStatus;
     private final TelegramProperties properties;
     private final TelegramAuthorizationManager authorizationManager;
     private final ObjectProvider<TelegramClient> telegramClientProvider;
@@ -43,7 +42,7 @@ public class TelegramAuthorizationStateListener
     public TelegramAuthorizationStateListener(
             UUID channelId,
             UUID channelAccountId,
-            ChannelRepository channelRepository,
+            ChannelStatusService channelStatus,
             TelegramAccountProfileSynchronizer profileSynchronizer,
             TelegramProperties properties,
             TelegramAuthorizationManager authorizationManager,
@@ -54,7 +53,7 @@ public class TelegramAuthorizationStateListener
 
         this.channelId = channelId;
         this.channelAccountId = channelAccountId;
-        this.channelRepository = channelRepository;
+        this.channelStatus = channelStatus;
         this.profileSynchronizer = profileSynchronizer;
         this.properties = properties;
         this.authorizationManager = authorizationManager;
@@ -182,73 +181,9 @@ public class TelegramAuthorizationStateListener
             TdApi.AuthorizationState state
     ) {
         try {
-            ChannelEntity channel =
-                    channelRepository.findById(channelId)
-                            .orElse(null);
-
-            if (channel == null) {
-                log.warn(
-                        "Telegram channel not found: channelId={}",
-                        channelId
-                );
-                return;
+            if (channelStatus.transition(channelAccountId, status, "CONNECTOR_AUTH_STATE")) {
+                fireChannelChanged(new ChannelEvent(channelAccountId, status));
             }
-
-            ChannelAccountEntity account =
-                    channel.getAccount();
-
-            if (account == null) {
-                log.warn(
-                        "Telegram channel account not found: channelId={}",
-                        channelId
-                );
-                return;
-            }
-
-            log.debug(
-                    "Telegram account loaded: " +
-                            "channelAccountId={}, channelFound={}",
-                    account.getId(),
-                    true
-            );
-
-            if (channel.getStatus() == status) {
-                log.debug(
-                        "Telegram status already set: " +
-                                "channelAccountId={}, " +
-                                "currentStatus={}, requestedStatus={}",
-                        account.getId(),
-                        channel.getStatus(),
-                        status
-                );
-                return;
-            }
-
-            log.debug(
-                    "Telegram saving connection status: " +
-                            "channelAccountId={}, status={}",
-                    account.getId(),
-                    status
-            );
-
-            channel.setStatus(status);
-
-            channelRepository.save(channel);
-
-            log.debug(
-                    "Telegram connection status saved: " +
-                            "channelAccountId={}, status={}, tdlibState={}",
-                    account.getId(),
-                    channel.getStatus(),
-                    state.getClass().getSimpleName()
-            );
-
-            fireChannelChanged(
-                    new ChannelEvent(
-                            channelAccountId,
-                            status
-                    )
-            );
 
         } catch (RuntimeException e) {
             log.error(

@@ -52,8 +52,10 @@ public class KafkaPlatformMessageConsumer {
             );
         }
 
-        messageProcessingService.processPlatformMessage(
-                event.payload()
-        );
+        // A legacy envelope may still persist business data, but cannot manufacture a fresh alert time.
+        var source = event.occurredAt() == null || event.eventId() == null ? null
+                : new kit.penny.clientbus.server.notification.contract.NotificationSourceContext(
+                        event.payload().origin(), event.occurredAt(), event.eventId(), null);
+        messageProcessingService.processPlatformMessage(event.payload(), source);
     }
 }

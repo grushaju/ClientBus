@@ -35,6 +35,8 @@ import static org.mockito.Mockito.*;
 
 class KafkaErrorHandlerConfigTest {
 
+    private static final UUID ATTEMPT_ID = UUID.randomUUID();
+
     private static final String TOPIC =
             "clientbus.outbound.telegram";
 
@@ -102,7 +104,7 @@ class KafkaErrorHandlerConfigTest {
         );
 
         verify(messageService)
-                .markDeliveryFailed(messageId);
+                .markDeliveryFailed(messageId, ATTEMPT_ID);
 
         verify(deadLetterPublishingRecoverer)
                 .accept(record, exception);
@@ -112,6 +114,21 @@ class KafkaErrorHandlerConfigTest {
                         any(TopicPartition.class),
                         any(Long.class)
                 );
+    }
+
+    @Test
+    void removedMessageStillReachesDlqWithoutBlockingThePartition() {
+        var errorHandler = config.kafkaCommonErrorHandler(deadLetterPublishingRecoverer, messageService);
+        UUID messageId = UUID.randomUUID();
+        var record = outboundRecord(messageId);
+        var failure = new EntityNotFoundException("Removed target");
+        when(messageService.markDeliveryFailed(messageId, ATTEMPT_ID)).thenThrow(failure);
+
+        errorHandler.handleOne(failure, record, consumer, container);
+
+        verify(messageService).markDeliveryFailed(messageId, ATTEMPT_ID);
+        verify(deadLetterPublishingRecoverer).accept(record, failure);
+        verifyNoInteractions(recentChatsSyncCoordinator);
     }
 
     @ParameterizedTest
@@ -161,7 +178,7 @@ class KafkaErrorHandlerConfigTest {
         }
 
         verify(messageService, never())
-                .markDeliveryFailed(any());
+                .markDeliveryFailed(any(), any());
 
         verify(deadLetterPublishingRecoverer, never())
                 .accept(any(), any());
@@ -174,7 +191,7 @@ class KafkaErrorHandlerConfigTest {
         );
 
         verify(messageService)
-                .markDeliveryFailed(messageId);
+                .markDeliveryFailed(messageId, ATTEMPT_ID);
 
         verify(deadLetterPublishingRecoverer)
                 .accept(record, exception);
@@ -209,7 +226,7 @@ class KafkaErrorHandlerConfigTest {
                 ArgumentCaptor.forClass(UUID.class);
 
         verify(messageService)
-                .markDeliveryFailed(messageIdCaptor.capture());
+                .markDeliveryFailed(messageIdCaptor.capture(), eq(ATTEMPT_ID));
 
         verifyNoInteractions(recentChatsSyncCoordinator);
 
@@ -249,7 +266,7 @@ class KafkaErrorHandlerConfigTest {
         }
 
         verify(messageService, never())
-                .markDeliveryFailed(any());
+                .markDeliveryFailed(any(), any());
 
         verify(deadLetterPublishingRecoverer)
                 .accept(record, exception);
@@ -285,7 +302,7 @@ class KafkaErrorHandlerConfigTest {
         }
 
         verify(messageService, never())
-                .markDeliveryFailed(any());
+                .markDeliveryFailed(any(), any());
 
         verify(deadLetterPublishingRecoverer)
                 .accept(record, exception);
@@ -353,7 +370,7 @@ class KafkaErrorHandlerConfigTest {
                 .complete(channelAccountId, syncRunId);
 
         verify(messageService, never())
-                .markDeliveryFailed(any());
+                .markDeliveryFailed(any(), any());
 
         verify(deadLetterPublishingRecoverer)
                 .accept(record, exception);
@@ -370,7 +387,7 @@ class KafkaErrorHandlerConfigTest {
                         "telegram-user",
                         kit.penny.clientbus.common.enums.MessageType.TEXT,
                         "Test message",
-                        List.of()
+                        List.of(), ATTEMPT_ID
                 );
 
         KafkaEvent<OutboundMessageKafkaCommand> event =

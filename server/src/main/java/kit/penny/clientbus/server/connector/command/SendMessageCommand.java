@@ -12,8 +12,14 @@ public record SendMessageCommand(
         String recipientExternalId,
         MessageType type,
         String content,
-        List<ChannelAttachment> attachments
+        List<ChannelAttachment> attachments,
+        UUID sendAttemptId
 ) implements ChannelConnectorCommand {
+
+    public SendMessageCommand(UUID messageId, UUID channelAccountId, String recipientExternalId,
+            MessageType type, String content, List<ChannelAttachment> attachments) {
+        this(messageId, channelAccountId, recipientExternalId, type, content, attachments, null);
+    }
 
     public SendMessageCommand {
         attachments =

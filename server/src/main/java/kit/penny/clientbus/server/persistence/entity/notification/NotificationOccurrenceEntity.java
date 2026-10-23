@@ -9,34 +9,35 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "notification_occurrence", schema = "dbo",
+@Table(name = "notificationoccurrence", schema = "dbo",
     uniqueConstraints = {
-        @UniqueConstraint(name = "notification_occurrence_key_uq", columnNames = {"organization_id", "occurrence_key"})
+        @UniqueConstraint(name = "notificationoccurrencepk", columnNames = {"id"}),
+        @UniqueConstraint(name = "notificationoccurrencekeyuq", columnNames = {"organizationid", "occurrencekey"})
     },
     indexes = {
-        @Index(name = "notification_occurrence_retention_idx", columnList = "dedup_until")
+        @Index(name = "notificationoccurrenceretentionidx", columnList = "dedupuntil")
     },
-    check = @CheckConstraint(name = "notification_occurrence_ck", constraint =
-            "dedup_until > created_at and origin = 'LIVE'"))
+    check = @CheckConstraint(name = "notificationoccurrenceck", constraint =
+            "dedupuntil > createdat and origin = 'LIVE'"))
 public class NotificationOccurrenceEntity extends NotificationRecord {
-    @Column(name = "organization_id", nullable = false, updatable = false)
+    @Column(name = "organizationid", nullable = false, updatable = false)
     private UUID organizationId;
 
-    @Column(name = "occurrence_key", nullable = false, updatable = false, length = 64)
+    @Column(name = "occurrencekey", nullable = false, updatable = false, length = 64)
     private String occurrenceKey;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "origin", nullable = false, updatable = false, length = 20)
     private EventOrigin origin;
 
-    @Column(name = "workspace_id", updatable = false)
+    @Column(name = "workspaceid", updatable = false)
     private UUID workspaceId;
 
     @JdbcTypeCode(SqlTypes.ARRAY)
-    @Column(name = "recipient_employee_ids", nullable = false, updatable = false, columnDefinition = "uuid[]")
+    @Column(name = "recipientemployeeids", nullable = false, updatable = false, columnDefinition = "uuid[]")
     private UUID[] recipientEmployeeIds;
 
-    @Column(name = "dedup_until", nullable = false)
+    @Column(name = "dedupuntil", nullable = false)
     private Instant dedupUntil;
 
     public NotificationOccurrenceEntity() {}

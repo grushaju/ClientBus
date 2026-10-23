@@ -19,49 +19,49 @@ public class UiOutboxStore {
     public Optional<Claim> claim() {
         var rows=jdbc.query("""
             with candidate as (
-                select id from dbo.notification_outbox
-                where (status in ('PENDING','RETRY') and next_attempt_at<=clock_timestamp())
-                   or (status='IN_FLIGHT' and lease_until<=clock_timestamp())
-                order by next_attempt_at,created_at,id limit 1 for update skip locked
+                select id from dbo.notificationoutbox
+                where (status in ('PENDING','RETRY') and nextattemptat<=clock_timestamp())
+                   or (status='IN_FLIGHT' and leaseuntil<=clock_timestamp())
+                order by nextattemptat,createdat,id limit 1 for update skip locked
             )
-            update dbo.notification_outbox o set status='IN_FLIGHT',attempts=o.attempts+1,
-                claim_version=o.claim_version+1,lease_until=clock_timestamp()+(:lease * interval '1 millisecond'),error_code=null
+            update dbo.notificationoutbox o set status='IN_FLIGHT',attempts=o.attempts+1,
+                claimversion=o.claimversion+1,leaseuntil=clock_timestamp()+(:lease * interval '1 millisecond'),errorcode=null
             from candidate c where o.id=c.id
             returning o.*
-            """,Map.of("lease",config.lease().toMillis()),(rs,n)->new Claim(rs.getObject("id",UUID.class),rs.getObject("event_id",UUID.class),
-                rs.getObject("organization_id",UUID.class),rs.getString("destination"),rs.getString("event_type"),
-                rs.getInt("schema_version"),rs.getString("payload"),rs.getObject("operation_id",UUID.class),rs.getLong("claim_version"),rs.getInt("attempts")));
+            """,Map.of("lease",config.lease().toMillis()),(rs,n)->new Claim(rs.getObject("id",UUID.class),rs.getObject("eventid",UUID.class),
+                rs.getObject("organizationid",UUID.class),rs.getString("destination"),rs.getString("eventtype"),
+                rs.getInt("schemaversion"),rs.getString("payload"),rs.getObject("operationid",UUID.class),rs.getLong("claimversion"),rs.getInt("attempts")));
         return rows.stream().findFirst();
     }
 
     public boolean published(Claim claim) {
         return jdbc.update("""
-            update dbo.notification_outbox set status='PUBLISHED',published_at=clock_timestamp(),lease_until=null,error_code=null
-            where id=:id and status='IN_FLIGHT' and claim_version=:version
+            update dbo.notificationoutbox set status='PUBLISHED',publishedat=clock_timestamp(),leaseuntil=null,errorcode=null
+            where id=:id and status='IN_FLIGHT' and claimversion=:version
             """,Map.of("id",claim.id(),"version",claim.version()))==1;
     }
     public boolean failed(Claim claim, boolean permanent, String code) {
         long delay=Math.min(300_000L,1000L << Math.min(claim.attempts()-1,8));
         return jdbc.update("""
-            update dbo.notification_outbox set status=:status,lease_until=null,error_code=:code,
-                next_attempt_at=clock_timestamp()+(:delay * interval '1 millisecond')
-            where id=:id and status='IN_FLIGHT' and claim_version=:version
+            update dbo.notificationoutbox set status=:status,leaseuntil=null,errorcode=:code,
+                nextattemptat=clock_timestamp()+(:delay * interval '1 millisecond')
+            where id=:id and status='IN_FLIGHT' and claimversion=:version
             """,Map.of("id",claim.id(),"version",claim.version(),"status",permanent?"QUARANTINED":"RETRY","code",code,"delay",delay))==1;
     }
     /** Administrative service operation; identity/payload are immutable. Commands are excluded until 11.10. */
     public boolean retryQuarantined(UUID id) {
         return jdbc.update("""
-            update dbo.notification_outbox set status='RETRY',next_attempt_at=clock_timestamp(),error_code=null
-            where id=:id and status='QUARANTINED' and destination=:topic and operation_id is null
+            update dbo.notificationoutbox set status='RETRY',nextattemptat=clock_timestamp(),errorcode=null
+            where id=:id and status='QUARANTINED' and destination=:topic and operationid is null
             """,Map.of("id",id,"topic",UiKafkaSubscriber.TOPIC))==1;
     }
     public Map<String,Object> statistics() {
         return jdbc.queryForMap("""
             select count(*) filter (where status in ('PENDING','RETRY','IN_FLIGHT')) as pending,
                 count(*) filter (where status='QUARANTINED') as quarantined,
-                coalesce(extract(epoch from (clock_timestamp()-min(created_at) filter
+                coalesce(extract(epoch from (clock_timestamp()-min(createdat) filter
                     (where status in ('PENDING','RETRY','IN_FLIGHT')))),0) as oldest_seconds
-            from dbo.notification_outbox
+            from dbo.notificationoutbox
             """,Map.of());
     }
 }

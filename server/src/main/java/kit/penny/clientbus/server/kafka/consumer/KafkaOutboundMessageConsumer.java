@@ -98,9 +98,7 @@ public class KafkaOutboundMessageConsumer {
          * this attempt must not call the external connector.
          */
         boolean claimed =
-                messageService.claimOutboundDelivery(
-                        messageId
-                );
+                messageService.claimOutboundDelivery(messageId, kafkaCommand.sendAttemptId());
 
         if (!claimed) {
 
@@ -119,9 +117,7 @@ public class KafkaOutboundMessageConsumer {
             );
         } catch (ChannelUnavailableException e) {
 
-            messageService.releaseOutboundDeliveryClaim(
-                    messageId
-            );
+            messageService.releaseOutboundDeliveryClaim(messageId, kafkaCommand.sendAttemptId());
 
             log.warn(
                     "Skipping outbound connector call because channel is unavailable: " +
@@ -150,9 +146,7 @@ public class KafkaOutboundMessageConsumer {
              *
              * Release the claim so Kafka can retry.
              */
-            messageService.releaseOutboundDeliveryClaim(
-                    messageId
-            );
+            messageService.releaseOutboundDeliveryClaim(messageId, kafkaCommand.sendAttemptId());
 
             log.error(
                     "Failed to resolve channel connector: messageId={}, " +
@@ -190,9 +184,7 @@ public class KafkaOutboundMessageConsumer {
              *
              * Release the claim so Kafka can retry.
              */
-            messageService.releaseOutboundDeliveryClaim(
-                    messageId
-            );
+            messageService.releaseOutboundDeliveryClaim(messageId, kafkaCommand.sendAttemptId());
 
             log.error(
                     "Failed to map outbound Kafka command to connector command: " +
@@ -231,9 +223,7 @@ public class KafkaOutboundMessageConsumer {
 
         } catch (Exception e) {
 
-            messageService.releaseOutboundDeliveryClaim(
-                    messageId
-            );
+            messageService.releaseOutboundDeliveryClaim(messageId, kafkaCommand.sendAttemptId());
 
             log.error(
                     "Connector threw exception while sending outbound message: " +
@@ -264,6 +254,9 @@ public class KafkaOutboundMessageConsumer {
             );
         }
 
+        if (!java.util.Objects.equals(kafkaCommand.sendAttemptId(), result.sendAttemptId()))
+            throw new IllegalStateException("Connector result send attempt mismatch");
+
         /*
          * At this point the external platform has accepted
          * the message.
@@ -276,10 +269,8 @@ public class KafkaOutboundMessageConsumer {
          */
         try {
 
-            messageService.registerExternalId(
-                    messageId,
-                    result.externalId()
-            );
+            messageService.registerExternalAttempt(messageId, kafkaCommand.sendAttemptId(),
+                    command.channelAccountId(), command.recipientExternalId(), result.externalId());
 
         } catch (Exception e) {
 

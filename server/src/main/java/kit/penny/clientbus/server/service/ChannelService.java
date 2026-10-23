@@ -34,6 +34,7 @@ public class ChannelService {
     private final ChannelMapper channelMapper;
     private final CurrentUserService currentUserService;
     private final HttpAccessPolicy accessPolicy;
+    private final ChannelStatusService channelStatus;
     private final ChannelAccountLifecycleRegistry
             channelAccountLifecycleRegistry;
 
@@ -44,7 +45,8 @@ public class ChannelService {
             ChannelMapper channelMapper,
             CurrentUserService currentUserService,
             ChannelAccountLifecycleRegistry channelAccountLifecycleRegistry,
-            HttpAccessPolicy accessPolicy
+            HttpAccessPolicy accessPolicy,
+            ChannelStatusService channelStatus
     ) {
         this.channelRepository = channelRepository;
         this.channelAccountRepository = channelAccountRepository;
@@ -53,6 +55,7 @@ public class ChannelService {
         this.currentUserService = currentUserService;
         this.channelAccountLifecycleRegistry = channelAccountLifecycleRegistry;
         this.accessPolicy = accessPolicy;
+        this.channelStatus = channelStatus;
     }
 
     @Transactional
@@ -188,6 +191,7 @@ public class ChannelService {
         ChannelAccountEntity account =
                 findChannelAccount(id);
 
+        channelStatus.expectDisconnect(account.getId(), kit.penny.clientbus.common.enums.ChannelConnectionStatus.DISCONNECTED);
         channelAccountLifecycleRegistry
                 .getLifecycle(channel.getType())
                 .disconnect(account.getId());
@@ -253,6 +257,7 @@ public class ChannelService {
         ChannelAccountEntity account =
                 findChannelAccount(channelId);
 
+        channelStatus.expectDisconnect(account.getId(), kit.penny.clientbus.common.enums.ChannelConnectionStatus.DISCONNECTED);
         channelAccountLifecycleRegistry
                 .getLifecycle(channel.getType())
                 .disconnect(account.getId());

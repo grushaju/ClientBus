@@ -68,7 +68,8 @@ public class KafkaPlatformEventPublisher
                         event.channelAccountId(),
                         event.externalId(),
                         event.type(),
-                        event.metadata()
+                        event.metadata(),
+                        event.sendAttemptId()
                 );
 
         KafkaEvent<PlatformMessageKafkaEvent> kafkaEvent =

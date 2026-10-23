@@ -7,29 +7,30 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "notification_delivery", schema = "dbo",
+@Table(name = "notificationdelivery", schema = "dbo",
     uniqueConstraints = {
-        @UniqueConstraint(name = "notification_delivery_intent_uq", columnNames = {"notification_id", "registration_id", "binding_version", "channel"})
+        @UniqueConstraint(name = "notificationdeliverypk", columnNames = {"id"}),
+        @UniqueConstraint(name = "notificationdeliveryintentuq", columnNames = {"notificationid", "registrationid", "bindingversion", "channel"})
     },
     indexes = {
-        @Index(name = "notification_delivery_poll_idx", columnList = "status, next_attempt_at, created_at"),
-        @Index(name = "notification_delivery_lease_idx", columnList = "status, lease_until"),
-        @Index(name = "notification_delivery_retention_idx", columnList = "status, retain_until")
+        @Index(name = "notificationdeliverypollidx", columnList = "status, nextattemptat, createdat"),
+        @Index(name = "notificationdeliveryleaseidx", columnList = "status, leaseuntil"),
+        @Index(name = "notificationdeliveryretentionidx", columnList = "status, retainuntil")
     },
-    check = @CheckConstraint(name = "notification_delivery_ck", constraint =
-            "((status in ('PROVIDER_ACCEPTED', 'FAILED', 'CANCELLED', 'EXPIRED') and completed_at is not null and retain_until is not null and completed_at >= created_at and retain_until > completed_at) or (status in ('PENDING', 'RETRY', 'IN_FLIGHT') and completed_at is null and retain_until is null)) and binding_version > 0 and (attempt_endpoint_version is null or attempt_endpoint_version > 0) and attempts >= 0 and claim_version >= 0 and expires_at > created_at and channel = 'MOBILE_PUSH' and ((status = 'IN_FLIGHT' and lease_until is not null and attempt_endpoint_version is not null) or (status <> 'IN_FLIGHT' and lease_until is null))"))
+    check = @CheckConstraint(name = "notificationdeliveryck", constraint =
+            "((status in ('PROVIDER_ACCEPTED', 'FAILED', 'CANCELLED', 'EXPIRED') and completedat is not null and retainuntil is not null and completedat >= createdat and retainuntil > completedat) or (status in ('PENDING', 'RETRY', 'IN_FLIGHT') and completedat is null and retainuntil is null)) and bindingversion > 0 and (attemptendpointversion is null or attemptendpointversion > 0) and attempts >= 0 and claimversion >= 0 and expiresat > createdat and channel = 'MOBILE_PUSH' and ((status = 'IN_FLIGHT' and leaseuntil is not null and attemptendpointversion is not null) or (status <> 'IN_FLIGHT' and leaseuntil is null))"))
 public class NotificationDeliveryEntity extends NotificationRecord {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "notification_id", nullable = false, updatable = false,
-            foreignKey = @ForeignKey(name = "notification_delivery_notification_id_fk"))
+    @JoinColumn(name = "notificationid", nullable = false, updatable = false,
+            foreignKey = @ForeignKey(name = "notificationdeliverynotificationidfk"))
     private NotificationEntity notification;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "registration_id", nullable = false, updatable = false,
-            foreignKey = @ForeignKey(name = "notification_delivery_registration_id_fk"))
+    @JoinColumn(name = "registrationid", nullable = false, updatable = false,
+            foreignKey = @ForeignKey(name = "notificationdeliveryregistrationidfk"))
     private PushInstallationEntity registration;
 
-    @Column(name = "binding_version", nullable = false, updatable = false)
+    @Column(name = "bindingversion", nullable = false, updatable = false)
     private long bindingVersion;
 
     @Column(name = "channel", nullable = false, updatable = false, length = 24)
@@ -42,25 +43,25 @@ public class NotificationDeliveryEntity extends NotificationRecord {
     @Column(name = "attempts", nullable = false)
     private int attempts;
 
-    @Column(name = "claim_version", nullable = false)
+    @Column(name = "claimversion", nullable = false)
     private long claimVersion;
 
-    @Column(name = "attempt_endpoint_version")
+    @Column(name = "attemptendpointversion")
     private Long attemptEndpointVersion;
 
-    @Column(name = "next_attempt_at", nullable = false)
+    @Column(name = "nextattemptat", nullable = false)
     private Instant nextAttemptAt;
 
-    @Column(name = "lease_until")
+    @Column(name = "leaseuntil")
     private Instant leaseUntil;
 
-    @Column(name = "expires_at", nullable = false, updatable = false)
+    @Column(name = "expiresat", nullable = false, updatable = false)
     private Instant expiresAt;
 
-    @Column(name = "completed_at")
+    @Column(name = "completedat")
     private Instant completedAt;
 
-    @Column(name = "retain_until")
+    @Column(name = "retainuntil")
     private Instant retainUntil;
 
     public Instant getCompletedAt() { return completedAt; }
@@ -68,10 +69,10 @@ public class NotificationDeliveryEntity extends NotificationRecord {
     public Instant getRetainUntil() { return retainUntil; }
     public void setRetainUntil(Instant retainUntil) { this.retainUntil = retainUntil; }
 
-    @Column(name = "provider_message_id", length = 512)
+    @Column(name = "providermessageid", length = 512)
     private String providerMessageId;
 
-    @Column(name = "error_code", length = 64)
+    @Column(name = "errorcode", length = 64)
     private String errorCode;
 
     public NotificationDeliveryEntity() {}

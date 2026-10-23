@@ -12,7 +12,13 @@ public record PlatformMessageKafkaEvent(
 
         PlatformMessageEventType type,
 
-        String metadata
+        String metadata,
+
+        UUID sendAttemptId
 
 ) {
+    public PlatformMessageKafkaEvent(UUID channelAccountId, String externalId,
+            PlatformMessageEventType type, String metadata) {
+        this(channelAccountId, externalId, type, metadata, null);
+    }
 }

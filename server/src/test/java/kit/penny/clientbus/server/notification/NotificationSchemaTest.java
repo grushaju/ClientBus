@@ -1,6 +1,7 @@
 package kit.penny.clientbus.server.notification;
 
 import kit.penny.clientbus.server.persistence.entity.notification.*;
+import kit.penny.clientbus.server.persistence.entity.OutboundCallbackEntity;
 import org.hibernate.SessionFactory;
 import org.hibernate.boot.MetadataSources;
 import org.hibernate.boot.registry.StandardServiceRegistry;
@@ -22,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class NotificationSchemaTest {
     @Container
     static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
-            .withDatabaseName("notification_contract").withUsername("clientbus").withPassword("clientbus");
+            .withDatabaseName("notificationcontract").withUsername("clientbus").withPassword("clientbus");
 
     private static final UUID ORGANIZATION = UUID.randomUUID(), RECIPIENT = UUID.randomUUID();
     private static JdbcTemplate jdbc;
@@ -55,6 +56,7 @@ class NotificationSchemaTest {
                 .addAnnotatedClass(PushInstallationEntity.class)
                 .addAnnotatedClass(NotificationDeliveryEntity.class)
                 .addAnnotatedClass(HistorySyncOperationEntity.class)
+                .addAnnotatedClass(OutboundCallbackEntity.class)
                 .buildMetadata().buildSessionFactory();
     }
 
@@ -66,9 +68,40 @@ class NotificationSchemaTest {
 
     @BeforeEach
     void clearOnlyTestDatabase() {
-        jdbc.execute("truncate dbo.notification_delivery, dbo.notification, dbo.notification_dedup, "
-                + "dbo.notification_occurrence, dbo.notification_command, dbo.notification_outbox, "
-                + "dbo.push_installation, dbo.history_sync_operation cascade");
+        jdbc.execute("truncate dbo.notificationdelivery, dbo.notification, dbo.notificationdedup, "
+                + "dbo.notificationoccurrence, dbo.notificationcommand, dbo.notificationoutbox, "
+                + "dbo.pushinstallation, dbo.historysyncoperation, dbo.outboundsendcallback cascade");
+    }
+
+    @Test
+    void databaseTablesColumnsIndexesAndConstraintsHaveNoUnderscores() {
+        var expected = Set.of("notification", "notificationoccurrence", "notificationdedup", "notificationcommand",
+                "notificationoutbox", "notificationdelivery", "pushinstallation", "historysyncoperation", "outboundsendcallback");
+        assertEquals(expected, new HashSet<>(jdbc.queryForList("select tablename from pg_tables where schemaname='dbo'", String.class)));
+        for (String table : expected) {
+            var columns = jdbc.queryForList("select column_name from information_schema.columns where table_schema='dbo' and table_name=?", String.class, table);
+            var indexes = jdbc.queryForList("select indexname from pg_indexes where schemaname='dbo' and tablename=?", String.class, table);
+            var constraints = jdbc.queryForList("""
+                    select con.conname from pg_constraint con join pg_class t on t.oid=con.conrelid
+                    join pg_namespace ns on ns.oid=t.relnamespace where ns.nspname='dbo' and t.relname=?
+                    """, String.class, table);
+            assertFalse(columns.isEmpty(), table);
+            assertFalse(indexes.isEmpty(), table);
+            assertFalse(constraints.isEmpty(), table);
+            assertEquals(table + "pk", jdbc.queryForObject("""
+                    select con.conname from pg_constraint con join pg_class t on t.oid=con.conrelid
+                    join pg_namespace ns on ns.oid=t.relnamespace
+                    where ns.nspname='dbo' and t.relname=? and con.contype='p'
+                    """, String.class, table));
+            assertEquals(0, jdbc.queryForObject("""
+                    select count(*) from pg_constraint uk join pg_constraint pk
+                    on uk.conrelid=pk.conrelid and uk.conkey=pk.conkey and pk.contype='p'
+                    join pg_class t on t.oid=uk.conrelid join pg_namespace ns on ns.oid=t.relnamespace
+                    where ns.nspname='dbo' and t.relname=? and uk.contype='u'
+                    """, Integer.class, table), "A named primary key must not add a duplicate unique index");
+            for (var names : List.of(columns, indexes, constraints))
+                assertTrue(names.stream().noneMatch(name -> name.contains("_")), table + ": " + names);
+        }
     }
 
     @Test
@@ -77,9 +110,9 @@ class NotificationSchemaTest {
         factory.close();
         StandardServiceRegistryBuilder.destroy(registry);
         factory = buildFactory("update");
-        assertEquals(1, count("notification_occurrence"));
+        assertEquals(1, count("notificationoccurrence"));
         assertArrayEquals(new Object[0], jdbc.queryForObject(
-                "select recipient_employee_ids from dbo.notification_occurrence where id = ?",
+                "select recipientemployeeids from dbo.notificationoccurrence where id = ?",
                 (rs, row) -> (Object[]) rs.getArray(1).getArray(), occurrence));
         assertTrue(jdbc.queryForObject("select count(*) from pg_indexes where schemaname='dbo'",
                 Integer.class) >= 20);
@@ -131,16 +164,16 @@ class NotificationSchemaTest {
     @Test
     void emptyAudienceSurvivesRepeatAfterAssignmentAndImportCannotDecideLive() {
         UUID occurrence = occurrence(new UUID[0]);
-        int inserted = jdbc.update("insert into dbo.notification_occurrence "
-                + "(id, organization_id, occurrence_key, origin, recipient_employee_ids, dedup_until) "
+        int inserted = jdbc.update("insert into dbo.notificationoccurrence "
+                + "(id, organizationid, occurrencekey, origin, recipientemployeeids, dedupuntil) "
                 + "values (?, ?, 'key', 'LIVE', array[?]::uuid[], clock_timestamp()+interval '90 days') "
-                + "on conflict (organization_id, occurrence_key) do nothing",
+                + "on conflict (organizationid, occurrencekey) do nothing",
                 UUID.randomUUID(), ORGANIZATION, UUID.randomUUID());
         assertEquals(0, inserted);
-        assertEquals(0, jdbc.queryForObject("select cardinality(recipient_employee_ids) "
-                + "from dbo.notification_occurrence where id=?", Integer.class, occurrence));
+        assertEquals(0, jdbc.queryForObject("select cardinality(recipientemployeeids) "
+                + "from dbo.notificationoccurrence where id=?", Integer.class, occurrence));
         assertThrows(org.springframework.dao.DataIntegrityViolationException.class, () ->
-                jdbc.update("update dbo.notification_occurrence set origin='HISTORY_IMPORT' where id=?", occurrence));
+                jdbc.update("update dbo.notificationoccurrence set origin='HISTORY_IMPORT' where id=?", occurrence));
     }
 
     @Test
@@ -148,12 +181,12 @@ class NotificationSchemaTest {
         UUID occurrence = occurrence(new UUID[]{RECIPIENT});
         UUID dedup = dedup(occurrence), notification = notification(dedup);
         jdbc.update("delete from dbo.notification where id=?", notification);
-        assertEquals(1, count("notification_dedup"));
-        assertEquals(1, count("notification_occurrence"));
-        assertEquals(0, jdbc.update("insert into dbo.notification_dedup "
-                + "(id, occurrence_id, organization_id, recipient_employee_id, deduplication_key, dedup_until) "
+        assertEquals(1, count("notificationdedup"));
+        assertEquals(1, count("notificationoccurrence"));
+        assertEquals(0, jdbc.update("insert into dbo.notificationdedup "
+                + "(id, occurrenceid, organizationid, recipientemployeeid, deduplicationkey, dedupuntil) "
                 + "values (?, ?, ?, ?, 'key', clock_timestamp()+interval '90 days') "
-                + "on conflict (organization_id, recipient_employee_id, deduplication_key) do nothing",
+                + "on conflict (organizationid, recipientemployeeid, deduplicationkey) do nothing",
                 UUID.randomUUID(), occurrence, ORGANIZATION, RECIPIENT));
     }
 
@@ -162,9 +195,9 @@ class NotificationSchemaTest {
         UUID dedup = dedup(occurrence(new UUID[]{RECIPIENT}));
         UUID notification = notification(dedup);
         assertThrows(org.springframework.dao.DataIntegrityViolationException.class, () ->
-                jdbc.update("delete from dbo.notification_dedup where id=?", dedup));
+                jdbc.update("delete from dbo.notificationdedup where id=?", dedup));
         assertThrows(org.springframework.dao.DataIntegrityViolationException.class, () ->
-                jdbc.update("update dbo.notification set alert_expires_at=created_at where id=?", notification));
+                jdbc.update("update dbo.notification set alertexpiresat=createdat where id=?", notification));
     }
 
     @Test
@@ -172,44 +205,44 @@ class NotificationSchemaTest {
         UUID dedup = dedup(occurrence(new UUID[]{RECIPIENT}));
         notification(dedup);
         UUID command = UUID.randomUUID();
-        jdbc.update("insert into dbo.notification_command "
-                + "(id, organization_id, recipient_employee_id, idempotency_key, request_hash, scope, read_at, updated_count, retain_until) "
+        jdbc.update("insert into dbo.notificationcommand "
+                + "(id, organizationid, recipientemployeeid, idempotencykey, requesthash, scope, readat, updatedcount, retainuntil) "
                 + "values (?, ?, ?, 'request', 'hash', 'ALL_ACCESSIBLE', clock_timestamp(), 0, clock_timestamp()+interval '7 days')",
                 command, ORGANIZATION, RECIPIENT);
         // ACL predicate is deliberately a test fixture; production policy is implemented in 11.3.
-        int updated = jdbc.update("update dbo.notification set read_at=clock_timestamp() "
-                + "where organization_id=? and recipient_employee_id=? and read_at is null", ORGANIZATION, RECIPIENT);
-        jdbc.update("update dbo.notification_command set updated_count=? where id=?", updated, command);
+        int updated = jdbc.update("update dbo.notification set readat=clock_timestamp() "
+                + "where organizationid=? and recipientemployeeid=? and readat is null", ORGANIZATION, RECIPIENT);
+        jdbc.update("update dbo.notificationcommand set updatedcount=? where id=?", updated, command);
         UUID secondOccurrence = UUID.randomUUID(), secondDedup = UUID.randomUUID();
-        jdbc.update("insert into dbo.notification_occurrence "
-                + "(id, organization_id, occurrence_key, origin, recipient_employee_ids, dedup_until) "
+        jdbc.update("insert into dbo.notificationoccurrence "
+                + "(id, organizationid, occurrencekey, origin, recipientemployeeids, dedupuntil) "
                 + "values (?, ?, 'second', 'LIVE', array[?]::uuid[], clock_timestamp()+interval '90 days')",
                 secondOccurrence, ORGANIZATION, RECIPIENT);
-        jdbc.update("insert into dbo.notification_dedup "
-                + "(id, occurrence_id, organization_id, recipient_employee_id, deduplication_key, dedup_until) "
+        jdbc.update("insert into dbo.notificationdedup "
+                + "(id, occurrenceid, organizationid, recipientemployeeid, deduplicationkey, dedupuntil) "
                 + "values (?, ?, ?, ?, 'second', clock_timestamp()+interval '90 days')",
                 secondDedup, secondOccurrence, ORGANIZATION, RECIPIENT);
         notification(secondDedup);
         assertEquals(1, jdbc.queryForObject(
-                "select updated_count from dbo.notification_command where id=?", Integer.class, command));
-        assertEquals(1, jdbc.queryForObject("select count(*) from dbo.notification where read_at is null", Integer.class));
+                "select updatedcount from dbo.notificationcommand where id=?", Integer.class, command));
+        assertEquals(1, jdbc.queryForObject("select count(*) from dbo.notification where readat is null", Integer.class));
         assertThrows(org.springframework.dao.DataIntegrityViolationException.class, () ->
-                jdbc.update("update dbo.notification_command set updated_count=-1 where id=?", command));
+                jdbc.update("update dbo.notificationcommand set updatedcount=-1 where id=?", command));
     }
 
     @Test
     void outboxClaimFencesLateAckAndDoesNotFakePublished() {
         UUID id = outbox();
-        assertEquals(1, jdbc.update("update dbo.notification_outbox set status='IN_FLIGHT', claim_version=1, "
-                + "lease_until=clock_timestamp()+interval '30 seconds' where id=? and status='PENDING'", id));
-        assertEquals(1, jdbc.update("update dbo.notification_outbox set claim_version=2, "
-                + "lease_until=clock_timestamp()+interval '30 seconds' where id=? and status='IN_FLIGHT'", id));
-        assertEquals(0, jdbc.update("update dbo.notification_outbox set status='PUBLISHED', published_at=clock_timestamp(), "
-                + "lease_until=null where id=? and status='IN_FLIGHT' and claim_version=1", id));
+        assertEquals(1, jdbc.update("update dbo.notificationoutbox set status='IN_FLIGHT', claimversion=1, "
+                + "leaseuntil=clock_timestamp()+interval '30 seconds' where id=? and status='PENDING'", id));
+        assertEquals(1, jdbc.update("update dbo.notificationoutbox set claimversion=2, "
+                + "leaseuntil=clock_timestamp()+interval '30 seconds' where id=? and status='IN_FLIGHT'", id));
+        assertEquals(0, jdbc.update("update dbo.notificationoutbox set status='PUBLISHED', publishedat=clock_timestamp(), "
+                + "leaseuntil=null where id=? and status='IN_FLIGHT' and claimversion=1", id));
         assertThrows(org.springframework.dao.DataIntegrityViolationException.class, () ->
-                jdbc.update("update dbo.notification_outbox set status='PUBLISHED', lease_until=null where id=?", id));
-        assertEquals(1, jdbc.update("update dbo.notification_outbox set status='QUARANTINED', lease_until=null, "
-                + "error_code='INVALID_PAYLOAD' where id=? and claim_version=2", id));
+                jdbc.update("update dbo.notificationoutbox set status='PUBLISHED', leaseuntil=null where id=?", id));
+        assertEquals(1, jdbc.update("update dbo.notificationoutbox set status='QUARANTINED', leaseuntil=null, "
+                + "errorcode='INVALID_PAYLOAD' where id=? and claimversion=2", id));
     }
 
     @Test
@@ -217,18 +250,18 @@ class NotificationSchemaTest {
         String fingerprint = "a".repeat(64);
         UUID installation = installation(fingerprint);
         assertThrows(org.springframework.dao.DataIntegrityViolationException.class, () -> installation(fingerprint));
-        jdbc.update("update dbo.push_installation set enabled=false, active_endpoint_fingerprint=null where id=?", installation);
+        jdbc.update("update dbo.pushinstallation set enabled=false, activeendpointfingerprint=null where id=?", installation);
         assertDoesNotThrow(() -> installation(fingerprint));
     }
 
     @Test
     void lateEndpointErrorCannotDisableRotation() {
         UUID id = installation("b".repeat(64));
-        jdbc.update("update dbo.push_installation set endpoint_version=2, endpoint_fingerprint=?, "
-                + "active_endpoint_fingerprint=? where id=?", "c".repeat(64), "c".repeat(64), id);
-        assertEquals(0, jdbc.update("update dbo.push_installation set enabled=false, active_endpoint_fingerprint=null "
-                + "where id=? and endpoint_version=1 and endpoint_fingerprint=?", id, "b".repeat(64)));
-        assertTrue(jdbc.queryForObject("select enabled from dbo.push_installation where id=?", Boolean.class, id));
+        jdbc.update("update dbo.pushinstallation set endpointversion=2, endpointfingerprint=?, "
+                + "activeendpointfingerprint=? where id=?", "c".repeat(64), "c".repeat(64), id);
+        assertEquals(0, jdbc.update("update dbo.pushinstallation set enabled=false, activeendpointfingerprint=null "
+                + "where id=? and endpointversion=1 and endpointfingerprint=?", id, "b".repeat(64)));
+        assertTrue(jdbc.queryForObject("select enabled from dbo.pushinstallation where id=?", Boolean.class, id));
     }
 
     @Test
@@ -237,50 +270,50 @@ class NotificationSchemaTest {
         UUID installation = installation("d".repeat(64));
         UUID delivery = delivery(notification, installation);
         assertThrows(org.springframework.dao.DataIntegrityViolationException.class, () -> delivery(notification, installation));
-        jdbc.update("update dbo.notification_delivery set status='IN_FLIGHT', claim_version=2, "
-                + "attempt_endpoint_version=1, lease_until=clock_timestamp()+interval '30 seconds' where id=?", delivery);
-        assertEquals(0, jdbc.update("update dbo.notification_delivery set status='PROVIDER_ACCEPTED', lease_until=null, completed_at=clock_timestamp(), retain_until=clock_timestamp()+interval '7 days' "
-                + "where id=? and status='IN_FLIGHT' and claim_version=1", delivery));
-        assertEquals(1, jdbc.update("update dbo.notification_delivery set status='PROVIDER_ACCEPTED', lease_until=null, completed_at=clock_timestamp(), retain_until=clock_timestamp()+interval '7 days' "
-                + "where id=? and status='IN_FLIGHT' and claim_version=2", delivery));
+        jdbc.update("update dbo.notificationdelivery set status='IN_FLIGHT', claimversion=2, "
+                + "attemptendpointversion=1, leaseuntil=clock_timestamp()+interval '30 seconds' where id=?", delivery);
+        assertEquals(0, jdbc.update("update dbo.notificationdelivery set status='PROVIDER_ACCEPTED', leaseuntil=null, completedat=clock_timestamp(), retainuntil=clock_timestamp()+interval '7 days' "
+                + "where id=? and status='IN_FLIGHT' and claimversion=1", delivery));
+        assertEquals(1, jdbc.update("update dbo.notificationdelivery set status='PROVIDER_ACCEPTED', leaseuntil=null, completedat=clock_timestamp(), retainuntil=clock_timestamp()+interval '7 days' "
+                + "where id=? and status='IN_FLIGHT' and claimversion=2", delivery));
     }
 
     @Test
     void installationMutationVersionFencesOldAccountAndTokenUpdates() {
         UUID id = installation("e".repeat(64));
-        assertEquals(1, jdbc.update("update dbo.push_installation set recipient_employee_id=?, "
-                + "binding_version=binding_version+1, registration_version=registration_version+1 "
-                + "where id=? and registration_version=1", UUID.randomUUID(), id));
-        assertEquals(0, jdbc.update("update dbo.push_installation set recipient_employee_id=?, "
-                + "registration_version=registration_version+1 where id=? and registration_version=1", RECIPIENT, id));
-        assertEquals(0, jdbc.update("update dbo.push_installation set enabled=false, active_endpoint_fingerprint=null, "
-                + "registration_version=registration_version+1 where id=? and registration_version=1", id));
-        assertEquals(1, jdbc.update("update dbo.push_installation set endpoint_version=endpoint_version+1, "
-                + "registration_version=registration_version+1 where id=? and registration_version=2", id));
-        assertEquals(0, jdbc.update("update dbo.push_installation set endpoint_version=1, "
-                + "registration_version=registration_version+1 where id=? and registration_version=2", id));
+        assertEquals(1, jdbc.update("update dbo.pushinstallation set recipientemployeeid=?, "
+                + "bindingversion=bindingversion+1, registrationversion=registrationversion+1 "
+                + "where id=? and registrationversion=1", UUID.randomUUID(), id));
+        assertEquals(0, jdbc.update("update dbo.pushinstallation set recipientemployeeid=?, "
+                + "registrationversion=registrationversion+1 where id=? and registrationversion=1", RECIPIENT, id));
+        assertEquals(0, jdbc.update("update dbo.pushinstallation set enabled=false, activeendpointfingerprint=null, "
+                + "registrationversion=registrationversion+1 where id=? and registrationversion=1", id));
+        assertEquals(1, jdbc.update("update dbo.pushinstallation set endpointversion=endpointversion+1, "
+                + "registrationversion=registrationversion+1 where id=? and registrationversion=2", id));
+        assertEquals(0, jdbc.update("update dbo.pushinstallation set endpointversion=1, "
+                + "registrationversion=registrationversion+1 where id=? and registrationversion=2", id));
     }
 
     @Test
     void terminalDeliveryRequiresCompletionAndIndependentRetention() {
         UUID id = delivery(notification(dedup(occurrence(new UUID[]{RECIPIENT}))), installation("f".repeat(64)));
         assertThrows(org.springframework.dao.DataIntegrityViolationException.class, () ->
-                jdbc.update("update dbo.notification_delivery set status='CANCELLED' where id=?", id));
+                jdbc.update("update dbo.notificationdelivery set status='CANCELLED' where id=?", id));
         assertThrows(org.springframework.dao.DataIntegrityViolationException.class, () ->
-                jdbc.update("update dbo.notification_delivery set retain_until=clock_timestamp()+interval '7 days' where id=?", id));
-        assertEquals(1, jdbc.update("update dbo.notification_delivery set status='CANCELLED', completed_at=clock_timestamp(), "
-                + "retain_until=clock_timestamp()+interval '7 days' where id=?", id));
-        assertTrue(jdbc.queryForObject("select retain_until > expires_at from dbo.notification_delivery where id=?", Boolean.class, id));
+                jdbc.update("update dbo.notificationdelivery set retainuntil=clock_timestamp()+interval '7 days' where id=?", id));
+        assertEquals(1, jdbc.update("update dbo.notificationdelivery set status='CANCELLED', completedat=clock_timestamp(), "
+                + "retainuntil=clock_timestamp()+interval '7 days' where id=?", id));
+        assertTrue(jdbc.queryForObject("select retainuntil > expiresat from dbo.notificationdelivery where id=?", Boolean.class, id));
     }
 
     @Test
     void closedAlertRemainsClosedWithoutMarkingCenterRead() {
         UUID id = notification(dedup(occurrence(new UUID[]{RECIPIENT})));
-        assertEquals(1, jdbc.update("update dbo.notification set alert_invalidated_at=clock_timestamp() "
-                + "where id=? and alert_invalidated_at is null", id));
-        var closedAt = jdbc.queryForObject("select alert_invalidated_at from dbo.notification where id=?", java.sql.Timestamp.class, id);
-        assertEquals(0, jdbc.update("update dbo.notification set alert_invalidated_at=clock_timestamp() "
-                + "where id=? and alert_invalidated_at is null", id));
+        assertEquals(1, jdbc.update("update dbo.notification set alertinvalidatedat=clock_timestamp() "
+                + "where id=? and alertinvalidatedat is null", id));
+        var closedAt = jdbc.queryForObject("select alertinvalidatedat from dbo.notification where id=?", java.sql.Timestamp.class, id);
+        assertEquals(0, jdbc.update("update dbo.notification set alertinvalidatedat=clock_timestamp() "
+                + "where id=? and alertinvalidatedat is null", id));
         try (var session = factory.openSession()) {
             var value = session.find(NotificationEntity.class, id);
             value.invalidateAlert(java.time.Instant.now().plusSeconds(60));
@@ -292,16 +325,16 @@ class NotificationSchemaTest {
     @Test
     void terminalHistoryOperationIsRecoverableByKeyAndNotResurrectedByConditionalResult() {
         UUID id = operation();
-        jdbc.update("update dbo.history_sync_operation set status='FAILED', error_code='DEADLINE_EXCEEDED', "
-                + "completed_at=clock_timestamp() where id=? and status='PENDING'", id);
-        assertEquals(id, jdbc.queryForObject("select id from dbo.history_sync_operation "
-                + "where organization_id=? and initiator_employee_id=? and idempotency_key='request'",
+        jdbc.update("update dbo.historysyncoperation set status='FAILED', errorcode='DEADLINE_EXCEEDED', "
+                + "completedat=clock_timestamp() where id=? and status='PENDING'", id);
+        assertEquals(id, jdbc.queryForObject("select id from dbo.historysyncoperation "
+                + "where organizationid=? and initiatoremployeeid=? and idempotencykey='request'",
                 UUID.class, ORGANIZATION, RECIPIENT));
-        assertEquals(0, jdbc.update("update dbo.history_sync_operation set status='SUCCEEDED', result='{}', "
-                + "error_code=null, completed_at=clock_timestamp() "
-                + "where id=? and status='RUNNING' and claim_version=1", id));
+        assertEquals(0, jdbc.update("update dbo.historysyncoperation set status='SUCCEEDED', result='{}', "
+                + "errorcode=null, completedat=clock_timestamp() "
+                + "where id=? and status='RUNNING' and claimversion=1", id));
         assertThrows(org.springframework.dao.DataIntegrityViolationException.class, () ->
-                jdbc.update("update dbo.history_sync_operation set status='RUNNING', completed_at=null where id=?", id));
+                jdbc.update("update dbo.historysyncoperation set status='RUNNING', completedat=null where id=?", id));
     }
 
     @Test
@@ -310,10 +343,10 @@ class NotificationSchemaTest {
             CountDownLatch start = new CountDownLatch(1);
             Callable<Integer> insert = () -> {
                 start.await(10, TimeUnit.SECONDS);
-                return jdbc.update("insert into dbo.notification_occurrence "
-                        + "(id, organization_id, occurrence_key, origin, recipient_employee_ids, dedup_until) "
+                return jdbc.update("insert into dbo.notificationoccurrence "
+                        + "(id, organizationid, occurrencekey, origin, recipientemployeeids, dedupuntil) "
                         + "values (?, ?, 'concurrent', 'LIVE', '{}'::uuid[], clock_timestamp()+interval '90 days') "
-                        + "on conflict (organization_id, occurrence_key) do nothing", UUID.randomUUID(), ORGANIZATION);
+                        + "on conflict (organizationid, occurrencekey) do nothing", UUID.randomUUID(), ORGANIZATION);
             };
             Future<Integer> first = executor.submit(insert), second = executor.submit(insert);
             start.countDown();
@@ -328,8 +361,8 @@ class NotificationSchemaTest {
     private UUID occurrence(UUID[] recipients) {
         UUID id = UUID.randomUUID();
         jdbc.execute((java.sql.Connection connection) -> {
-            try (var statement = connection.prepareStatement("insert into dbo.notification_occurrence "
-                    + "(id, organization_id, occurrence_key, origin, recipient_employee_ids, dedup_until) "
+            try (var statement = connection.prepareStatement("insert into dbo.notificationoccurrence "
+                    + "(id, organizationid, occurrencekey, origin, recipientemployeeids, dedupuntil) "
                     + "values (?, ?, 'key', 'LIVE', ?, clock_timestamp()+interval '90 days')")) {
                 statement.setObject(1, id); statement.setObject(2, ORGANIZATION);
                 statement.setArray(3, connection.createArrayOf("uuid", recipients));
@@ -342,16 +375,16 @@ class NotificationSchemaTest {
 
     private UUID dedup(UUID occurrence) {
         UUID id = UUID.randomUUID();
-        jdbc.update("insert into dbo.notification_dedup (id, occurrence_id, organization_id, recipient_employee_id, "
-                + "deduplication_key, dedup_until) values (?, ?, ?, ?, 'key', clock_timestamp()+interval '90 days')",
+        jdbc.update("insert into dbo.notificationdedup (id, occurrenceid, organizationid, recipientemployeeid, "
+                + "deduplicationkey, dedupuntil) values (?, ?, ?, ?, 'key', clock_timestamp()+interval '90 days')",
                 id, occurrence, ORGANIZATION, RECIPIENT);
         return id;
     }
 
     private UUID notification(UUID dedup) {
         UUID id = UUID.randomUUID();
-        jdbc.update("insert into dbo.notification (id, dedup_id, organization_id, recipient_employee_id, type, "
-                + "target_kind, target_id, template_args, alert_expires_at, retain_until) "
+        jdbc.update("insert into dbo.notification (id, dedupid, organizationid, recipientemployeeid, type, "
+                + "targetkind, targetid, templateargs, alertexpiresat, retainuntil) "
                 + "values (?, ?, ?, ?, 'INCOMING_MESSAGE', 'CONVERSATION', ?, '{}', "
                 + "clock_timestamp()+interval '5 minutes', clock_timestamp()+interval '30 days')",
                 id, dedup, ORGANIZATION, RECIPIENT, UUID.randomUUID());
@@ -360,8 +393,8 @@ class NotificationSchemaTest {
 
     private UUID outbox() {
         UUID id = UUID.randomUUID();
-        jdbc.update("insert into dbo.notification_outbox (id, event_id, organization_id, destination, event_type, "
-                + "schema_version, payload, status, attempts, claim_version, next_attempt_at) "
+        jdbc.update("insert into dbo.notificationoutbox (id, eventid, organizationid, destination, eventtype, "
+                + "schemaversion, payload, status, attempts, claimversion, nextattemptat) "
                 + "values (?, ?, ?, 'clientbus.ui.invalidations.v1', 'inbox.invalidated', 1, '{}', 'PENDING', 0, 0, clock_timestamp())",
                 id, UUID.randomUUID(), ORGANIZATION);
         return id;
@@ -369,9 +402,9 @@ class NotificationSchemaTest {
 
     private UUID installation(String fingerprint) {
         UUID id = UUID.randomUUID();
-        jdbc.update("insert into dbo.push_installation (id, organization_id, recipient_employee_id, platform, provider, "
-                + "app_id, environment, encrypted_endpoint, endpoint_fingerprint, active_endpoint_fingerprint, ownership_secret_hash, "
-                + "binding_version, endpoint_version, enabled, reported_permission, last_seen_at, active_until) "
+        jdbc.update("insert into dbo.pushinstallation (id, organizationid, recipientemployeeid, platform, provider, "
+                + "appid, environment, encryptedendpoint, endpointfingerprint, activeendpointfingerprint, ownershipsecrethash, "
+                + "bindingversion, endpointversion, enabled, reportedpermission, lastseenat, activeuntil) "
                 + "values (?, ?, ?, 'ANDROID', 'FCM', 'test-app', 'PRODUCTION', ?, ?, ?, ?, 1, 1, true, 'GRANTED', "
                 + "clock_timestamp(), clock_timestamp()+interval '30 days')",
                 id, ORGANIZATION, RECIPIENT, new byte[]{1}, fingerprint, fingerprint, new byte[32]);
@@ -380,8 +413,8 @@ class NotificationSchemaTest {
 
     private UUID delivery(UUID notification, UUID installation) {
         UUID id = UUID.randomUUID();
-        jdbc.update("insert into dbo.notification_delivery (id, notification_id, registration_id, binding_version, channel, "
-                + "status, attempts, claim_version, next_attempt_at, expires_at) "
+        jdbc.update("insert into dbo.notificationdelivery (id, notificationid, registrationid, bindingversion, channel, "
+                + "status, attempts, claimversion, nextattemptat, expiresat) "
                 + "values (?, ?, ?, 1, 'MOBILE_PUSH', 'PENDING', 0, 0, clock_timestamp(), clock_timestamp()+interval '5 minutes')",
                 id, notification, installation);
         return id;
@@ -389,9 +422,9 @@ class NotificationSchemaTest {
 
     private UUID operation() {
         UUID id = UUID.randomUUID();
-        jdbc.update("insert into dbo.history_sync_operation (id, organization_id, workspace_id, conversation_id, channel_account_id, "
-                + "initiator_employee_id, idempotency_key, request_hash, request_limit, status, attempts, claim_version, deadline_at, "
-                + "updated_at, retain_until) values (?, ?, ?, ?, ?, ?, 'request', 'hash', 50, 'PENDING', 0, 0, "
+        jdbc.update("insert into dbo.historysyncoperation (id, organizationid, workspaceid, conversationid, channelaccountid, "
+                + "initiatoremployeeid, idempotencykey, requesthash, requestlimit, status, attempts, claimversion, deadlineat, "
+                + "updatedat, retainuntil) values (?, ?, ?, ?, ?, ?, 'request', 'hash', 50, 'PENDING', 0, 0, "
                 + "clock_timestamp()+interval '2 minutes', clock_timestamp(), clock_timestamp()+interval '7 days')",
                 id, ORGANIZATION, UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), RECIPIENT);
         return id;

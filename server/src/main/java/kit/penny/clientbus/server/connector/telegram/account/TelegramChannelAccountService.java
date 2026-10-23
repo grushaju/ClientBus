@@ -7,10 +7,9 @@ import kit.penny.clientbus.server.connector.telegram.client.TelegramClientContex
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientLifecycleService;
 import kit.penny.clientbus.server.connector.telegram.storage.TelegramDataStorage;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
-import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
 import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
-import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
 import org.springframework.stereotype.Service;
+import kit.penny.clientbus.server.service.ChannelStatusService;
 
 import java.util.UUID;
 
@@ -19,19 +18,19 @@ public class TelegramChannelAccountService
         implements IChannelAccountLifecycle {
 
     private final ChannelAccountRepository channelAccountRepository;
-    private final ChannelRepository channelRepository;
+    private final ChannelStatusService channelStatus;
     private final TelegramClientLifecycleService lifecycleService;
     private final TelegramDataStorage dataStorage;
 
     public TelegramChannelAccountService(
             ChannelAccountRepository channelAccountRepository,
-            ChannelRepository channelRepository,
+            ChannelStatusService channelStatus,
             TelegramClientLifecycleService lifecycleService,
             TelegramDataStorage dataStorage
     ) {
         this.channelAccountRepository = channelAccountRepository;
         this.lifecycleService = lifecycleService;
-        this.channelRepository = channelRepository;
+        this.channelStatus = channelStatus;
         this.dataStorage = dataStorage;
     }
 
@@ -43,22 +42,9 @@ public class TelegramChannelAccountService
     @Override
     public void disconnect(UUID channelAccountId) {
 
+        channelStatus.expectDisconnect(channelAccountId, ChannelConnectionStatus.DISCONNECTED);
         lifecycleService.disconnect(channelAccountId);
-
         dataStorage.delete(channelAccountId);
-
-        channelAccountRepository.findById(channelAccountId)
-                .ifPresent(account -> {
-
-                    ChannelEntity channel =
-                            account.getChannel();
-
-                    channel.setStatus(
-                            ChannelConnectionStatus.DISCONNECTED
-                    );
-
-                    channelRepository.save(channel);
-                });
     }
 
     public TelegramClientContext create(UUID channelAccountId) {
@@ -80,13 +66,7 @@ public class TelegramChannelAccountService
             );
         }
 
-        ChannelEntity channel = account.getChannel();
-
-        channel.setStatus(
-                ChannelConnectionStatus.CONNECTING
-        );
-
-        channelRepository.save(channel);
+        channelStatus.beginConnecting(channelAccountId);
 
         try {
             return lifecycleService.create(
@@ -94,11 +74,7 @@ public class TelegramChannelAccountService
                     account.getPhone()
             );
         } catch (RuntimeException e) {
-            channel.setStatus(
-                    ChannelConnectionStatus.ERROR
-            );
-
-            channelRepository.save(channel);
+            channelStatus.transition(channelAccountId, ChannelConnectionStatus.ERROR, "CONNECTOR_START_FAILED");
 
             throw e;
         }
@@ -114,20 +90,8 @@ public class TelegramChannelAccountService
 
     public void disable(UUID channelAccountId) {
 
+        channelStatus.expectDisconnect(channelAccountId, ChannelConnectionStatus.DISABLED);
         lifecycleService.stop(channelAccountId);
-
-        channelAccountRepository.findById(channelAccountId)
-                .ifPresent(account -> {
-
-                    ChannelEntity channel =
-                            account.getChannel();
-
-                    channel.setStatus(
-                            ChannelConnectionStatus.DISABLED
-                    );
-
-                    channelRepository.save(channel);
-                });
     }
 
     public void enable(UUID channelAccountId) {
@@ -153,13 +117,7 @@ public class TelegramChannelAccountService
             );
         }
 
-        ChannelEntity channel = account.getChannel();
-
-        channel.setStatus(
-                ChannelConnectionStatus.CONNECTING
-        );
-
-        channelRepository.save(channel);
+        channelStatus.beginConnecting(channelAccountId);
 
         try {
             lifecycleService.restart(
@@ -167,11 +125,7 @@ public class TelegramChannelAccountService
                     account.getPhone()
             );
         } catch (RuntimeException e) {
-            channel.setStatus(
-                    ChannelConnectionStatus.ERROR
-            );
-
-            channelRepository.save(channel);
+            channelStatus.transition(channelAccountId, ChannelConnectionStatus.ERROR, "CONNECTOR_START_FAILED");
 
             throw e;
         }

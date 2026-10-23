@@ -10,44 +10,45 @@ import java.util.UUID;
 import java.util.Map;
 
 @Entity
-@Table(name = "history_sync_operation", schema = "dbo",
+@Table(name = "historysyncoperation", schema = "dbo",
     uniqueConstraints = {
-        @UniqueConstraint(name = "history_sync_operation_key_uq", columnNames = {"organization_id", "initiator_employee_id", "idempotency_key"})
+        @UniqueConstraint(name = "historysyncoperationpk", columnNames = {"id"}),
+        @UniqueConstraint(name = "historysyncoperationkeyuq", columnNames = {"organizationid", "initiatoremployeeid", "idempotencykey"})
     },
     indexes = {
-        @Index(name = "history_sync_operation_discovery_idx", columnList = "initiator_employee_id, conversation_id, created_at DESC, id DESC"),
-        @Index(name = "history_sync_operation_watchdog_idx", columnList = "status, deadline_at"),
-        @Index(name = "history_sync_operation_lease_idx", columnList = "status, lease_until"),
-        @Index(name = "history_sync_operation_retention_idx", columnList = "retain_until")
+        @Index(name = "historysyncoperationdiscoveryidx", columnList = "initiatoremployeeid, conversationid, createdat DESC, id DESC"),
+        @Index(name = "historysyncoperationwatchdogidx", columnList = "status, deadlineat"),
+        @Index(name = "historysyncoperationleaseidx", columnList = "status, leaseuntil"),
+        @Index(name = "historysyncoperationretentionidx", columnList = "retainuntil")
     },
-    check = @CheckConstraint(name = "history_sync_operation_ck", constraint =
-            "request_limit between 1 and 100 and claim_version >= 0 and attempts >= 0 and deadline_at > created_at and retain_until > deadline_at and ((status in ('SUCCEEDED', 'FAILED') and completed_at is not null and lease_until is null) or (status in ('PENDING', 'RUNNING') and completed_at is null)) and ((status = 'RUNNING' and lease_until is not null) or (status <> 'RUNNING' and lease_until is null)) and ((status = 'SUCCEEDED' and result is not null and error_code is null) or (status <> 'SUCCEEDED' and result is null)) and (status <> 'FAILED' or error_code is not null) and (result is null or jsonb_typeof(result) = 'object')"))
+    check = @CheckConstraint(name = "historysyncoperationck", constraint =
+            "requestlimit between 1 and 100 and claimversion >= 0 and attempts >= 0 and deadlineat > createdat and retainuntil > deadlineat and ((status in ('SUCCEEDED', 'FAILED') and completedat is not null and leaseuntil is null) or (status in ('PENDING', 'RUNNING') and completedat is null)) and ((status = 'RUNNING' and leaseuntil is not null) or (status <> 'RUNNING' and leaseuntil is null)) and ((status = 'SUCCEEDED' and result is not null and errorcode is null) or (status <> 'SUCCEEDED' and result is null)) and (status <> 'FAILED' or errorcode is not null) and (result is null or jsonb_typeof(result) = 'object')"))
 public class HistorySyncOperationEntity extends NotificationRecord {
-    @Column(name = "organization_id", nullable = false, updatable = false)
+    @Column(name = "organizationid", nullable = false, updatable = false)
     private UUID organizationId;
 
-    @Column(name = "workspace_id", nullable = false, updatable = false)
+    @Column(name = "workspaceid", nullable = false, updatable = false)
     private UUID workspaceId;
 
-    @Column(name = "conversation_id", nullable = false, updatable = false)
+    @Column(name = "conversationid", nullable = false, updatable = false)
     private UUID conversationId;
 
-    @Column(name = "channel_account_id", nullable = false, updatable = false)
+    @Column(name = "channelaccountid", nullable = false, updatable = false)
     private UUID channelAccountId;
 
-    @Column(name = "initiator_employee_id", nullable = false, updatable = false)
+    @Column(name = "initiatoremployeeid", nullable = false, updatable = false)
     private UUID initiatorEmployeeId;
 
-    @Column(name = "idempotency_key", nullable = false, updatable = false, length = 128)
+    @Column(name = "idempotencykey", nullable = false, updatable = false, length = 128)
     private String idempotencyKey;
 
-    @Column(name = "request_hash", nullable = false, updatable = false, length = 64)
+    @Column(name = "requesthash", nullable = false, updatable = false, length = 64)
     private String requestHash;
 
-    @Column(name = "before_external_id", updatable = false, length = 256)
+    @Column(name = "beforeexternalid", updatable = false, length = 256)
     private String beforeExternalId;
 
-    @Column(name = "request_limit", nullable = false, updatable = false)
+    @Column(name = "requestlimit", nullable = false, updatable = false)
     private int requestLimit;
 
     @Enumerated(EnumType.STRING)
@@ -57,29 +58,29 @@ public class HistorySyncOperationEntity extends NotificationRecord {
     @Column(name = "attempts", nullable = false)
     private int attempts;
 
-    @Column(name = "claim_version", nullable = false)
+    @Column(name = "claimversion", nullable = false)
     private long claimVersion;
 
-    @Column(name = "lease_until")
+    @Column(name = "leaseuntil")
     private Instant leaseUntil;
 
-    @Column(name = "deadline_at", nullable = false, updatable = false)
+    @Column(name = "deadlineat", nullable = false, updatable = false)
     private Instant deadlineAt;
 
-    @Column(name = "completed_at")
+    @Column(name = "completedat")
     private Instant completedAt;
 
-    @Column(name = "updated_at", nullable = false)
+    @Column(name = "updatedat", nullable = false)
     private Instant updatedAt;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "result", columnDefinition = "jsonb")
     private Map<String, Object> result;
 
-    @Column(name = "error_code", length = 64)
+    @Column(name = "errorcode", length = 64)
     private String errorCode;
 
-    @Column(name = "retain_until", nullable = false)
+    @Column(name = "retainuntil", nullable = false)
     private Instant retainUntil;
 
     public HistorySyncOperationEntity() {}

@@ -29,7 +29,7 @@ class UiOutboxIntegrationTest extends AbstractIntegrationTest {
     UUID conversation;
     private <T> T save(T entity){em.persist(entity);return entity;}
     @BeforeEach void fixtures() {
-        jdbc.update("delete from dbo.notification_outbox");
+        jdbc.update("delete from dbo.notificationoutbox");
         tx.executeWithoutResult(status->{
             var org=save(TestDataFactory.organization());var w=save(TestDataFactory.workspace(org));
             var channel=save(TestDataFactory.channelAccount(save(TestDataFactory.channel(w))));
@@ -43,20 +43,20 @@ class UiOutboxIntegrationTest extends AbstractIntegrationTest {
     @Test void rollbackLeavesNeitherMessageNorOutboxAndDuplicateDoesNotPublishAgain() {
         tx.executeWithoutResult(status->{create("rollback",EventOrigin.LIVE);em.flush();status.setRollbackOnly();});
         assertEquals(0,jdbc.queryForObject("select count(*) from dbo.message where conversationid=?",Integer.class,conversation));
-        assertEquals(0,jdbc.queryForObject("select count(*) from dbo.notification_outbox",Integer.class));
+        assertEquals(0,jdbc.queryForObject("select count(*) from dbo.notificationoutbox",Integer.class));
         tx.executeWithoutResult(status->create("live",EventOrigin.LIVE));
-        var ids=jdbc.queryForList("select event_id from dbo.notification_outbox order by event_id",UUID.class);
+        var ids=jdbc.queryForList("select eventid from dbo.notificationoutbox order by eventid",UUID.class);
         tx.executeWithoutResult(status->create("live",EventOrigin.LIVE));
-        assertEquals(ids,jdbc.queryForList("select event_id from dbo.notification_outbox order by event_id",UUID.class));
+        assertEquals(ids,jdbc.queryForList("select eventid from dbo.notificationoutbox order by eventid",UUID.class));
         assertEquals(2,ids.size());
         relay.tick();
-        assertEquals(2,jdbc.queryForObject("select count(*) from dbo.notification_outbox where status='PUBLISHED' and published_at is not null",Integer.class));
+        assertEquals(2,jdbc.queryForObject("select count(*) from dbo.notificationoutbox where status='PUBLISHED' and publishedat is not null",Integer.class));
     }
     @Test void staleClaimCannotCompleteTakeoverAndManualRetryPreservesEventIdentity() {
         tx.executeWithoutResult(status->create("claim",EventOrigin.LIVE));
         var first=store.claim().orElseThrow();
-        jdbc.update("delete from dbo.notification_outbox where id<>?",first.id());
-        jdbc.update("update dbo.notification_outbox set lease_until=clock_timestamp()-interval '1 second' where id=?",first.id());
+        jdbc.update("delete from dbo.notificationoutbox where id<>?",first.id());
+        jdbc.update("update dbo.notificationoutbox set leaseuntil=clock_timestamp()-interval '1 second' where id=?",first.id());
         var other=store.claim().orElseThrow();
         assertEquals(first.id(),other.id());assertTrue(other.version()>first.version());
         assertFalse(store.published(first));assertFalse(store.failed(first,true,"STALE"));
@@ -68,11 +68,11 @@ class UiOutboxIntegrationTest extends AbstractIntegrationTest {
     }
     @Test void poisonPayloadIsQuarantinedWithoutBlockingNextRecord() {
         tx.executeWithoutResult(status->create("poison",EventOrigin.LIVE));
-        UUID id=jdbc.queryForObject("select id from dbo.notification_outbox order by created_at limit 1",UUID.class);
-        jdbc.update("update dbo.notification_outbox set payload='{}'::jsonb where id=?",id);
+        UUID id=jdbc.queryForObject("select id from dbo.notificationoutbox order by createdat limit 1",UUID.class);
+        jdbc.update("update dbo.notificationoutbox set payload='{}'::jsonb where id=?",id);
         relay.tick();
-        assertEquals("QUARANTINED",jdbc.queryForObject("select status from dbo.notification_outbox where id=?",String.class,id));
-        assertEquals(1,jdbc.queryForObject("select count(*) from dbo.notification_outbox where status='PUBLISHED'",Integer.class));
+        assertEquals("QUARANTINED",jdbc.queryForObject("select status from dbo.notificationoutbox where id=?",String.class,id));
+        assertEquals(1,jdbc.queryForObject("select count(*) from dbo.notificationoutbox where status='PUBLISHED'",Integer.class));
         assertEquals(1,((Number)store.statistics().get("quarantined")).intValue());
     }
     @Test void concurrentWorkersClaimDifferentRows() throws Exception {
@@ -85,7 +85,7 @@ class UiOutboxIntegrationTest extends AbstractIntegrationTest {
     @Test void persistedOriginDistinguishesLiveHistoryAndSyncWithoutActivatingCenter() {
         for(var origin:EventOrigin.values()) tx.executeWithoutResult(status->create(origin.name(),origin));
         for(var origin:EventOrigin.values()) assertEquals(2,jdbc.queryForObject(
-                "select count(*) from dbo.notification_outbox where payload->>'origin'=?",Integer.class,origin.name()));
+                "select count(*) from dbo.notificationoutbox where payload->>'origin'=?",Integer.class,origin.name()));
         assertEquals(0,jdbc.queryForObject("select count(*) from dbo.notification",Integer.class));
     }
 }

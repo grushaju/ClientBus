@@ -26,6 +26,8 @@ import static org.mockito.Mockito.*;
 
 class KafkaOutboundMessageConsumerTest {
 
+    private static final UUID ATTEMPT_ID = UUID.randomUUID();
+
     private ChannelConnectorRegistry channelConnectorRegistry;
     private OutboundMessageKafkaCommandMapper commandMapper;
     private MessageService messageService;
@@ -66,29 +68,37 @@ class KafkaOutboundMessageConsumerTest {
     }
 
     @Test
+    void shouldRejectAConnectorResultFromAnotherAttemptWithoutReleasingAcceptedSend() {
+        var kafkaCommand = validCommand();
+        var command = new SendMessageCommand(kafkaCommand.messageId(), kafkaCommand.channelAccountId(),
+                kafkaCommand.recipientExternalId(), kafkaCommand.type(), kafkaCommand.content(), List.of(), ATTEMPT_ID);
+        when(messageService.claimOutboundDelivery(kafkaCommand.messageId(), ATTEMPT_ID)).thenReturn(true);
+        when(channelConnectorRegistry.getConnector(ChannelType.TELEGRAM)).thenReturn(connector);
+        when(commandMapper.toCommand(kafkaCommand)).thenReturn(command);
+        when(connector.handle(command)).thenReturn(new ConnectorSendResult("accepted", UUID.randomUUID()));
+
+        assertThatThrownBy(() -> consumer.consume(outboundEvent(kafkaCommand), "clientbus.outbound.telegram"))
+                .isInstanceOf(IllegalStateException.class).hasMessage("Connector result send attempt mismatch");
+
+        verify(messageService, never()).registerExternalAttempt(any(), any(), any(), anyString(), anyString());
+        verify(messageService, never()).releaseOutboundDeliveryClaim(any(), any());
+    }
+
+    @Test
     void shouldClaimSendAndRegisterExternalId() {
 
         OutboundMessageKafkaCommand kafkaCommand =
                 validCommand();
 
         SendMessageCommand command =
-                new SendMessageCommand(
-                        kafkaCommand.messageId(),
-                        kafkaCommand.channelAccountId(),
-                        kafkaCommand.recipientExternalId(),
-                        kafkaCommand.type(),
-                        kafkaCommand.content(),
-                        List.of()
-                );
+                new SendMessageCommand(kafkaCommand.messageId(), kafkaCommand.channelAccountId(), kafkaCommand.recipientExternalId(), kafkaCommand.type(), kafkaCommand.content(), List.of(), ATTEMPT_ID);
 
         KafkaEvent<OutboundMessageKafkaCommand> event =
                 outboundEvent(
                         kafkaCommand
                 );
 
-        when(messageService.claimOutboundDelivery(
-                kafkaCommand.messageId()
-        ))
+        when(messageService.claimOutboundDelivery(kafkaCommand.messageId(), ATTEMPT_ID))
                 .thenReturn(true);
 
         when(channelConnectorRegistry.getConnector(
@@ -103,9 +113,7 @@ class KafkaOutboundMessageConsumerTest {
 
         when(connector.handle(command))
                 .thenReturn(
-                        new ConnectorSendResult(
-                                "telegram-message-123"
-                        )
+                        new ConnectorSendResult("telegram-message-123", ATTEMPT_ID)
                 );
 
         consumer.consume(
@@ -114,9 +122,7 @@ class KafkaOutboundMessageConsumerTest {
         );
 
         verify(messageService)
-                .claimOutboundDelivery(
-                        kafkaCommand.messageId()
-                );
+                .claimOutboundDelivery(kafkaCommand.messageId(), ATTEMPT_ID);
 
         verify(channelConnectorRegistry)
                 .getConnector(
@@ -132,18 +138,13 @@ class KafkaOutboundMessageConsumerTest {
                 .handle(command);
 
         verify(messageService)
-                .registerExternalId(
-                        kafkaCommand.messageId(),
-                        "telegram-message-123"
-                );
+                .registerExternalAttempt(kafkaCommand.messageId(), ATTEMPT_ID, kafkaCommand.channelAccountId(), kafkaCommand.recipientExternalId(), "telegram-message-123");
 
         verify(
                 messageService,
                 never()
         )
-                .releaseOutboundDeliveryClaim(
-                        any()
-                );
+                .releaseOutboundDeliveryClaim(any(), any());
     }
 
     @Test
@@ -157,9 +158,7 @@ class KafkaOutboundMessageConsumerTest {
                         kafkaCommand
                 );
 
-        when(messageService.claimOutboundDelivery(
-                kafkaCommand.messageId()
-        ))
+        when(messageService.claimOutboundDelivery(kafkaCommand.messageId(), ATTEMPT_ID))
                 .thenReturn(false);
 
         consumer.consume(
@@ -168,9 +167,7 @@ class KafkaOutboundMessageConsumerTest {
         );
 
         verify(messageService)
-                .claimOutboundDelivery(
-                        kafkaCommand.messageId()
-                );
+                .claimOutboundDelivery(kafkaCommand.messageId(), ATTEMPT_ID);
 
         verifyNoInteractions(
                 channelConnectorRegistry,
@@ -182,18 +179,13 @@ class KafkaOutboundMessageConsumerTest {
                 messageService,
                 never()
         )
-                .registerExternalId(
-                        any(),
-                        anyString()
-                );
+                .registerExternalAttempt(any(), any(), any(), anyString(), anyString());
 
         verify(
                 messageService,
                 never()
         )
-                .releaseOutboundDeliveryClaim(
-                        any()
-                );
+                .releaseOutboundDeliveryClaim(any(), any());
     }
 
     @Test
@@ -210,9 +202,7 @@ class KafkaOutboundMessageConsumerTest {
                         "Channel is not connected"
                 );
 
-        when(messageService.claimOutboundDelivery(
-                kafkaCommand.messageId()
-        ))
+        when(messageService.claimOutboundDelivery(kafkaCommand.messageId(), ATTEMPT_ID))
                 .thenReturn(true);
 
         doThrow(exception)
@@ -230,9 +220,7 @@ class KafkaOutboundMessageConsumerTest {
                 .isSameAs(exception);
 
         verify(messageService)
-                .claimOutboundDelivery(
-                        kafkaCommand.messageId()
-                );
+                .claimOutboundDelivery(kafkaCommand.messageId(), ATTEMPT_ID);
 
         verify(channelAvailabilityService)
                 .requireConnected(
@@ -240,9 +228,7 @@ class KafkaOutboundMessageConsumerTest {
                 );
 
         verify(messageService)
-                .releaseOutboundDeliveryClaim(
-                        kafkaCommand.messageId()
-                );
+                .releaseOutboundDeliveryClaim(kafkaCommand.messageId(), ATTEMPT_ID);
 
         verifyNoInteractions(
                 channelConnectorRegistry,
@@ -254,10 +240,7 @@ class KafkaOutboundMessageConsumerTest {
                 messageService,
                 never()
         )
-                .registerExternalId(
-                        any(),
-                        anyString()
-                );
+                .registerExternalAttempt(any(), any(), any(), anyString(), anyString());
     }
 
     @Test
@@ -276,9 +259,7 @@ class KafkaOutboundMessageConsumerTest {
                         "Connector unavailable"
                 );
 
-        when(messageService.claimOutboundDelivery(
-                kafkaCommand.messageId()
-        ))
+        when(messageService.claimOutboundDelivery(kafkaCommand.messageId(), ATTEMPT_ID))
                 .thenReturn(true);
 
         when(channelConnectorRegistry.getConnector(
@@ -295,14 +276,10 @@ class KafkaOutboundMessageConsumerTest {
                 .isSameAs(exception);
 
         verify(messageService)
-                .claimOutboundDelivery(
-                        kafkaCommand.messageId()
-                );
+                .claimOutboundDelivery(kafkaCommand.messageId(), ATTEMPT_ID);
 
         verify(messageService)
-                .releaseOutboundDeliveryClaim(
-                        kafkaCommand.messageId()
-                );
+                .releaseOutboundDeliveryClaim(kafkaCommand.messageId(), ATTEMPT_ID);
 
         verifyNoInteractions(
                 commandMapper,
@@ -326,9 +303,7 @@ class KafkaOutboundMessageConsumerTest {
                         "Mapping failed"
                 );
 
-        when(messageService.claimOutboundDelivery(
-                kafkaCommand.messageId()
-        ))
+        when(messageService.claimOutboundDelivery(kafkaCommand.messageId(), ATTEMPT_ID))
                 .thenReturn(true);
 
         when(channelConnectorRegistry.getConnector(
@@ -350,14 +325,10 @@ class KafkaOutboundMessageConsumerTest {
                 .isSameAs(exception);
 
         verify(messageService)
-                .claimOutboundDelivery(
-                        kafkaCommand.messageId()
-                );
+                .claimOutboundDelivery(kafkaCommand.messageId(), ATTEMPT_ID);
 
         verify(messageService)
-                .releaseOutboundDeliveryClaim(
-                        kafkaCommand.messageId()
-                );
+                .releaseOutboundDeliveryClaim(kafkaCommand.messageId(), ATTEMPT_ID);
 
         verifyNoInteractions(connector);
     }
@@ -369,14 +340,7 @@ class KafkaOutboundMessageConsumerTest {
                 validCommand();
 
         SendMessageCommand command =
-                new SendMessageCommand(
-                        kafkaCommand.messageId(),
-                        kafkaCommand.channelAccountId(),
-                        kafkaCommand.recipientExternalId(),
-                        kafkaCommand.type(),
-                        kafkaCommand.content(),
-                        List.of()
-                );
+                new SendMessageCommand(kafkaCommand.messageId(), kafkaCommand.channelAccountId(), kafkaCommand.recipientExternalId(), kafkaCommand.type(), kafkaCommand.content(), List.of(), ATTEMPT_ID);
 
         KafkaEvent<OutboundMessageKafkaCommand> event =
                 outboundEvent(
@@ -388,9 +352,7 @@ class KafkaOutboundMessageConsumerTest {
                         "Platform unavailable"
                 );
 
-        when(messageService.claimOutboundDelivery(
-                kafkaCommand.messageId()
-        ))
+        when(messageService.claimOutboundDelivery(kafkaCommand.messageId(), ATTEMPT_ID))
                 .thenReturn(true);
 
         when(channelConnectorRegistry.getConnector(
@@ -415,26 +377,19 @@ class KafkaOutboundMessageConsumerTest {
                 .isSameAs(exception);
 
         verify(messageService)
-                .claimOutboundDelivery(
-                        kafkaCommand.messageId()
-                );
+                .claimOutboundDelivery(kafkaCommand.messageId(), ATTEMPT_ID);
 
         verify(connector)
                 .handle(command);
 
         verify(messageService)
-                .releaseOutboundDeliveryClaim(
-                        kafkaCommand.messageId()
-                );
+                .releaseOutboundDeliveryClaim(kafkaCommand.messageId(), ATTEMPT_ID);
 
         verify(
                 messageService,
                 never()
         )
-                .registerExternalId(
-                        any(),
-                        anyString()
-                );
+                .registerExternalAttempt(any(), any(), any(), anyString(), anyString());
     }
 
     @Test
@@ -444,14 +399,7 @@ class KafkaOutboundMessageConsumerTest {
                 validCommand();
 
         SendMessageCommand command =
-                new SendMessageCommand(
-                        kafkaCommand.messageId(),
-                        kafkaCommand.channelAccountId(),
-                        kafkaCommand.recipientExternalId(),
-                        kafkaCommand.type(),
-                        kafkaCommand.content(),
-                        List.of()
-                );
+                new SendMessageCommand(kafkaCommand.messageId(), kafkaCommand.channelAccountId(), kafkaCommand.recipientExternalId(), kafkaCommand.type(), kafkaCommand.content(), List.of(), ATTEMPT_ID);
 
         KafkaEvent<OutboundMessageKafkaCommand> event =
                 outboundEvent(
@@ -463,9 +411,7 @@ class KafkaOutboundMessageConsumerTest {
                         "Database unavailable"
                 );
 
-        when(messageService.claimOutboundDelivery(
-                kafkaCommand.messageId()
-        ))
+        when(messageService.claimOutboundDelivery(kafkaCommand.messageId(), ATTEMPT_ID))
                 .thenReturn(true);
 
         when(channelConnectorRegistry.getConnector(
@@ -480,17 +426,12 @@ class KafkaOutboundMessageConsumerTest {
 
         when(connector.handle(command))
                 .thenReturn(
-                        new ConnectorSendResult(
-                                "telegram-message-456"
-                        )
+                        new ConnectorSendResult("telegram-message-456", ATTEMPT_ID)
                 );
 
         doThrow(exception)
                 .when(messageService)
-                .registerExternalId(
-                        kafkaCommand.messageId(),
-                        "telegram-message-456"
-                );
+                .registerExternalAttempt(kafkaCommand.messageId(), ATTEMPT_ID, kafkaCommand.channelAccountId(), kafkaCommand.recipientExternalId(), "telegram-message-456");
 
         assertThatThrownBy(() ->
                 consumer.consume(
@@ -504,10 +445,7 @@ class KafkaOutboundMessageConsumerTest {
                 .handle(command);
 
         verify(messageService)
-                .registerExternalId(
-                        kafkaCommand.messageId(),
-                        "telegram-message-456"
-                );
+                .registerExternalAttempt(kafkaCommand.messageId(), ATTEMPT_ID, kafkaCommand.channelAccountId(), kafkaCommand.recipientExternalId(), "telegram-message-456");
 
         /*
          * External platform may already have accepted the message.
@@ -519,9 +457,7 @@ class KafkaOutboundMessageConsumerTest {
                 messageService,
                 never()
         )
-                .releaseOutboundDeliveryClaim(
-                        any()
-                );
+                .releaseOutboundDeliveryClaim(any(), any());
     }
 
     @Test
@@ -531,23 +467,14 @@ class KafkaOutboundMessageConsumerTest {
                 validCommand();
 
         SendMessageCommand command =
-                new SendMessageCommand(
-                        kafkaCommand.messageId(),
-                        kafkaCommand.channelAccountId(),
-                        kafkaCommand.recipientExternalId(),
-                        kafkaCommand.type(),
-                        kafkaCommand.content(),
-                        List.of()
-                );
+                new SendMessageCommand(kafkaCommand.messageId(), kafkaCommand.channelAccountId(), kafkaCommand.recipientExternalId(), kafkaCommand.type(), kafkaCommand.content(), List.of(), ATTEMPT_ID);
 
         KafkaEvent<OutboundMessageKafkaCommand> event =
                 outboundEvent(
                         kafkaCommand
                 );
 
-        when(messageService.claimOutboundDelivery(
-                kafkaCommand.messageId()
-        ))
+        when(messageService.claimOutboundDelivery(kafkaCommand.messageId(), ATTEMPT_ID))
                 .thenReturn(true);
 
         when(channelConnectorRegistry.getConnector(
@@ -584,18 +511,13 @@ class KafkaOutboundMessageConsumerTest {
                 messageService,
                 never()
         )
-                .registerExternalId(
-                        any(),
-                        anyString()
-                );
+                .registerExternalAttempt(any(), any(), any(), anyString(), anyString());
 
         verify(
                 messageService,
                 never()
         )
-                .releaseOutboundDeliveryClaim(
-                        any()
-                );
+                .releaseOutboundDeliveryClaim(any(), any());
     }
 
     @Test
@@ -605,23 +527,14 @@ class KafkaOutboundMessageConsumerTest {
                 validCommand();
 
         SendMessageCommand command =
-                new SendMessageCommand(
-                        kafkaCommand.messageId(),
-                        kafkaCommand.channelAccountId(),
-                        kafkaCommand.recipientExternalId(),
-                        kafkaCommand.type(),
-                        kafkaCommand.content(),
-                        List.of()
-                );
+                new SendMessageCommand(kafkaCommand.messageId(), kafkaCommand.channelAccountId(), kafkaCommand.recipientExternalId(), kafkaCommand.type(), kafkaCommand.content(), List.of(), ATTEMPT_ID);
 
         KafkaEvent<OutboundMessageKafkaCommand> event =
                 outboundEvent(
                         kafkaCommand
                 );
 
-        when(messageService.claimOutboundDelivery(
-                kafkaCommand.messageId()
-        ))
+        when(messageService.claimOutboundDelivery(kafkaCommand.messageId(), ATTEMPT_ID))
                 .thenReturn(true);
 
         when(channelConnectorRegistry.getConnector(
@@ -636,7 +549,7 @@ class KafkaOutboundMessageConsumerTest {
 
         when(connector.handle(command))
                 .thenReturn(
-                        new ConnectorSendResult("   ")
+                        new ConnectorSendResult("   ", ATTEMPT_ID)
                 );
 
         assertThatThrownBy(() ->
@@ -660,18 +573,13 @@ class KafkaOutboundMessageConsumerTest {
                 messageService,
                 never()
         )
-                .registerExternalId(
-                        any(),
-                        anyString()
-                );
+                .registerExternalAttempt(any(), any(), any(), anyString(), anyString());
 
         verify(
                 messageService,
                 never()
         )
-                .releaseOutboundDeliveryClaim(
-                        any()
-                );
+                .releaseOutboundDeliveryClaim(any(), any());
     }
 
     @Test
@@ -754,13 +662,6 @@ class KafkaOutboundMessageConsumerTest {
 
     private static OutboundMessageKafkaCommand validCommand() {
 
-        return new OutboundMessageKafkaCommand(
-                UUID.randomUUID(),
-                UUID.randomUUID(),
-                "recipient-123",
-                MessageType.TEXT,
-                "Hello",
-                List.of()
-        );
+        return new OutboundMessageKafkaCommand(UUID.randomUUID(), UUID.randomUUID(), "recipient-123", MessageType.TEXT, "Hello", List.of(), ATTEMPT_ID);
     }
 }

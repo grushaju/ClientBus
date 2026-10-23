@@ -879,7 +879,7 @@ public class TelegramChannelConnector
                         .getObjectOrThrow();
 
         return new ConnectorSendResult(
-                String.valueOf(message.id)
+                String.valueOf(message.id), command.sendAttemptId()
         );
     }
 
@@ -945,6 +945,7 @@ public class TelegramChannelConnector
                     createTemporaryFile(
                             command.channelAccountId(),
                             command.messageId(),
+                            command.sendAttemptId(),
                             attachment.fileName()
                     );
 
@@ -981,7 +982,7 @@ public class TelegramChannelConnector
                             .getObjectOrThrow();
 
             return new ConnectorSendResult(
-                    String.valueOf(message.id)
+                    String.valueOf(message.id), command.sendAttemptId()
             );
 
         } catch (IOException e) {
@@ -1005,9 +1006,19 @@ public class TelegramChannelConnector
         }
     }
 
+    @org.springframework.transaction.event.TransactionalEventListener(
+            phase = org.springframework.transaction.event.TransactionPhase.AFTER_COMMIT)
+    public void releaseCompletedAttempt(kit.penny.clientbus.server.connector.OutboundSendCompleted event) {
+        if (event.channelType() == ChannelType.TELEGRAM) {
+            kit.penny.clientbus.server.connector.telegram.client.TelegramMessageSendListener.deleteTemporaryFiles(
+                    event.channelAccountId(), event.messageId(), event.sendAttemptId());
+        }
+    }
+
     private Path createTemporaryFile(
             UUID channelAccountId,
             UUID messageId,
+            UUID sendAttemptId,
             String fileName
     ) throws IOException {
         String suffix =
@@ -1018,6 +1029,8 @@ public class TelegramChannelConnector
                         + channelAccountId
                         + "-"
                         + messageId
+                        + "-"
+                        + sendAttemptId
                         + "-",
                 suffix
         );

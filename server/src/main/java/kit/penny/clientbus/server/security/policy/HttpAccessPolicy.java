@@ -1,7 +1,12 @@
 package kit.penny.clientbus.server.security.policy;
 
+import kit.penny.clientbus.server.security.jwt.JwtAuthenticationFilter;
 import kit.penny.clientbus.server.security.service.CurrentUserService;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+
+import java.time.Instant;
 import java.util.UUID;
 
 /** HTTP adapter only; callback/startup code uses explicit subjects and never this adapter. */
@@ -17,12 +22,11 @@ public class HttpAccessPolicy {
     }
 
     public AccessSubject sessionSubject() {
-        var authentication = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !(authentication.getDetails() instanceof
-                kit.penny.clientbus.server.security.jwt.JwtAuthenticationFilter.VerifiedSession session)
-                || session.expiresAt() == null) {
-            throw new org.springframework.security.access.AccessDeniedException("Verified session required");
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getDetails() instanceof JwtAuthenticationFilter.VerifiedSession(
+                Instant expiresAt))  || expiresAt == null) {
+            throw new AccessDeniedException("Verified session required");
         }
-        return AccessSubject.session(currentUser.getCurrentEmployeeId(), session.expiresAt());
+        return AccessSubject.session(currentUser.getCurrentEmployeeId(), expiresAt);
     }
 }

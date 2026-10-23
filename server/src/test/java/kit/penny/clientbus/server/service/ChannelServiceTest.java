@@ -63,7 +63,8 @@ class ChannelServiceTest {
                 channelMapper,
                 currentUserService,
                 lifecycleRegistry,
-                mock(kit.penny.clientbus.server.security.policy.HttpAccessPolicy.class)
+                mock(kit.penny.clientbus.server.security.policy.HttpAccessPolicy.class),
+                mock(ChannelStatusService.class)
         );
     }
 

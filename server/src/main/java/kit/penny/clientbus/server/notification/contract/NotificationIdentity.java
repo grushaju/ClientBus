@@ -15,6 +15,11 @@ public final class NotificationIdentity {
         return digest("N2/v1", channelAccountId.toString(), externalMessageId);
     }
 
+    /** External message IDs are unique within their conversation, not necessarily across one account. */
+    public static String incoming(UUID channelAccountId, UUID conversationId, String externalMessageId) {
+        return digest("N2/v2", channelAccountId.toString(), conversationId.toString(), externalMessageId);
+    }
+
     public static String outboundFailure(OutboundAttemptContext attempt) {
         return digest("N3/v1", attempt.messageId().toString(), attempt.sendAttemptId().toString());
     }

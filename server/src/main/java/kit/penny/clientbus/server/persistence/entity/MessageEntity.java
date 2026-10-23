@@ -54,6 +54,19 @@ import java.util.UUID;
 )
 public class MessageEntity {
 
+    @Column(name = "sendattemptid")
+    private UUID sendAttemptId;
+
+    @Column(name = "sendattemptstartedat")
+    private Instant sendAttemptStartedAt;
+
+    public UUID getSendAttemptId() { return sendAttemptId; }
+    public Instant getSendAttemptStartedAt() { return sendAttemptStartedAt; }
+    public void setSendAttemptId(UUID value) {
+        if (!java.util.Objects.equals(sendAttemptId, value)) sendAttemptStartedAt = value == null ? null : Instant.now();
+        sendAttemptId = value;
+    }
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     @Column(nullable = false, updatable = false, name = "messageid")

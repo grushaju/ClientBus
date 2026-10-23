@@ -109,6 +109,19 @@ public class ConversationEntity {
     )
     private EmployeeEntity assignedEmployee;
 
+    @Column(name = "assignmentoccurrenceid")
+    private UUID assignmentOccurrenceId;
+
+    @Column(name = "assignmentobservedat")
+    private Instant assignmentObservedAt;
+
+    public UUID getAssignmentOccurrenceId() { return assignmentOccurrenceId; }
+    public Instant getAssignmentObservedAt() { return assignmentObservedAt; }
+    public void setAssignmentOccurrenceId(UUID value) {
+        if (!java.util.Objects.equals(assignmentOccurrenceId, value)) assignmentObservedAt = value == null ? null : Instant.now();
+        assignmentOccurrenceId = value;
+    }
+
     /**
      * Время последнего сообщения в Conversation.
      *

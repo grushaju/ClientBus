@@ -11,6 +11,7 @@ import org.springframework.boot.context.event.ApplicationStartedEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
+import kit.penny.clientbus.server.service.ChannelStatusService;
 import java.util.List;
 
 @Service
@@ -21,13 +22,16 @@ public class TelegramClientStartupService {
 
     private final ChannelAccountRepository channelAccountRepository;
     private final TelegramChannelAccountService channelAccountService;
+    private final ChannelStatusService channelStatus;
 
     public TelegramClientStartupService(
             ChannelAccountRepository channelAccountRepository,
-            TelegramChannelAccountService channelAccountService
+            TelegramChannelAccountService channelAccountService,
+            ChannelStatusService channelStatus
     ) {
         this.channelAccountRepository = channelAccountRepository;
         this.channelAccountService = channelAccountService;
+        this.channelStatus = channelStatus;
     }
 
     @EventListener(ApplicationStartedEvent.class)
@@ -71,10 +75,7 @@ public class TelegramClientStartupService {
                     e
             );
 
-            account.getChannel()
-                    .setStatus(ChannelConnectionStatus.ERROR);
-
-            channelAccountRepository.save(account);
+            channelStatus.transition(account.getId(), ChannelConnectionStatus.ERROR, "CONNECTOR_RESTORE_FAILED");
         }
     }
 }

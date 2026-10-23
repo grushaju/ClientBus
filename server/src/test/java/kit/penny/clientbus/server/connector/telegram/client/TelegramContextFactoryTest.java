@@ -79,7 +79,7 @@ class TelegramContextFactoryTest {
                 new TelegramContextFactory(
                         globalProperties,
                         channelAccountRepository,
-                        channelRepository,
+                        Mockito.mock(kit.penny.clientbus.server.service.ChannelStatusService.class),
                         conversationRepository,
                         messageService,
                         messageRepository,
@@ -242,7 +242,7 @@ class TelegramContextFactoryTest {
                 new TelegramContextFactory(
                         globalProperties,
                         channelAccountRepository,
-                        channelRepository,
+                        Mockito.mock(kit.penny.clientbus.server.service.ChannelStatusService.class),
                         conversationRepository,
                         messageService,
                         messageRepository,

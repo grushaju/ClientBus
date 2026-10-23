@@ -140,11 +140,8 @@ class OutboundMessageAsyncFlowIntegrationTest
 
         when(
                 channelConnector.handle((SendMessageCommand)any())
-        ).thenReturn(
-                new ConnectorSendResult(
-                        EXTERNAL_MESSAGE_ID
-                )
-        );
+        ).thenAnswer(invocation -> new ConnectorSendResult(EXTERNAL_MESSAGE_ID,
+                        ((SendMessageCommand) invocation.getArgument(0)).sendAttemptId()));
 
         createTopicsIfNeeded();
         startOutboundConsumer();

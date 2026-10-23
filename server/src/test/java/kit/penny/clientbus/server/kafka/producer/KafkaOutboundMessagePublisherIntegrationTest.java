@@ -96,11 +96,8 @@ class KafkaOutboundMessagePublisherIntegrationTest
                 channelConnector.handle(
                         (SendMessageCommand)any()
                 )
-        ).thenReturn(
-                new ConnectorSendResult(
-                        "telegram-external-message-123"
-                )
-        );
+        ).thenAnswer(invocation -> new ConnectorSendResult("telegram-external-message-123",
+                        ((SendMessageCommand) invocation.getArgument(0)).sendAttemptId()));
     }
 
     @Test

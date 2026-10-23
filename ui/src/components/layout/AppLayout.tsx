@@ -18,6 +18,7 @@ import Sidebar from './Sidebar'
 import EmployeeAvatar from '../employees/EmployeeAvatar'
 
 import WorkspaceAvatar from '../workspaces/WorkspaceAvatar'
+import NotificationCenter from '../notifications/NotificationCenter'
 
 interface AppLayoutProps {
     children: ReactNode
@@ -143,6 +144,7 @@ function AppLayout({
                     </div>
 
                     <div className="app-user">
+                        <NotificationCenter />
                         {currentEmployee && (
                             <EmployeeAvatar
                                 employeeId={currentEmployee.id}

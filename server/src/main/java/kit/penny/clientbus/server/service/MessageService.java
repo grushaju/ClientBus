@@ -37,6 +37,121 @@ import java.util.concurrent.TimeoutException;
 @Service
 public class MessageService {
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private kit.penny.clientbus.server.notification.center.PersonalNotificationWriter personalNotifications;
+    @org.springframework.beans.factory.annotation.Autowired
+    private OutboundCallbackStore outboundCallbacks;
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.springframework.context.ApplicationEventPublisher applicationEvents;
+    @jakarta.persistence.PersistenceContext
+    private jakarta.persistence.EntityManager entityManager;
+
+    private MessageEntity lockedMessage(UUID messageId) {
+        var message = messageRepository.findByIdForUpdate(messageId)
+                .orElseThrow(() -> new EntityNotFoundException("Message not found"));
+        if (entityManager != null) entityManager.refresh(message, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+        return message;
+    }
+
+    private boolean sameAttempt(MessageEntity message, UUID attempt) {
+        // Missing IDs may operate only on legacy rows, never on a newer identified attempt.
+        return java.util.Objects.equals(message.getSendAttemptId(), attempt);
+    }
+
+    @Transactional
+    public boolean claimOutboundDelivery(UUID messageId, UUID attempt) {
+        return sameAttempt(lockedMessage(messageId), attempt) && claimOutboundDelivery(messageId);
+    }
+
+    @Transactional
+    public void releaseOutboundDeliveryClaim(UUID messageId, UUID attempt) {
+        if (sameAttempt(lockedMessage(messageId), attempt)) releaseOutboundDeliveryClaim(messageId);
+    }
+
+    @Transactional
+    public MessageDto markDeliveryFailed(UUID messageId, UUID attempt) {
+        var message = lockedMessage(messageId);
+        if (!sameAttempt(message, attempt) || message.getProcessingStatus() == MessageProcessingStatus.FAILED
+                || (message.getDeliveryStatus() != MessageDeliveryStatus.PENDING
+                && message.getDeliveryStatus() != MessageDeliveryStatus.SENT)) return messageMapper.toDto(message);
+        return markDeliveryFailed(messageId);
+    }
+
+    @Transactional
+    public MessageDto markProcessingFailed(UUID messageId, UUID attempt) {
+        var message = lockedMessage(messageId);
+        if (!sameAttempt(message, attempt) || message.getProcessingStatus() != MessageProcessingStatus.PROCESSING)
+            return messageMapper.toDto(message);
+        return markProcessingFailed(messageId);
+    }
+
+    @Transactional
+    public MessageDto markDelivered(UUID messageId, UUID attempt) {
+        var message = lockedMessage(messageId);
+        if (!sameAttempt(message, attempt) || message.getDeliveryStatus() != MessageDeliveryStatus.SENT)
+            return messageMapper.toDto(message);
+        return markDelivered(messageId);
+    }
+
+    @Transactional
+    public MessageDto markRead(UUID messageId, UUID attempt) {
+        var message = lockedMessage(messageId);
+        if (!sameAttempt(message, attempt) || (message.getDeliveryStatus() != MessageDeliveryStatus.SENT
+                && message.getDeliveryStatus() != MessageDeliveryStatus.DELIVERED)) return messageMapper.toDto(message);
+        return markRead(messageId);
+    }
+
+    private MessageDto saveTerminalFailure(MessageEntity message) {
+        messageRepository.save(message);
+        if (personalNotifications != null && message.getSendAttemptId() != null) {
+            messageRepository.flush();
+            personalNotifications.outboundFailed(message.getId(), message.getSendAttemptId());
+        }
+        return messageMapper.toDto(message);
+    }
+
+    @Transactional
+    public MessageDto registerExternalAttempt(UUID messageId, UUID attempt, UUID account, String recipient, String pending) {
+        // Correlation row always precedes the message lock, including in callback transactions.
+        var result=outboundCallbacks.bind(account,recipient,pending,messageId,attempt);
+        var message=lockedMessage(messageId);
+        if(!sameAttempt(message,attempt)) return messageMapper.toDto(message);
+        if(!account.equals(message.getConversation().getChannelAccount().getId())
+                || !recipient.equals(message.getConversation().getClientAccount().getExternalId()))
+            throw new IllegalArgumentException("Outbound correlation scope mismatch");
+        if(message.getDeliveryStatus()!=MessageDeliveryStatus.PENDING
+                || message.getProcessingStatus()!=MessageProcessingStatus.PROCESSING) return messageMapper.toDto(message);
+        registerExternalId(messageId,pending);
+        applyExternalResult(message,result);
+        return messageMapper.toDto(message);
+    }
+
+    @Transactional
+    public UUID recordExternalOutcome(UUID account,String recipient,String pending,String finalId,boolean failed) {
+        var result=outboundCallbacks.record(account,recipient,pending,finalId,failed);
+        if(result==null || result.messageId()==null) return null;
+        var message=lockedMessage(result.messageId());
+        return applyExternalResult(message,result) ? message.getId() : null;
+    }
+
+    private boolean applyExternalResult(MessageEntity message,OutboundCallbackStore.Result result) {
+        if(!sameAttempt(message,result.attemptId()) || result.outcome()==null
+                || message.getProcessingStatus()==MessageProcessingStatus.FAILED) return false;
+        if("FAILED".equals(result.outcome())) {
+            if(message.getDeliveryStatus()!=MessageDeliveryStatus.PENDING && message.getDeliveryStatus()!=MessageDeliveryStatus.SENT) return false;
+            markDeliveryFailed(message.getId());
+        } else {
+            if(message.getDeliveryStatus()!=MessageDeliveryStatus.PENDING
+                    || message.getProcessingStatus()!=MessageProcessingStatus.PROCESSING) return false;
+            markSent(message.getId(),result.finalExternalId());
+        }
+        if (applicationEvents != null) applicationEvents.publishEvent(
+                new kit.penny.clientbus.server.connector.OutboundSendCompleted(
+                        message.getConversation().getChannelAccount().getChannel().getType(),
+                        message.getConversation().getChannelAccount().getId(), message.getId(), message.getSendAttemptId()));
+        return true;
+    }
+
     private final MessageRepository messageRepository;
     private final ConversationRepository conversationRepository;
     private final ConversationService conversationService;
@@ -311,6 +426,7 @@ public class MessageService {
                 currentUserService.getCurrentEmployee()
         );
 
+        message.setSendAttemptId(UUID.randomUUID());
         message.setClientAccount(null);
 
         message.setContent(
@@ -425,6 +541,7 @@ public class MessageService {
                 currentUserService.getCurrentEmployee()
         );
 
+        message.setSendAttemptId(UUID.randomUUID());
         message.setClientAccount(null);
 
         message.setContent(
@@ -574,9 +691,7 @@ public class MessageService {
                 MessageProcessingStatus.FAILED
         );
 
-        return messageMapper.toDto(
-                messageRepository.save(message)
-        );
+        return saveTerminalFailure(message);
     }
 
     /**
@@ -1006,7 +1121,11 @@ public class MessageService {
                                 MessageDeliveryStatus.SENT
                         );
 
-        for (MessageEntity message : messages) {
+        Instant readAt = Instant.now();
+        for (MessageEntity candidate : messages) {
+            UUID attempt = candidate.getSendAttemptId();
+            MessageEntity message = lockedMessage(candidate.getId());
+            if (!sameAttempt(message, attempt) || message.getDeliveryStatus() != MessageDeliveryStatus.SENT) continue;
 
             String externalId =
                     message.getExternalId();
@@ -1036,7 +1155,7 @@ public class MessageService {
                 );
 
                 message.setReadAt(
-                        Instant.now()
+                        readAt
                 );
             }
         }
@@ -1122,9 +1241,7 @@ public class MessageService {
             );
         }
 
-        return messageMapper.toDto(
-                messageRepository.save(message)
-        );
+        return saveTerminalFailure(message);
     }
 
     /**
@@ -1148,7 +1265,7 @@ public class MessageService {
          * Retry-specific conversation ACL is checked
          * by OutboundMessageTransactionService.
          */
-        getMessageEntityForProcessing(messageId);
+        UUID previousAttempt = lockedMessage(messageId).getSendAttemptId();
 
         int updatedRows =
                 messageRepository.retryDelivery(
@@ -1193,6 +1310,10 @@ public class MessageService {
 
         MessageEntity retriedMessage =
                 getMessageEntity(messageId);
+        retriedMessage.setSendAttemptId(UUID.randomUUID());
+        messageRepository.saveAndFlush(retriedMessage);
+        if (personalNotifications != null && previousAttempt != null)
+            personalNotifications.closeOutboundAttempt(messageId, previousAttempt);
 
         return messageMapper.toDto(
                 retriedMessage

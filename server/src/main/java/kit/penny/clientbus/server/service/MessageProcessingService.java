@@ -23,6 +23,9 @@ import java.util.UUID;
 public class MessageProcessingService
         implements IMessageProcessingService {
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private kit.penny.clientbus.server.notification.center.PersonalNotificationWriter personalNotifications;
+
     private final ChannelAccountRepository channelAccountRepository;
     private final ClientAccountRepository clientAccountRepository;
     private final ClientAccountService clientAccountService;
@@ -63,6 +66,13 @@ public class MessageProcessingService
     public MessageDto processPlatformMessage(
             PlatformMessageRequest request
     ) {
+        // Legacy/direct imports have no trusted observation envelope and create no personal effect.
+        return processPlatformMessage(request, null);
+    }
+
+    @Transactional
+    public MessageDto processPlatformMessage(PlatformMessageRequest request,
+            kit.penny.clientbus.server.notification.contract.NotificationSourceContext source) {
 
         if (request == null) {
             throw new IllegalArgumentException(
@@ -162,6 +172,11 @@ public class MessageProcessingService
             }
         }
 
+        if (!outbound && source != null && personalNotifications != null) {
+            if (source.origin() != request.origin()) throw new IllegalArgumentException("Source origin mismatch");
+            messageRepository.flush();
+            personalNotifications.incomingMessage(conversation.getId(), channelAccount.getId(), request.externalId(), source);
+        }
         return result.message();
     }
 
@@ -267,9 +282,7 @@ public class MessageProcessingService
         } catch (RuntimeException e) {
 
             try {
-                messageService.markDeliveryFailed(
-                        result.messageId()
-                );
+                messageService.markDeliveryFailed(result.messageId(), result.command().sendAttemptId());
             } catch (RuntimeException ignored) {
                 // Preserve original exception.
             }
@@ -301,9 +314,7 @@ public class MessageProcessingService
         } catch (RuntimeException e) {
 
             try {
-                messageService.markDeliveryFailed(
-                        result.messageId()
-                );
+                messageService.markDeliveryFailed(result.messageId(), result.command().sendAttemptId());
             } catch (RuntimeException ignored) {
                 // Preserve original exception.
             }
@@ -409,11 +420,11 @@ public class MessageProcessingService
         }
 
         MessageEntity message =
-                messageRepository
-                        .findByConversationChannelAccountIdAndExternalId(
-                                event.channelAccountId(),
-                                event.externalId()
-                        )
+                (event.sendAttemptId() == null
+                        ? messageRepository.findByConversationChannelAccountIdAndExternalId(
+                                event.channelAccountId(), event.externalId())
+                        : messageRepository.findBySendAttemptIdAndConversationChannelAccountIdAndExternalId(
+                                event.sendAttemptId(), event.channelAccountId(), event.externalId()))
                         .orElseThrow(() ->
                                 new EntityNotFoundException(
                                         "Message not found for "
@@ -434,17 +445,17 @@ public class MessageProcessingService
 
             case DELIVERED ->
                     messageService.markDelivered(
-                            message.getId()
+                            message.getId(), event.sendAttemptId()
                     );
 
             case READ ->
                     messageService.markRead(
-                            message.getId()
+                            message.getId(), event.sendAttemptId()
                     );
 
             case FAILED ->
                     messageService.markDeliveryFailed(
-                            message.getId()
+                            message.getId(), event.sendAttemptId()
                     );
         };
     }

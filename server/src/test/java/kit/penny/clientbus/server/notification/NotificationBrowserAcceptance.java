@@ -122,13 +122,13 @@ class NotificationBrowserAcceptance extends AbstractIntegrationTest {
         record RelayInput(boolean paused) {}
         @PostMapping("/relay") Map<String,Object> relay(@RequestBody RelayInput input) {
             publisherGate.paused=input.paused();
-            if(!input.paused()) jdbc.update("update dbo.notification_outbox set next_attempt_at=clock_timestamp() where status='RETRY'");
+            if(!input.paused()) jdbc.update("update dbo.notificationoutbox set nextattemptat=clock_timestamp() where status='RETRY'");
             return Map.of("accepted",true);
         }
         @GetMapping("/stats") Map<String,Object> stats(){return Map.of(
                 "messages",jdbc.queryForObject("select count(*) from dbo.message where conversationid=?",Integer.class,conversation),
-                "eventIds",jdbc.queryForList("select event_id from dbo.notification_outbox where payload->'resource'->>'id'=? order by event_id",UUID.class,conversation.toString()),
-                "published",jdbc.queryForObject("select count(*) from dbo.notification_outbox where payload->'resource'->>'id'=? and status='PUBLISHED'",Integer.class,conversation.toString()),
-                "pending",jdbc.queryForObject("select count(*) from dbo.notification_outbox where payload->'resource'->>'id'=? and status in ('PENDING','RETRY','IN_FLIGHT')",Integer.class,conversation.toString()));}
+                "eventIds",jdbc.queryForList("select eventid from dbo.notificationoutbox where payload->'resource'->>'id'=? order by eventid",UUID.class,conversation.toString()),
+                "published",jdbc.queryForObject("select count(*) from dbo.notificationoutbox where payload->'resource'->>'id'=? and status='PUBLISHED'",Integer.class,conversation.toString()),
+                "pending",jdbc.queryForObject("select count(*) from dbo.notificationoutbox where payload->'resource'->>'id'=? and status in ('PENDING','RETRY','IN_FLIGHT')",Integer.class,conversation.toString()));}
     }
 }

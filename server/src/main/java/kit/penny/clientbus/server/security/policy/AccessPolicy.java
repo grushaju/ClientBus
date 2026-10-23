@@ -29,10 +29,10 @@ public class AccessPolicy {
             + " or c.assignedemployeeid is null or c.assignedemployeeid=e.employeeid)";
 
     /** Same predicate is intended for list/count/read/read-all; outer aliases n/e/u are fixed. */
-    public static final String NOTIFICATION_PREDICATE = "n.organization_id=e.organizationid and n.recipient_employee_id=e.employeeid and ("
-            + "(n.target_kind='CONVERSATION' and exists (select 1 from dbo.conversation c join dbo.workspace w on w.workspaceid=c.workspaceid where c.conversationid=n.target_id and n.workspace_id=w.workspaceid and " + CONVERSATION + ")) or "
-            + "(n.target_kind='CHANNEL_ACCOUNT' and exists (select 1 from dbo.channelaccount a join dbo.channel ch on ch.channelid=a.channelid join dbo.workspace w on w.workspaceid=ch.workspaceid where a.channelaccountid=n.target_id and n.workspace_id=w.workspaceid and " + WORKSPACE + " and u.role='SUPER_ADMIN')) or "
-            + "(n.target_kind='HISTORY_OPERATION' and exists (select 1 from dbo.history_sync_operation h join dbo.conversation c on c.conversationid=h.conversation_id join dbo.workspace w on w.workspaceid=c.workspaceid where h.id=n.target_id and h.initiator_employee_id=e.employeeid and h.organization_id=e.organizationid and h.workspace_id=w.workspaceid and n.workspace_id=w.workspaceid and " + CONVERSATION + ")))";
+    public static final String NOTIFICATION_PREDICATE = "n.organizationid=e.organizationid and n.recipientemployeeid=e.employeeid and ("
+            + "(n.targetkind='CONVERSATION' and exists (select 1 from dbo.conversation c join dbo.workspace w on w.workspaceid=c.workspaceid where c.conversationid=n.targetid and n.workspaceid=w.workspaceid and " + CONVERSATION + ")) or "
+            + "(n.targetkind='CHANNEL_ACCOUNT' and exists (select 1 from dbo.channelaccount a join dbo.channel ch on ch.channelid=a.channelid join dbo.workspace w on w.workspaceid=ch.workspaceid where a.channelaccountid=n.targetid and n.workspaceid=w.workspaceid and " + WORKSPACE + " and u.role='SUPER_ADMIN')) or "
+            + "(n.targetkind='HISTORY_OPERATION' and exists (select 1 from dbo.historysyncoperation h join dbo.conversation c on c.conversationid=h.conversationid join dbo.workspace w on w.workspaceid=c.workspaceid where h.id=n.targetid and h.initiatoremployeeid=e.employeeid and h.organizationid=e.organizationid and h.workspaceid=w.workspaceid and n.workspaceid=w.workspaceid and " + CONVERSATION + ")))";
 
     private static String predicate(Resource resource) {
         return switch (resource) {
@@ -54,8 +54,8 @@ public class AccessPolicy {
             case SAVED_FILTER -> "exists (select 1 from dbo.savedconversationfilter f join dbo.workspace w on w.workspaceid=f.workspaceid where f.savedconversationfilterid=:id and (f.filtertype='SYSTEM' or (f.filtertype='PRIVATE' and f.owneremployeeid=e.employeeid)) and " + WORKSPACE + ")";
             case EMPLOYEE -> "exists (select 1 from dbo.employee target where target.employeeid=:id and target.organizationid=e.organizationid and (target.employeeid=e.employeeid or u.role='SUPER_ADMIN' or exists (select 1 from dbo.employeeworkspace tm join dbo.workspace w on w.workspaceid=tm.workspaceid where tm.employeeid=target.employeeid and w.organizationid=e.organizationid and " + SUPERVISOR + ")))";
             case NOTIFICATION -> "exists (select 1 from dbo.notification n where n.id=:id and " + NOTIFICATION_PREDICATE + ")";
-            case HISTORY_OPERATION -> "exists (select 1 from dbo.history_sync_operation h join dbo.conversation c on c.conversationid=h.conversation_id join dbo.workspace w on w.workspaceid=c.workspaceid where h.id=:id and h.initiator_employee_id=e.employeeid and h.organization_id=e.organizationid and h.workspace_id=w.workspaceid and " + CONVERSATION + ")";
-            case INSTALLATION -> "exists (select 1 from dbo.push_installation i where i.id=:id and i.recipient_employee_id=e.employeeid and i.organization_id=e.organizationid)";
+            case HISTORY_OPERATION -> "exists (select 1 from dbo.historysyncoperation h join dbo.conversation c on c.conversationid=h.conversationid join dbo.workspace w on w.workspaceid=c.workspaceid where h.id=:id and h.initiatoremployeeid=e.employeeid and h.organizationid=e.organizationid and h.workspaceid=w.workspaceid and " + CONVERSATION + ")";
+            case INSTALLATION -> "exists (select 1 from dbo.pushinstallation i where i.id=:id and i.recipientemployeeid=e.employeeid and i.organizationid=e.organizationid)";
         };
     }
 
@@ -74,17 +74,17 @@ public class AccessPolicy {
     /** Current DB authorization for a claimed delivery, independent of HTTP authentication. */
     public boolean allowsPush(UUID deliveryId) {
         return Boolean.TRUE.equals(jdbc.queryForObject("select exists (select 1" + SUBJECT + """
-                join dbo.notification n on n.recipient_employee_id=e.employeeid
-                join dbo.notification_delivery d on d.notification_id=n.id
-                join dbo.push_installation i on i.id=d.registration_id
+                join dbo.notification n on n.recipientemployeeid=e.employeeid
+                join dbo.notificationdelivery d on d.notificationid=n.id
+                join dbo.pushinstallation i on i.id=d.registrationid
                 where d.id=:id and
                 """ + ACTIVE + " and " + NOTIFICATION_PREDICATE + """
-                  and i.recipient_employee_id=e.employeeid and i.organization_id=e.organizationid
-                  and i.binding_version=d.binding_version and i.enabled
-                  and i.active_until>clock_timestamp() and i.reported_permission in ('GRANTED','PROVISIONAL')
-                  and n.read_at is null and n.alert_invalidated_at is null
-                  and n.alert_expires_at>clock_timestamp() and d.expires_at>clock_timestamp()
-                  and d.status='IN_FLIGHT' and d.attempt_endpoint_version=i.endpoint_version
+                  and i.recipientemployeeid=e.employeeid and i.organizationid=e.organizationid
+                  and i.bindingversion=d.bindingversion and i.enabled
+                  and i.activeuntil>clock_timestamp() and i.reportedpermission in ('GRANTED','PROVISIONAL')
+                  and n.readat is null and n.alertinvalidatedat is null
+                  and n.alertexpiresat>clock_timestamp() and d.expiresat>clock_timestamp()
+                  and d.status='IN_FLIGHT' and d.attemptendpointversion=i.endpointversion
                 )
                 """, Map.of("id", deliveryId), Boolean.class));
     }

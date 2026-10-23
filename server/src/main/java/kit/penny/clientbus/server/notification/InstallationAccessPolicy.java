@@ -38,10 +38,10 @@ public class InstallationAccessPolicy {
                 || (mutation == Mutation.CREATE ? expectedVersion != 0 : expectedVersion < 1)
                 || secret == null || !secret.matches("[A-Za-z0-9_-]{43,128}")) throw denied();
         var rows = jdbc.query("""
-                select i.organization_id, i.recipient_employee_id, i.registration_version,
-                       i.binding_version, i.endpoint_version, i.ownership_secret_hash,
-                       (i.recipient_employee_id=e.employeeid and i.organization_id=e.organizationid) as owner
-                from dbo.push_installation i cross join dbo.employee e
+                select i.organizationid, i.recipientemployeeid, i.registrationversion,
+                       i.bindingversion, i.endpointversion, i.ownershipsecrethash,
+                       (i.recipientemployeeid=e.employeeid and i.organizationid=e.organizationid) as owner
+                from dbo.pushinstallation i cross join dbo.employee e
                 join dbo.users u on u.userid=e.userid
                 where i.id=:id and e.employeeid=:employee and u.isenabled
                   and u.role in ('EMPLOYEE','SUPER_ADMIN')

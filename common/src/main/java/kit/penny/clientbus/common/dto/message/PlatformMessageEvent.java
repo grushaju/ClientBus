@@ -35,7 +35,14 @@ public record PlatformMessageEvent(
         /**
          * Дополнительные данные платформы.
          */
-        String metadata
+        String metadata,
+
+        /** Trusted send identity; absent only for legacy messages. */
+        UUID sendAttemptId
 
 ) {
+    public PlatformMessageEvent(UUID channelAccountId, String externalId,
+            PlatformMessageEventType type, Instant occurredAt, String metadata) {
+        this(channelAccountId, externalId, type, occurredAt, metadata, null);
+    }
 }

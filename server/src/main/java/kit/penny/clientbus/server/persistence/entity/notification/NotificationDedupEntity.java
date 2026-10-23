@@ -7,31 +7,32 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "notification_dedup", schema = "dbo",
+@Table(name = "notificationdedup", schema = "dbo",
     uniqueConstraints = {
-        @UniqueConstraint(name = "notification_dedup_recipient_key_uq", columnNames = {"organization_id", "recipient_employee_id", "deduplication_key"})
+        @UniqueConstraint(name = "notificationdeduppk", columnNames = {"id"}),
+        @UniqueConstraint(name = "notificationdeduprecipientkeyuq", columnNames = {"organizationid", "recipientemployeeid", "deduplicationkey"})
     },
     indexes = {
-        @Index(name = "notification_dedup_retention_idx", columnList = "dedup_until")
+        @Index(name = "notificationdedupretentionidx", columnList = "dedupuntil")
     },
-    check = @CheckConstraint(name = "notification_dedup_ck", constraint =
-            "dedup_until > created_at"))
+    check = @CheckConstraint(name = "notificationdedupck", constraint =
+            "dedupuntil > createdat"))
 public class NotificationDedupEntity extends NotificationRecord {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "occurrence_id", nullable = false, updatable = false,
-            foreignKey = @ForeignKey(name = "notification_dedup_occurrence_id_fk"))
+    @JoinColumn(name = "occurrenceid", nullable = false, updatable = false,
+            foreignKey = @ForeignKey(name = "notificationdedupoccurrenceidfk"))
     private NotificationOccurrenceEntity occurrence;
 
-    @Column(name = "organization_id", nullable = false, updatable = false)
+    @Column(name = "organizationid", nullable = false, updatable = false)
     private UUID organizationId;
 
-    @Column(name = "recipient_employee_id", nullable = false, updatable = false)
+    @Column(name = "recipientemployeeid", nullable = false, updatable = false)
     private UUID recipientEmployeeId;
 
-    @Column(name = "deduplication_key", nullable = false, updatable = false, length = 64)
+    @Column(name = "deduplicationkey", nullable = false, updatable = false, length = 64)
     private String deduplicationKey;
 
-    @Column(name = "dedup_until", nullable = false)
+    @Column(name = "dedupuntil", nullable = false)
     private Instant dedupUntil;
 
     public NotificationDedupEntity() {}
