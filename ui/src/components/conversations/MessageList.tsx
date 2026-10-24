@@ -30,6 +30,8 @@ function getMessageDate(
         message.sentAt ??
         message.createdAt
 
+    if (!value) return ''
+
     const date =
         new Date(value)
 
@@ -377,7 +379,7 @@ function MessageList({
                             : null
 
                     const showDateSeparator =
-                        messageDate !== previousDate
+                        !!messageDate && messageDate !== previousDate
 
                     return (
 

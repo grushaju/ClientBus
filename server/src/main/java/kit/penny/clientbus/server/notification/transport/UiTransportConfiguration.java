@@ -10,13 +10,6 @@ import java.util.Map;
 @Configuration
 @ConditionalOnProperty(prefix="clientbus.notifications",name="sse-enabled",havingValue="true")
 public class UiTransportConfiguration {
-    // Unqualified business @Scheduled methods must not inherit the outbox executor.
-    @Bean(name="taskScheduler")
-    @org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean(name="taskScheduler")
-    org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler taskScheduler(
-            org.springframework.boot.task.ThreadPoolTaskSchedulerBuilder builder) {
-        return builder.build();
-    }
     @Bean org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler uiOutboxScheduler() {
         var scheduler=new org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler();
         scheduler.setPoolSize(1);scheduler.setThreadNamePrefix("ui-outbox-");

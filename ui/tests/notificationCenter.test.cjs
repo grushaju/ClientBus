@@ -103,7 +103,7 @@ test('actual logout clears the account alert dedup without deleting an unconfirm
     const command = storage.beginReadAll('O:E')
     let token = 'A', auth, renderer
     const module = load('../../auth/AuthContext.tsx', {
-        './authStorage': { getAccessToken: () => token, clearAccessToken: () => { token = null } },
+        './authStorage': { getAccessToken: () => token, clearAccessToken: () => { token = null }, clearHistoryRecovery: () => {} },
         '../api/employeeApi': { getCurrentEmployee: async () => ({ id: 'E', organizationId: 'O', enabled: true }) },
         '../api/employeeWorkspaceApi': { getCurrentEmployeeWorkspaces: async () => [] },
         '../api/organizationApi': { getOrganization: async () => ({ id: 'O' }) },

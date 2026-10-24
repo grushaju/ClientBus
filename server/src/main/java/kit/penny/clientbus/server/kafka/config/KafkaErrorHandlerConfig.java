@@ -53,7 +53,8 @@ public class KafkaErrorHandlerConfig {
     public CommonErrorHandler kafkaCommonErrorHandler(
             DeadLetterPublishingRecoverer
                     deadLetterPublishingRecoverer,
-            MessageService messageService
+            MessageService messageService,
+            kit.penny.clientbus.server.notification.history.HistorySyncService history
     ) {
 
         FixedBackOff backOff =
@@ -74,6 +75,14 @@ public class KafkaErrorHandlerConfig {
                                     record,
                                     messageService
                             );
+
+                            if (record.value() instanceof KafkaEvent<?> event
+                                    && event.eventType() == KafkaEventType.HISTORY_SYNC_OPERATION
+                                    && event.payload() instanceof kit.penny.clientbus.server.notification.contract.HistorySyncCommand) {
+                                @SuppressWarnings("unchecked")
+                                var historyEvent = (KafkaEvent<kit.penny.clientbus.server.notification.contract.HistorySyncCommand>) event;
+                                history.deadLetter(historyEvent);
+                            }
 
                             deadLetterPublishingRecoverer.accept(
                                     record,

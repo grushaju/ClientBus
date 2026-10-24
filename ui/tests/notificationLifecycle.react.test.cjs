@@ -17,7 +17,7 @@ function environment(t) {
 function authentication(t, overrides={}) {
     const restore = environment(t)
     let token='A', state, renderer, Child
-    const storage={getAccessToken:()=>token,setAccessToken:value=>{token=value},clearAccessToken:()=>{token=null}}
+    const storage={getAccessToken:()=>token,setAccessToken:value=>{token=value},clearAccessToken:()=>{token=null},clearHistoryRecovery:()=>{}}
     const module=load('../../auth/AuthContext.tsx',{
         './authStorage':storage,
         './authApi':{login:async()=>({accessToken:'B'}),...overrides.login},

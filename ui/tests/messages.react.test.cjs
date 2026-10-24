@@ -262,6 +262,23 @@ test('retry control is offered only for delivery failures supported by the backe
     assert.equal(renderer.root.findAllByType('button').length, 0)
 })
 
+test('messages without timestamps show neither an epoch date nor a fabricated clock time', async t => {
+    const Bubble = load('MessageBubble.tsx', { '../../api/messageApi': {}, './ImageViewer': { default: () => null } }).default
+    const List = load('MessageList.tsx', { './MessageBubble': { default: () => null } }).default
+    const pending = message('pending', { sentAt: null, createdAt: null, deliveryStatus: 'PENDING' })
+    let bubble, list
+    t.after(() => act(() => { bubble?.unmount(); list?.unmount() }))
+    await act(async () => {
+        bubble = create(React.createElement(Bubble, { message: pending }))
+        list = create(React.createElement(List, { messages: [pending], loading: false, loadingOlder: false,
+            hasMore: false, historyStartReached: false, error: null, onLoadOlder: async () => {} }))
+    })
+    const time = bubble.root.findByType('time')
+    assert.equal(time.props.dateTime, undefined)
+    assert.equal(time.children.join(''), '')
+    assert.equal(list.root.findAllByProps({ className: 'message-date-separator' }).length, 0)
+})
+
 test('polling pauses for a hidden conversation or browser document', async t => {
     t.mock.timers.enable({ apis: ['setTimeout'] })
     const previousDocument = global.document

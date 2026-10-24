@@ -239,7 +239,9 @@ public class JwtAuthenticationFilter
     public static boolean isNotificationRequest(HttpServletRequest request) {
         String path=request.getRequestURI().substring(request.getContextPath().length());
         return path.equals("/api/events") || path.equals("/api/notifications") || path.startsWith("/api/notifications/")
-                || path.equals("/api/push/installations") || path.startsWith("/api/push/installations/");
+                || path.equals("/api/push/installations") || path.startsWith("/api/push/installations/")
+                || path.equals("/api/history-sync-operations") || path.startsWith("/api/history-sync-operations/")
+                || path.matches("/api/conversations/[^/]+/history-sync(?:-operations)?");
     }
 
     public static void writeStreamUnauthorized(HttpServletResponse response) throws IOException {

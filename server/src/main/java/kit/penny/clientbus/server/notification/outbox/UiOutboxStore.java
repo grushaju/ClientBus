@@ -17,18 +17,28 @@ public class UiOutboxStore {
 
     @Transactional
     public Optional<Claim> claim() {
+        return claim(UiKafkaSubscriber.TOPIC, false);
+    }
+
+    @Transactional
+    public Optional<Claim> claimHistory() {
+        return claim(kit.penny.clientbus.server.notification.history.HistorySyncConfiguration.TOPIC, true);
+    }
+
+    private Optional<Claim> claim(String destination, boolean command) {
         var rows=jdbc.query("""
             with candidate as (
                 select id from dbo.notificationoutbox
-                where (status in ('PENDING','RETRY') and nextattemptat<=clock_timestamp())
-                   or (status='IN_FLIGHT' and leaseuntil<=clock_timestamp())
+                where destination=:destination and (operationid is not null)=:command and
+                    ((status in ('PENDING','RETRY') and nextattemptat<=clock_timestamp())
+                     or (status='IN_FLIGHT' and leaseuntil<=clock_timestamp()))
                 order by nextattemptat,createdat,id limit 1 for update skip locked
             )
             update dbo.notificationoutbox o set status='IN_FLIGHT',attempts=o.attempts+1,
                 claimversion=o.claimversion+1,leaseuntil=clock_timestamp()+(:lease * interval '1 millisecond'),errorcode=null
             from candidate c where o.id=c.id
             returning o.*
-            """,Map.of("lease",config.lease().toMillis()),(rs,n)->new Claim(rs.getObject("id",UUID.class),rs.getObject("eventid",UUID.class),
+            """,Map.of("lease",config.lease().toMillis(),"destination",destination,"command",command),(rs,n)->new Claim(rs.getObject("id",UUID.class),rs.getObject("eventid",UUID.class),
                 rs.getObject("organizationid",UUID.class),rs.getString("destination"),rs.getString("eventtype"),
                 rs.getInt("schemaversion"),rs.getString("payload"),rs.getObject("operationid",UUID.class),rs.getLong("claimversion"),rs.getInt("attempts")));
         return rows.stream().findFirst();

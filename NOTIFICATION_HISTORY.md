@@ -1,0 +1,63 @@
+# Stage 11.10 — History Sync
+
+План согласован пользователем 24.10.2026 после повторного ревью. Этап закрыт 24.10.2026 после исправления замечаний и финальных проверок. Работа выполнена локально, без миграций и коммитов.
+
+## Реализация
+
+Новый POST `/api/conversations/{id}/history-sync` возвращает 202 и Location после транзакции создания `historysyncoperation` и command outbox. GET статуса и discovery проверяют владельца и текущий доступ к диалогу. Повтор ключа проверяется до submission flag, лимитов и доступности канала; иные нормализованные параметры дают 409. Пустой/blank cursor нормализуется в null. Завершённая операция возвращается тем же ключом, включая ситуацию потери 202 с завершением до reload.
+
+Новый `HISTORY_SYNC_OPERATION` использует отдельный Kafka topic `clientbus.history-sync-operations.v1`. Legacy history DTO/topics/API и Recent Chats сохраняются. Общая outbox разделяется при захвате по destination/наличию operationId; UI relay не забирает команды. Command relay работает независимо от SSE и флага новых submissions, подтверждает публикацию только по ack, сохраняет eventId при retry, условно переводит постоянную ошибку в карантин вместе с FAILED/PUBLICATION_FAILED. Проверка формата отделена от обращений к БД: временный сбой canonical/activity check даёт RETRY/TRANSIENT_DATABASE без завершения операции и повторяет ту же команду после восстановления. Поздняя ошибка старого claim не завершает новую публикацию. DLQ применяет тот же протокол к проверенной исходной команде.
+
+Worker вызывает только `ChannelConnectorRegistry → IChannelConnector`. HTTP и Kafka consumer не ждут внешнего вызова. Выполнение ограничено четырьмя слотами на экземпляр; admission — четырьмя активными операциями на сотрудника и диалог. Значения задаются через `clientbus.notifications.history.workers/max-active-per-employee/max-active-per-conversation/max-attempts`; максимум попыток по умолчанию три. Очередь executor ограничена числом зарезервированных слотов. Неотменяемый внешний вызов может продолжиться после логического deadline, занимая свой слот; его результат больше не принимается.
+
+Worker периодически восстанавливает PENDING с опубликованной командой и RUNNING с истёкшим lease. Захват увеличивает claimVersion/attempts; heartbeat продлевает действующий lease не дальше исходного deadline. Watchdog переводит просроченные PENDING/RUNNING в FAILED/DEADLINE_EXCEEDED. Уже принятые операции обрабатываются и при выключенных creation/SSE/historySubmission flags.
+
+Проверка Telegram-коннектора 24.10.2026: `queryIdentifier=-799960451` относится к `GetChatHistory`. В ClientBus externalId приватного собеседника является user ID; перед чтением истории коннектор получает соответствующий чат через `CreatePrivateChat(userId, false)` на клиенте того же ChannelAccount и использует возвращённый `chat.id`. Это устраняет пропущенную инициализацию чата в текущем TDLib context; пользователь подтвердил исправление на своём аккаунте. Ошибка получения чата передаётся как ошибка коннектора, без чтения истории и ложного marker конца. Ошибка преобразования отдельного сообщения также прерывает всю страницу: возврат неполной успешной страницы с cursor за пропущенным сообщением запрещён. Эти границы покрыты тремя регрессионными тестами. Доступ к настоящему Telegram-аккаунту в автопроверке не использовался.
+
+Worker сохраняет одну ограниченную страницу до 100 сообщений с блокировками conversation → operation. Порция проверяет текущие ACL, scope, claimVersion, lease и deadline до и после сохранения. Внешний вызов выполняется до транзакции. Страница и её terminal result фиксируются вместе: частичная новая страница не сдвигает UI cursor через ещё не сохранённые сообщения при повторе. Уже имевшийся кэш, включая частичные legacy-импорты, сохраняется при FAILED. После смены claim/terminal новые порции и historyStartReached не принимаются. Финальные сообщения, marker, SUCCEEDED и персональная invalidation согласованы транзакционно. Импорт всегда HISTORY_IMPORT; N2/N5/toast/push за страницы не создаются. importedCount считает различные сообщения страницы, успешно находящиеся в кэше, включая ранее сохранённые.
+
+RetainUntil сохраняет обещанный при приёме срок и не сокращается при изменении конфигурации; terminal хранится не менее исходного retention после завершения. historyIdempotencyWindow не может быть меньше семи дней, historyRetention — короче этого окна: уменьшенная конфигурация отклоняется при binding. Это соответствует семидневному окну автоматического повтора UI. Очистка ограничена batch 100 и учитывает command rows. Общий NotificationCenterCleanup исключает строки с operationId; историю команд очищает HistorySyncService по retainUntil операции. Возраст publishedAt сам по себе не удаляет связь с принятой операцией. Ручной повтор карантина проверяет PENDING/deadline и не воскрешает terminal.
+
+Проверка конкурентного LIVE/History дополнительно выявила deadlock PostgreSQL при сохранении одного externalId. Общий createPlatformMessage теперь получает PESSIMISTIC_WRITE на conversation перед проверкой дубликата и сохранением сообщения, как и history import. После ожидания строка перечитывается; уже удерживаемая блокировка переиспользуется без refresh, чтобы не затирать несохранённые изменения предыдущих сообщений страницы. Детерминированный тест останавливает LIVE на блокировке, затем завершает History и проверяет обе транзакции, единственное сообщение и SUCCEEDED; отдельно проверяется unreadCount всей страницы.
+
+Уточнение предыдущего ревью Telegram: предположение «limit=1 обязательно возвращает cursor» не подтверждается [исходниками TDLib](https://github.com/tdlib/td/blob/master/td/telegram/OrderedMessage.cpp): при offset=0 реализация исключает исходное сообщение. Регрессия проверяет корректную страницу из одного более старого сообщения. Защита от неожиданного cursor-only/newer-only ответа выполняет один повтор, затем возвращает ошибку без marker конца. Конец определяется пустой валидной страницей; null response/messages — ошибка. Первоначальная непустая страница не теряется, если её повтор вернул пустой ответ. Cursor и более новые ID в импорт не попадают.
+
+## UI
+
+UI использует новые endpoints и существующие состояния загрузки/ошибки переписки. До POST сохраняются UUID key, исходные параметры и время в sessionStorage с namespace Organization/employee/conversation. До 32 незавершённых клиентских записей на аккаунт/вкладку; отказ записи запрещает новый POST. Logout/смена сессии очищает записи в каждой затронутой вкладке, включая storage event из другой вкладки; новый общий access token при этом не удаляется. Обычный reload и событие без смены сессии сохраняют ключ. После семи дней новый запуск требует явной команды пользователя.
+
+Первичная загрузка восстанавливает сохранённый ключ, включая terminal, и дополняется active-only discovery. Найденная операция сохраняется в той же ограниченной записи sessionStorage как operationId без придуманного ключа/body; после ошибки status/cache и reload читается этот ID, включая terminal, уже отсутствующий в active-only списке. Rollback UI сохраняет восстановление как ключей, так и найденных operationId. SSE invalidation ускоряет GET статуса, polling раз в две секунды восстанавливает состояние без SSE; hidden/offline приостанавливают status GET. Смена scope и отмена прерывают ожидание, но сохраняют запись для восстановления. Обычный reconnect/fallback повторяет незавершённый клиентский запрос тем же ключом либо GET найденной операции. Сбой самого discovery также повторяется; на пустой первоначальной загрузке после успешного discovery без операции выполняется обычный initial submit. Unknown outcome не переключается автоматически на legacy API.
+
+После terminal UI перечитывает обычный REST-кэш; до успешного чтения ключ/operationId не удаляется. Готовый кэш показывается сразу, ожидание History имеет отдельный индикатор. Первоначальное ожидание, подгрузка и фоновое восстановление не блокируют обычную сверку LIVE-сообщений; завершение операции не затирает пришедшие за это время сообщения и статусы. Частичный импорт при FAILED показывается вместе с inline-ошибкой. Успех не сбрасывает черновик и прокрутку. Глобальный marker конца истории не скрывает оставшиеся локальные страницы.
+
+Существующий GET сообщений дополнен optional `beforeMessageId` с текущим ACL. Кэш упорядочен по `(coalesce(sentAt,createdAt),createdAt,id)`; UI сравнивает Instants с сохранением дробной точности до наносекунд. Якорь следующей локальной страницы сохраняется из серверного ответа до UI merge и не выбирается из отображаемого массива; локальное PENDING и одинаковая миллисекунда не подменяют его. Это позволяет дочитывать старую страницу независимо от поступления LIVE-сообщений и смещения offset. Прежние page/size и синхронный history endpoint сохраняются.
+
+Исправление после пользовательской проверки: null в createdAt вызывал ошибку `.match()` в новом сравнении времени. UI явно допускает nullable createdAt, безопасно сравнивает null/отсутствующие/некорректные timestamps и оставляет сообщения с неизвестным временем после датированных до REST-сверки. Дата и время для них не выдумываются, 1970 год не отображается. Покрыты первоначальный merge, равный sentAt с null createdAt, ответ отправки с последующим REST-обновлением и desktop/mobile отрисовка ответа с null в обеих датах.
+
+## Включение
+
+В `application.yml` включены `clientbus.notifications.creation-enabled=true` по просьбе пользователя и `history-submission-enabled=true` для нового flow. Binding defaults остаются false; SSE и push автоматически не включаются. REST колокольчика доступен с выключенным SSE.
+
+Production UI собирается с `VITE_HISTORY_OPERATIONS_ENABLED=true` по умолчанию. Значение false возвращает новые подгрузки на legacy API; уже сохранённые новые ключи продолжают восстанавливаться через operation API. При выключении BE submission flag status/discovery и повторы принятых ключей остаются доступны. Для изменения флагов приложения требуется перезапуск BE, для флага UI — пересборка.
+
+## Проверки
+
+Добавлены HistorySyncIntegrationTest, HistoryWireProtocolTest, HistoryOutboxRelayTest, UI historyOperations.test.cjs и реальная desktop/mobile приёмка HistorySyncBrowserAcceptance.
+
+Результат 24.10.2026:
+
+| Проверка | Результат |
+|---|---|
+| Полный BE-прогон | 812/812 passed; после исправления deadlock LIVE/History |
+| History integration/wire/outbox | 26/26 passed; включая атомарность страницы, временный сбой БД, retention команды и детерминированную гонку LIVE/History |
+| Telegram-коннектор | 34/34 passed; включая private chat, ошибку преобразования, limit=1, отсутствие продвижения cursor и пустой повтор начальной страницы |
+| UI | 326/326 passed, 34 History-сценария; включая recovery operationId, ошибки discovery/status/cache, LIVE во время ожидания, expiry, микросекунды и null timestamps |
+| Настоящий History browser + PostgreSQL/Kafka | 10/10 desktop/mobile: потеря 202 и terminal до reload, inline failure/manual retry, discovery без локального ключа с ошибкой status и reload, доступность кэша, сохранение черновика, logout между вкладками, завершение принятой операции после logout, null timestamps без падения UI, отсутствие N2/N5 |
+| Регрессия центра уведомлений | 2/2 desktop/mobile: N1/N2, две сессии, read/read-all, ACL |
+| TypeScript приложения/Vite/E2E и production build | Passed |
+| Rollback build VITE_HISTORY_OPERATIONS_ENABLED=false | Passed; основная production-сборка сохранена |
+| UI resources | Все 45 файлов совпадают с server/target/classes/static; пользовательский buildinfo не изменён |
+
+Повторное ревью исправлено с дополнительным поиском дефектов: сохранение operationId и повтор discovery, показ кэша/LIVE во время ожидания, минимум retention, единая очистка history-команд, некорректные страницы TDLib и deadlock LIVE/History. Прежние исправления ошибки преобразования Telegram-страницы и null timestamps сохранены. Логи финальных проверок: `server/target/notification-11-10-final-review-all.log`, `server/target/notification-11-10-final-review-browser.log`, `server/target/history-browser.log`, `server/target/notification-center-browser.log`, `ui/node_modules/.cache/notification-11-10-final-review-ui.log`. Исходный deadlock воспроизведён в `server/target/history-live-race-review.log`, исправление и регрессия сообщений — `server/target/history-live-race-fixed.log` (91/91).
+
+В браузерной приёмке используется общий тестовый IChannelConnector; настоящие PostgreSQL, command outbox, Kafka, consumer/worker, HTTP и production UI. Это не проверка native SDK/устройств или HA platform context. Полная многосерверная приёмка всей системы остаётся 11.12. Пользовательская БД не изменялась. Buildinfo пользователя сохранён; коммиты и staging не создавались.

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { getConversationMessages, getMessage, retryOutboundMessage, syncConversationHistory } from '../../api/messageApi'
+import { getConversationMessages, getMessage, retryOutboundMessage, syncConversationHistory, resumeConversationHistory } from '../../api/messageApi'
+import { historyOperationsEnabled, hasHistoryRecovery, wakeHistory } from '../../api/historySyncApi'
 import { getApiErrorStatus } from '../../api/apiClient'
 import type { MessageDto } from '../../api/types/message'
 import { useUiInvalidation } from '../../api/events/InvalidationContext'
@@ -10,27 +11,48 @@ import { bindRequestBudget, type RequestBudget } from '../../api/events/requestB
 const PAGE_SIZE = 100
 const REFRESH_INTERVAL = 5000
 
+function compareTimestamps(left: string | null | undefined, right: string | null | undefined): number {
+    const leftMillis = typeof left === 'string' ? Date.parse(left) : NaN
+    const rightMillis = typeof right === 'string' ? Date.parse(right) : NaN
+    // A newly accepted message may not have its persistence timestamp yet.
+    // Keep unknown times last until REST reconciliation supplies the real value.
+    if (!Number.isFinite(leftMillis)) return Number.isFinite(rightMillis) ? 1 : 0
+    if (!Number.isFinite(rightMillis)) return -1
+    const millis = leftMillis - rightMillis
+    if (millis) return millis
+    // REST Instants retain PostgreSQL microseconds (and may include nanoseconds).
+    // Date.parse alone collapses these into one millisecond and changes keyset order.
+    const remainder = (value: string | null | undefined) => Number((value?.match(/\.(\d+)/)?.[1] ?? '').padEnd(9, '0').slice(3, 9))
+    return remainder(left) - remainder(right)
+}
+
 export function mergeMessages(current: MessageDto[], incoming: MessageDto[]): MessageDto[] {
     const byId = new Map(current.map(message => [message.id, message]))
     incoming.forEach(message => byId.set(message.id, message))
     return [...byId.values()].sort((left, right) => {
-        const time = Date.parse(left.sentAt ?? left.createdAt) - Date.parse(right.sentAt ?? right.createdAt)
-        return time || left.id.localeCompare(right.id)
+        const time = compareTimestamps(left.sentAt ?? left.createdAt, right.sentAt ?? right.createdAt)
+        return time || compareTimestamps(left.createdAt, right.createdAt) || left.id.localeCompare(right.id)
     })
 }
 
 function newestStableMessage(items: MessageDto[]): string | null {
-    // Pending messages with null sentAt sort ahead of sent messages in the DB,
-    // and failed messages can move when retried. Neither is a stable frontier.
+    // Pending/failed messages can move when retried. Neither is a stable frontier.
     const stable = mergeMessages([], items.filter(message => message.sentAt &&
         (message.direction === 'INBOUND' || ['SENT', 'DELIVERED', 'READ'].includes(message.deliveryStatus))))
     return stable[stable.length - 1]?.id ?? null
 }
 
+function oldestExternalMessage(items: MessageDto[]): MessageDto | undefined {
+    return items.find(message => message.externalId && (message.direction === 'INBOUND'
+        || ['SENT', 'DELIVERED', 'READ'].includes(message.deliveryStatus)))
+}
+
 function createSession(conversationId: string | undefined, budget?: RequestBudget) {
     return { conversationId, budget, active: true, unavailable: false, generation: 0, initialPending: false, olderPending: false,
+        historyPending: false, historyRecoveryNeeded: false,
         refreshPending: false, refreshFailure: undefined as { error: unknown } | undefined,
-        statusRemaining: undefined as Set<string> | undefined, localPage: 0, localHasMore: true, refreshAnchor: null as string | null,
+        statusRemaining: undefined as Set<string> | undefined, localPage: 0, localHasMore: true,
+        localAnchor: null as string | null, refreshAnchor: null as string | null,
         reads: new Set<AbortController>(), retrying: new Set<string>(), messageVersions: new Map<string, number>() }
 }
 type Session = ReturnType<typeof createSession>
@@ -40,7 +62,7 @@ function beginRead(session: Session) {
     session.reads.add(controller)
     return {
         signal: controller.signal,
-        read: <T,>(action: (signal: AbortSignal) => Promise<T>) => withCancellation(action, [controller.signal], 35_000),
+        read: <T,>(action: (signal: AbortSignal) => Promise<T>, timeout = 35_000) => withCancellation(action, [controller.signal], timeout),
         close: () => { session.reads.delete(controller) },
     }
 }
@@ -76,6 +98,7 @@ export function useConversationMessages(conversationId: string | undefined, visi
         session.reads.forEach(controller => controller.abort())
         session.generation += 1
         session.initialPending = session.olderPending = session.refreshPending = false
+        session.historyPending = session.historyRecoveryNeeded = false
         update(() => ({ ...emptyState(session), loading: false, hasMore: false,
             error: error instanceof Error ? error.message : 'Диалог недоступен' }))
         unavailableHandler.current?.(error)
@@ -91,28 +114,60 @@ export function useConversationMessages(conversationId: string | undefined, visi
         const request = beginRead(session)
         const versions = new Map(session.messageVersions)
         session.initialPending = true
+        session.historyPending = session.historyRecoveryNeeded = false
         session.olderPending = false
         session.refreshPending = false
         session.localPage = 0
         session.localHasMore = true
+        session.localAnchor = null
         update(previous => ({ ...previous, loading: true, loadingOlder: false, error: null, refreshError: null }))
         try {
             const page = await request.read(signal => getConversationMessages(conversationId, 0, PAGE_SIZE, signal))
             if (!isCurrent(generation) || request.signal.aborted) return
             session.localPage = 1
             session.localHasMore = !page.last
+            session.localAnchor = page.content[page.content.length - 1]?.id ?? null
             let messages = mergeMessages([], page.content)
+            let historyMessages: MessageDto[] = []
             let historyStartReached = false
-            if (!messages.length) {
-                const result = await request.read(signal => syncConversationHistory(conversationId, null, PAGE_SIZE, signal))
-                if (!isCurrent(generation) || request.signal.aborted) return
-                messages = mergeMessages([], result.messages)
-                historyStartReached = result.historyStartReached
-            }
+            let historyError: string | null = null
+            const context = scope?.historyAccount ? { account: scope.historyAccount, workspaceId,
+                anchorMessageId: oldestExternalMessage(messages)?.id ?? null } : undefined
+            // History status waiting is independent of cache visibility and live reconciliation.
+            session.initialPending = false
+            session.historyPending = !!context
+            session.historyRecoveryNeeded = !!context && typeof resumeConversationHistory === 'function'
             session.refreshAnchor = newestStableMessage(messages)
             update(previous => ({ ...previous, messages: mergeMessages(messages, previous.messages.filter(message =>
-                (session.messageVersions.get(message.id) ?? 0) !== (versions.get(message.id) ?? 0))), hasMore: !historyStartReached,
-                historyStartReached, error: null }))
+                (session.messageVersions.get(message.id) ?? 0) !== (versions.get(message.id) ?? 0))),
+                loading: !messages.length, loadingOlder: !!context && messages.length > 0, error: null }))
+            const resumed = context && typeof resumeConversationHistory === 'function'
+                ? await request.read(signal => resumeConversationHistory(conversationId, context, signal), 180_000) : null
+            if (!isCurrent(generation) || request.signal.aborted) return
+            session.historyRecoveryNeeded = false
+            if (resumed) {
+                historyMessages = resumed.messages
+                messages = mergeMessages(messages, resumed.messages)
+                historyStartReached = resumed.historyStartReached
+                historyError = resumed.error ?? null
+                session.localHasMore = resumed.cacheHasMore ?? session.localHasMore
+                session.localAnchor = resumed.cacheAnchorMessageId ?? session.localAnchor
+            }
+            if (!messages.length && !resumed) {
+                session.historyPending = true
+                const result = await request.read(signal => syncConversationHistory(conversationId, null, PAGE_SIZE, signal, context), 180_000)
+                if (!isCurrent(generation) || request.signal.aborted) return
+                historyMessages = result.messages
+                messages = mergeMessages([], result.messages)
+                historyStartReached = result.historyStartReached
+                historyError = result.error ?? null
+                session.localHasMore = result.cacheHasMore ?? session.localHasMore
+                session.localAnchor = result.cacheAnchorMessageId ?? session.localAnchor
+            }
+            session.refreshAnchor ??= newestStableMessage(messages)
+            update(previous => ({ ...previous, messages: mergeMessages(previous.messages, historyMessages.filter(message =>
+                (session.messageVersions.get(message.id) ?? 0) === (versions.get(message.id) ?? 0))), hasMore: !historyStartReached,
+                historyStartReached, error: historyError }))
         } catch (error) {
             if (request.signal.aborted) return
             if (handleUnavailable(error, generation)) return
@@ -122,14 +177,15 @@ export function useConversationMessages(conversationId: string | undefined, visi
             request.close()
             if (isCurrent(generation)) {
                 session.initialPending = false
-                update(previous => ({ ...previous, loading: false }))
+                session.historyPending = false
+                update(previous => ({ ...previous, loading: false, loadingOlder: false }))
             }
         }
     }, [session, conversationId, update, handleUnavailable])
 
     const loadOlder = useCallback(async (manual = false, onStart?: () => void) => {
         const snapshot = latest.current
-        if (!conversationId || session.unavailable || session.initialPending || session.olderPending || session.refreshPending
+        if (!conversationId || session.unavailable || session.initialPending || session.olderPending || session.historyPending || session.refreshPending
             || snapshot.historyStartReached || (!manual && (!snapshot.hasMore || !!snapshot.error))) return
         const generation = session.generation
         const request = beginRead(session)
@@ -142,19 +198,30 @@ export function useConversationMessages(conversationId: string | undefined, visi
             let historyStartReached = false
             let hasMore = true
             if (session.localHasMore) {
-                const page = await request.read(signal => getConversationMessages(conversationId, session.localPage, PAGE_SIZE, signal))
+                const stable = !!scope?.historyAccount && historyOperationsEnabled()
+                const page = await request.read(signal => getConversationMessages(conversationId, stable ? 0 : session.localPage,
+                    PAGE_SIZE, signal, stable ? session.localAnchor ?? undefined : undefined))
                 if (!isCurrent(generation) || request.signal.aborted) return
                 session.localPage += 1
                 session.localHasMore = !page.last && page.content.length > 0
+                session.localAnchor = page.content[page.content.length - 1]?.id ?? session.localAnchor
                 incoming = page.content
             } else {
-                const cursor = snapshot.messages.find(message => message.externalId)?.externalId ?? null
-                const result = await request.read(signal => syncConversationHistory(conversationId, cursor, PAGE_SIZE, signal))
+                const frontier = scope?.historyAccount ? oldestExternalMessage(snapshot.messages)
+                    : snapshot.messages.find(message => message.externalId)
+                const cursor = frontier?.externalId ?? null
+                const context = scope?.historyAccount ? { account: scope.historyAccount, workspaceId,
+                    anchorMessageId: frontier?.id ?? null, manual } : undefined
+                session.historyPending = true
+                const result = await request.read(signal => syncConversationHistory(conversationId, cursor, PAGE_SIZE, signal, context), 180_000)
                 if (!isCurrent(generation) || request.signal.aborted) return
                 incoming = result.messages
                 historyStartReached = result.historyStartReached
+                session.localHasMore = result.cacheHasMore ?? session.localHasMore
+                session.localAnchor = result.cacheAnchorMessageId ?? session.localAnchor
+                if (result.error) update(previous => ({ ...previous, error: result.error ?? null }))
                 const existing = new Set(snapshot.messages.map(message => message.id))
-                hasMore = !historyStartReached && incoming.some(message => !existing.has(message.id))
+                hasMore = !historyStartReached && (!!result.cacheHasMore || incoming.some(message => !existing.has(message.id)))
             }
             incoming = incoming.filter(message => (session.messageVersions.get(message.id) ?? 0) === (versions.get(message.id) ?? 0))
             update(previous => ({ ...previous, messages: mergeMessages(previous.messages, incoming),
@@ -168,13 +235,57 @@ export function useConversationMessages(conversationId: string | undefined, visi
             request.close()
             if (isCurrent(generation)) {
                 session.olderPending = false
+                session.historyPending = false
                 update(previous => ({ ...previous, loadingOlder: false }))
             }
         }
     }, [session, conversationId, update, handleUnavailable])
 
+    const recoverHistory = useCallback(async () => {
+        if (!conversationId || !scope?.historyAccount || session.historyPending || session.unavailable) return
+        const generation = session.generation
+        const request = beginRead(session)
+        const versions = new Map(session.messageVersions)
+        const retryDiscovery = session.historyRecoveryNeeded
+        const context = { account: scope.historyAccount, workspaceId,
+            anchorMessageId: oldestExternalMessage(latest.current.messages)?.id ?? null }
+        session.historyPending = true
+        update(previous => ({ ...previous, loadingOlder: true }))
+        try {
+            let recovered = await request.read(signal => resumeConversationHistory(conversationId, context, signal), 180_000)
+            if (!isCurrent(generation) || request.signal.aborted) return
+            // A failed discovery on an empty first load must not permanently skip
+            // the initial submission once discovery becomes available again.
+            if (!recovered && retryDiscovery && !latest.current.messages.length) {
+                recovered = await request.read(signal => syncConversationHistory(conversationId, null, PAGE_SIZE, signal, context), 180_000)
+                if (!isCurrent(generation) || request.signal.aborted) return
+            }
+            session.historyRecoveryNeeded = false
+            if (recovered) {
+                const result = recovered
+                session.localHasMore = result.cacheHasMore ?? session.localHasMore
+                session.localAnchor = result.cacheAnchorMessageId ?? session.localAnchor
+                update(previous => ({ ...previous, messages: mergeMessages(previous.messages, result.messages.filter(message =>
+                    (session.messageVersions.get(message.id) ?? 0) === (versions.get(message.id) ?? 0))),
+                    loading: false, historyStartReached: result.historyStartReached, hasMore: !result.historyStartReached,
+                    error: result.error ?? null }))
+            } else if (retryDiscovery) update(previous => ({ ...previous, error: null }))
+        } catch (error) {
+            if (request.signal.aborted || handleUnavailable(error, generation)) return
+            if (isCurrent(generation)) update(previous => ({ ...previous,
+                error: error instanceof Error ? error.message : 'Не удалось восстановить загрузку истории' }))
+        } finally {
+            request.close()
+            if (isCurrent(generation)) {
+                session.historyPending = false
+                update(previous => ({ ...previous, loadingOlder: session.olderPending }))
+            }
+        }
+    }, [session, conversationId, scope, workspaceId, update, handleUnavailable])
+
     const refreshMessages = useCallback(async () => {
-        if (!conversationId || session.unavailable || session.initialPending || session.refreshPending || session.olderPending) return
+        if (!conversationId || session.unavailable || session.initialPending || session.refreshPending
+            || (session.olderPending && !session.historyPending)) return
         const generation = session.generation
         const request = beginRead(session)
         const versions = new Map(session.messageVersions)
@@ -207,13 +318,14 @@ export function useConversationMessages(conversationId: string | undefined, visi
             if (recoveredInitial && session.localPage === 0) {
                 session.localPage = 1
                 session.localHasMore = !firstPage.last
+                session.localAnchor = firstPage.content[firstPage.content.length - 1]?.id ?? null
             }
             session.localPage = Math.max(session.localPage, pageNumber + 1)
             session.refreshAnchor = newestStableMessage(pageMessages)
             const unchangedVersion = (message: MessageDto) =>
                 (session.messageVersions.get(message.id) ?? 0) === (versions.get(message.id) ?? 0)
             update(previous => ({ ...previous, messages: mergeMessages(previous.messages, pageMessages.filter(unchangedVersion)),
-                refreshError: null, ...(recoveredInitial ? { error: null } : {}) }))
+                refreshError: null, ...(pageMessages.length ? { loading: false } : {}), ...(recoveredInitial ? { error: null } : {}) }))
 
             // Keep a finite status pass across deadlines. Even unchanged SENT/
             // DELIVERED responses count as progress so they cannot starve later IDs.
@@ -246,6 +358,14 @@ export function useConversationMessages(conversationId: string | undefined, visi
             if (!isCurrent(generation) || request.signal.aborted) return
             if (remaining.size === 0) session.statusRemaining = undefined
             if (statusFailure) throw statusFailure.error
+            // A lost POST/status/cache response is recovered by the normal reconnect/fallback pass.
+            if (scope?.historyAccount && !session.historyPending
+                && (session.historyRecoveryNeeded || hasHistoryRecovery(scope.historyAccount, conversationId))
+                && typeof resumeConversationHistory === 'function') {
+                // Status waiting has its own cancellable read. It must not keep
+                // the live-message reconciliation subscription busy for minutes.
+                void recoverHistory()
+            }
         } catch (error) {
             if (request.signal.aborted) return
             if (handleUnavailable(error, generation)) return
@@ -254,9 +374,12 @@ export function useConversationMessages(conversationId: string | undefined, visi
                 refreshError: error instanceof Error ? error.message : 'Не удалось обновить сообщения' }))
         } finally {
             request.close()
-            if (isCurrent(generation)) session.refreshPending = false
+            if (isCurrent(generation)) {
+                session.refreshPending = false
+                update(previous => ({ ...previous, loadingOlder: session.historyPending || session.olderPending }))
+            }
         }
-    }, [session, conversationId, update, handleUnavailable])
+    }, [session, conversationId, update, handleUnavailable, recoverHistory])
 
     const acceptMessage = useCallback((message: MessageDto) => {
         if (message.conversationId !== conversationId || currentSession.current !== session || (scope && !scope.isCurrent())) return
@@ -309,7 +432,7 @@ export function useConversationMessages(conversationId: string | undefined, visi
             signal.addEventListener('abort', cancel, { once: true })
             try {
             while (!signal.aborted && session.active && !session.unavailable
-                && (session.initialPending || session.refreshPending || session.olderPending)) {
+                && (session.initialPending || session.refreshPending || (session.olderPending && !session.historyPending))) {
                 await new Promise(resolve => setTimeout(resolve, 25))
             }
             if (signal.aborted || !session.active || session.unavailable) return
@@ -319,6 +442,10 @@ export function useConversationMessages(conversationId: string | undefined, visi
         }, () => {
             handleUnavailable(Object.assign(new Error('Проверка доступа к диалогу'), { status: 403 }), session.generation)
         }, visible)
+
+    useUiInvalidation('history-operation:' + (conversationId ?? ''), !!conversationId && !!scope?.historyAccount,
+        event => event.type === 'history-operation.invalidated', async () => { if (conversationId) wakeHistory(conversationId) },
+        undefined, visible)
 
     return { ...current, reloadMessages, refreshMessages, acceptMessage, retryMessage,
         loadOlderMessages: useCallback((onStart?: () => void) => loadOlder(false, onStart), [loadOlder]),

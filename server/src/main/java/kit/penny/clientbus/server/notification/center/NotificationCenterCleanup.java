@@ -57,7 +57,8 @@ public class NotificationCenterCleanup {
                 delete from dbo.notificationcommand o using candidate c where o.id=c.id
                 """, params);
         cleaned += jdbc.update("""
-                with candidate as (select id from dbo.notificationoutbox where status='PUBLISHED' and publishedat<=:publishedBefore
+                with candidate as (select id from dbo.notificationoutbox where operationid is null
+                    and status='PUBLISHED' and publishedat<=:publishedBefore
                     order by publishedat,id limit :limit for update skip locked)
                 delete from dbo.notificationoutbox o using candidate c where o.id=c.id
                 """, params);

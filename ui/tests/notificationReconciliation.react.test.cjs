@@ -67,7 +67,7 @@ test('attempt cancellation releases message refresh and a late old response cann
             getConversationMessages: async (_id,_page,_size,s) => { signal = s; calls++; return calls === 2 ? blocked.promise : page(calls === 1 ? 'initial' : 'reconnected') },
         },
         '../../api/apiClient': { getApiErrorStatus: error => error.status },
-        '../../api/events/InvalidationContext': { useUiInvalidation: (_key,_enabled,_matches,callback) => { refresh = callback } },
+        '../../api/events/InvalidationContext': { useUiInvalidation: (_key,_enabled,_matches,callback) => { if (_enabled && _key === 'conversation') refresh = callback } },
     })
     function Probe() { state = useConversationMessages('conversation'); return null }
     t.after(async () => { manager.close(); await act(async () => renderer?.unmount()) })

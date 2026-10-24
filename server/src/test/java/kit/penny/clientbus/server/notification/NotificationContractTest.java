@@ -89,7 +89,7 @@ class NotificationContractTest {
         for (Object item : map(api.get("paths")).values()) {
             for (Object value : map(item).values()) {
                 assertTrue(operationIds.add(map(value).get("operationId")));
-                assertEquals("notificationEvents".equals(map(value).get("operationId")) ? "feature-flagged" : "contract-only",
+                assertEquals(Set.of("notificationEvents", "startHistorySync").contains(map(value).get("operationId")) ? "feature-flagged" : "implemented",
                         map(value).get("x-implementation-status"));
             }
         }
@@ -187,5 +187,20 @@ class NotificationContractTest {
         assertThrows(Exception.class, () -> new Binder(new MapConfigurationPropertySource(Map.of(
                 "clientbus.notifications.max-outbox-bytes", "131072")))
                 .bindOrCreate("clientbus.notifications", NotificationProperties.class));
+    }
+
+    @Test void historyRetryWindowCannotBeShorterThanTheClientSevenDayWindow() {
+        for (String window : List.of("PT1H", "P1D", "PT167H59M59S")) {
+            assertThrows(RuntimeException.class, () -> new Binder(new MapConfigurationPropertySource(Map.of(
+                    "clientbus.notifications.history-idempotency-window", window,
+                    "clientbus.notifications.history-retention", window)))
+                    .bindOrCreate("clientbus.notifications", NotificationProperties.class));
+        }
+        var longer = new Binder(new MapConfigurationPropertySource(Map.of(
+                "clientbus.notifications.history-idempotency-window", "P8D",
+                "clientbus.notifications.history-retention", "P9D")))
+                .bindOrCreate("clientbus.notifications", NotificationProperties.class);
+        assertEquals(Duration.ofDays(8), longer.historyIdempotencyWindow());
+        assertEquals(Duration.ofDays(9), longer.historyRetention());
     }
 }

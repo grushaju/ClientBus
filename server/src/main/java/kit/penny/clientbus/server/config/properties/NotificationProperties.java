@@ -5,7 +5,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 import java.time.Duration;
 import java.util.List;
 
-/** Initial contract defaults. No worker/transport is enabled by this stage. */
+/** Safe binding defaults; application configuration opts into creation and new history submissions. */
 @ConfigurationProperties("clientbus.notifications")
 public record NotificationProperties(
         @DefaultValue("false") boolean creationEnabled,
@@ -51,6 +51,7 @@ public record NotificationProperties(
         if (dedupRetention.compareTo(sourceReplayWindow) < 0
                 || centerRetention.compareTo(maxAlert) < 0
                 || clientAlertDedupRetention.compareTo(maxAlert) < 0
+                || historyIdempotencyWindow.compareTo(Duration.ofDays(7)) < 0
                 || historyRetention.compareTo(historyIdempotencyWindow) < 0
                 || lease.compareTo(historyDeadline) >= 0
                 || maxOutboxBytes < maxEventBytes

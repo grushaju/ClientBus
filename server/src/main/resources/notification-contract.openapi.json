@@ -3,7 +3,7 @@
   "info": {
     "title": "ClientBus Notification Contract",
     "version": "1.0.0",
-    "description": "Target contract. Stage 11.4 implements GET /api/events behind clientbus.notifications.sse-enabled=false by default; other endpoints remain contract-only. Bearer token only, never URL. Private REST/SSE must use Cache-Control: no-store."
+    "description": "Stage 11 REST/SSE contract. Center and installation endpoints are implemented in 11.8; durable History Sync in 11.10. SSE and new history submissions are feature-flagged. Bearer token only, never URL. Private REST/SSE use Cache-Control: no-store."
   },
   "security": [
     {
@@ -140,7 +140,7 @@
         "tags": [
           "Notifications Stage 11"
         ],
-        "x-implementation-status": "contract-only",
+        "x-implementation-status": "implemented",
         "parameters": [
           {
             "name": "unreadOnly",
@@ -265,7 +265,7 @@
         "tags": [
           "Notifications Stage 11"
         ],
-        "x-implementation-status": "contract-only",
+        "x-implementation-status": "implemented",
         "parameters": [],
         "responses": {
           "200": {
@@ -374,7 +374,7 @@
         "tags": [
           "Notifications Stage 11"
         ],
-        "x-implementation-status": "contract-only",
+        "x-implementation-status": "implemented",
         "parameters": [
           {
             "name": "id",
@@ -493,7 +493,7 @@
         "tags": [
           "Notifications Stage 11"
         ],
-        "x-implementation-status": "contract-only",
+        "x-implementation-status": "implemented",
         "parameters": [
           {
             "name": "id",
@@ -612,7 +612,7 @@
         "tags": [
           "Notifications Stage 11"
         ],
-        "x-implementation-status": "contract-only",
+        "x-implementation-status": "implemented",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -726,7 +726,7 @@
         "tags": [
           "Notifications Stage 11"
         ],
-        "x-implementation-status": "contract-only",
+        "x-implementation-status": "implemented",
         "parameters": [
           {
             "name": "installationId",
@@ -870,7 +870,7 @@
         "tags": [
           "Notifications Stage 11"
         ],
-        "x-implementation-status": "contract-only",
+        "x-implementation-status": "implemented",
         "parameters": [
           {
             "name": "installationId",
@@ -988,7 +988,7 @@
         "tags": [
           "Notifications Stage 11"
         ],
-        "x-implementation-status": "contract-only",
+        "x-implementation-status": "feature-flagged",
         "parameters": [
           {
             "name": "id",
@@ -1129,7 +1129,7 @@
         "tags": [
           "Notifications Stage 11"
         ],
-        "x-implementation-status": "contract-only",
+        "x-implementation-status": "implemented",
         "parameters": [
           {
             "name": "id",
@@ -1248,7 +1248,7 @@
         "tags": [
           "Notifications Stage 11"
         ],
-        "x-implementation-status": "contract-only",
+        "x-implementation-status": "implemented",
         "parameters": [
           {
             "name": "id",
@@ -1861,7 +1861,8 @@
         "properties": {
           "importedCount": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "description": "Distinct messages from the connector page successfully available in the cache; existing cached messages count once."
           },
           "historyStartReached": {
             "type": "boolean"

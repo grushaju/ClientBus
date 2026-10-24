@@ -3,7 +3,9 @@ import react from '@vitejs/plugin-react'
 import { recoveryPolicy } from './src/api/events/recoveryPolicy'
 
 export default defineConfig(({ mode }) => {
-    const env = loadEnv(mode, process.cwd(), 'VITE_UI_RECOVERY_')
+    const env = loadEnv(mode, process.cwd(), 'VITE_')
+    const history = env.VITE_HISTORY_OPERATIONS_ENABLED ?? 'true'
+    if (history !== 'true' && history !== 'false') throw new Error('Invalid history operations flag')
     const policy: Record<string, number | boolean> = {}
     const names = { ENABLED: 'enabled', FALLBACK_MS: 'fallbackMs', FALLBACK_MAX_MS: 'fallbackMaxMs', CONTROL_MS: 'controlMs',
         JITTER: 'jitter', MAX_CONCURRENT: 'maxConcurrent', MAX_QUEUED: 'maxQueued', REQUEST_SPACING_MS: 'requestSpacingMs',
@@ -17,7 +19,7 @@ export default defineConfig(({ mode }) => {
         }
     }
     return {
-    define: { __UI_RECOVERY_POLICY__: JSON.stringify(recoveryPolicy(policy)) },
+    define: { __UI_RECOVERY_POLICY__: JSON.stringify(recoveryPolicy(policy)), __HISTORY_OPERATIONS_ENABLED__: history },
     plugins: [react()],
     server: {
         port: 5173,

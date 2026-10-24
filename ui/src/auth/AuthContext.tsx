@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { clearAccessToken, getAccessToken, setAccessToken } from './authStorage'
+import { clearAccessToken, clearHistoryRecovery, getAccessToken, setAccessToken } from './authStorage'
 import { login as loginApi } from './authApi'
 import { getCurrentEmployee } from '../api/employeeApi'
 import { getCurrentEmployeeWorkspaces } from '../api/employeeWorkspaceApi'
@@ -47,6 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         notificationOwner.current = null
         loginVersion.current++
         session.current.controller.abort()
+        clearHistoryRecovery()
         session.current = { epoch: session.current.epoch + 1, token, controller: new AbortController() }
         flight.current = undefined
         setEpoch(session.current.epoch)

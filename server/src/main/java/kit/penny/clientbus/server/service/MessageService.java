@@ -259,6 +259,19 @@ public class MessageService {
                 .map(messageMapper::toDto);
     }
 
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public Page<MessageDto> getConversationMessagesBefore(UUID conversationId, UUID beforeMessageId, Pageable pageable) {
+        var conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new EntityNotFoundException("Conversation not found"));
+        currentUserService.requireConversationAccess(conversation);
+        currentUserService.requireWorkspaceAccess(conversation.getWorkspace().getId());
+        var anchor = messageRepository.findById(beforeMessageId)
+                .filter(message -> conversationId.equals(message.getConversation().getId()))
+                .orElseThrow(() -> new EntityNotFoundException("Message not found"));
+        return messageRepository.findOlder(conversationId, anchor.getSentAt() == null ? anchor.getCreatedAt() : anchor.getSentAt(),
+                anchor.getCreatedAt(), anchor.getId(), pageable).map(messageMapper::toDto);
+    }
+
     @Transactional
     public MessageCreationResult createPlatformMessage(
             CreatePlatformMessageRequest request
@@ -274,6 +287,12 @@ public class MessageService {
                 getConversation(
                         request.conversationId()
                 );
+
+        // LIVE and history must acquire the conversation before inserting a message
+        // or flushing its profile. Refresh after waiting so counters are current.
+        // An existing lock preserves this transaction's unflushed page updates.
+        if (entityManager != null && entityManager.getLockMode(conversation) != jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+            entityManager.refresh(conversation, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
 
         MessageEntity existing =
                 messageRepository

@@ -255,7 +255,7 @@ public class TelegramChannelConnector
         TelegramClient telegramClient =
                 context.telegramClient();
 
-        long chatId =
+        long userId =
                 parseChatId(
                         command.conversationExternalId()
                 );
@@ -273,49 +273,21 @@ public class TelegramChannelConnector
                         command.beforeExternalId()
                 );
 
-        TdApi.Messages messages =
-                telegramClient
-                        .send(
-                                new TdApi.GetChatHistory(
-                                        chatId,
-                                        beforeMessageId,
-                                        0,
-                                        limit,
-                                        false
-                                )
-                        )
-                        .getObjectOrThrow();
+        // ClientBus stores the private peer's user ID. Its chat may not yet be
+        // known to this TDLib client, for example after reconnecting the account.
+        long chatId = resolvePrivateChatId(telegramClient, userId);
 
-        /*
-         * TDLib may return a partial result on the first request while
-         * the chat history is still being loaded.
-         *
-         * For the initial request, retry once when fewer messages than
-         * requested were returned. A repeated request allows TDLib to
-         * return the already loaded history.
-         */
-        if (beforeMessageId == 0
-                && messages != null
-                && messages.messages != null
-                && messages.messages.length < limit) {
-
-            messages =
-                    telegramClient
-                            .send(
-                                    new TdApi.GetChatHistory(
-                                            chatId,
-                                            0,
-                                            0,
-                                            limit,
-                                            false
-                                    )
-                            )
-                            .getObjectOrThrow();
+        TdApi.Messages messages = readHistoryPage(telegramClient, chatId, beforeMessageId, limit);
+        // Initial pages can be incomplete while TDLib preloads history. A non-empty
+        // cursor page without older IDs is also inconclusive; retry it once.
+        if ((beforeMessageId == 0 && messages.messages.length < limit)
+                || (beforeMessageId != 0 && messages.messages.length > 0 && !hasOlderMessage(messages, beforeMessageId))) {
+            TdApi.Messages repeated = readHistoryPage(telegramClient, chatId, beforeMessageId, limit);
+            // A transient empty retry must not discard a page already returned.
+            if (beforeMessageId != 0 || repeated.messages.length > 0 || messages.messages.length == 0) messages = repeated;
         }
 
-        if (messages == null
-                || messages.messages == null
-                || messages.messages.length == 0) {
+        if (messages.messages.length == 0) {
 
             log.debug(
                     "Telegram conversation history reached its start: " +
@@ -333,44 +305,10 @@ public class TelegramChannelConnector
             );
         }
 
-        /*
-         * End-of-history detection:
-         *
-         * For the initial request (beforeMessageId == 0), TDLib starts
-         * from the newest messages. If fewer messages than requested
-         * were returned, the beginning of the history has been reached.
-         *
-         * For subsequent pages, determine the end of history from the
-         * raw TDLib response before filtering out the cursor message.
-         *
-         * The cursor message itself is not an older message.
-         */
-        boolean historyStartReached;
-
-        if (beforeMessageId == 0) {
-
-            // Непустая начальная страница не доказывает,
-            // что TDLib загрузил всю историю.
-            historyStartReached = false;
-
-        } else {
-
-            boolean hasOlderMessage = false;
-
-            for (TdApi.Message message : messages.messages) {
-
-                if (message == null) {
-                    continue;
-                }
-
-                if (message.id < beforeMessageId) {
-                    hasOlderMessage = true;
-                    break;
-                }
-            }
-
-            historyStartReached = !hasOlderMessage;
-        }
+        if (beforeMessageId != 0 && !hasOlderMessage(messages, beforeMessageId))
+            throw new IllegalStateException("TDLib history response did not advance the cursor");
+        // A non-empty short page does not prove the beginning of history.
+        boolean historyStartReached = false;
 
         List<PlatformMessageRequest> result =
                 new ArrayList<>(
@@ -396,7 +334,7 @@ public class TelegramChannelConnector
              * of the requested "before" page.
              */
             if (beforeMessageId != 0
-                    && message.id == beforeMessageId) {
+                    && message.id >= beforeMessageId) {
                 continue;
             }
 
@@ -422,6 +360,9 @@ public class TelegramChannelConnector
                         message.id,
                         e
                 );
+                // A successful partial page would move the caller's cursor past
+                // this message and make a later retry unable to recover it.
+                throw e;
             }
         }
 
@@ -458,6 +399,32 @@ public class TelegramChannelConnector
                 List.copyOf(result),
                 historyStartReached
         );
+    }
+
+    private TdApi.Messages readHistoryPage(TelegramClient client, long chatId, long before, int limit) {
+        TdApi.Messages messages = client.send(new TdApi.GetChatHistory(chatId, before, 0, limit, false)).getObjectOrThrow();
+        if (messages == null || messages.messages == null)
+            throw new IllegalStateException("TDLib returned an invalid history page");
+        return messages;
+    }
+
+    private boolean hasOlderMessage(TdApi.Messages messages, long before) {
+        for (TdApi.Message message : messages.messages) if (message != null && message.id < before) return true;
+        return false;
+    }
+
+    private long resolvePrivateChatId(TelegramClient telegramClient, long userId) {
+        if (userId <= 0) {
+            throw new IllegalArgumentException("Telegram history requires a positive user ID");
+        }
+        TdApi.Chat chat = telegramClient
+                .send(new TdApi.CreatePrivateChat(userId, false))
+                .getObjectOrThrow();
+        if (chat.id == 0 || !(chat.type instanceof TdApi.ChatTypePrivate privateChat)
+                || privateChat.userId != userId) {
+            throw new IllegalStateException("TDLib returned an unexpected private chat");
+        }
+        return chat.id;
     }
 
     private PlatformConversationRequest syncChat(

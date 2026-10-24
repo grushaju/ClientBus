@@ -18,6 +18,18 @@ import java.util.UUID;
 public interface MessageRepository
         extends JpaRepository<MessageEntity, UUID> {
 
+    @Query("""
+            select m from MessageEntity m where m.conversation.id=:conversation and
+              (coalesce(m.sentAt,m.createdAt)<:at or
+               (coalesce(m.sentAt,m.createdAt)=:at and m.createdAt<:created) or
+               (coalesce(m.sentAt,m.createdAt)=:at and m.createdAt=:created and m.id<:anchor))
+            order by coalesce(m.sentAt,m.createdAt) desc,m.createdAt desc,m.id desc
+            """)
+    Page<MessageEntity> findOlder(@org.springframework.data.repository.query.Param("conversation") UUID conversation,
+            @org.springframework.data.repository.query.Param("at") Instant at,
+            @org.springframework.data.repository.query.Param("created") Instant created,
+            @org.springframework.data.repository.query.Param("anchor") UUID anchor, Pageable pageable);
+
     @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
     @Query("select m from MessageEntity m where m.id=:messageId")
     Optional<MessageEntity> findByIdForUpdate(@org.springframework.data.repository.query.Param("messageId") UUID messageId);
@@ -84,6 +96,7 @@ public interface MessageRepository
             String externalId
     );
 
+    @Query("select m from MessageEntity m where m.conversation.id=:conversationId order by coalesce(m.sentAt,m.createdAt) desc,m.createdAt desc,m.id desc")
     Page<MessageEntity> findAllByConversationIdOrderBySentAtDescCreatedAtDesc(
             UUID conversationId,
             Pageable pageable

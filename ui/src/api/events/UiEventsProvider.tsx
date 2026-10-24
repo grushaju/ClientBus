@@ -32,6 +32,7 @@ export function UiEventsProvider({ children, policy: overrides }: { children: Re
     const currentScope = useRef<object>()
     const scope = useMemo(() => {
         const value = { owner: coordinator, workspaceId, active: true, accessVersion: 0, requestBudget: budget, managedPolling: policy.enabled,
+            historyAccount: currentEmployee ? currentEmployee.organizationId + ':' + currentEmployee.id : undefined,
             isCurrent: () => value.active && currentScope.current === value && getAccessToken() === accessToken }
         return value
     }, [coordinator, workspaceId, accessToken, budget, policy])

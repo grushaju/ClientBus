@@ -76,7 +76,7 @@ function MessageBubble({
                     <time
                         dateTime={
                             message.sentAt ??
-                            message.createdAt
+                            message.createdAt ?? undefined
                         }
                     >
                         {formatMessageTime(
@@ -313,8 +313,9 @@ function MessageAttachment({
 }
 
 function formatMessageTime(
-    value: string,
+    value: string | null | undefined,
 ): string {
+    if (!value) return ''
     const date = new Date(value)
 
     if (Number.isNaN(date.getTime())) {

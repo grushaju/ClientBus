@@ -147,6 +147,8 @@ public class KafkaEventJsonDeserializer
                             SyncConversationHistoryKafkaCommand.Result.class
                     );
 
+            case HISTORY_SYNC_OPERATION -> objectMapper.convertValue(payload,
+                    kit.penny.clientbus.server.notification.contract.HistorySyncCommand.class);
         };
     }
 

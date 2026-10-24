@@ -18,7 +18,8 @@ import java.util.Map;
     indexes = {
         @Index(name = "historysyncoperationdiscoveryidx", columnList = "initiatoremployeeid, conversationid, createdat DESC, id DESC"),
         @Index(name = "historysyncoperationwatchdogidx", columnList = "status, deadlineat"),
-        @Index(name = "historysyncoperationleaseidx", columnList = "status, leaseuntil"),
+         @Index(name = "historysyncoperationleaseidx", columnList = "status, leaseuntil"),
+         @Index(name = "historysyncoperationadmissionidx", columnList = "conversationid, status, deadlineat"),
         @Index(name = "historysyncoperationretentionidx", columnList = "retainuntil")
     },
     check = @CheckConstraint(name = "historysyncoperationck", constraint =

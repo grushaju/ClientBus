@@ -105,7 +105,7 @@ Client dedup хранит только opaque notificationId/expiry в пред�
 
 ## 5. History, общий коннектор и совместимость
 
-HistorySyncCommand задаёт operation/initiator/org/W/conversation/channel/request/origin/deadline; worker захватывает operation и передаёт claimVersion результату HistorySyncCompletion. Успех содержит importedCount и historyStartReached после фиксации данных. Массив полных MessageDto в operation не хранится: после SUCCEEDED UI перечитывает обычный REST-кэш сообщений. Partial import допустим при FAILED, остаётся HISTORY_IMPORT. Result не читается через чужой operationId.
+HistorySyncCommand задаёт operation/initiator/org/W/conversation/channel/request/origin/deadline; worker захватывает operation и применяет результат по operationId/claimVersion, отражённым в общем контракте HistorySyncCompletion. Успех содержит importedCount и historyStartReached после фиксации данных. Массив полных MessageDto в operation не хранится: после SUCCEEDED UI перечитывает обычный REST-кэш сообщений. Partial import допустим при FAILED, остаётся HISTORY_IMPORT. В 11.10 worker сохраняет одну ограниченную страницу до 100 сообщений вместе с её terminal result: ошибка середины страницы не продвигает клиентский cursor через ещё не сохранённые сообщения. Уже имевшийся кэш не откатывается. Result не читается через чужой operationId.
 
 Потеря 202: клиент повторяет исходный POST с сохранённым ключом, получает ту же operation включая terminal state. Active-only discovery не заменяет этот путь. При недоступном target возвращается безопасный отказ, даже если operation существует. Срок result/command связи не короче окна safe retry.
 
@@ -136,7 +136,7 @@ Delivery expiresAt ≤ alertExpiresAt, retry не продлевает TTL. Ес
 | creationEnabled / sseEnabled / pushEnabled / historySubmissionEnabled | false / false / false / false |
 | sourceReplayWindow / dedupRetention | 30 дней / 90 дней |
 | centerRetention | 30 дней |
-| commandIdempotencyWindow / historyIdempotencyWindow | 7 дней / 7 дней |
+| commandIdempotencyWindow / historyIdempotencyWindow | 7 дней / 7 дней; historyIdempotencyWindow нельзя уменьшить ниже 7 дней из-за окна safe retry UI |
 | historyRetention | Не менее 7 дней после terminal; никогда не короче окна ключа |
 | deliveryRetention / publishedOutboxRetention | 7 дней после terminal/published; незавершённые не удаляются по этому правилу |
 | installationActivity | 30 дней от lastSeenAt |
@@ -186,3 +186,5 @@ Delivery expiresAt ≤ alertExpiresAt, retry не продлевает TTL. Ес
 Этап 11.7 выполнен 22.10.2026: [NOTIFICATION_RECOVERY.md](NOTIFICATION_RECOVERY.md). Добавлены общая политика восстановления/редкой сверки/fallback, бюджет реальных GET, partial REST failure без разрыва SSE, bounded retry/Retry-After и hidden/offline lifecycle. Несовместимая версия терминально включает fallback, как требует контракт. Gateway дополнен fetch limits и безопасным lifecycle собственной consumer group. Проверки: 255 UI-тестов, 30 BE-тестов, TypeScript приложения/Vite config/E2E, production и rollback build, 8 настоящих desktop/mobile E2E прошли. Новых wire DTO/endpoints, миграций и коммитов нет. Флаги BE по умолчанию остаются выключены. 11.8 требует отдельного согласования.
 
 Этап 11.8 закрыт 23.10.2026 по реализации и автоматической приёмке: N1–N4, центр BE/UI, read/read-all, lifecycle баннеров, push foundation и имена объектов БД без подчёркиваний. Все замечания завершающего ревью исправлены и покрыты регрессиями. Финал: 776/776 BE, 289/289 UI, 10/10 реальных desktop/mobile browser-сценариев на финальной схеме; TypeScript и production build прошли. Протокол — [NOTIFICATION_CENTER.md](NOTIFICATION_CENTER.md). Применение к существующей локальной БД требует отдельного разового rename старых объектов; пользовательская БД, staging и коммиты не изменялись. Следующий 11.9 требует отдельного плана и согласования.
+
+Этап 11.10 закрыт 24.10.2026 после исправления замечаний повторного ревью: [NOTIFICATION_HISTORY.md](NOTIFICATION_HISTORY.md). Исправлены классификация ошибок БД в command relay, точность времени/серверный якорь пагинации и очистка History recovery при logout/смене сессии в другой вкладке. Telegram-коннектор получает private chat перед чтением и не возвращает успешную неполную страницу при ошибке преобразования сообщения. Реальные endpoints отмечены в OpenAPI; legacy wire/API сохранены. В application.yml включены creation-enabled и history-submission-enabled; безопасные binding defaults false сохранены, SSE/push автоматически не включаются. Полный BE-прогон 804/804, UI 316/316, восемь desktop/mobile History-сценариев и два сценария центра прошли. TypeScript, production/rollback builds и копирование ресурсов проверены. Обычная пагинация истории N5 не активирует. Миграций, staging и коммитов нет.

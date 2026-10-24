@@ -1,4 +1,8 @@
 clientbus:
+  notifications:
+    creation-enabled: true
+    history-submission-enabled: true
+
   sync:
     recent-chats:
       interval: PT15M

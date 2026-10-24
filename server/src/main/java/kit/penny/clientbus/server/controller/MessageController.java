@@ -67,7 +67,7 @@ public class MessageController {
         );
     }
 
-    @GetMapping("/conversation/{conversationId}")
+    @GetMapping(value = "/conversation/{conversationId}", params = "!beforeMessageId")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<PagedModel<MessageDto>> getConversationMessages(
             @PathVariable UUID conversationId,
@@ -97,6 +97,15 @@ public class MessageController {
         return ResponseEntity.ok(
                 new PagedModel<>(messages)
         );
+    }
+
+    @GetMapping(value = "/conversation/{conversationId}", params = "beforeMessageId")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<PagedModel<MessageDto>> getConversationMessagesBefore(@PathVariable UUID conversationId,
+            @RequestParam UUID beforeMessageId, @RequestParam(defaultValue = "50") int size) {
+        if (size < 1) throw new IllegalArgumentException("Size must be positive");
+        return ResponseEntity.ok(new PagedModel<>(messageService.getConversationMessagesBefore(
+                conversationId, beforeMessageId, PageRequest.of(0, Math.min(size, 100)))));
     }
 
     @PostMapping("/conversation/{conversationId}/history/sync")

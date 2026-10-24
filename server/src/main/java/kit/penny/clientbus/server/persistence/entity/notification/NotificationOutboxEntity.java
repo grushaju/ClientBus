@@ -16,7 +16,8 @@ import java.util.Map;
         @UniqueConstraint(name = "notificationoutboxeventuq", columnNames = {"eventid"})
     },
     indexes = {
-        @Index(name = "notificationoutboxpollidx", columnList = "status, nextattemptat, createdat"),
+         @Index(name = "notificationoutboxpollidx", columnList = "status, nextattemptat, createdat"),
+         @Index(name = "notificationoutboxdestinationidx", columnList = "destination, status, nextattemptat, createdat"),
         @Index(name = "notificationoutboxleaseidx", columnList = "status, leaseuntil"),
         @Index(name = "notificationoutboxpublishedidx", columnList = "publishedat")
     },

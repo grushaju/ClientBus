@@ -3,6 +3,7 @@ package kit.penny.clientbus.server.connector.telegram;
 import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.common.enums.MessageAttachmentType;
 import kit.penny.clientbus.common.enums.MessageType;
+import kit.penny.clientbus.common.dto.message.PlatformMessageRequest;
 import kit.penny.clientbus.server.connector.ConnectorSendResult;
 import kit.penny.clientbus.server.connector.command.SendMessageCommand;
 import kit.penny.clientbus.server.connector.telegram.account.TelegramAccountProfileSynchronizer;
@@ -16,7 +17,9 @@ import kit.penny.clientbus.server.storage.IAttachmentStorage;
 import org.springframework.context.ConfigurableApplicationContext;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import kit.penny.tdlib.client.TelegramClient;
+import kit.penny.tdlib.exception.TdlibException;
 import kit.penny.tdlib.query.TdlibResponse;
 import org.drinkless.tdlib.TdApi;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,6 +35,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -853,10 +857,92 @@ class TelegramChannelConnectorTest {
     }
 
     @Test
-    void shouldMarkHistoryStartReachedWhenTelegramReturnsEmptyHistory() {
+    void shouldResolvePrivateChatBeforeRequestingUncachedHistory() {
         stubTelegramClient();
+        boolean[] chatKnown = {false};
+        TdApi.Chat chat = new TdApi.Chat();
+        chat.id = CHAT_ID;
+        chat.type = new TdApi.ChatTypePrivate(CHAT_ID);
 
-        when(telegramClient.send(any()))
+        when(telegramClient.send(any())).thenAnswer(invocation -> {
+            TdApi.Function<?> query = invocation.getArgument(0);
+            if (query instanceof TdApi.CreatePrivateChat create) {
+                assertEquals(CHAT_ID, create.userId);
+                assertFalse(create.force);
+                chatKnown[0] = true;
+                return new TdlibResponse<>(chat, null);
+            }
+            if (query instanceof TdApi.GetChatHistory history) {
+                if (!chatKnown[0]) {
+                    return new TdlibResponse<>(null, new TdApi.Error(400, "Chat not found"));
+                }
+                assertEquals(chat.id, history.chatId);
+                assertEquals(0, history.fromMessageId);
+                assertEquals(50, history.limit);
+                assertFalse(history.onlyLocal);
+                return new TdlibResponse<>(new TdApi.Messages(0, new TdApi.Message[0]), null);
+            }
+            throw new AssertionError("Unexpected TDLib request: " + query.getClass().getSimpleName());
+        });
+
+        var result = connector.handle(new SyncConversationHistoryCommand(
+                CHANNEL_ACCOUNT_ID, String.valueOf(CHAT_ID), null, 50));
+
+        assertTrue(result.historyStartReached());
+        assertTrue(result.messages().isEmpty());
+        var order = inOrder(telegramClient);
+        order.verify(telegramClient).send(any(TdApi.CreatePrivateChat.class));
+        order.verify(telegramClient, times(2)).send(any(TdApi.GetChatHistory.class));
+        order.verifyNoMoreInteractions();
+    }
+
+    @Test
+    void shouldNotRequestHistoryWhenPrivateChatResolutionFails() {
+        stubTelegramClient();
+        var error = new TdApi.Error(400, "User not found");
+        when(telegramClient.send(any())).thenAnswer(invocation -> {
+            TdApi.Function<?> query = invocation.getArgument(0);
+            if (query instanceof TdApi.CreatePrivateChat) return new TdlibResponse<>(null, error);
+            throw new AssertionError("History must not be queried before resolving its chat");
+        });
+
+        var failure = assertThrows(TdlibException.class, () -> connector.handle(new SyncConversationHistoryCommand(
+                CHANNEL_ACCOUNT_ID, String.valueOf(CHAT_ID), "100", 50)));
+
+        assertSame(error, failure.getError());
+        verify(telegramClient, never()).send(any(TdApi.GetChatHistory.class));
+        verifyNoInteractions(telegramInboundMessageProcessor);
+    }
+
+    @Test
+    void shouldFailTheWholeHistoryPageWhenOneMessageCannotBeConverted() {
+        stubHistoryClient();
+        var newest = telegramMessage(99L);
+        var broken = telegramMessage(98L);
+        var oldest = telegramMessage(97L);
+        when(telegramClient.send(any(TdApi.GetChatHistory.class)))
+                .thenReturn(new TdlibResponse<>(new TdApi.Messages(3, new TdApi.Message[]{newest, broken, oldest}), null));
+        var applicationContext = mock(ConfigurableApplicationContext.class);
+        when(telegramClientContext.applicationContext()).thenReturn(applicationContext);
+        when(applicationContext.getBean(TelegramInboundMessageProcessor.class)).thenReturn(telegramInboundMessageProcessor);
+        var mapped = new PlatformMessageRequest(CHANNEL_ACCOUNT_ID, String.valueOf(CHAT_ID), null, null, null,
+                String.valueOf(CHAT_ID), "99", MessageType.TEXT, "Cached first message", null, Instant.EPOCH, List.of());
+        var cause = new IllegalStateException("Attachment download failed");
+        when(telegramInboundMessageProcessor.process(CHANNEL_ACCOUNT_ID, newest)).thenReturn(CompletableFuture.completedFuture(mapped));
+        when(telegramInboundMessageProcessor.process(CHANNEL_ACCOUNT_ID, broken)).thenReturn(CompletableFuture.failedFuture(cause));
+
+        var failure = assertThrows(CompletionException.class, () -> connector.handle(new SyncConversationHistoryCommand(
+                CHANNEL_ACCOUNT_ID, String.valueOf(CHAT_ID), "100", 50)));
+
+        assertSame(cause, failure.getCause());
+        verify(telegramInboundMessageProcessor, never()).process(CHANNEL_ACCOUNT_ID, oldest);
+    }
+
+    @Test
+    void shouldMarkHistoryStartReachedWhenTelegramReturnsEmptyHistory() {
+        stubHistoryClient();
+
+        when(telegramClient.send(any(TdApi.GetChatHistory.class)))
                 .thenReturn(new TdlibResponse<>(
                         new TdApi.Messages(
                                 0,
@@ -881,12 +967,12 @@ class TelegramChannelConnectorTest {
     }
 
     @Test
-    void shouldMarkHistoryStartReachedWhenResponseContainsOnlyCursor() {
-        stubTelegramClient();
+    void shouldRejectARepeatedCursorOnlyResponseWithoutMarkingTheHistoryEnd() {
+        stubHistoryClient();
 
         long cursorMessageId = 100L;
 
-        when(telegramClient.send(any()))
+        when(telegramClient.send(any(TdApi.GetChatHistory.class)))
                 .thenReturn(new TdlibResponse<>(
                         new TdApi.Messages(
                                 1,
@@ -905,33 +991,92 @@ class TelegramChannelConnectorTest {
                         50
                 );
 
-        ConfigurableApplicationContext applicationContext =
-                mock(ConfigurableApplicationContext.class);
+        assertThrows(IllegalStateException.class, () -> connector.handle(command));
+        verify(telegramClient, times(2)).send(any(TdApi.GetChatHistory.class));
+        verifyNoInteractions(telegramInboundMessageProcessor);
+    }
 
-        when(telegramClientContext.applicationContext())
-                .thenReturn(applicationContext);
+    @Test void limitOneStillImportsAnOlderMessageWithTdlibsExclusiveCursor() {
+        stubHistoryClient();
+        var older = telegramMessage(99L);
+        when(telegramClient.send(any(TdApi.GetChatHistory.class)))
+                .thenAnswer(invocation -> {
+                    TdApi.GetChatHistory query = invocation.getArgument(0);
+                    assertEquals(100L, query.fromMessageId); assertEquals(0, query.offset); assertEquals(1, query.limit);
+                    return new TdlibResponse<>(new TdApi.Messages(1, new TdApi.Message[]{older}), null);
+                });
+        stubHistoryProcessor();
+        var mapped = historyMessage("99");
+        when(telegramInboundMessageProcessor.process(CHANNEL_ACCOUNT_ID, older)).thenReturn(CompletableFuture.completedFuture(mapped));
+        var result = connector.handle(new SyncConversationHistoryCommand(CHANNEL_ACCOUNT_ID, String.valueOf(CHAT_ID), "100", 1));
+        assertEquals(List.of(mapped), result.messages()); assertFalse(result.historyStartReached());
+        verify(telegramClient).send(any(TdApi.GetChatHistory.class));
+    }
 
-        SyncConversationHistoryResult result =
-                connector.handle(command);
+    @Test void aCursorOnlyPageCanRecoverOnTheSingleBoundedRetry() {
+        stubHistoryClient(); stubHistoryProcessor();
+        var older = telegramMessage(99L);
+        when(telegramClient.send(any(TdApi.GetChatHistory.class)))
+                .thenReturn(new TdlibResponse<>(new TdApi.Messages(1, new TdApi.Message[]{telegramMessage(100L)}), null))
+                .thenReturn(new TdlibResponse<>(new TdApi.Messages(1, new TdApi.Message[]{older}), null));
+        when(telegramInboundMessageProcessor.process(CHANNEL_ACCOUNT_ID, older)).thenReturn(CompletableFuture.completedFuture(historyMessage("99")));
+        var result = connector.handle(new SyncConversationHistoryCommand(CHANNEL_ACCOUNT_ID, String.valueOf(CHAT_ID), "100", 50));
+        assertEquals(1, result.messages().size()); assertFalse(result.historyStartReached());
+        verify(telegramClient, times(2)).send(any(TdApi.GetChatHistory.class));
+    }
 
-        assertTrue(result.historyStartReached());
+    @Test void anEmptyInitialRetryCannotDiscardAnAlreadyReceivedPage() {
+        stubHistoryClient(); stubHistoryProcessor();
+        var first = telegramMessage(100L);
+        when(telegramClient.send(any(TdApi.GetChatHistory.class)))
+                .thenReturn(new TdlibResponse<>(new TdApi.Messages(1, new TdApi.Message[]{first}), null))
+                .thenReturn(new TdlibResponse<>(new TdApi.Messages(0, new TdApi.Message[0]), null));
+        when(telegramInboundMessageProcessor.process(CHANNEL_ACCOUNT_ID, first)).thenReturn(CompletableFuture.completedFuture(historyMessage("100")));
+        var result = connector.handle(new SyncConversationHistoryCommand(CHANNEL_ACCOUNT_ID, String.valueOf(CHAT_ID), null, 50));
+        assertEquals(1, result.messages().size()); assertFalse(result.historyStartReached());
+    }
 
-        assertTrue(
-                result.messages().isEmpty(),
-                "Cursor message must be filtered from the result"
-        );
+    @Test void invalidHistoryResponseIsAnErrorRatherThanTheHistoryEnd() {
+        stubHistoryClient();
+        when(telegramClient.send(any(TdApi.GetChatHistory.class)))
+                .thenReturn(new TdlibResponse<>(new TdApi.Messages(0, null), null));
+        assertThrows(IllegalStateException.class, () -> connector.handle(new SyncConversationHistoryCommand(
+                CHANNEL_ACCOUNT_ID, String.valueOf(CHAT_ID), "100", 50)));
+    }
+
+    @Test void historyImportsOnlyMessagesOlderThanTheRequestedCursor() {
+        stubHistoryClient(); stubHistoryProcessor();
+        var newer = telegramMessage(101L); var cursor = telegramMessage(100L); var older = telegramMessage(99L);
+        when(telegramClient.send(any(TdApi.GetChatHistory.class)))
+                .thenReturn(new TdlibResponse<>(new TdApi.Messages(3, new TdApi.Message[]{newer, cursor, older}), null));
+        when(telegramInboundMessageProcessor.process(CHANNEL_ACCOUNT_ID, older)).thenReturn(CompletableFuture.completedFuture(historyMessage("99")));
+        var result = connector.handle(new SyncConversationHistoryCommand(CHANNEL_ACCOUNT_ID, String.valueOf(CHAT_ID), "100", 50));
+        assertEquals(1, result.messages().size()); assertFalse(result.historyStartReached());
+        verify(telegramInboundMessageProcessor, never()).process(CHANNEL_ACCOUNT_ID, newer);
+        verify(telegramInboundMessageProcessor, never()).process(CHANNEL_ACCOUNT_ID, cursor);
+    }
+
+    private void stubHistoryProcessor() {
+        var application = mock(ConfigurableApplicationContext.class);
+        when(telegramClientContext.applicationContext()).thenReturn(application);
+        when(application.getBean(TelegramInboundMessageProcessor.class)).thenReturn(telegramInboundMessageProcessor);
+    }
+
+    private PlatformMessageRequest historyMessage(String id) {
+        return new PlatformMessageRequest(CHANNEL_ACCOUNT_ID, String.valueOf(CHAT_ID), null, null, null,
+                String.valueOf(CHAT_ID), id, MessageType.TEXT, "History", null, Instant.EPOCH, List.of());
     }
 
     @Test
     void shouldNotMarkHistoryStartReachedWhenResponseContainsOlderMessage() {
-        stubTelegramClient();
+        stubHistoryClient();
 
         long cursorMessageId = 100L;
 
         TdApi.Message olderMessage =
                 telegramMessage(99L);
 
-        when(telegramClient.send(any()))
+        when(telegramClient.send(any(TdApi.GetChatHistory.class)))
                 .thenReturn(new TdlibResponse<>(
                         new TdApi.Messages(
                                 2,
@@ -974,9 +1119,9 @@ class TelegramChannelConnectorTest {
 
     @Test
     void shouldNotMarkHistoryStartReachedForShortPageWhenHistoryContinues() {
-        stubTelegramClient();
+        stubHistoryClient();
 
-        when(telegramClient.send(any()))
+        when(telegramClient.send(any(TdApi.GetChatHistory.class)))
                 .thenReturn(new TdlibResponse<>(
                         new TdApi.Messages(
                                 2,
@@ -1060,6 +1205,15 @@ class TelegramChannelConnectorTest {
                 "Unsupported Telegram content: "
                         + content.getClass().getName()
         );
+    }
+
+    private void stubHistoryClient() {
+        stubTelegramClient();
+        TdApi.Chat chat = new TdApi.Chat();
+        chat.id = CHAT_ID;
+        chat.type = new TdApi.ChatTypePrivate(CHAT_ID);
+        when(telegramClient.send(any(TdApi.CreatePrivateChat.class)))
+                .thenReturn(new TdlibResponse<>(chat, null));
     }
 
     private void stubTelegramClient() {

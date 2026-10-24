@@ -12,7 +12,7 @@ export interface MessageDto {
     content: string | null
     metadata: string | null
     sentAt: string | null
-    createdAt: string
+    createdAt: string | null
     processingStatus: MessageProcessingStatus
     deliveryStatus: MessageDeliveryStatus
     processedAt: string | null

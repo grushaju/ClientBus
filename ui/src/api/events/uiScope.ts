@@ -4,6 +4,7 @@ import type { RequestBudget } from './requestBudget'
 
 // Opaque identity: A -> B -> A creates three different owners. No token is stored in resource keys.
 export const UiScopeContext = createContext<{ owner: object; workspaceId: string | null; accessVersion: number;
+    historyAccount?: string;
     requestBudget?: RequestBudget; managedPolling?: boolean; isCurrent: () => boolean } | null>(null)
 export const useUiScope = () => useContext(UiScopeContext)
 export const isAccessEvent = (event: UiEventEnvelope) => event.type === 'access.invalidated' || event.type === 'identity.invalidated'

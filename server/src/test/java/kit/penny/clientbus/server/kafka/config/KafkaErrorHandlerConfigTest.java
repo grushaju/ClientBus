@@ -85,7 +85,7 @@ class KafkaErrorHandlerConfigTest {
         CommonErrorHandler errorHandler =
                 config.kafkaCommonErrorHandler(
                         deadLetterPublishingRecoverer,
-                        messageService
+                        messageService, mock(kit.penny.clientbus.server.notification.history.HistorySyncService.class)
                 );
 
         UUID messageId = UUID.randomUUID();
@@ -118,7 +118,7 @@ class KafkaErrorHandlerConfigTest {
 
     @Test
     void removedMessageStillReachesDlqWithoutBlockingThePartition() {
-        var errorHandler = config.kafkaCommonErrorHandler(deadLetterPublishingRecoverer, messageService);
+        var errorHandler = config.kafkaCommonErrorHandler(deadLetterPublishingRecoverer, messageService, mock(kit.penny.clientbus.server.notification.history.HistorySyncService.class));
         UUID messageId = UUID.randomUUID();
         var record = outboundRecord(messageId);
         var failure = new EntityNotFoundException("Removed target");
@@ -157,7 +157,7 @@ class KafkaErrorHandlerConfigTest {
         CommonErrorHandler errorHandler =
                 config.kafkaCommonErrorHandler(
                         deadLetterPublishingRecoverer,
-                        messageService
+                        messageService, mock(kit.penny.clientbus.server.notification.history.HistorySyncService.class)
                 );
 
         UUID messageId = UUID.randomUUID();
@@ -202,7 +202,7 @@ class KafkaErrorHandlerConfigTest {
         CommonErrorHandler errorHandler =
                 config.kafkaCommonErrorHandler(
                         deadLetterPublishingRecoverer,
-                        messageService
+                        messageService, mock(kit.penny.clientbus.server.notification.history.HistorySyncService.class)
                 );
 
         UUID messageId = UUID.randomUUID();
@@ -241,7 +241,7 @@ class KafkaErrorHandlerConfigTest {
         CommonErrorHandler errorHandler =
                 config.kafkaCommonErrorHandler(
                         deadLetterPublishingRecoverer,
-                        messageService
+                        messageService, mock(kit.penny.clientbus.server.notification.history.HistorySyncService.class)
                 );
 
         ConsumerRecord<String, Object> record =
@@ -277,7 +277,7 @@ class KafkaErrorHandlerConfigTest {
         CommonErrorHandler errorHandler =
                 config.kafkaCommonErrorHandler(
                         deadLetterPublishingRecoverer,
-                        messageService
+                        messageService, mock(kit.penny.clientbus.server.notification.history.HistorySyncService.class)
                 );
 
         ConsumerRecord<String, Object> record =
@@ -314,7 +314,7 @@ class KafkaErrorHandlerConfigTest {
         CommonErrorHandler errorHandler =
                 config.kafkaCommonErrorHandler(
                         deadLetterPublishingRecoverer,
-                        messageService
+                        messageService, mock(kit.penny.clientbus.server.notification.history.HistorySyncService.class)
                 );
 
         UUID channelAccountId = UUID.randomUUID();

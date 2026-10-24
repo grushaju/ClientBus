@@ -1,5 +1,7 @@
 import { apiFetch } from './apiClient'
 import { withCancellation } from './events/requestScope'
+import { completeHistory, historyFailure, historyOperationsEnabled, hasHistoryRecovery, resumeHistory, startHistory,
+    type HistoryContext, type HistoryOutcome } from './historySyncApi'
 
 import type {
     MessageAttachmentDto,
@@ -11,6 +13,9 @@ import type {
 export interface SyncConversationHistoryResult {
     messages: MessageDto[]
     historyStartReached: boolean
+    error?: string
+    cacheHasMore?: boolean
+    cacheAnchorMessageId?: string | null
 }
 
 export async function getConversationMessages(
@@ -18,10 +23,11 @@ export async function getConversationMessages(
     page = 0,
     size = 50,
     signal?: AbortSignal,
+    beforeMessageId?: string,
 ): Promise<MessagePage> {
     return withCancellation(async requestSignal => {
         const response = await apiFetch(
-            `/api/messages/conversation/${conversationId}?page=${page}&size=${size}`,
+            `/api/messages/conversation/${conversationId}?page=${page}&size=${size}${beforeMessageId ? '&beforeMessageId=' + encodeURIComponent(beforeMessageId) : ''}`,
             { signal: requestSignal },
         )
 
@@ -132,12 +138,29 @@ export async function retryOutboundMessage(
     return response.json()
 }
 
+async function cachedHistory(conversationId: string, context: HistoryContext, outcome: HistoryOutcome, signal: AbortSignal): Promise<SyncConversationHistoryResult> {
+    const page = await getConversationMessages(conversationId, 0, 100, signal, context.anchorMessageId ?? undefined)
+    if (signal.aborted) throw signal.reason
+    completeHistory(context.account, conversationId, outcome)
+    return { messages: page.content, historyStartReached: !!outcome.operation.result?.historyStartReached && page.last,
+        cacheHasMore: !page.last, cacheAnchorMessageId: page.content[page.content.length - 1]?.id ?? context.anchorMessageId ?? null,
+        ...(outcome.operation.status === 'FAILED' ? { error: historyFailure(outcome.operation.errorCode) } : {}) }
+}
+export async function resumeConversationHistory(conversationId: string, context: HistoryContext, signal: AbortSignal): Promise<SyncConversationHistoryResult | null> {
+    const outcome = await resumeHistory(conversationId, context, signal)
+    return outcome ? cachedHistory(conversationId, context, outcome, signal) : null
+}
 export async function syncConversationHistory(
     conversationId: string,
     beforeExternalId: string | null,
     limit = 50,
     signal?: AbortSignal,
+    context?: HistoryContext,
 ): Promise<SyncConversationHistoryResult> {
+    if (context?.account && (historyOperationsEnabled() || hasHistoryRecovery(context.account, conversationId))) {
+        return withCancellation(async child => cachedHistory(conversationId, context,
+            await startHistory(conversationId, { beforeExternalId, limit }, context, child), child), signal ? [signal] : [], 180_000)
+    }
     const params = new URLSearchParams()
 
     if (beforeExternalId !== null) {
