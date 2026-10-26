@@ -547,7 +547,36 @@
     letter-spacing: 0.02em;
 }
 
+.new-conversation-result-identity {
+    display: flex;
+    align-items: center;
+    gap: var(--ui-space-3);
+}
+
+.new-conversation-result-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 48px;
+    width: 48px;
+    height: 48px;
+    overflow: hidden;
+    border-radius: 50%;
+    background: var(--ui-color-background-muted);
+    color: var(--ui-color-text-secondary);
+    font-size: var(--ui-font-size-xl);
+    font-weight: var(--ui-font-weight-semibold);
+}
+
+.new-conversation-result-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
 .new-conversation-result-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
     margin-bottom: var(--ui-space-1);
 
     color: var(--ui-color-text);

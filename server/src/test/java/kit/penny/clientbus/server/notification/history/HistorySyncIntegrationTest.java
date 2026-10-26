@@ -116,9 +116,32 @@ class HistorySyncIntegrationTest extends AbstractIntegrationTest {
         verifyNoInteractions(registry);
     }
     @Test void transactionRollbackLeavesNeitherAnOperationNorACommand() {
+        double created=meters.counter("clientbus.history.operations.created").count();
         tx.executeWithoutResult(status -> { submit(UUID.randomUUID().toString()); status.setRollbackOnly(); });
         assertEquals(0, jdbc.queryForObject("select count(*) from dbo.historysyncoperation", Integer.class));
         assertEquals(0, jdbc.queryForObject("select count(*) from dbo.notificationoutbox", Integer.class));
+        assertEquals(created,meters.counter("clientbus.history.operations.created").count());
+    }
+    @Test void committedMetricsDeduplicateCommandsAndIgnoreRollbackOrLateCompletion() {
+        String key=UUID.randomUUID().toString();
+        double created=meters.counter("clientbus.history.operations.created").count();
+        var op=submit(key);submit(key);
+        assertEquals(created+1,meters.counter("clientbus.history.operations.created").count());
+        var claim=history.claim(op.id()).orElseThrow();
+        var counter=meters.counter("clientbus.history.operations.completed","status","failed","reason","INTERNAL_ERROR");
+        double failed=counter.count();
+        tx.executeWithoutResult(status->{history.fail(claim,"IMPORT_FAILED");status.setRollbackOnly();});
+        assertEquals(failed,counter.count());
+        assertEquals(HistoryOperationStatus.RUNNING,history.get(subject(),op.id()).status());
+        history.fail(claim,"IMPORT_FAILED");history.fail(claim,"IMPORT_FAILED");
+        assertEquals(failed+1,counter.count());
+    }
+    @Test void brokenDiagnosticsCannotTurnCommittedAcceptanceIntoFailure() {
+        var broken=mock(MeterRegistry.class);
+        doThrow(new IllegalStateException("unavailable registry")).when(broken).counter("clientbus.history.operations.created");
+        var service=new HistorySyncService(named,config,limits,mapper,policy,conversations,availability,messages,events,broken);
+        var result=assertDoesNotThrow(()->tx.execute(status->service.submit(subject(),conversation,UUID.randomUUID().toString(),new HistorySyncRequest(null,100))));
+        assertEquals(HistoryOperationStatus.PENDING,history.get(subject(),result.id()).status());
     }
     @Test void historyAuthenticationErrorsUseThePrivateJsonContract() throws Exception {
         for (String path : List.of("/api/conversations/" + conversation + "/history-sync",
@@ -150,7 +173,7 @@ class HistorySyncIntegrationTest extends AbstractIntegrationTest {
         jdbc.update("update dbo.channel set status='DISCONNECTED' where channelid=(select channelid from dbo.channelaccount where channelaccountid=?)", account);
         var disabledConfig = new Binder(new MapConfigurationPropertySource(Map.of("clientbus.notifications.history-submission-enabled", "false")))
                 .bindOrCreate("clientbus.notifications", NotificationProperties.class);
-        var disabled = new HistorySyncService(named, disabledConfig, limits, mapper, policy, conversations, availability, messages, events);
+        var disabled = new HistorySyncService(named, disabledConfig, limits, mapper, policy, conversations, availability, messages, events, meters);
         var recovered = tx.execute(status -> disabled.submit(subject(), conversation, key, new HistorySyncRequest("  ", 100)));
         assertEquals(accepted.id(), recovered.id()); assertEquals(HistoryOperationStatus.SUCCEEDED, recovered.status());
         assertTrue(history.list(subject(), conversation, true, 10, null).items().isEmpty());
@@ -261,12 +284,41 @@ class HistorySyncIntegrationTest extends AbstractIntegrationTest {
             });
             start.countDown(); completion.get(10, TimeUnit.SECONDS); timeout.get(10, TimeUnit.SECONDS);
         }
+        // A watchdog pass may SKIP LOCKED while final import still holds the row and then rolls back.
+        // Production repeats maintenance; require the same eventual terminal outcome here.
+        await().atMost(Duration.ofSeconds(5)).untilAsserted(()->{
+            history.maintain();
+            assertTrue(Set.of(HistoryOperationStatus.SUCCEEDED,HistoryOperationStatus.FAILED)
+                    .contains(history.get(subject(),claim.id()).status()));
+        });
         var result = history.get(subject(), claim.id());
         assertTrue(Set.of(HistoryOperationStatus.SUCCEEDED, HistoryOperationStatus.FAILED).contains(result.status()));
         boolean success = result.status() == HistoryOperationStatus.SUCCEEDED;
         assertEquals(success, jdbc.queryForObject("select historystartreached from dbo.conversation where conversationid=?", Boolean.class, conversation));
         assertEquals(success ? 1 : 0, jdbc.queryForObject("select count(*) from dbo.message where conversationid=?", Integer.class, conversation));
         assertEquals(2, jdbc.queryForObject("select count(*) from dbo.notificationoutbox where eventtype='history-operation.invalidated'", Integer.class));
+    }
+    @Test void watchdogRetriesAnExpiredOperationSkippedByAnEarlierLockedPass() throws Exception {
+        var claim=claimed();
+        jdbc.update("update dbo.historysyncoperation set deadlineat=createdat+interval '1 microsecond' where id=?",claim.id());
+        var locked=new CountDownLatch(1);var release=new CountDownLatch(1);
+        try(var pool=Executors.newSingleThreadExecutor()) {
+            var holder=pool.submit(()->tx.executeWithoutResult(status->{
+                jdbc.queryForObject("select id from dbo.historysyncoperation where id=? for update",UUID.class,claim.id());
+                locked.countDown();
+                try {assertTrue(release.await(5,TimeUnit.SECONDS));}
+                catch(InterruptedException interrupted) {Thread.currentThread().interrupt();throw new AssertionError(interrupted);}
+            }));
+            try {
+                assertTrue(locked.await(3,TimeUnit.SECONDS));
+                history.maintain();
+                assertEquals(HistoryOperationStatus.RUNNING,history.get(subject(),claim.id()).status());
+            } finally {release.countDown();}
+            holder.get(5,TimeUnit.SECONDS);
+        }
+        history.maintain();
+        assertEquals(HistoryOperationStatus.FAILED,history.get(subject(),claim.id()).status());
+        assertEquals("DEADLINE_EXCEEDED",history.get(subject(),claim.id()).errorCode());
     }
     @Test void rightsRevokedDuringConnectorCallPreventImportAndTargetRecreation() {
         var claim = claimed(); var execution = history.execution(claim);

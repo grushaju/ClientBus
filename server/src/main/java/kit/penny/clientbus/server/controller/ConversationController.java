@@ -6,6 +6,7 @@ import jakarta.validation.Valid;
 import kit.penny.clientbus.common.dto.conversation.*;
 import kit.penny.clientbus.server.service.ConversationService;
 import kit.penny.clientbus.server.service.ConversationGroupService;
+import kit.penny.clientbus.server.service.OutboundConversationService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -25,14 +26,17 @@ public class ConversationController {
 
     private final ConversationService conversationService;
     private final ConversationGroupService conversationGroupService;
+    private final OutboundConversationService outboundConversations;
 
     public ConversationController(
-            ConversationService conversationService, ConversationGroupService conversationGroupService
+            ConversationService conversationService, ConversationGroupService conversationGroupService,
+            OutboundConversationService outboundConversations
     ) {
         this.conversationService =
                 conversationService;
         this.conversationGroupService =
                 conversationGroupService;
+        this.outboundConversations = outboundConversations;
     }
 
     /**
@@ -75,7 +79,7 @@ public class ConversationController {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(
-                        conversationService.createOutboundConversation(
+                        outboundConversations.create(
                                 request
                         )
                 );

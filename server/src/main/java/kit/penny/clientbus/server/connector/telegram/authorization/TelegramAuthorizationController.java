@@ -102,17 +102,20 @@ public class TelegramAuthorizationController {
     }
 
     @GetMapping("/find")
-    public ClientAccountDiscoveryDto find(
+    public org.springframework.http.ResponseEntity<ClientAccountDiscoveryDto> find(
             @PathVariable UUID channelAccountId,
             @RequestParam(required = false) String phone,
             @RequestParam(required = false) String username
     ) {
         accessPolicy.require(CHANNEL_ACCOUNT, channelAccountId);
-        return authorizationService.find(
+        var found = authorizationService.find(
                 channelAccountId,
                 phone,
                 username
         );
+        accessPolicy.require(CHANNEL_ACCOUNT, channelAccountId);
+        return org.springframework.http.ResponseEntity.ok()
+                .cacheControl(org.springframework.http.CacheControl.noStore()).body(found);
     }
 
     public record AuthenticationCodeRequest(

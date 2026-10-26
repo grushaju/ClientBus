@@ -17,6 +17,11 @@ import kit.penny.clientbus.server.service.IMessageProcessingService;
 import org.springframework.jdbc.core.namedparam.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import io.micrometer.core.instrument.MeterRegistry;
+import kit.penny.clientbus.server.notification.diagnostics.NotificationDiagnostics;
+import static kit.penny.clientbus.server.notification.diagnostics.NotificationDiagnostics.*;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.charset.StandardCharsets;
@@ -52,12 +57,13 @@ public class HistorySyncService {
     private final ChannelAvailabilityService availability;
     private final IMessageProcessingService messages;
     private final HistorySyncEvents events;
+    private final MeterRegistry meters;
 
     public HistorySyncService(NamedParameterJdbcTemplate jdbc, NotificationProperties config, HistorySyncSettings limits,
             JsonMapper mapper, AccessPolicy policy, ConversationRepository conversations,
-            ChannelAvailabilityService availability, IMessageProcessingService messages, HistorySyncEvents events) {
+            ChannelAvailabilityService availability, IMessageProcessingService messages, HistorySyncEvents events, MeterRegistry meters) {
         this.jdbc = jdbc; this.config = config; this.limits = limits; this.mapper = mapper; this.policy = policy;
-        this.conversations = conversations; this.availability = availability; this.messages = messages; this.events = events;
+        this.conversations = conversations; this.availability = availability; this.messages = messages; this.events = events; this.meters=meters;
     }
 
     @Transactional
@@ -103,6 +109,10 @@ public class HistorySyncService {
                 from (select clock_timestamp() as at) moment
                 """, parameters);
         Operation operation = find(id).orElseThrow();
+        afterCommit(() -> {
+            meters.counter("clientbus.history.operations.created").increment();
+            NotificationDiagnostics.event(Stage.HISTORY_API,Outcome.ACCEPTED,Code.NONE,null,id,id);
+        });
         if (target.isHistoryStartReached()) {
             succeed(operation, 0, true);
         } else {
@@ -179,6 +189,8 @@ public class HistorySyncService {
                 where id=:id
                 """, Map.of("id", id, "lease", config.lease().toMillis()));
         events.changed(operation.organization(), operation.initiator(), id);
+        afterCommit(() -> meters.counter("clientbus.history.operations.claims","kind",
+                operation.status()==HistoryOperationStatus.RUNNING?"takeover":"initial").increment());
         return find(id);
     }
 
@@ -233,6 +245,7 @@ public class HistorySyncService {
         var operation = lock(claim.id());
         if (operation.isPresent() && operation.get().status() == HistoryOperationStatus.RUNNING
                 && operation.get().version() == claim.version() && valid(claim)) failLocked(operation.get(), code);
+        else afterCommit(()->meters.counter("clientbus.history.operations.stale","stage","completion").increment());
     }
 
     public boolean matches(KafkaEvent<HistorySyncCommand> event) {
@@ -251,7 +264,7 @@ public class HistorySyncService {
     }
 
     @Transactional
-    public void publicationFailed(kit.penny.clientbus.server.notification.outbox.UiOutboxStore.Claim claim, String code) {
+    public boolean publicationFailed(kit.penny.clientbus.server.notification.outbox.UiOutboxStore.Claim claim, String code) {
         var operation = lock(claim.operationId());
         int changed = jdbc.update("""
                 update dbo.notificationoutbox set status='QUARANTINED',leaseuntil=null,errorcode=:code
@@ -261,6 +274,7 @@ public class HistorySyncService {
                 .ifPresent(op -> failLocked(op, Boolean.TRUE.equals(jdbc.queryForObject(
                         "select deadlineat<=clock_timestamp() from dbo.historysyncoperation where id=:id", Map.of("id", op.id()), Boolean.class))
                         ? "DEADLINE_EXCEEDED" : "PUBLICATION_FAILED"));
+        return changed==1;
     }
 
     @Transactional
@@ -277,6 +291,16 @@ public class HistorySyncService {
                     where o.operationid=h.id and o.destination=:topic and o.status='PUBLISHED')))
                 order by h.createdat,h.id limit :limit
                 """, Map.of("topic", HistorySyncConfiguration.TOPIC, "limit", limits.workers()), UUID.class);
+    }
+
+    @Transactional(readOnly=true,timeoutString="${clientbus.notifications.metrics-query-timeout-seconds:2}")
+    public Map<String,Object> statistics() {
+        return jdbc.queryForMap("""
+            select count(*) filter(where status='PENDING') as pending,
+                count(*) filter(where status='RUNNING') as running,
+                coalesce(extract(epoch from(clock_timestamp()-min(createdat))),0) as oldest_seconds
+            from dbo.historysyncoperation where status in ('PENDING','RUNNING')
+            """,Map.of());
     }
 
     @Transactional
@@ -330,9 +354,10 @@ public class HistorySyncService {
                 "retention", config.historyRetention().toMillis(), "status", operation.status().name(), "version", operation.version()));
         if (changed != 1) throw new StaleClaim();
         events.changed(operation.organization(), operation.initiator(), operation.id());
+        completed(operation,"succeeded",Code.NONE);
     }
     private void failLocked(Operation operation, String code) {
-        jdbc.update("""
+        int changed=jdbc.update("""
                 update dbo.historysyncoperation set status='FAILED',errorcode=:code,completedat=clock_timestamp(),
                   updatedat=clock_timestamp(),leaseuntil=null,retainuntil=greatest(retainuntil,
                   clock_timestamp()+greatest(retainuntil-deadlineat,:retention*interval '1 millisecond'))
@@ -343,6 +368,29 @@ public class HistorySyncService {
                 where operationid=:id and status in ('PENDING','RETRY','IN_FLIGHT')
                 """, Map.of("id", operation.id(), "code", code));
         events.changed(operation.organization(), operation.initiator(), operation.id());
+        if(changed==1) completed(operation,"failed",switch(code) {
+            case "DEADLINE_EXCEEDED" -> Code.DEADLINE_EXCEEDED;
+            case "ACCESS_REVOKED" -> Code.ACCESS_REVOKED;
+            case "CONNECTOR_UNAVAILABLE" -> Code.UNAVAILABLE;
+            case "PUBLICATION_FAILED" -> Code.PIPELINE_UNAVAILABLE;
+            default -> Code.INTERNAL_ERROR;
+        });
+    }
+    private void completed(Operation operation,String status,Code reason) {
+        afterCommit(() -> {
+            meters.counter("clientbus.history.operations.completed","status",status,"reason",reason.name()).increment();
+            var duration=java.time.Duration.between(operation.created(),Instant.now());
+            meters.timer("clientbus.history.operations.duration","status",status).record(duration.isNegative()?java.time.Duration.ZERO:duration);
+            NotificationDiagnostics.event(Stage.HISTORY_WORKER,"succeeded".equals(status)?Outcome.SUCCEEDED:Outcome.FAILED,
+                    reason,null,operation.id(),operation.id());
+        });
+    }
+    private static void afterCommit(Runnable action) {
+        Runnable safe=()->{try {action.run();}catch(RuntimeException diagnosticFailure) { /* Diagnostics cannot undo a committed operation or change its HTTP outcome. */ }};
+        if(!TransactionSynchronizationManager.isSynchronizationActive()) {safe.run();return;}
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override public void afterCommit() {safe.run();}
+        });
     }
     private void checkScope(Operation operation, ConversationEntity conversation) {
         if (!operation.account().equals(conversation.getChannelAccount().getId())

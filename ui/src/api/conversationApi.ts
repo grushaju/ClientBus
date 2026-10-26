@@ -63,12 +63,14 @@ export async function getUnassignedConversations(
 
 export async function createOutboundConversation(
     request: CreateOutboundConversationRequest,
+    signal?: AbortSignal,
 ): Promise<ConversationDto> {
     const response = await apiFetch(
         '/api/conversations/outbound',
         {
             method: 'POST',
             body: JSON.stringify(request),
+            signal,
         },
     )
 

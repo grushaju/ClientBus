@@ -5,6 +5,7 @@ import kit.penny.clientbus.server.persistence.entity.UserEntity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.Base64;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -120,9 +121,14 @@ class JwtServiceTest {
         String token =
                 jwtService.generateToken(user);
 
-        String modifiedToken =
-                token.substring(0, token.length() - 1)
-                        + "X";
+        // Change signed bytes; changing only the last Base64URL symbol may affect unused padding bits.
+        int signatureStart = token.lastIndexOf('.') + 1;
+        byte[] signature = Base64.getUrlDecoder().decode(token.substring(signatureStart));
+        signature[0] ^= 1;
+        String modifiedToken = token.substring(0, signatureStart)
+                + Base64.getUrlEncoder().withoutPadding().encodeToString(signature);
+
+        assertThat(jwtService.isTokenValid(token)).isTrue();
 
         assertThat(
                 jwtService.isTokenValid(modifiedToken)

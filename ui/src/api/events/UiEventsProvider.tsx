@@ -4,12 +4,13 @@ import { getAccessToken } from '../../auth/authStorage'
 import { useWorkspace } from '../../workspace/WorkspaceContext'
 import { InvalidationContext } from './InvalidationContext'
 import { InvalidationCoordinator } from './invalidationCoordinator'
-import { startUiEventStream } from './uiEventStream'
+import { startUiEventStream, type StreamState } from './uiEventStream'
 import { affectsWorkspace, isAccessEvent, UiScopeContext } from './uiScope'
 import { RequestBudget } from './requestBudget'
 import { recoveryPolicy, type UiRecoveryPolicy } from './recoveryPolicy'
 import { UiRecovery } from './uiRecovery'
 import { NotificationFeed, NotificationFeedContext } from './NotificationFeedContext'
+import { registerUiDiagnostics } from './uiDiagnostics'
 
 export function UiEventsProvider({ children, policy: overrides }: { children: ReactNode; policy?: Partial<UiRecoveryPolicy> }) {
     const { accessToken, currentEmployee, sessionEpoch, employeeWorkspaces, logout, synchronizeSession, refreshCurrentUser, invalidateIdentity } = useAuth()
@@ -43,6 +44,11 @@ export function UiEventsProvider({ children, policy: overrides }: { children: Re
         budget?.resume()
         const controller = new UiRecovery(coordinator, policy)
         recovery.current = controller
+        const transport = { state: 'connecting' as StreamState, attempts: 0, reconnects: 0, resyncs: 0 }
+        const removeDiagnostics = registerUiDiagnostics(() => ({
+            version: 1, managedPolling: policy.enabled, transport,
+            recovery: controller.snapshot(), reconciliation: coordinator.snapshot(), requests: budget?.snapshot() ?? null,
+        }), scope.isCurrent)
         const syncBudget = () => {
             if (online() && !document.hidden) budget?.resume()
             else budget?.pause()
@@ -82,8 +88,13 @@ export function UiEventsProvider({ children, policy: overrides }: { children: Re
                     if (event.type === 'notifications.created' && event.resource?.kind === 'notification') feed.created(event.resource.id)
                 }
             },
-            onResync: () => controller.request(),
+            onResync: () => { transport.resyncs++; controller.request() },
             onState: state => {
+                transport.state = state
+                if (state === 'connecting') {
+                    transport.attempts++
+                    transport.reconnects = Math.max(0, transport.attempts - 1)
+                }
                 if (!['open', 'degraded', 'reconciling'].includes(state)) feed.reset()
                 controller.state(state)
                 if (getAccessToken() !== accessToken) { synchronizeSession(); return }
@@ -104,6 +115,7 @@ export function UiEventsProvider({ children, policy: overrides }: { children: Re
         }
         window.addEventListener('clientbus:foreground-notification', foregroundPush)
         return () => {
+            removeDiagnostics()
             scope.active = false; feed.reset(); controller.stop(); stream.stop(); unsubscribeIdentity(); coordinator.close(); budget?.close()
             if (recovery.current === controller) recovery.current = undefined
             document.removeEventListener('visibilitychange', visible)

@@ -1,5 +1,6 @@
 package kit.penny.clientbus.server.kafka.config;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.springframework.beans.factory.annotation.Value;
@@ -24,7 +25,7 @@ public class KafkaConsumerConfig {
     private String autoOffsetReset;
 
     @Bean
-    public ConsumerFactory<String, Object> kafkaConsumerFactory() {
+    public ConsumerFactory<String, Object> kafkaConsumerFactory(MeterRegistry meters) {
 
         Map<String, Object> properties =
                 new HashMap<>();
@@ -54,9 +55,10 @@ public class KafkaConsumerConfig {
                 false
         );
 
-        return new DefaultKafkaConsumerFactory<>(
-                properties
-        );
+        var factory=new DefaultKafkaConsumerFactory<String,Object>(properties);
+        // This custom factory bypasses Boot's DefaultKafkaConsumerFactoryCustomizer callbacks.
+        factory.addListener(new HistoryConsumerMetrics(meters));
+        return factory;
     }
 
     @Bean

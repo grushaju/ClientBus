@@ -2,6 +2,8 @@ package kit.penny.clientbus.server.notification.transport;
 
 import kit.penny.clientbus.server.config.properties.NotificationProperties;
 import kit.penny.clientbus.server.notification.contract.UiInvalidation;
+import kit.penny.clientbus.server.notification.diagnostics.NotificationDiagnostics;
+import static kit.penny.clientbus.server.notification.diagnostics.NotificationDiagnostics.*;
 import org.apache.kafka.clients.consumer.*;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
@@ -25,6 +27,7 @@ public class UiKafkaSubscriber implements SmartLifecycle {
     private final UiGatewayProperties config;
     private final NotificationProperties limits;
     private final JsonMapper mapper;
+    private final UiTransportMetrics metrics;
     private final Map<String,Object> properties;
     private final Map<String,Object> adminProperties;
     private final java.util.concurrent.atomic.AtomicLong cleanedGroups = new java.util.concurrent.atomic.AtomicLong();
@@ -33,7 +36,12 @@ public class UiKafkaSubscriber implements SmartLifecycle {
     private Thread thread;
     public UiKafkaSubscriber(UiSseGateway gateway, UiGatewayProperties config, NotificationProperties limits,
                              JsonMapper mapper,KafkaProperties kafka) {
-        this.gateway=gateway;this.config=config;this.limits=limits;this.mapper=mapper;
+        this(gateway,config,limits,mapper,kafka,new UiTransportMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry(),config,limits));
+    }
+    @org.springframework.beans.factory.annotation.Autowired
+    public UiKafkaSubscriber(UiSseGateway gateway, UiGatewayProperties config, NotificationProperties limits,
+                             JsonMapper mapper,KafkaProperties kafka,UiTransportMetrics metrics) {
+        this.gateway=gateway;this.config=config;this.limits=limits;this.mapper=mapper;this.metrics=metrics;
         properties=new HashMap<>(kafka.buildConsumerProperties());
         adminProperties=new HashMap<>(kafka.buildAdminProperties());
         // Kafka requires the Admin API timeout to cover its request timeout.
@@ -69,9 +77,9 @@ public class UiKafkaSubscriber implements SmartLifecycle {
                 current=new KafkaConsumer<String,String>(properties);
                 consumer=current;
                 current.subscribe(List.of(TOPIC),new ConsumerRebalanceListener() {
-                    public void onPartitionsRevoked(Collection<TopicPartition> partitions) { gateway.pipelineLost(); }
-                    public void onPartitionsAssigned(Collection<TopicPartition> partitions) { gateway.pipelineLost(); }
-                    public void onPartitionsLost(Collection<TopicPartition> partitions) { gateway.pipelineLost(); }
+                    public void onPartitionsRevoked(Collection<TopicPartition> partitions) { metrics.kafkaUnavailable();gateway.pipelineLost(); }
+                    public void onPartitionsAssigned(Collection<TopicPartition> partitions) { metrics.kafkaUnavailable();gateway.pipelineLost(); }
+                    public void onPartitionsLost(Collection<TopicPartition> partitions) { metrics.kafkaUnavailable();gateway.pipelineLost(); }
                 });
                 long nextProbe=0;
                 while (running) {
@@ -79,26 +87,38 @@ public class UiKafkaSubscriber implements SmartLifecycle {
                     if (System.nanoTime()>=nextProbe) {
                         var metadata=current.partitionsFor(TOPIC,config.brokerTimeout());
                         var expected=metadata.stream().map(p -> new TopicPartition(TOPIC,p.partition())).toList();
-                        if (expected.isEmpty() || !current.assignment().containsAll(expected)) gateway.pipelineLost();
+                        if (expected.isEmpty() || !current.assignment().containsAll(expected)) { metrics.kafkaUnavailable();gateway.pipelineLost(); }
                         else {
                             // An empty poll can succeed while disconnected: obtain a broker response too.
-                            current.endOffsets(expected,config.brokerTimeout());
+                            var ends=current.endOffsets(expected,config.brokerTimeout());
+                            sampleLag(current,ends);
                             if (running) gateway.pipelineHealthy();
                         }
                         nextProbe=System.nanoTime()+config.probeInterval().toNanos();
                     }
                     for (var record:records) receive(record.value());
                 }
-            } catch (WakeupException e) { gateway.pipelineLost(); }
+            } catch (WakeupException e) { metrics.kafkaUnavailable();gateway.pipelineLost(); }
             catch (RuntimeException e) {
-                gateway.pipelineLost();
+                metrics.kafkaUnavailable();metrics.kafka(UiTransportMetrics.KafkaResult.ERROR);gateway.pipelineLost();
+                NotificationDiagnostics.event(Stage.KAFKA_SUBSCRIBER,Outcome.DEGRADED,Code.PIPELINE_UNAVAILABLE,null,null,null);
                 // Avoid logging payload/token or spinning on permanent authorization/configuration errors.
                 if (running) java.util.concurrent.locks.LockSupport.parkNanos(Duration.ofSeconds(1).toNanos());
             } finally {
                 if (current!=null) { try { current.close(Duration.ofSeconds(2)); } catch (RuntimeException ignored) { } }
-                consumer=null; gateway.pipelineLost();
+                consumer=null;metrics.kafkaUnavailable();gateway.pipelineLost();
             }
         }
+    }
+    /** Called exclusively by the consumer owner thread, using fetched position rather than committed offsets. */
+    void sampleLag(Consumer<String,String> current,Map<TopicPartition,Long> ends) {
+        try {
+            if(ends.isEmpty()) { metrics.kafkaUnavailable();return; }
+            long remaining=0;
+            for(var partition:ends.entrySet()) remaining=Math.addExact(remaining,
+                    Math.max(0,partition.getValue()-current.position(partition.getKey(),Duration.ZERO)));
+            metrics.kafkaLag(remaining,ends.size());
+        } catch (RuntimeException unavailable) { metrics.kafkaUnavailable(); }
     }
     void receive(String json) {
         try {
@@ -107,11 +127,15 @@ public class UiKafkaSubscriber implements SmartLifecycle {
             if (event.eventId()==null || event.type()==null || event.organizationId()==null || event.occurredAt()==null
                     || event.audience()==null || event.recipientEmployeeIds().size()>500
                     || (event.resource()!=null && (event.resource().id()==null || event.resource().kind()==null))) throw new IllegalArgumentException();
-            gateway.accept(event);
-        } catch (RuntimeException e) { gateway.malformedEvent(); }
+            gateway.accept(event);metrics.kafka(UiTransportMetrics.KafkaResult.RECEIVED);
+        } catch (RuntimeException e) {
+            metrics.kafka(UiTransportMetrics.KafkaResult.MALFORMED);
+            NotificationDiagnostics.event(Stage.KAFKA_SUBSCRIBER,Outcome.REJECTED,Code.INVALID_EVENT,null,null,null);
+            gateway.malformedEvent();
+        }
     }
     @Override public synchronized void stop() {
-        running=false;gateway.pipelineLost();
+        running=false;metrics.kafkaUnavailable();gateway.pipelineLost();
         var current=consumer;if(current!=null)current.wakeup();
         if(thread!=null)java.util.concurrent.locks.LockSupport.unpark(thread);
     }
@@ -132,7 +156,8 @@ public class UiKafkaSubscriber implements SmartLifecycle {
             admin=Admin.create(adminProperties);
             admin.deleteConsumerGroups(List.of(groupId())).all().get(config.brokerTimeout().toMillis(),java.util.concurrent.TimeUnit.MILLISECONDS);
             cleanedGroups.incrementAndGet();
-        } catch (Exception ignored) { /* Crash/broker outage cleanup is an explicit offline admin procedure. */ }
+            metrics.kafka(UiTransportMetrics.KafkaResult.CLEANED);
+        } catch (Exception ignored) { metrics.kafka(UiTransportMetrics.KafkaResult.CLEANUP_FAILED); /* Explicit offline admin procedure. */ }
         finally { if(admin!=null) admin.close(config.brokerTimeout()); }
     }
     @Override public boolean isRunning() { return running; }

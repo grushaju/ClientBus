@@ -9,7 +9,7 @@ import java.util.Map;
 
 @Configuration
 public class HistorySyncConfiguration {
-    public static final String TOPIC = "clientbus.history-sync-operations.v1";
+    public static final String TOPIC = "clientbus.history-sync-operations";
 
     @Bean(name = "taskScheduler")
     @ConditionalOnMissingBean(name = "taskScheduler")

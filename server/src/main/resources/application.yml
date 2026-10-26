@@ -1,7 +1,28 @@
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when_authorized
+      roles: SUPER_ADMIN
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db
+        delivery:
+          include: uiPipeline
+
 clientbus:
   notifications:
     creation-enabled: true
     history-submission-enabled: true
+    metrics-poll-ms: 10000
+    metrics-query-timeout-seconds: 2
 
   sync:
     recent-chats:

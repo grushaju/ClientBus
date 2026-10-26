@@ -39,7 +39,8 @@ class InboxErrorResponseTest {
     }
 
     private org.springframework.test.web.servlet.MockMvc mvc(ConversationService service) {
-        return MockMvcBuilders.standaloneSetup(new ConversationController(service, mock(ConversationGroupService.class)))
+        return MockMvcBuilders.standaloneSetup(new ConversationController(service, mock(ConversationGroupService.class),
+                        mock(kit.penny.clientbus.server.service.OutboundConversationService.class)))
                 .setControllerAdvice(new GlobalExceptionHandler()).build();
     }
 }

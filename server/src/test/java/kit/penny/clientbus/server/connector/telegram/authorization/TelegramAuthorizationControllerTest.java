@@ -151,7 +151,7 @@ class TelegramAuthorizationControllerTest {
                 )
         ).thenReturn(expected);
 
-        ClientAccountDiscoveryDto result =
+        var response =
                 controller.find(
                         channelAccountId,
                         null,
@@ -160,8 +160,9 @@ class TelegramAuthorizationControllerTest {
 
         assertEquals(
                 expected,
-                result
+                response.getBody()
         );
+        assertEquals("no-store", response.getHeaders().getCacheControl());
 
         verify(
                 authorizationService

@@ -14,10 +14,12 @@ import kit.penny.clientbus.server.persistence.entity.*;
 import kit.penny.clientbus.server.persistence.entity.notification.*;
 import kit.penny.clientbus.server.security.policy.*;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -25,6 +27,7 @@ import java.time.*;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 @SpringBootTest(properties={
     "clientbus.notifications.push.endpoint-key=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
@@ -34,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class PushFoundationIntegrationTest extends AbstractIntegrationTest {
     @Autowired EntityManager em;
     @Autowired JdbcTemplate jdbc;
+    @Autowired NamedParameterJdbcTemplate named;
     @Autowired PlatformTransactionManager transactions;
     @Autowired PushInstallationService registrations;
     @Autowired PushEndpointCipher cipher;
@@ -43,6 +47,7 @@ class PushFoundationIntegrationTest extends AbstractIntegrationTest {
     @Autowired NotificationProperties config;
     @Autowired AccessPolicy access;
     @Autowired NotificationCenterService center;
+    @Autowired MeterRegistry meters;
     EmployeeEntity owner,other;
     OrganizationEntity organization;
     WorkspaceEntity workspace;
@@ -84,6 +89,7 @@ class PushFoundationIntegrationTest extends AbstractIntegrationTest {
     });}
     private UUID deliverable(){registration();UUID id=notification();tx().executeWithoutResult(status->intents.createIntents(id));return id;}
     private String state(UUID id){return jdbc.queryForObject("select status from dbo.notificationdelivery where notificationid=?",String.class,id);}
+    private double transitions(String status){return meters.counter("clientbus.notification.push.transitions","status",status).count();}
     @Test void registrationEncryptsCredentialsAndExposesOnlyVersions(){
         UUID id=registration();
         byte[] encrypted=jdbc.queryForObject("select encryptedendpoint from dbo.pushinstallation where id=?",byte[].class,id);
@@ -109,32 +115,41 @@ class PushFoundationIntegrationTest extends AbstractIntegrationTest {
         assertEquals(0,jdbc.queryForObject("select count(*) from dbo.pushinstallation where id=?",Integer.class,second));
     }
     @Test void intentsAreTransactionalAndCreatedWhileSendingIsDisabled(){
+        double queued=meters.counter("clientbus.notification.push.queued").count();
         UUID active=registration(),denied=UUID.randomUUID();
         registrations.put(subject(owner),denied,request(0,"denied",PROOF,true,PushPermission.DENIED));
         UUID n=notification();assertFalse(config.pushEnabled());
         assertThrows(org.springframework.transaction.IllegalTransactionStateException.class,()->intents.createIntents(n));
-        tx().executeWithoutResult(status->{intents.createIntents(n);intents.createIntents(n);});
+        tx().executeWithoutResult(status->{intents.createIntents(n);intents.createIntents(n);
+            assertEquals(queued,meters.counter("clientbus.notification.push.queued").count(),"Uncommitted intents are not queued metrics");});
+        assertEquals(queued+1,meters.counter("clientbus.notification.push.queued").count(),"Conflict duplicates are not new intents");
         assertEquals(List.of(active),jdbc.queryForList("select registrationid from dbo.notificationdelivery where notificationid=?",UUID.class,n));
         AtomicReference<UUID> rolledBack=new AtomicReference<>();
         assertThrows(IllegalStateException.class,()->tx().executeWithoutResult(status->{UUID id=notification();rolledBack.set(id);intents.createIntents(id);throw new IllegalStateException("rollback");}));
         assertEquals(0,jdbc.queryForObject("select count(*) from dbo.notification where id=?",Integer.class,rolledBack.get()));
         assertEquals(0,jdbc.queryForObject("select count(*) from dbo.notificationdelivery where notificationid=?",Integer.class,rolledBack.get()));
+        assertEquals(queued+1,meters.counter("clientbus.notification.push.queued").count(),"Rollback does not publish queue metrics");
     }
     @Test void leaseTakeoverFencesLateAcknowledgementAndInvalidEndpoint(){
         UUID n=deliverable();var old=deliveries.claim().orElseThrow();
+        double accepted=transitions("provider_accepted"),failed=transitions("failed");
         jdbc.update("update dbo.notificationdelivery set leaseuntil=clock_timestamp()-interval '1 second' where id=?",old.id());
         var current=deliveries.claim().orElseThrow();assertTrue(current.claimVersion()>old.claimVersion());
         assertFalse(deliveries.terminal(old,"PROVIDER_ACCEPTED",null,"late"));assertFalse(deliveries.invalidEndpoint(old));
+        assertEquals(accepted,transitions("provider_accepted"));assertEquals(failed,transitions("failed"));
         assertTrue(jdbc.queryForObject("select enabled from dbo.pushinstallation where id=?",Boolean.class,current.installationId()));
         assertTrue(deliveries.terminal(current,"PROVIDER_ACCEPTED",null,"accepted"));assertEquals("PROVIDER_ACCEPTED",state(n));
+        assertEquals(accepted+1,transitions("provider_accepted"));
     }
     @Test void errorFromOldEndpointVersionCannotDisableRotatedRegistration(){
         UUID n=deliverable();var claim=deliveries.claim().orElseThrow();
+        double retry=transitions("retry"),failed=transitions("failed");
         registrations.put(subject(owner),claim.installationId(),request(1,"rotated",PROOF,true,PushPermission.GRANTED));
         assertTrue(deliveries.invalidEndpoint(claim));
         assertTrue(jdbc.queryForObject("select enabled from dbo.pushinstallation where id=?",Boolean.class,claim.installationId()));
         assertEquals(2,jdbc.queryForObject("select registrationversion from dbo.pushinstallation where id=?",Long.class,claim.installationId()));
         assertEquals("RETRY",state(n));
+        assertEquals(retry+1,transitions("retry"));assertEquals(failed,transitions("failed"));
     }
     @Test void logoutAndRebindCancelOldDeliveryWithoutChangingNotificationReadState(){
         UUID n=deliverable();var claim=deliveries.claim().orElseThrow();
@@ -144,7 +159,9 @@ class PushFoundationIntegrationTest extends AbstractIntegrationTest {
     }
     @Test void retryBeyondTtlExpiresAndRetentionDoesNotUseAlertExpiry(){
         UUID n=deliverable();var claim=deliveries.claim().orElseThrow();
+        double expired=transitions("expired"),retry=transitions("retry");
         assertTrue(deliveries.retry(claim,"RATE_LIMITED",Duration.ofHours(1)));assertEquals("EXPIRED",state(n));
+        assertEquals(expired+1,transitions("expired"));assertEquals(retry,transitions("retry"));
         var completed=jdbc.queryForObject("select completedat from dbo.notificationdelivery where id=?",java.sql.Timestamp.class,claim.id()).toInstant();
         var retained=jdbc.queryForObject("select retainuntil from dbo.notificationdelivery where id=?",java.sql.Timestamp.class,claim.id()).toInstant();
         assertTrue(retained.isAfter(completed.plus(Duration.ofDays(6))));
@@ -200,12 +217,17 @@ class PushFoundationIntegrationTest extends AbstractIntegrationTest {
     }
     @Test void lateAcceptedResultAfterRebindCannotOverwriteCancellation(){
         UUID n=deliverable();var claim=deliveries.claim().orElseThrow();
+        double accepted=transitions("provider_accepted"),cancelled=transitions("cancelled");
+        var workerMeters=new SimpleMeterRegistry();
         PushProvider adapter=new PushProvider(){public PushProviderType provider(){return PushProviderType.FCM;}
             public Result send(Request value){registrations.put(subject(other),claim.installationId(),request(1,"rebound",PROOF,true,PushPermission.GRANTED));
                 return new Result(Outcome.ACCEPTED,"late",null);}};
-        try(var worker=worker(adapter)){worker.deliver(claim);}
+        try(var worker=new PushDeliveryWorker(deliveries,center,access,cipher,settings,config,List.of(adapter),workerMeters)){worker.deliver(claim);}
         assertEquals("CANCELLED",state(n));assertNull(jdbc.queryForObject("select providermessageid from dbo.notificationdelivery where id=?",String.class,claim.id()));
         assertEquals(other.getId(),jdbc.queryForObject("select recipientemployeeid from dbo.pushinstallation where id=?",UUID.class,claim.installationId()));
+        assertEquals(1,workerMeters.get("clientbus.notification.push.provider.responses").tag("outcome","accepted").counter().count());
+        assertEquals(accepted,transitions("provider_accepted"),"Provider response cannot invent a committed delivery transition");
+        assertEquals(cancelled+1,transitions("cancelled"));
     }
     @Test void serverRevokeCancelsInFlightAndCannotBeUndoneByOldProviderResult(){
         UUID n=deliverable();var claim=deliveries.claim().orElseThrow();registrations.delete(subject(owner),claim.installationId(),PROOF,1);
@@ -259,6 +281,52 @@ class PushFoundationIntegrationTest extends AbstractIntegrationTest {
         deliveries.cleanupBatch(retained.plusSeconds(1),100);
         assertEquals(0,jdbc.queryForObject("select count(*) from dbo.notificationdelivery where id=?",Integer.class,claim.id()));
         assertEquals(0,jdbc.queryForObject("select count(*) from dbo.pushinstallation where id=?",Integer.class,claim.installationId()));
+    }
+
+    @Test void rolledBackDeliveryTransitionDoesNotPublishMetrics(){
+        UUID n=deliverable();var claim=deliveries.claim().orElseThrow();
+        double accepted=transitions("provider_accepted");
+        tx().executeWithoutResult(status->{
+            assertTrue(deliveries.terminal(claim,"PROVIDER_ACCEPTED",null,"not-committed"));
+            assertEquals(accepted,transitions("provider_accepted"));status.setRollbackOnly();
+        });
+        assertEquals("IN_FLIGHT",state(n));assertEquals(accepted,transitions("provider_accepted"));
+        assertTrue(deliveries.terminal(claim,"PROVIDER_ACCEPTED",null,"committed"));
+        assertEquals(accepted+1,transitions("provider_accepted"));
+    }
+
+    @Test void failingObservationCannotTurnCommittedIntentIntoBusinessFailure(){
+        registration();UUID committed=notification(),rolledBack=notification();
+        var unavailable=mock(MeterRegistry.class);
+        when(unavailable.counter("clientbus.notification.push.queued")).thenThrow(new IllegalStateException("registry unavailable"));
+        var writer=new PushIntentWriter(named,new PushDeliveryMetrics(unavailable));
+        assertDoesNotThrow(()->tx().executeWithoutResult(status->writer.createIntents(committed)));
+        assertEquals(1,jdbc.queryForObject("select count(*) from dbo.notificationdelivery where notificationid=?",Integer.class,committed));
+        verify(unavailable,times(1)).counter("clientbus.notification.push.queued");
+
+        tx().executeWithoutResult(status->{writer.createIntents(rolledBack);status.setRollbackOnly();});
+        assertEquals(0,jdbc.queryForObject("select count(*) from dbo.notificationdelivery where notificationid=?",Integer.class,rolledBack));
+        verify(unavailable,times(1)).counter("clientbus.notification.push.queued");
+    }
+
+    @Test void cleanupExpiryAndRemovalMetricsFollowCommitWhilePushIsDisabled(){
+        UUID n=deliverable();var claim=deliveries.claim().orElseThrow();
+        assertFalse(config.pushEnabled());
+        jdbc.update("update dbo.notificationdelivery set createdat=clock_timestamp()-interval '2 seconds',expiresat=clock_timestamp()-interval '1 second' where id=?",claim.id());
+        double expired=transitions("expired");
+        double cleaned=meters.counter("clientbus.notification.push.cleanup","resource","deliveries_expired").count();
+        tx().executeWithoutResult(status->{deliveries.cleanupBatch(Instant.now(),100);status.setRollbackOnly();});
+        assertEquals("IN_FLIGHT",state(n));assertEquals(expired,transitions("expired"));
+        assertEquals(cleaned,meters.counter("clientbus.notification.push.cleanup","resource","deliveries_expired").count());
+        deliveries.cleanupBatch(Instant.now(),100);
+        assertEquals("EXPIRED",state(n));assertEquals(expired+1,transitions("expired"));
+        assertEquals(cleaned+1,meters.counter("clientbus.notification.push.cleanup","resource","deliveries_expired").count());
+        deliveries.cleanupBatch(Instant.now(),100);
+        assertEquals(expired+1,transitions("expired"),"Repeated sweep does not count an already terminal delivery");
+        var retained=jdbc.queryForObject("select retainuntil from dbo.notificationdelivery where id=?",java.sql.Timestamp.class,claim.id()).toInstant();
+        double removed=meters.counter("clientbus.notification.push.cleanup","resource","deliveries_removed").count();
+        deliveries.cleanupBatch(retained.plusSeconds(1),100);
+        assertEquals(removed+1,meters.counter("clientbus.notification.push.cleanup","resource","deliveries_removed").count());
     }
 
     private void concurrentRegistrationChange(String change) throws Exception {

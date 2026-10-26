@@ -5,5 +5,7 @@ public sealed interface ChannelConnectorCommand
         MarkMessagesReadCommand,
         SyncRecentChatsCommand,
         SyncConversationHistoryCommand,
-        SyncClientAccountCommand {
+        SyncClientAccountCommand,
+        DiscoverClientAccountCommand,
+        ReadClientAccountAvatarCommand {
 }

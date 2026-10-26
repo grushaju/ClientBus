@@ -11,6 +11,8 @@ import org.springframework.stereotype.Component;
 import tools.jackson.databind.json.JsonMapper;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutionException;
+import kit.penny.clientbus.server.notification.diagnostics.NotificationDiagnostics;
+import static kit.penny.clientbus.server.notification.diagnostics.NotificationDiagnostics.*;
 
 @Component
 @ConditionalOnProperty(prefix="clientbus.notifications",name="sse-enabled",havingValue="true")
@@ -33,22 +35,38 @@ public class UiOutboxRelay {
         } catch(RuntimeException e) {meters.counter("clientbus.notification.outbox.errors","stage","database").increment();}
     }
     void deliver(UiOutboxStore.Claim claim) {
-        try { validate(claim); }
-        catch(RuntimeException e) { if(store.failed(claim,true,"INVALID_PAYLOAD")) outcome("quarantined");return; }
+        UiInvalidation event;
+        try { event=validate(claim); }
+        catch(RuntimeException e) {
+            boolean updated=store.failed(claim,true,"INVALID_PAYLOAD");
+            if(updated) outcome("quarantined");
+            NotificationDiagnostics.event(Stage.UI_RELAY,updated?Outcome.QUARANTINED:Outcome.STALE,updated?Code.INVALID_EVENT:Code.LEASE_LOST,claim.eventId(),null,null);
+            return;
+        }
         try {
-            publisher.publish(claim.organizationId().toString(),claim.payload());
-            if(store.published(claim)) outcome("published");
+            long started=System.nanoTime();
+            meters.counter("clientbus.notification.publish.calls","pipeline","ui").increment();
+            boolean acknowledged=false;
+            try {publisher.publish(claim.organizationId().toString(),claim.payload());acknowledged=true;}
+            finally {meters.timer("clientbus.notification.publish.duration","pipeline","ui","result",acknowledged?"ack":"failure")
+                    .record(System.nanoTime()-started,java.util.concurrent.TimeUnit.NANOSECONDS);}
+            boolean updated=store.published(claim);
+            if(updated) outcome("published");
+            NotificationDiagnostics.event(Stage.UI_RELAY,updated?Outcome.PUBLISHED:Outcome.STALE,updated?Code.NONE:Code.LEASE_LOST,claim.eventId(),event.correlationId(),null);
         } catch(Exception error) {
             Throwable cause=error;while(cause instanceof ExecutionException && cause.getCause()!=null) cause=cause.getCause();
             boolean permanent=cause instanceof AuthorizationException || cause instanceof InvalidTopicException
                     || cause instanceof RecordTooLargeException || cause instanceof SerializationException
                     || cause instanceof UnsupportedVersionException || cause instanceof org.apache.kafka.common.config.ConfigException;
-            if(store.failed(claim,permanent,permanent?"PERMANENT_PUBLISH":"TRANSIENT_PUBLISH")) outcome(permanent?"quarantined":"retry");
+            boolean updated=store.failed(claim,permanent,permanent?"PERMANENT_PUBLISH":"TRANSIENT_PUBLISH");
+            if(updated) outcome(permanent?"quarantined":"retry");
+            NotificationDiagnostics.event(Stage.UI_RELAY,updated?(permanent?Outcome.QUARANTINED:Outcome.RETRY):Outcome.STALE,
+                    updated?Code.PIPELINE_UNAVAILABLE:Code.LEASE_LOST,claim.eventId(),event.correlationId(),null);
             if(cause instanceof InterruptedException) Thread.currentThread().interrupt();
         }
     }
     private void outcome(String result){meters.counter("clientbus.notification.outbox.attempts","result",result).increment();}
-    private void validate(UiOutboxStore.Claim claim) {
+    private UiInvalidation validate(UiOutboxStore.Claim claim) {
         if(!UiKafkaSubscriber.TOPIC.equals(claim.destination()) || claim.operationId()!=null
                 || claim.schemaVersion()!=1 || claim.payload().getBytes(StandardCharsets.UTF_8).length>config.maxOutboxBytes())
             throw new IllegalArgumentException();
@@ -58,5 +76,6 @@ public class UiOutboxRelay {
                 || event.origin()==null || event.audience()==null || event.recipientEmployeeIds().size()>500
                 || event.type().startsWith("stream.") || event.resource()==null
                 || event.resource().id()==null || event.resource().kind()==null) throw new IllegalArgumentException();
+        return event;
     }
 }

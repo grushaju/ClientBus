@@ -27,6 +27,9 @@ import java.util.stream.Collectors;
 @Transactional
 public class ConversationService {
 
+    @jakarta.persistence.PersistenceContext
+    private jakarta.persistence.EntityManager entityManager;
+
     @org.springframework.beans.factory.annotation.Autowired
     private kit.penny.clientbus.server.notification.center.PersonalNotificationWriter personalNotifications;
 
@@ -168,6 +171,26 @@ public class ConversationService {
      * с Conversation, поэтому отдельного standalone
      * ClientAccount для Employee не возникает.
      */
+    public record OutboundTarget(String avatarKey) {}
+
+    /** Validate before external I/O, without creating an account or a conversation. */
+    @Transactional(readOnly = true)
+    public OutboundTarget prepareOutboundConversation(CreateOutboundConversationRequest request) {
+        if (!currentUserService.isEmployee()) throw new AccessDeniedException("Only EMPLOYEE can create outbound conversations");
+        if (request == null || request.externalId() == null || request.externalId().isBlank())
+            throw new IllegalArgumentException("External recipient must not be blank");
+        var workspace = getWorkspace(request.workspaceId());
+        currentUserService.requireWorkspaceAccess(workspace.getId());
+        var channelAccount = getChannelAccount(request.channelAccountId());
+        validateChannelAccountWorkspace(channelAccount, workspace);
+        if (channelAccount.getChannel().getType() != request.channelType())
+            throw new IllegalArgumentException("ChannelAccount and requested channel type must match");
+        var account = clientAccountRepository.findByChannelTypeAndExternalId(request.channelType(), request.externalId());
+        account.flatMap(a -> conversationRepository.findByChannelAccountIdAndClientAccountId(channelAccount.getId(), a.getId()))
+                .ifPresent(this::requireConversationAccess);
+        return new OutboundTarget(account.map(ClientAccountEntity::getAvatarUrl).orElse(null));
+    }
+
     public ConversationDto createOutboundConversation(
             CreateOutboundConversationRequest request
     ) {
@@ -233,25 +256,13 @@ public class ConversationService {
                     ClientAccountState.ACTIVE
             );
 
-            try {
-
-                clientAccount =
-                        clientAccountRepository.saveAndFlush(
-                                clientAccount
-                        );
-
-            } catch (DataIntegrityViolationException e) {
-
-                clientAccount =
-                        clientAccountRepository
-                                .findByChannelTypeAndExternalId(
-                                        request.channelType(),
-                                        request.externalId()
-                                )
-                                .orElseThrow(() -> e);
-            }
+            // A uniqueness race is retried by the outbound orchestrator in a fresh transaction.
+            clientAccount = clientAccountRepository.saveAndFlush(clientAccount);
 
         } else {
+
+            // Serialize creation for this global identity and read the current avatar after waiting for the lock.
+            entityManager.refresh(clientAccount, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
 
             if (request.username() != null) {
                 clientAccount.setUsername(
@@ -298,31 +309,7 @@ public class ConversationService {
                 currentEmployee
         );
 
-        try {
-
-            ConversationEntity saved =
-                    conversationRepository.saveAndFlush(
-                            conversation
-                    );
-
-            return conversationMapper.toDto(saved);
-
-        } catch (DataIntegrityViolationException e) {
-
-            ConversationEntity concurrent =
-                    conversationRepository
-                            .findByChannelAccountIdAndClientAccountId(
-                                    channelAccount.getId(),
-                                    clientAccount.getId()
-                            )
-                            .orElseThrow(() -> e);
-
-            requireConversationAccess(concurrent);
-
-            return conversationMapper.toDto(
-                    concurrent
-            );
-        }
+        return conversationMapper.toDto(conversationRepository.saveAndFlush(conversation));
     }
 
     /**

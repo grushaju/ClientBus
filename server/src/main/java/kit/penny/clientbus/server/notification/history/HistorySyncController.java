@@ -3,6 +3,7 @@ package kit.penny.clientbus.server.notification.history;
 import kit.penny.clientbus.common.dto.notification.*;
 import kit.penny.clientbus.server.exception.ChannelUnavailableException;
 import kit.penny.clientbus.server.notification.center.NotificationApiException;
+import kit.penny.clientbus.server.notification.diagnostics.NotificationDiagnostics;
 import kit.penny.clientbus.server.security.policy.HttpAccessPolicy;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.*;
@@ -49,6 +50,7 @@ public class HistorySyncController {
     private ResponseEntity<NotificationApiErrorDto> failure(int status, String code) {
         var response = ResponseEntity.status(status).cacheControl(CacheControl.noStore());
         if (status == 429 || status == 503) response.header(HttpHeaders.RETRY_AFTER, "2");
-        return response.body(new NotificationApiErrorDto(code, UUID.randomUUID()));
+        return response.body(new NotificationApiErrorDto(code,
+                NotificationDiagnostics.apiFailure(NotificationDiagnostics.Stage.HISTORY_API, status, code)));
     }
 }

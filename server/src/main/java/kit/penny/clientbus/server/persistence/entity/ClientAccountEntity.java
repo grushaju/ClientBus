@@ -3,10 +3,13 @@ package kit.penny.clientbus.server.persistence.entity;
 import jakarta.persistence.*;
 import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.common.enums.ClientAccountState;
+import org.hibernate.annotations.DynamicUpdate;
 
 import java.util.UUID;
 
 @Entity
+// Profile or client-link changes must not write back an avatar read before a concurrent update.
+@DynamicUpdate
 @Table(
         name = "clientaccount",
         uniqueConstraints = {

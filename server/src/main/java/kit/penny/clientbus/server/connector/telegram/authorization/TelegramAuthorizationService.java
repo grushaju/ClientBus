@@ -2,6 +2,9 @@ package kit.penny.clientbus.server.connector.telegram.authorization;
 
 import jakarta.persistence.EntityNotFoundException;
 import kit.penny.clientbus.common.dto.channel.ClientAccountDiscoveryDto;
+import kit.penny.clientbus.common.dto.channel.ClientAccountAvatarPreviewDto;
+import kit.penny.clientbus.server.connector.IChannelConnectorRegistry;
+import kit.penny.clientbus.server.connector.command.DiscoverClientAccountCommand;
 import kit.penny.clientbus.common.enums.ChannelConnectionStatus;
 import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.server.connector.telegram.account.TelegramChannelAccountService;
@@ -11,9 +14,6 @@ import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
 import kit.penny.clientbus.server.persistence.repository.ClientAccountRepository;
 import kit.penny.clientbus.server.security.service.CurrentUserService;
-import kit.penny.tdlib.query.TdlibResponse;
-import kit.penny.tdlib.service.TelegramUserService;
-import org.drinkless.tdlib.TdApi;
 import org.springframework.stereotype.Service;
 
 import java.util.UUID;
@@ -38,19 +38,22 @@ public class TelegramAuthorizationService {
     private final ChannelAccountRepository channelAccountRepository;
     private final ClientAccountRepository clientAccountRepository;
     private final CurrentUserService currentUserService;
+    private final IChannelConnectorRegistry connectors;
 
     public TelegramAuthorizationService(
             TelegramClientLifecycleService lifecycleService,
             TelegramChannelAccountService channelAccountService,
             ChannelAccountRepository channelAccountRepository,
             ClientAccountRepository clientAccountRepository,
-            CurrentUserService currentUserService
+            CurrentUserService currentUserService,
+            IChannelConnectorRegistry connectors
     ) {
         this.lifecycleService = lifecycleService;
         this.channelAccountService = channelAccountService;
         this.channelAccountRepository = channelAccountRepository;
         this.clientAccountRepository = clientAccountRepository;
         this.currentUserService = currentUserService;
+        this.connectors = connectors;
     }
 
     public void startAuthorization(
@@ -164,62 +167,13 @@ public class TelegramAuthorizationService {
             );
         }
 
-        TelegramClientContext context =
-                lifecycleService.require(channelAccountId);
-
-        TelegramUserService telegramUserService =
-                context.applicationContext()
-                        .getBean(TelegramUserService.class);
-
-        TdlibResponse<TdApi.User> response;
-
-        if (hasPhone) {
-
-            response = telegramUserService
-                    .searchUserByPhoneNumber(
-                            phone.trim()
-                    )
-                    .join();
-
-        } else {
-
-            response = telegramUserService
-                    .searchUserByUsername(
-                            normalizeUsername(username)
-                    )
-                    .join();
-        }
-
-        if (response.getError().isPresent()) {
-
-            TdApi.Error error =
-                    response.getError().get();
-
-            throw new IllegalStateException(
-                    "Telegram user search failed: "
-                            + error.message
-            );
-        }
-
-        TdApi.User user =
-                response.getObject()
-                        .orElseThrow(() ->
-                                new EntityNotFoundException(
-                                        "Telegram user not found"
-                                )
-                        );
-
-        String externalId =
-                String.valueOf(user.id);
-
-        String resolvedUsername =
-                extractUsername(user);
-
-        String displayName =
-                buildDisplayName(
-                        user.firstName,
-                        user.lastName
-                );
+        var found = connectors.getConnector(ChannelType.TELEGRAM).handle(
+                new DiscoverClientAccountCommand(channelAccountId,
+                        hasPhone ? phone.trim() : null,
+                        hasUsername ? normalizeUsername(username) : null));
+        // A lookup may outlive membership or account revocation while waiting on the platform.
+        currentUserService.requireWorkspaceAccess(channelAccount.getChannel().getWorkspace().getId());
+        String externalId = found.externalId();
 
         UUID existingClientAccountId =
                 clientAccountRepository
@@ -232,10 +186,12 @@ public class TelegramAuthorizationService {
 
         return new ClientAccountDiscoveryDto(
                 externalId,
-                resolvedUsername,
-                emptyToNull(user.phoneNumber),
-                displayName,
-                existingClientAccountId
+                found.username(),
+                found.phone(),
+                found.displayName(),
+                existingClientAccountId,
+                found.avatarPreview() == null ? null : new ClientAccountAvatarPreviewDto(
+                        found.avatarPreview().contentType(), found.avatarPreview().base64())
         );
     }
 
@@ -278,47 +234,4 @@ public class TelegramAuthorizationService {
         return normalized;
     }
 
-    private String extractUsername(
-            TdApi.User user
-    ) {
-        if (user.usernames == null
-                || user.usernames.activeUsernames == null
-                || user.usernames.activeUsernames.length == 0) {
-
-            return null;
-        }
-
-        return user.usernames.activeUsernames[0];
-    }
-
-    private String buildDisplayName(
-            String firstName,
-            String lastName
-    ) {
-        String first =
-                emptyToNull(firstName);
-
-        String last =
-                emptyToNull(lastName);
-
-        if (first == null) {
-            return last;
-        }
-
-        if (last == null) {
-            return first;
-        }
-
-        return first + " " + last;
-    }
-
-    private String emptyToNull(
-            String value
-    ) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-
-        return value;
-    }
 }

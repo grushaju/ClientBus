@@ -93,6 +93,7 @@ export async function findTelegramClientAccount(
         phone?: string
         username?: string
     },
+    signal?: AbortSignal,
 ): Promise<ClientAccountDiscoveryDto> {
     const params = new URLSearchParams()
 
@@ -118,6 +119,7 @@ export async function findTelegramClientAccount(
         `/api/channels/${channelAccountId}/telegram/find${
             query ? `?${query}` : ''
         }`,
+        { signal, cache: 'no-store' },
     )
 
     return response.json()

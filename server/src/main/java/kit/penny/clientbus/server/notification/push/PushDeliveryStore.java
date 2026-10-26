@@ -19,7 +19,8 @@ public class PushDeliveryStore {
     }
     private final NamedParameterJdbcTemplate jdbc;
     private final NotificationProperties config;
-    public PushDeliveryStore(NamedParameterJdbcTemplate jdbc,NotificationProperties config){this.jdbc=jdbc;this.config=config;}
+    private final PushDeliveryMetrics metrics;
+    public PushDeliveryStore(NamedParameterJdbcTemplate jdbc,NotificationProperties config,PushDeliveryMetrics metrics){this.jdbc=jdbc;this.config=config;this.metrics=metrics;}
     @Transactional
     public Optional<Claim> claim(){
         return jdbc.query("""
@@ -64,11 +65,13 @@ public class PushDeliveryStore {
         var parameters=parameters(claim).addValue("status",status).addValue("code",code)
                 .addValue("message",providerMessageId==null?null:providerMessageId.substring(0,Math.min(512,providerMessageId.length())))
                 .addValue("retention",config.deliveryRetention().toMillis());
-        return jdbc.update("""
+        int changed=jdbc.update("""
             update dbo.notificationdelivery set status=:status,errorcode=:code,providermessageid=:message,
                 leaseuntil=null,completedat=clock_timestamp(),retainuntil=clock_timestamp()+(:retention * interval '1 millisecond')
             where id=:id and status='IN_FLIGHT' and claimversion=:version
-            """,parameters)==1;
+            """,parameters);
+        metrics.transition(status,changed,claim.notificationId(),claim.id(),code);
+        return changed==1;
     }
     @Transactional
     public boolean retry(Claim claim,String code,Duration hint){
@@ -76,15 +79,18 @@ public class PushDeliveryStore {
         long delay=retryDelayMillis(claim.attempts(),hint,java.util.concurrent.ThreadLocalRandom.current().nextDouble(),remaining);
         var parameters=parameters(claim).addValue("delay",delay).addValue("expire",delay>=remaining).addValue("code",code)
                 .addValue("retention",config.deliveryRetention().toMillis());
-        return jdbc.update("""
+        var statuses=jdbc.query("""
             update dbo.notificationdelivery set
                 status=case when :expire or clock_timestamp()+(:delay * interval '1 millisecond')>=expiresat then 'EXPIRED' else 'RETRY' end,
                 errorcode=:code,leaseuntil=null,nextattemptat=clock_timestamp()+(:delay * interval '1 millisecond'),
                 completedat=case when :expire or clock_timestamp()+(:delay * interval '1 millisecond')>=expiresat then clock_timestamp() else null end,
                 retainuntil=case when :expire or clock_timestamp()+(:delay * interval '1 millisecond')>=expiresat
                     then clock_timestamp()+(:retention * interval '1 millisecond') else null end
-            where id=:id and status='IN_FLIGHT' and claimversion=:version
-            """,parameters)==1;
+            where id=:id and status='IN_FLIGHT' and claimversion=:version returning status
+            """,parameters,(rs,row)->rs.getString(1));
+        statuses.forEach(status->metrics.transition(status,1,claim.notificationId(),claim.id(),code));
+        if(statuses.isEmpty())metrics.stale(claim.notificationId(),claim.id());
+        return !statuses.isEmpty();
     }
     /** Jitter applies to backoff only; a provider minimum is preserved until it would exhaust the original TTL. */
     static long retryDelayMillis(int attempts,Duration hint,double entropy,long remainingMillis){
@@ -124,7 +130,7 @@ public class PushDeliveryStore {
     }
     /** Rebind/logout/permission changes fence previous in-flight work in the same transaction. */
     public int cancelObsolete(UUID installationId){
-        return jdbc.update("""
+        int changed=jdbc.update("""
             update dbo.notificationdelivery d set status='CANCELLED',claimversion=d.claimversion+1,
                 leaseuntil=null,errorcode='REGISTRATION_CHANGED',completedat=clock_timestamp(),
                 retainuntil=clock_timestamp()+(:retention * interval '1 millisecond')
@@ -132,6 +138,8 @@ public class PushDeliveryStore {
                 and d.status in ('PENDING','RETRY','IN_FLIGHT')
                 and (d.bindingversion<>i.bindingversion or not i.enabled or i.reportedpermission='DENIED')
             """,Map.of("id",installationId,"retention",config.deliveryRetention().toMillis()));
+        metrics.transition("CANCELLED",changed,null,null,"REGISTRATION_CHANGED");
+        return changed;
     }
     @Transactional
     public int cleanupBatch(Instant now,int limit){
@@ -140,35 +148,42 @@ public class PushDeliveryStore {
                 .addValue("retention",config.deliveryRetention().toMillis());
         // Complete installation mutations before taking any delivery locks, as in registration/result handling.
         // A registration still referenced by this batch's deliveries is removed by a later batch.
-        jdbc.update("""
+        int disabled=jdbc.update("""
             update dbo.pushinstallation set enabled=false,activeendpointfingerprint=null,registrationversion=registrationversion+1
             where id in (select id from dbo.pushinstallation where enabled and activeuntil<=:now
                 order by activeuntil,id limit :limit for update skip locked)
             """,p);
+        metrics.cleaned("installations_disabled",disabled);
         int removed=jdbc.update("""
             delete from dbo.pushinstallation i where i.id in (select x.id from dbo.pushinstallation x
                 where not x.enabled and x.activeuntil<=:now and not exists
                     (select 1 from dbo.notificationdelivery d where d.registrationid=x.id)
                 order by x.activeuntil,x.id limit :limit for update skip locked)
             """,p);
-        jdbc.update("""
+        metrics.cleaned("installations_removed",removed);
+        int expired=jdbc.update("""
             update dbo.notificationdelivery set status='EXPIRED',claimversion=claimversion+1,leaseuntil=null,
                 completedat=clock_timestamp(),retainuntil=clock_timestamp()+(:retention * interval '1 millisecond'),errorcode='TTL_EXPIRED'
             where id in (select id from dbo.notificationdelivery where status in ('PENDING','RETRY','IN_FLIGHT')
                 and expiresat<=:now order by expiresat,id limit :limit for update skip locked)
             """,p);
-        removed+=jdbc.update("""
+        metrics.cleaned("deliveries_expired",expired);
+        metrics.transition("EXPIRED",expired,null,null,"TTL_EXPIRED");
+        int removedDeliveries=jdbc.update("""
             delete from dbo.notificationdelivery where id in (select id from dbo.notificationdelivery
                 where status in ('PROVIDER_ACCEPTED','FAILED','CANCELLED','EXPIRED') and retainuntil<=:now
                 order by retainuntil,id limit :limit for update skip locked)
             """,p);
-        return removed;
+        metrics.cleaned("deliveries_removed",removedDeliveries);
+        return removed+removedDeliveries;
     }
+    @Transactional(readOnly=true,timeoutString="${clientbus.notifications.metrics-query-timeout-seconds:2}")
     public Map<String,Object> statistics(){return jdbc.queryForMap("""
         select count(*) filter(where status in ('PENDING','RETRY','IN_FLIGHT')) as pending,
             count(*) filter(where status='IN_FLIGHT') as in_flight,
+            count(*) filter(where status='RETRY') as retry,
             coalesce(extract(epoch from(clock_timestamp()-min(createdat) filter(where status in ('PENDING','RETRY','IN_FLIGHT')))),0) as oldest_seconds
-        from dbo.notificationdelivery
+        from dbo.notificationdelivery where status in ('PENDING','RETRY','IN_FLIGHT')
         """,Map.of());}
     private MapSqlParameterSource parameters(Claim claim){return new MapSqlParameterSource().addValue("id",claim.id())
         .addValue("version",claim.claimVersion()).addValue("installation",claim.installationId())

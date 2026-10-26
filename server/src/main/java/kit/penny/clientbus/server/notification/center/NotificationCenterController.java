@@ -1,6 +1,7 @@
 package kit.penny.clientbus.server.notification.center;
 
 import kit.penny.clientbus.common.dto.notification.*;
+import kit.penny.clientbus.server.notification.diagnostics.NotificationDiagnostics;
 import kit.penny.clientbus.server.security.policy.HttpAccessPolicy;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.CacheControl;
@@ -58,6 +59,7 @@ public class NotificationCenterController {
 
     private ResponseEntity<NotificationApiErrorDto> failure(int status, String code) {
         return ResponseEntity.status(status).cacheControl(CacheControl.noStore())
-                .body(new NotificationApiErrorDto(code, UUID.randomUUID()));
+                .body(new NotificationApiErrorDto(code,
+                        NotificationDiagnostics.apiFailure(NotificationDiagnostics.Stage.CENTER_API, status, code)));
     }
 }

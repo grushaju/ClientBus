@@ -13,12 +13,26 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 
 class UiSchedulingIsolationTest {
+    @Test void metricsSchedulerAndSamplingRemainAvailableWithSseDisabled() {
+        try(var context=new AnnotationConfigApplicationContext()) {
+            context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("test",Map.of("clientbus.notifications.sse-enabled","false")));
+            context.registerBean(kit.penny.clientbus.server.notification.outbox.UiOutboxStore.class,()->mock(kit.penny.clientbus.server.notification.outbox.UiOutboxStore.class));
+            context.registerBean(io.micrometer.core.instrument.MeterRegistry.class,io.micrometer.core.instrument.simple.SimpleMeterRegistry::new);
+            context.registerBean(kit.penny.clientbus.server.notification.metrics.NotificationMetricsSettings.class,()->new kit.penny.clientbus.server.notification.metrics.NotificationMetricsSettings(10000,2));
+            context.register(UiTransportConfiguration.class,kit.penny.clientbus.server.notification.metrics.NotificationMetricsConfiguration.class,
+                    kit.penny.clientbus.server.notification.outbox.UiOutboxMetrics.class);
+            context.refresh();
+            assertNotNull(context.getBean("uiOutboxMetricsScheduler"));
+            assertNotNull(context.getBean(kit.penny.clientbus.server.notification.outbox.UiOutboxMetrics.class));
+            assertFalse(context.containsBean("uiOutboxScheduler"));
+        }
+    }
     @Test void blockedRelayCannotBlockDefaultBusinessSchedulerOrMetricsSampling() throws Exception {
         try(var context=new AnnotationConfigApplicationContext()) {
             context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("test",Map.of("clientbus.notifications.sse-enabled","true")));
             context.registerBean(UiSseGateway.class,()->mock(UiSseGateway.class));
             context.registerBean(ThreadPoolTaskSchedulerBuilder.class,ThreadPoolTaskSchedulerBuilder::new);
-            context.register(UiTransportConfiguration.class);context.refresh();
+            context.register(UiTransportConfiguration.class,kit.penny.clientbus.server.notification.metrics.NotificationMetricsConfiguration.class);context.refresh();
             var relay=context.getBean("uiOutboxScheduler",ThreadPoolTaskScheduler.class);
             var metrics=context.getBean("uiOutboxMetricsScheduler",ThreadPoolTaskScheduler.class);
             var router=new TaskSchedulerRouter();router.setBeanFactory(context.getBeanFactory());

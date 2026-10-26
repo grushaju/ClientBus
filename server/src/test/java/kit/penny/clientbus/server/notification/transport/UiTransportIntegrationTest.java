@@ -51,6 +51,7 @@ class UiTransportIntegrationTest extends AbstractIntegrationTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired KafkaProperties kafkaProperties;
     @Autowired JsonMapper mapper;
+    @Autowired io.micrometer.core.instrument.MeterRegistry metrics;
     @Autowired EntityManager em;
     @Autowired TransactionTemplate tx;
     @Autowired JwtService jwt;
@@ -99,6 +100,59 @@ class UiTransportIntegrationTest extends AbstractIntegrationTest {
                 .timeout(Duration.ofSeconds(15)).header("Accept","text/event-stream");
         if(auth!=null)builder.header("Authorization","Bearer "+auth);
         return builder.build();
+    }
+    private HttpRequest api(String path,String auth) {
+        var builder=HttpRequest.newBuilder(URI.create("http://localhost:"+port+path)).timeout(Duration.ofSeconds(10));
+        if(auth!=null)builder.header("Authorization","Bearer "+auth);
+        return builder.build();
+    }
+    private String administratorToken() {
+        return tx.execute(status->{
+            String key=UUID.randomUUID().toString();
+            var user=save(new UserEntity(key,key+"@test.local","unused",UserRole.SUPER_ADMIN));em.flush();
+            return jwt.generateToken(user);
+        });
+    }
+    @Test void managementHealthAndMetricsRequireExistingSuperAdminAndDoNotExposeConfiguration() throws Exception {
+        String admin=administratorToken();
+        try(var http=HttpClient.newHttpClient()) {
+            assertEquals(200,http.send(api("/api/notifications/summary",token),HttpResponse.BodyHandlers.discarding()).statusCode(),
+                    "The employee JWT is valid before management access is denied");
+            for(String path:List.of("/actuator/health/readiness","/actuator/health/liveness","/actuator/health/delivery","/actuator/metrics")) {
+                assertEquals(401,http.send(api(path,null),HttpResponse.BodyHandlers.discarding()).statusCode(),path);
+                var basic=HttpRequest.newBuilder(URI.create("http://localhost:"+port+path))
+                        .header("Authorization","Basic "+Base64.getEncoder().encodeToString("operator:unconfigured".getBytes(StandardCharsets.UTF_8))).GET().build();
+                assertEquals(401,http.send(basic,HttpResponse.BodyHandlers.discarding()).statusCode(),"Unconfigured management credentials remain disabled");
+                assertEquals(403,http.send(api(path,token),HttpResponse.BodyHandlers.discarding()).statusCode(),path);
+                assertEquals(200,http.send(api(path,admin),HttpResponse.BodyHandlers.discarding()).statusCode(),path);
+            }
+            var health=http.send(api("/actuator/health/delivery",admin),HttpResponse.BodyHandlers.ofString());
+            assertTrue(health.body().contains("ready"),"An authorized operator sees the delivery mode");
+            for(String path:List.of("/actuator/env","/actuator/configprops","/actuator/heapdump"))
+                assertEquals(403,http.send(api(path,admin),HttpResponse.BodyHandlers.discarding()).statusCode(),path);
+            await().atMost(Duration.ofSeconds(5)).until(()->metrics.get("clientbus.notification.kafka.sample.valid").gauge().value()==1);
+            assertTrue(metrics.get("clientbus.notification.kafka.lag.records").gauge().value()>=0);
+            await().atMost(Duration.ofSeconds(10)).until(()->metrics.find("kafka.consumer.fetch.manager.records.lag.max")
+                    .tag("pipeline","history").gauge()!=null);
+            var historyLag=metrics.get("kafka.consumer.fetch.manager.records.lag.max").tag("pipeline","history").gauge();
+            assertTrue(historyLag.getId().getTag("client.id").startsWith(
+                    kit.penny.clientbus.server.kafka.config.HistoryConsumerMetrics.CLIENT_ID_PREFIX));
+        }
+    }
+    @Test void deliveryDegradationKeepsCoreReadinessAndNotificationRestAvailable() throws Exception {
+        String admin=administratorToken();
+        try(var http=HttpClient.newHttpClient()) {
+            subscriber.stop(()->{});
+            try {
+                assertFalse(gateway.ready());
+                assertEquals(503,http.send(api("/actuator/health/delivery",admin),HttpResponse.BodyHandlers.discarding()).statusCode());
+                assertEquals(200,http.send(api("/actuator/health/readiness",admin),HttpResponse.BodyHandlers.discarding()).statusCode());
+                assertEquals(200,http.send(api("/actuator/health/liveness",admin),HttpResponse.BodyHandlers.discarding()).statusCode());
+                assertEquals(200,http.send(api("/api/notifications/summary",token),HttpResponse.BodyHandlers.discarding()).statusCode());
+                assertEquals(0,metrics.get("clientbus.notification.kafka.sample.valid").gauge().value());
+            } finally {subscriber.start();await().atMost(Duration.ofSeconds(30)).until(gateway::ready);}
+            assertEquals(200,http.send(api("/actuator/health/delivery",admin),HttpResponse.BodyHandlers.discarding()).statusCode());
+        }
     }
     private UiInvalidation event() {
         return new UiInvalidation(UUID.randomUUID(),1,"messages.invalidated",Instant.now(),org,workspace,

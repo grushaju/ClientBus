@@ -44,6 +44,14 @@ async function login(page: Page, fixture: Fixture, role: 'allowed' | 'other' = '
     await expect.poll(() => page.evaluate(workspace => (window as any).__centerReadyWorkspaces.includes(workspace), fixture.workspaceId)).toBe(true)
     await expect(page.locator('.workspace-switcher-trigger')).toContainText('Center selected')
     expect(await page.evaluate(() => localStorage.getItem('clientbus.currentWorkspaceId'))).toBe(fixture.workspaceId)
+    await expect.poll(() => page.evaluate(() => (window as any).clientbusNotificationDiagnostics?.()?.requests?.started ?? 0)).toBeGreaterThan(0)
+    const diagnostics = await page.evaluate(() => (window as any).clientbusNotificationDiagnostics?.())
+    expect(diagnostics?.version).toBe(1)
+    expect(diagnostics.transport.attempts).toBeGreaterThanOrEqual(1)
+    expect(diagnostics.requests.started).toBeGreaterThanOrEqual(1)
+    const serialized = JSON.stringify(diagnostics)
+    for (const privateValue of [accessToken, fixture.workspaceId, fixture.ownerId, fixture.conversationId])
+        expect(serialized).not.toContain(privateValue)
     return accessToken
 }
 const count = (page: Page, value: number) => expect(page.locator('.notification-bell')).toHaveAttribute('aria-label', `Уведомления: ${value} непрочитанных`)
@@ -162,10 +170,13 @@ test('global center shares N1/N2, read state and safe read-all replay across ses
         for (const current of [page, second]) await count(current, 1)
         await expect(page.locator('.notification-item')).toHaveCount(4)
         // Opening the current target rechecks REST access, marks the shared row read and selects W-B.
+        await page.evaluate(() => { (window as any).__oldDiagnostics = (window as any).clientbusNotificationDiagnostics })
         await page.locator('.notification-item.unread .notification-target').click()
         await expect(page).toHaveURL(new RegExp('/inbox/' + f.conversationId + '(?:[?#]|$)'))
         await expect(page.locator('.workspace-switcher-trigger')).toContainText('Center target')
         expect(await page.evaluate(() => localStorage.getItem('clientbus.currentWorkspaceId'))).toBe(f.targetWorkspaceId)
+        await expect.poll(() => page.evaluate(() => (window as any).__oldDiagnostics?.())).toBeNull()
+        await expect.poll(() => page.evaluate(() => (window as any).clientbusNotificationDiagnostics?.()?.version)).toBe(1)
         for (const current of [page, second]) await count(current, 0)
         await open(page)
         await expect(page.locator('.notification-item')).toHaveCount(4)

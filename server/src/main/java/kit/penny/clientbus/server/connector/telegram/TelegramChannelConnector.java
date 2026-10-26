@@ -6,6 +6,8 @@ import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.common.enums.MessageAttachmentType;
 import kit.penny.clientbus.common.enums.MessageType;
 import kit.penny.clientbus.server.connector.ClientAccountProfile;
+import kit.penny.clientbus.server.connector.ClientAccountAvatar;
+import kit.penny.clientbus.server.connector.DiscoveredClientAccount;
 import kit.penny.clientbus.server.connector.ConnectorSendResult;
 import kit.penny.clientbus.server.connector.IChannelConnector;
 import kit.penny.clientbus.server.connector.SyncConversationHistoryResult;
@@ -30,6 +32,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Component
@@ -79,6 +82,25 @@ public class TelegramChannelConnector
             ChannelType channelType
     ) {
         return channelType == ChannelType.TELEGRAM;
+    }
+
+    @Override
+    public DiscoveredClientAccount handle(DiscoverClientAccountCommand command) {
+        if (command == null || command.channelAccountId() == null) {
+            throw new IllegalArgumentException("channelAccountId must not be null");
+        }
+        return TelegramClientAccountDiscovery.discover(telegramClientManager.require(command.channelAccountId()), command);
+    }
+
+    @Override
+    public Optional<ClientAccountAvatar> handle(ReadClientAccountAvatarCommand command) {
+        if (command == null || command.channelAccountId() == null) {
+            throw new IllegalArgumentException("channelAccountId must not be null");
+        }
+        long userId = parseChatId(command.externalId());
+        if (userId <= 0) throw new IllegalArgumentException("Telegram avatar requires a positive user ID");
+        return TelegramClientAccountDiscovery.readAvatar(
+                telegramClientManager.require(command.channelAccountId()).telegramClient(), userId);
     }
 
     @Override
@@ -658,7 +680,7 @@ public class TelegramChannelConnector
             TelegramClient telegramClient,
             TdApi.User user
     ) {
-        if (user.profilePhoto == null || user.profilePhoto.big == null) {
+        if (user.profilePhoto == null || user.profilePhoto.isPersonal || user.profilePhoto.big == null) {
             return null;
         }
 

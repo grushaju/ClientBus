@@ -9,11 +9,12 @@ import java.util.UUID;
 @Service
 public class PushIntentWriter {
     private final NamedParameterJdbcTemplate jdbc;
-    public PushIntentWriter(NamedParameterJdbcTemplate jdbc) { this.jdbc = jdbc; }
+    private final PushDeliveryMetrics metrics;
+    public PushIntentWriter(NamedParameterJdbcTemplate jdbc, PushDeliveryMetrics metrics) { this.jdbc = jdbc; this.metrics = metrics; }
     /** Called once, only for a newly inserted notification, in its domain transaction. */
     @Transactional(propagation = Propagation.MANDATORY)
     public void createIntents(UUID notificationId) {
-        jdbc.update("""
+        int inserted = jdbc.update("""
             insert into dbo.notificationdelivery
                 (id,notificationid,registrationid,bindingversion,channel,status,attempts,claimversion,nextattemptat,expiresat)
             select gen_random_uuid(),n.id,i.id,i.bindingversion,'MOBILE_PUSH','PENDING',0,0,clock_timestamp(),n.alertexpiresat
@@ -24,5 +25,6 @@ public class PushIntentWriter {
               and i.reportedpermission in ('GRANTED','PROVISIONAL')
             on conflict (notificationid,registrationid,bindingversion,channel) do nothing
             """,Map.of("id",notificationId));
+        metrics.queued(inserted);
     }
 }

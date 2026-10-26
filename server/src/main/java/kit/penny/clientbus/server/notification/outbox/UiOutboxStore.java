@@ -65,13 +65,27 @@ public class UiOutboxStore {
             where id=:id and status='QUARANTINED' and destination=:topic and operationid is null
             """,Map.of("id",id,"topic",UiKafkaSubscriber.TOPIC))==1;
     }
-    public Map<String,Object> statistics() {
-        return jdbc.queryForMap("""
+    static final String STATISTICS_SQL="""
             select count(*) filter (where status in ('PENDING','RETRY','IN_FLIGHT')) as pending,
                 count(*) filter (where status='QUARANTINED') as quarantined,
                 coalesce(extract(epoch from (clock_timestamp()-min(createdat) filter
-                    (where status in ('PENDING','RETRY','IN_FLIGHT')))),0) as oldest_seconds
+                    (where status in ('PENDING','RETRY','IN_FLIGHT')))),0) as oldest_seconds,
+                count(*) filter (where destination=:ui and status<>'QUARANTINED') as uipending,
+                count(*) filter (where destination=:ui and status='QUARANTINED') as uiquarantined,
+                coalesce(extract(epoch from (clock_timestamp()-min(createdat) filter
+                    (where destination=:ui and status<>'QUARANTINED'))),0) as uioldest,
+                count(*) filter (where destination=:history and status<>'QUARANTINED') as historypending,
+                count(*) filter (where destination=:history and status='QUARANTINED') as historyquarantined,
+                coalesce(extract(epoch from (clock_timestamp()-min(createdat) filter
+                    (where destination=:history and status<>'QUARANTINED'))),0) as historyoldest
             from dbo.notificationoutbox
-            """,Map.of());
+            where status in ('PENDING','RETRY','IN_FLIGHT','QUARANTINED')
+            """;
+    static Map<String,Object> statisticsParameters() {
+        return Map.of("ui",UiKafkaSubscriber.TOPIC,"history",kit.penny.clientbus.server.notification.history.HistorySyncConfiguration.TOPIC);
+    }
+    @Transactional(readOnly=true, timeoutString="${clientbus.notifications.metrics-query-timeout-seconds:2}")
+    public Map<String,Object> statistics() {
+        return jdbc.queryForMap(STATISTICS_SQL,statisticsParameters());
     }
 }

@@ -53,6 +53,10 @@ export interface ClientAccountDiscoveryDto {
     phone: string | null
     displayName: string | null
     existingClientAccountId: string | null
+    avatarPreview?: {
+        contentType: string
+        base64: string
+    } | null
 }
 
 export interface CreateChannelAccountRequest {

@@ -6,8 +6,17 @@ import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.server.connector.command.*;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface IChannelConnector {
+
+    default DiscoveredClientAccount handle(DiscoverClientAccountCommand command) {
+        throw new UnsupportedOperationException("Contact discovery is not supported by this connector");
+    }
+
+    default Optional<ClientAccountAvatar> handle(ReadClientAccountAvatarCommand command) {
+        return Optional.empty();
+    }
 
     boolean supports(
             ChannelType channelType

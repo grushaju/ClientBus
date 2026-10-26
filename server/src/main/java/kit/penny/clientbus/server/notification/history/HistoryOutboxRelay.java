@@ -13,6 +13,8 @@ import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.json.JsonMapper;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutionException;
+import kit.penny.clientbus.server.notification.diagnostics.NotificationDiagnostics;
+import static kit.penny.clientbus.server.notification.diagnostics.NotificationDiagnostics.*;
 
 @Component
 public class HistoryOutboxRelay {
@@ -60,8 +62,15 @@ public class HistoryOutboxRelay {
         if (!canonical) { failed(claim, true, "INVALID_PAYLOAD"); return; }
         if (!publishable) { failed(claim, true, "OPERATION_TERMINAL"); return; }
         try {
-            publisher.publish(claim.operationId().toString(), claim.payload());
-            store.published(claim);
+            long started=System.nanoTime();
+            meters.counter("clientbus.notification.publish.calls","pipeline","history").increment();
+            boolean acknowledged=false;
+            try {publisher.publish(claim.operationId().toString(), claim.payload());acknowledged=true;}
+            finally {meters.timer("clientbus.notification.publish.duration","pipeline","history","result",acknowledged?"ack":"failure")
+                    .record(System.nanoTime()-started,java.util.concurrent.TimeUnit.NANOSECONDS);}
+            boolean updated=store.published(claim);
+            NotificationDiagnostics.event(Stage.HISTORY_RELAY,updated?Outcome.PUBLISHED:Outcome.STALE,updated?Code.NONE:Code.LEASE_LOST,
+                    claim.eventId(),claim.operationId(),claim.operationId());
         } catch (Exception error) {
             Throwable cause = error;
             while (cause instanceof ExecutionException && cause.getCause() != null) cause = cause.getCause();
@@ -73,7 +82,9 @@ public class HistoryOutboxRelay {
         }
     }
     private void failed(UiOutboxStore.Claim claim, boolean permanent, String code) {
-        if (permanent) history.publicationFailed(claim, code);
-        else store.failed(claim, false, code);
+        boolean updated=permanent?history.publicationFailed(claim, code):store.failed(claim, false, code);
+        NotificationDiagnostics.event(Stage.HISTORY_RELAY,updated?(permanent?Outcome.QUARANTINED:Outcome.RETRY):Outcome.STALE,
+                !updated?Code.LEASE_LOST:"INVALID_PAYLOAD".equals(code)?Code.INVALID_EVENT:"TRANSIENT_DATABASE".equals(code)?Code.DB_UNAVAILABLE:Code.PIPELINE_UNAVAILABLE,
+                claim.eventId(),claim.operationId(),claim.operationId());
     }
 }

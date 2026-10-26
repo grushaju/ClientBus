@@ -1,6 +1,7 @@
 import {
     useEffect,
     useMemo,
+    useRef,
     useState,
 } from 'react'
 
@@ -16,6 +17,8 @@ import type {
     ChannelDto,
     ClientAccountDiscoveryDto,
 } from '../../api/types/channel'
+import { useUiLifetime } from '../../api/events/useUiLifetime'
+import { useAuth } from '../../auth/AuthContext'
 
 interface NewConversationDialogProps {
     workspaceId: string
@@ -29,6 +32,42 @@ interface NewConversationDialogProps {
 type SearchMode =
     | 'phone'
     | 'username'
+
+function DiscoveryAvatar({ preview, displayName }: {
+    preview: ClientAccountDiscoveryDto['avatarPreview']
+    displayName: string
+}) {
+    const [imageUrl, setImageUrl] = useState<string | null>(null)
+    const objectUrl = useRef<string | null>(null)
+    const release = () => {
+        if (objectUrl.current) URL.revokeObjectURL(objectUrl.current)
+        objectUrl.current = null
+    }
+
+    useEffect(() => {
+        setImageUrl(null)
+        // Only bounded raster content is accepted; no remote URL or SVG is rendered.
+        if (preview && ['image/jpeg', 'image/png', 'image/webp'].includes(preview.contentType)
+            && typeof preview.base64 === 'string' && preview.base64.length > 0
+            && preview.base64.length <= Math.ceil(256 * 1024 / 3) * 4) {
+            try {
+                const binary = atob(preview.base64)
+                if (binary.length > 256 * 1024) return
+                const bytes = Uint8Array.from(binary, character => character.charCodeAt(0))
+                objectUrl.current = URL.createObjectURL(new Blob([bytes], { type: preview.contentType }))
+                setImageUrl(objectUrl.current)
+            } catch {
+                release()
+            }
+        }
+        return release
+    }, [preview])
+
+    return <span className="new-conversation-result-avatar" aria-hidden="true">
+        {imageUrl ? <img src={imageUrl} alt="" onError={() => { release(); setImageUrl(null) }} />
+            : displayName.trim().charAt(0).toUpperCase() || '•'}
+    </span>
+}
 
 function NewConversationDialog({
                                    workspaceId,
@@ -65,13 +104,6 @@ function NewConversationDialog({
     ] = useState('')
 
     const [
-        discovery,
-        setDiscovery,
-    ] = useState<ClientAccountDiscoveryDto | null>(
-        null,
-    )
-
-    const [
         loading,
         setLoading,
     ] = useState(false)
@@ -92,6 +124,36 @@ function NewConversationDialog({
                 channel.id ===
                 selectedChannelId,
         ) ?? null
+
+    const { sessionEpoch } = useAuth()
+    const lifetime = useUiLifetime(`new-conversation:${workspaceId}:${selectedChannel?.account?.id ?? ''}:${sessionEpoch}`)
+    const [discoveryState, setDiscovery] = useState<{
+        owner: typeof lifetime
+        account: ClientAccountDiscoveryDto
+    } | null>(null)
+    const discovery = discoveryState?.owner === lifetime ? discoveryState.account : null
+    const flight = useRef<{ owner: typeof lifetime; kind: 'search' | 'create' } | null>(null)
+
+    useEffect(() => {
+        setDiscovery(null)
+        setLoading(false)
+        setCreating(false)
+        setError(null)
+        flight.current = null
+    }, [lifetime])
+
+    const resetSearch = () => {
+        lifetime.reset()
+        flight.current = null
+        setLoading(false)
+        setCreating(false)
+        setDiscovery(null)
+        setError(null)
+    }
+    const handleClose = () => {
+        resetSearch()
+        onClose()
+    }
 
     useEffect(() => {
         if (telegramChannels.length === 0) {
@@ -122,9 +184,13 @@ function NewConversationDialog({
         ) => {
             if (
                 event.key === 'Escape' &&
-                !loading &&
                 !creating
             ) {
+                lifetime.reset()
+                flight.current = null
+                setDiscovery(null)
+                setLoading(false)
+                setError(null)
                 onClose()
             }
         }
@@ -142,7 +208,7 @@ function NewConversationDialog({
         }
     }, [
         creating,
-        loading,
+        lifetime,
         onClose,
     ])
 
@@ -151,17 +217,18 @@ function NewConversationDialog({
     ) => {
         setSearchMode(mode)
         setSearchValue('')
-        setDiscovery(null)
-        setError(null)
+        resetSearch()
     }
 
     const handleSearch = async () => {
+        if (!lifetime.isCurrent() || flight.current?.owner === lifetime) return
         if (!selectedChannel?.account) {
             setError(
                 'Выберите подключённый Telegram-канал.',
             )
             return
         }
+        const channelAccountId = selectedChannel.account.id
 
         const value =
             searchValue.trim()
@@ -175,14 +242,18 @@ function NewConversationDialog({
             return
         }
 
+        lifetime.reset()
+        const allowed = lifetime.capture()
+        const request = { owner: lifetime, kind: 'search' as const }
+        flight.current = request
         setLoading(true)
         setError(null)
         setDiscovery(null)
 
         try {
             const result =
-                await findTelegramClientAccount(
-                    selectedChannel.account.id,
+                await lifetime.read(signal => findTelegramClientAccount(
+                    channelAccountId,
                     searchMode === 'phone'
                         ? {
                             phone: value,
@@ -190,17 +261,20 @@ function NewConversationDialog({
                         : {
                             username: value,
                         },
-                )
+                    signal,
+                ))
 
-            setDiscovery(result)
+            if (allowed()) setDiscovery({ owner: lifetime, account: result })
         } catch (err) {
+            if (!allowed()) return
             setError(
                 err instanceof Error
                     ? err.message
                     : 'Не удалось найти пользователя.',
             )
         } finally {
-            setLoading(false)
+            if (flight.current === request) flight.current = null
+            if (allowed()) setLoading(false)
         }
     }
 
@@ -208,20 +282,26 @@ function NewConversationDialog({
         if (
             !selectedChannel ||
             !selectedChannel.account ||
-            !discovery
+            !discovery ||
+            !lifetime.isCurrent() ||
+            flight.current?.owner === lifetime
         ) {
             return
         }
+        const channelAccountId = selectedChannel.account.id
 
+        const allowed = lifetime.capture()
+        const request = { owner: lifetime, kind: 'create' as const }
+        flight.current = request
         setCreating(true)
         setError(null)
 
         try {
             const conversation =
-                await createOutboundConversation({
+                await lifetime.read(signal => createOutboundConversation({
                     workspaceId,
                     channelAccountId:
-                    selectedChannel.account.id,
+                    channelAccountId,
                     channelType:
                     selectedChannel.type,
                     externalId:
@@ -232,19 +312,23 @@ function NewConversationDialog({
                     discovery.phone,
                     displayName:
                     discovery.displayName,
-                })
+                }, signal))
 
+            if (!allowed()) return
+            resetSearch()
             onCreated(
                 conversation.id,
             )
         } catch (err) {
+            if (!allowed()) return
             setError(
                 err instanceof Error
                     ? err.message
                     : 'Не удалось создать диалог.',
             )
         } finally {
-            setCreating(false)
+            if (flight.current === request) flight.current = null
+            if (allowed()) setCreating(false)
         }
     }
 
@@ -262,10 +346,9 @@ function NewConversationDialog({
                 if (
                     event.target ===
                     event.currentTarget &&
-                    !loading &&
                     !creating
                 ) {
-                    onClose()
+                    handleClose()
                 }
             }}
         >
@@ -296,11 +379,8 @@ function NewConversationDialog({
                     <button
                         type="button"
                         className="ui-dialog-close"
-                        onClick={onClose}
-                        disabled={
-                            loading ||
-                            creating
-                        }
+                        onClick={handleClose}
+                        disabled={creating}
                         aria-label="Закрыть"
                     >
                         ×
@@ -334,7 +414,7 @@ function NewConversationDialog({
                             <button
                                 type="button"
                                 className="ui-button ui-button-sm ui-button-secondary"
-                                onClick={onClose}
+                                onClick={handleClose}
                             >
                                 Закрыть
                             </button>
@@ -355,16 +435,12 @@ function NewConversationDialog({
                                             selectedChannelId
                                         }
                                         onChange={event => {
+                                            resetSearch()
                                             setSelectedChannelId(
                                                 event.target.value,
                                             )
-                                            setDiscovery(null)
-                                            setError(null)
                                         }}
-                                        disabled={
-                                            loading ||
-                                            creating
-                                        }
+                                        disabled={creating}
                                     >
                                         {telegramChannels.map(
                                             channel => (
@@ -392,10 +468,7 @@ function NewConversationDialog({
                                                 'phone',
                                             )
                                         }
-                                        disabled={
-                                            loading ||
-                                            creating
-                                        }
+                                        disabled={creating}
                                     >
                                         Телефон
                                     </button>
@@ -412,10 +485,7 @@ function NewConversationDialog({
                                                 'username',
                                             )
                                         }
-                                        disabled={
-                                            loading ||
-                                            creating
-                                        }
+                                        disabled={creating}
                                     >
                                         Username
                                     </button>
@@ -441,11 +511,10 @@ function NewConversationDialog({
                                             searchValue
                                         }
                                         onChange={event => {
+                                            resetSearch()
                                             setSearchValue(
                                                 event.target.value,
                                             )
-                                            setDiscovery(null)
-                                            setError(null)
                                         }}
                                         placeholder={
                                             searchMode ===
@@ -453,10 +522,7 @@ function NewConversationDialog({
                                                 ? '+49...'
                                                 : '@username'
                                         }
-                                        disabled={
-                                            loading ||
-                                            creating
-                                        }
+                                        disabled={creating}
                                         autoFocus
                                         onKeyDown={event => {
                                             if (
@@ -485,8 +551,9 @@ function NewConversationDialog({
                                             найден
                                         </div>
 
-                                        <div className="new-conversation-result-name">
-                                            {displayName}
+                                        <div className="new-conversation-result-identity">
+                                            <DiscoveryAvatar preview={discovery.avatarPreview} displayName={displayName} />
+                                            <div className="new-conversation-result-name">{displayName}</div>
                                         </div>
 
                                         {discovery.username && (
@@ -544,11 +611,8 @@ function NewConversationDialog({
                             <button
                                 type="button"
                                 className="ui-button ui-button-sm ui-button-secondary"
-                                onClick={onClose}
-                                disabled={
-                                    loading ||
-                                    creating
-                                }
+                                onClick={handleClose}
+                                disabled={creating}
                             >
                                 Отмена
                             </button>
@@ -576,10 +640,7 @@ function NewConversationDialog({
                                     <button
                                         type="button"
                                         className="ui-button ui-button-sm ui-button-secondary"
-                                        onClick={() => {
-                                            setDiscovery(null)
-                                            setError(null)
-                                        }}
+                                        onClick={resetSearch}
                                         disabled={
                                             creating
                                         }

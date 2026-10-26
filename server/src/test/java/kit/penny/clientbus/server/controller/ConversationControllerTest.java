@@ -45,7 +45,8 @@ class ConversationControllerTest {
     void setUp() {
         controller = new ConversationController(
                 conversationService,
-                conversationGroupService
+                conversationGroupService,
+                mock(kit.penny.clientbus.server.service.OutboundConversationService.class)
         );
 
         conversationId = UUID.randomUUID();
