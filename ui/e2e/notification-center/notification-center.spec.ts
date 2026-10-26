@@ -86,6 +86,8 @@ test('global center shares N1/N2, read state and safe read-all replay across ses
         for (const current of [page, second]) { await count(current, 1); await open(current) }
         await expect(page.locator('.notification-item')).toHaveCount(1)
         await expect(page.locator('.notification-item')).toContainText('Вам назначен диалог')
+        await expect(page.locator('.notification-item .notification-sender')).toHaveText('Диалог: Center incoming contact')
+        await expect(page.locator('.notification-item .notification-source')).not.toBeEmpty()
         const dialog = await page.locator('.notification-dialog').boundingBox()
         expect(dialog).not.toBeNull()
         expect(dialog!.x).toBeGreaterThanOrEqual(0)
@@ -102,6 +104,9 @@ test('global center shares N1/N2, read state and safe read-all replay across ses
         for (const current of [page, second]) {
             await count(current, 2)
             await expect(current.locator('.notification-item')).toHaveCount(2)
+            const message = current.locator('.notification-item').filter({ hasText: 'Новое входящее сообщение' })
+            await expect(message.locator('.notification-sender')).toHaveText('От: Center incoming contact')
+            await expect(message.locator('.notification-source')).not.toBeEmpty()
             await expect(current.locator('.workspace-switcher-trigger')).toContainText('Center selected')
             expect(await current.evaluate(() => localStorage.getItem('clientbus.currentWorkspaceId'))).toBe(f.workspaceId)
         }
@@ -166,9 +171,44 @@ test('global center shares N1/N2, read state and safe read-all replay across ses
         await expect(page.locator('.notification-banner')).toHaveCount(0)
         await page.getByRole('button', { name: 'Отметить все прочитанными', exact: true }).click()
         for (const current of [page, second]) await count(current, 0)
+        const oldList = await page.request.get('/api/notifications?limit=100', { headers })
+        const oldIds: string[] = (await oldList.json()).items.map((item: { id: string }) => item.id)
+        expect(oldIds).toHaveLength(3)
+        const clear = page.getByRole('button', { name: 'Очистить уведомления', exact: true })
+        await clear.click()
+        await page.getByRole('group', { name: 'Подтверждение очистки уведомлений' }).getByRole('button', { name: 'Отмена', exact: true }).click()
+        await expect(page.locator('.notification-item')).toHaveCount(3)
+        let clearKey = '', clearReplayKey = ''
+        await page.route('**/api/notifications', async route => {
+            expect(route.request().method()).toBe('DELETE')
+            clearKey = route.request().headers()['idempotency-key']
+            const committed = await route.fetch(); expect(committed.ok()).toBe(true)
+            expect((await committed.json()).deletedCount).toBe(3)
+            await route.abort('failed')
+        }, { times: 1 })
+        await clear.click(); await page.getByRole('button', { name: 'Удалить все', exact: true }).click()
+        await expect(page.getByRole('button', { name: 'Повторить очистку', exact: true })).toBeVisible()
+        for (const current of [page, second]) {
+            await count(current, 0); await expect(current.locator('.notification-item')).toHaveCount(0)
+            await expect(current.locator('.notification-banner')).toHaveCount(0)
+        }
+        for (const id of oldIds) expect((await page.request.get('/api/notifications/' + id, { headers })).status()).toBe(404)
+        await page.reload(); await open(page)
+        await expect(page.getByRole('button', { name: 'Повторить очистку', exact: true })).toBeVisible()
+        await incoming('after-lost-clear')
+        for (const current of [page, second]) { await count(current, 1); await expect(current.locator('.notification-item')).toHaveCount(1) }
+        await page.route('**/api/notifications', async route => {
+            clearReplayKey = route.request().headers()['idempotency-key']; await route.continue()
+        }, { times: 1 })
+        await page.getByRole('button', { name: 'Повторить очистку', exact: true }).click()
+        await expect(page.getByRole('button', { name: 'Повторить очистку', exact: true })).toHaveCount(0)
+        expect(clearReplayKey).toBe(clearKey)
+        for (const current of [page, second]) { await count(current, 1); await expect(current.locator('.notification-item')).toHaveCount(1) }
+        await clear.click(); await page.getByRole('button', { name: 'Удалить все', exact: true }).click()
+        for (const current of [page, second]) { await count(current, 0); await expect(current.locator('.notification-item')).toHaveCount(0) }
         await incoming('before-revoke')
         for (const current of [page, second]) await count(current, 1)
-        await expect(page.locator('.notification-item')).toHaveCount(4)
+        await expect(page.locator('.notification-item')).toHaveCount(1)
         // Opening the current target rechecks REST access, marks the shared row read and selects W-B.
         await page.evaluate(() => { (window as any).__oldDiagnostics = (window as any).clientbusNotificationDiagnostics })
         await page.locator('.notification-item.unread .notification-target').click()
@@ -179,7 +219,7 @@ test('global center shares N1/N2, read state and safe read-all replay across ses
         await expect.poll(() => page.evaluate(() => (window as any).clientbusNotificationDiagnostics?.()?.version)).toBe(1)
         for (const current of [page, second]) await count(current, 0)
         await open(page)
-        await expect(page.locator('.notification-item')).toHaveCount(4)
+        await expect(page.locator('.notification-item')).toHaveCount(1)
         expect((await assignment(f.otherId)).ok()).toBe(true)
         for (const current of [page, second]) {
             await count(current, 0)

@@ -27,11 +27,17 @@ import java.util.stream.Collectors;
 @Transactional
 public class ConversationService {
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private kit.penny.clientbus.server.notification.outbox.UiDomainEvents uiEvents;
+
     @jakarta.persistence.PersistenceContext
     private jakarta.persistence.EntityManager entityManager;
 
     @org.springframework.beans.factory.annotation.Autowired
     private kit.penny.clientbus.server.notification.center.PersonalNotificationWriter personalNotifications;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private kit.penny.clientbus.server.notification.outbox.UiAssignmentEvents assignmentEvents;
 
     private final ConversationRepository conversationRepository;
     private final WorkspaceRepository workspaceRepository;
@@ -137,6 +143,7 @@ public class ConversationService {
             ConversationEntity saved =
                     conversationRepository.saveAndFlush(entity);
 
+            if (uiEvents != null) uiEvents.workspace(saved.getWorkspace(), "inbox.invalidated");
             return conversationMapper.toDto(saved);
 
         } catch (DataIntegrityViolationException e) {
@@ -308,6 +315,8 @@ public class ConversationService {
         conversation.setAssignedEmployee(
                 currentEmployee
         );
+
+        if (uiEvents != null) uiEvents.workspace(conversation.getWorkspace(), "inbox.invalidated");
 
         return conversationMapper.toDto(conversationRepository.saveAndFlush(conversation));
     }
@@ -1194,6 +1203,8 @@ public class ConversationService {
                 );
             }
 
+            if (conversation.getUnreadCount() > 0 && uiEvents != null)
+                uiEvents.workspace(conversation.getWorkspace(), "inbox.invalidated");
             conversation.setUnreadCount(0);
 
         }
@@ -1431,6 +1442,7 @@ public class ConversationService {
                         : newEmployee.getId();
 
         if (!Objects.equals(currentEmployeeId, newEmployeeId)) {
+            Set<UUID> previousAudience = assignmentEvents == null ? Set.of() : assignmentEvents.previousAudience(conversation);
             conversationGroupMembershipRepository
                     .deleteAllByConversation_Id(conversation.getId());
             conversation.setAssignmentOccurrenceId(UUID.randomUUID());
@@ -1440,6 +1452,7 @@ public class ConversationService {
                 personalNotifications.assignmentChanged(conversation.getId(), conversation.getAssignmentOccurrenceId(),
                         currentUserService.getCurrentEmployeeId());
             }
+            if (assignmentEvents != null) assignmentEvents.changed(conversation, previousAudience);
         }
 
         conversation.setAssignedEmployee(newEmployee);

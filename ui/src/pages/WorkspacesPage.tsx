@@ -1,5 +1,7 @@
+import { useRef } from 'react'
+import { useUiResource } from '../api/events/useUiResource'
+import { isAccessEvent } from '../api/events/uiScope'
 import {
-    useEffect,
     useState,
 } from 'react'
 
@@ -9,20 +11,9 @@ import {
 
 import {
     getAllWorkspaces,
+    getWorkspaceStatistics,
     deleteWorkspace,
 } from '../api/workspaceApi'
-
-import {
-    getWorkspaceEmployees,
-} from '../api/employeeApi'
-
-import {
-    getWorkspaceChannels,
-} from '../api/channelApi'
-
-import {
-    getWorkspaceConversations,
-} from '../api/conversationApi'
 
 import {
     useAuth,
@@ -74,7 +65,8 @@ function formatDate(
     ).format(new Date(value))
 }
 
-function WorkspacesPage() {
+function WorkspacesPageContent() {
+    const hasLoaded = useRef(false)
     const {
         addWorkspace,
         updateWorkspace,
@@ -111,122 +103,17 @@ function WorkspacesPage() {
             null,
         )
 
-    async function loadWorkspaces() {
-        setLoading(true)
-        setError(null)
-
-        try {
-            const result =
-                await getAllWorkspaces()
-
-            setWorkspaces(result)
-
-            const statsEntries =
-                await Promise.all(
-                    result.map(
-                        async workspace => {
-                            const [
-                                employees,
-                                channels,
-                                conversations,
-                            ] =
-                                await Promise.all([
-                                    getWorkspaceEmployees(
-                                        workspace.id,
-                                    ),
-                                    getWorkspaceChannels(
-                                        workspace.id,
-                                    ),
-                                    getWorkspaceConversations(
-                                        workspace.id,
-                                    ),
-                                ])
-
-                            const visibleEmployees =
-                                employees.filter(
-                                    employee =>
-                                        employee.role !==
-                                        'SUPER_ADMIN',
-                                )
-
-                            const unread =
-                                conversations.reduce(
-                                    (
-                                        total,
-                                        conversation,
-                                    ) =>
-                                        total +
-                                        conversation.unreadCount,
-                                    0,
-                                )
-
-                            const lastActivity =
-                                conversations.reduce<
-                                    string | null
-                                >(
-                                    (
-                                        latest,
-                                        conversation,
-                                    ) => {
-                                        if (
-                                            !conversation.lastMessageAt
-                                        ) {
-                                            return latest
-                                        }
-
-                                        if (
-                                            !latest ||
-                                            new Date(
-                                                conversation.lastMessageAt,
-                                            ).getTime() >
-                                            new Date(
-                                                latest,
-                                            ).getTime()
-                                        ) {
-                                            return conversation.lastMessageAt
-                                        }
-
-                                        return latest
-                                    },
-                                    null,
-                                )
-
-                            return [
-                                workspace.id,
-                                {
-                                    employees:
-                                    visibleEmployees.length,
-                                    channels:
-                                    channels.length,
-                                    conversations:
-                                    conversations.length,
-                                    unread,
-                                    lastActivity,
-                                },
-                            ] as const
-                        },
-                    ),
-                )
-
-            setStatistics(
-                Object.fromEntries(
-                    statsEntries,
-                ),
-            )
-        } catch (err) {
-            setError(
-                err instanceof Error
-                    ? err.message
-                    : 'Не удалось загрузить рабочие пространства',
-            )
-        } finally {
-            setLoading(false)
-        }
-    }
-
-    useEffect(() => {
-        loadWorkspaces()
-    }, [])
+    const resource = useUiResource('workspaces-page', true,
+        event => isAccessEvent(event) || ['workspace.invalidated', 'employees.invalidated', 'channels.invalidated', 'inbox.invalidated', 'messages.invalidated'].includes(event.type),
+        async signal => {
+            const [workspaces, stats] = await Promise.all([getAllWorkspaces(signal), getWorkspaceStatistics(signal)])
+            const statistics: Record<string, WorkspaceStats> = {}
+            for (const row of stats) statistics[row.workspaceId] = row
+            return { workspaces, statistics }
+        }, value => { hasLoaded.current = true; setWorkspaces(value.workspaces); setStatistics(value.statistics); setError(null) },
+        error => setError(error instanceof Error ? error.message : 'Не удалось загрузить рабочие пространства'),
+        () => { setWorkspaces([]); setStatistics({}); setEditWorkspace(null); setDeleteTarget(null) }, value => { if (!value || !hasLoaded.current) setLoading(value) })
+    const loadWorkspaces = resource.reload
 
     function handleCreated(
         workspace: WorkspaceDto,
@@ -530,6 +417,12 @@ function WorkspacesPage() {
             )}
         </div>
     )
+}
+
+function WorkspacesPage() {
+    const { currentEmployee, sessionEpoch } = useAuth()
+    const { currentWorkspace } = useWorkspace()
+    return <WorkspacesPageContent key={[sessionEpoch, currentEmployee?.id, currentEmployee?.role, currentWorkspace?.id].join(':')} />
 }
 
 export default WorkspacesPage

@@ -8,6 +8,7 @@ type Resource = {
     revision: number; completed: number; closed: boolean; lastStart: number
     controller: AbortController
     reset?: (event?: UiEventEnvelope) => void
+    onInvalidated?: (event?: UiEventEnvelope) => void
     epoch: number
     failures: number; retryAt: number
     visible: () => boolean
@@ -28,9 +29,10 @@ export class InvalidationCoordinator {
         running: [...this.resources].filter(resource => resource.running).length } }
     private health() { if (!this.closed) this.options.onHealth?.(![...this.resources].some(resource => resource.visible() && resource.failures > 0)) }
 
-    subscribe(matches: Resource['matches'], refresh: Resource['refresh'], reset?: Resource['reset'], visible = () => true): (() => void) & { invalidate: () => void } {
+    subscribe(matches: Resource['matches'], refresh: Resource['refresh'], reset?: Resource['reset'], visible = () => true,
+        onInvalidated?: Resource['onInvalidated']): (() => void) & { invalidate: () => void } {
         this.closed = false
-        const resource: Resource = { matches, refresh, reset, visible, epoch: 0, failures: 0, retryAt: 0,
+        const resource: Resource = { matches, refresh, reset, visible, onInvalidated, epoch: 0, failures: 0, retryAt: 0,
             revision: 0, completed: 0, closed: false, lastStart: 0, controller: new AbortController() }
         this.resources.add(resource)
         return Object.assign(() => {
@@ -38,11 +40,12 @@ export class InvalidationCoordinator {
             this.resources.delete(resource)
             this.health()
         }, { invalidate: () => {
-            if (!resource.closed) { resource.revision++; this.schedule(resource) }
+            if (!resource.closed) { resource.onInvalidated?.(); resource.revision++; this.schedule(resource) }
         } })
     }
     invalidate(event?: UiEventEnvelope): void {
         for (const resource of this.resources) if (!event || resource.matches(event)) {
+            resource.onInvalidated?.(event)
             resource.revision++; this.schedule(resource)
         }
     }

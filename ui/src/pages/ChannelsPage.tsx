@@ -1,5 +1,7 @@
+import { useRef } from 'react'
+import { useUiResource } from '../api/events/useUiResource'
+import { affectsWorkspace, isAccessEvent } from '../api/events/uiScope'
 import {
-    useCallback,
     useEffect,
     useState,
 } from 'react'
@@ -116,7 +118,8 @@ function sortChannels(
     })
 }
 
-function ChannelsPage() {
+function ChannelsPageContent() {
+    const hasLoaded = useRef(false)
     const [searchParams, setSearchParams] = useSearchParams()
     const requestedAccount = searchParams.get('accountId')
     const {
@@ -136,8 +139,9 @@ function ChannelsPage() {
     const [error, setError] =
         useState<string | null>(null)
 
-    const [selectedChannel, setSelectedChannel] =
-        useState<ChannelDto | null>(null)
+    const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null)
+    const selectedChannel = channels.find(channel => channel.id === selectedChannelId) ?? null
+    const setSelectedChannel = (channel: ChannelDto | null) => setSelectedChannelId(channel?.id ?? null)
 
     const [connectionChannel, setConnectionChannel] =
         useState<ChannelDto | null>(null)
@@ -151,43 +155,14 @@ function ChannelsPage() {
     const [deleteChannelTarget, setDeleteChannelTarget] =
         useState<ChannelDto | null>(null)
 
-    const loadChannels = useCallback(
-        () => {
-            if (!currentWorkspace) {
-                setChannels([])
-                return
-            }
-
-            setLoading(true)
-            setError(null)
-
-            getWorkspaceChannels(
-                currentWorkspace.id,
-            )
-                .then(result => {
-                    setChannels(
-                        sortChannels(result),
-                    )
-                })
-                .catch(err => {
-                    setError(
-                        err instanceof Error
-                            ? err.message
-                            : 'Не удалось загрузить каналы',
-                    )
-                })
-                .finally(() => {
-                    setLoading(false)
-                })
-        },
-        [currentWorkspace],
-    )
-
-    useEffect(() => {
-        loadChannels()
-    }, [
-        loadChannels,
-    ])
+    const resource = useUiResource('channels-page:' + currentWorkspace?.id, !!currentWorkspace,
+        event => affectsWorkspace(event, currentWorkspace?.id) && (isAccessEvent(event) || event.type === 'channels.invalidated'),
+        signal => getWorkspaceChannels(currentWorkspace!.id, signal),
+        result => { hasLoaded.current = true; setChannels(sortChannels(result)); setSelectedChannelId(id => result.some(channel => channel.id === id) ? id : null); setError(null) },
+        error => setError(error instanceof Error ? error.message : 'Не удалось загрузить каналы'),
+        () => { setChannels([]); setSelectedChannel(null); setConnectionChannel(null); setEditChannel(null); setDeleteChannelTarget(null) },
+        value => { if (!value || !hasLoaded.current) setLoading(value) })
+    const loadChannels = resource.reload
 
     useEffect(() => {
         if (!requestedAccount || loading || !currentWorkspace) return
@@ -714,6 +689,12 @@ function ChannelsPage() {
             />
         </div>
     )
+}
+
+function ChannelsPage() {
+    const { currentEmployee, sessionEpoch } = useAuth()
+    const { currentWorkspace } = useWorkspace()
+    return <ChannelsPageContent key={[sessionEpoch, currentEmployee?.id, currentEmployee?.role, currentWorkspace?.id].join(':')} />
 }
 
 export default ChannelsPage

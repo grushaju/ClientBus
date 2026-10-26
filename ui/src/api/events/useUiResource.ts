@@ -9,7 +9,8 @@ import { bindRequestBudget } from './requestBudget'
 /** Shares initial/manual/SSE reads and owns cancellation for one mounted query. */
 export function useUiResource<T>(key: string, enabled: boolean, matches: (event: UiEventEnvelope) => boolean,
     read: (signal: AbortSignal) => Promise<T>, apply: (value: T) => void,
-    fail: (error: unknown) => void, reset: () => void, pending?: (value: boolean) => void, visible = true) {
+    fail: (error: unknown) => void, reset: () => void, pending?: (value: boolean) => void, visible = true,
+    onInvalidated?: (event?: UiEventEnvelope) => void) {
     const scope = useUiScope()
     const owner = useMemo(() => ({ active: true, epoch: 0, denied: false,
         controller: undefined as AbortController | undefined, running: undefined as Promise<void> | undefined }), [scope, key, enabled])
@@ -58,7 +59,7 @@ export function useUiResource<T>(key: string, enabled: boolean, matches: (event:
             owner.running = undefined; owner.controller = undefined
         }
     }, [owner, refresh])
-    useUiInvalidation(key, enabled, matches, signal => refresh(signal), revoke, visible)
+    useUiInvalidation(key, enabled, matches, signal => refresh(signal), revoke, visible, onInvalidated)
     return { reload: useCallback(() => { owner.denied = false; void refresh().catch(() => {}) }, [owner, refresh]),
         capture: () => {
             const epoch = owner.epoch

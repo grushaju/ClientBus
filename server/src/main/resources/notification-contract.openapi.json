@@ -256,6 +256,118 @@
             }
           }
         }
+      },
+      "delete": {
+        "operationId": "clearNotifications",
+        "summary": "Delete the current employee’s entire personal notification center",
+        "tags": [
+          "Notifications Stage 11"
+        ],
+        "x-implementation-status": "implemented",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Original atomic clear result; also returned for the same Idempotency-Key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationClearResultDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request/cursor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token missing/expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Command forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Absent/inaccessible; no target disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Idempotency/installation/binding conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Unavailable; no policy bypass.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          }
+        },
+        "description": "Deletes read and unread notifications across all workspaces, including inaccessible targets, only for the authenticated enabled recipient. One statement snapshot; Idempotency-Key retry returns the original result and preserves later arrivals. Dedup records remain until normal retention. Linked deliveries are removed; an already issued provider call cannot be recalled."
       }
     },
     "/api/notifications/summary": {
@@ -1375,6 +1487,219 @@
         },
         "description": "Active-only discovery supplements idempotent POST recovery; completed operations can be absent."
       }
+    },
+    "/api/notifications/preferences": {
+      "get": {
+        "operationId": "getNotificationPreferences",
+        "summary": "Read own notification sound preference",
+        "tags": [
+          "Notifications Stage 11"
+        ],
+        "x-implementation-status": "implemented",
+        "responses": {
+          "200": {
+            "description": "Current employee preference; legacy null is enabled.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPreferencesDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid soundEnabled.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token missing or expired.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Active employee session required.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Preferences temporarily unavailable.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateNotificationPreferences",
+        "summary": "Set own notification sound preference",
+        "description": "Applies to the authenticated employee across Workspaces. An effective change commits a personal notifications.invalidated event with the preference.",
+        "tags": [
+          "Notifications Stage 11"
+        ],
+        "x-implementation-status": "implemented",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNotificationPreferencesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Current employee preference; legacy null is enabled.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPreferencesDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid soundEnabled.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token missing or expired.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Active employee session required.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Preferences temporarily unavailable.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationApiErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1552,6 +1877,7 @@
           },
           "templateArgs": {
             "type": "object",
+            "description": "Technical template parameters plus REST-only current senderName, channelType and channelName when available. Presentation is resolved with current target ACL; names are not persisted in notification/outbox or sent in push.",
             "additionalProperties": {
               "type": "string",
               "maxLength": 128
@@ -2058,6 +2384,49 @@
             "type": "integer",
             "format": "int64",
             "minimum": 1
+          }
+        }
+      },
+      "NotificationPreferencesDto": {
+        "type": "object",
+        "required": [
+          "soundEnabled"
+        ],
+        "properties": {
+          "soundEnabled": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      },
+      "UpdateNotificationPreferencesRequest": {
+        "type": "object",
+        "required": [
+          "soundEnabled"
+        ],
+        "properties": {
+          "soundEnabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "NotificationClearResultDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "clearedAt",
+          "deletedCount"
+        ],
+        "properties": {
+          "clearedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deletedCount": {
+            "type": "integer",
+            "minimum": 0,
+            "format": "int64",
+            "maximum": 9007199254740991
           }
         }
       }

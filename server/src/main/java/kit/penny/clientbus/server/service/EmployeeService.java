@@ -32,6 +32,9 @@ import java.util.UUID;
 @Transactional
 public class EmployeeService {
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private kit.penny.clientbus.server.notification.outbox.UiDomainEvents uiEvents;
+
     private final EmployeeRepository employeeRepository;
     private final UserRepository userRepository;
     private final OrganizationRepository organizationRepository;
@@ -124,6 +127,8 @@ public class EmployeeService {
                 employeeRepository.saveAndFlush(
                         employee
                 );
+
+        changed(employee);
 
         return employeeMapper.toDto(employee);
     }
@@ -263,6 +268,8 @@ public class EmployeeService {
 
         updateProfile(employee, request);
 
+        changed(employee);
+
         return employeeMapper.toDto(employee);
     }
 
@@ -278,6 +285,8 @@ public class EmployeeService {
                 currentUserService.getCurrentEmployee();
 
         updateProfile(employee, request);
+
+        changed(employee);
 
         return employeeMapper.toDto(employee);
     }
@@ -306,6 +315,8 @@ public class EmployeeService {
                 request
         );
 
+        changed(employee);
+
         return employeeMapper.toDto(employee);
     }
 
@@ -324,6 +335,8 @@ public class EmployeeService {
                 employee.getUser(),
                 request
         );
+
+        changed(employee);
 
         return employeeMapper.toDto(employee);
     }
@@ -380,6 +393,8 @@ public class EmployeeService {
         employee.getUser().setEnabled(
                 request.enabled()
         );
+
+        changed(employee);
 
         return employeeMapper.toDto(employee);
     }
@@ -439,6 +454,7 @@ public class EmployeeService {
         UserEntity user =
                 employee.getUser();
 
+        changed(employee);
         employeeRepository.delete(employee);
         userRepository.delete(user);
     }
@@ -487,6 +503,8 @@ public class EmployeeService {
                 attachmentStorage.delete(previousKey);
             }
 
+            changed(employee);
+
             return result;
         } catch (IOException e) {
             throw new IllegalStateException("Failed to read employee avatar", e);
@@ -505,6 +523,8 @@ public class EmployeeService {
         if (previousKey != null && !previousKey.isBlank()) {
             attachmentStorage.delete(previousKey);
         }
+
+        changed(employee);
 
         return result;
     }
@@ -651,6 +671,12 @@ public class EmployeeService {
                 .getOrganization()
                 .getId()
                 .equals(organizationId);
+    }
+
+    private void changed(EmployeeEntity employee) {
+        if (uiEvents == null) return;
+        uiEvents.identity(employee.getOrganization().getId(), employee.getId());
+        uiEvents.organization(employee.getOrganization().getId(), "employees.invalidated");
     }
 
     private EmployeeEntity getEmployeeEntity(

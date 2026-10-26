@@ -104,8 +104,11 @@ test('employee workspace tags highlight supervisor memberships and update after 
         '../workspace/WorkspaceContext': { useWorkspace: () => ({ workspaces: [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }] }) },
         '../api/employeeApi': {
             getEmployeesByOrganization: async () => [employee],
-            getEmployeeWorkspaces: async () => [{ workspaceId: 'a', isSupervisor: true }, { workspaceId: 'b', isSupervisor: false }],
         },
+        '../api/employeeWorkspaceApi': { getOrganizationMemberships: async () => [
+            { employeeId: 'employee', workspaceId: 'a', isSupervisor: true },
+            { employeeId: 'employee', workspaceId: 'b', isSupervisor: false },
+        ] },
         '../components/employees/EmployeeAvatar': { default: () => null },
         '../components/employees/EmployeeCreateDialog': { default: () => null },
         '../components/employees/EmployeeDetailsDialog': { default: props => React.createElement('aside', props) },
@@ -127,9 +130,11 @@ test('workspace employee list marks supervisors only for the displayed workspace
         'react-router-dom': { useParams: () => ({ workspaceId: 'workspace' }), useNavigate: () => () => {}, Link: props => React.createElement('a', null, props.children) },
         '../auth/AuthContext': { useAuth: () => ({ currentEmployee: { organizationId: 'org' } }) },
         '../workspace/WorkspaceContext': { useWorkspace: () => ({ removeWorkspace() {}, setCurrentWorkspaceId() {} }) },
-        '../api/workspaceApi': { getAllWorkspaces: async () => [workspace] },
+        '../api/workspaceApi': { getWorkspace: async (id, signal) => {
+            assert.equal(id, workspace.id); assert.equal(signal.aborted, false); return workspace
+        } },
         '../api/employeeApi': { getWorkspaceEmployees: async () => employees },
-        '../api/employeeWorkspaceApi': { getEmployeeWorkspaces: async id => [{ workspaceId: id === 'a' ? 'workspace' : 'other', isSupervisor: true }] },
+        '../api/employeeWorkspaceApi': { getWorkspaceMemberships: async id => { assert.equal(id, 'workspace'); return [{ employeeId: 'a', workspaceId: id, isSupervisor: true }, { employeeId: 'b', workspaceId: id, isSupervisor: false }] } },
         '../api/channelApi': { getWorkspaceChannels: async () => [] },
         '../api/conversationApi': { getWorkspaceConversations: async () => [] },
         '../components/workspaces/WorkspaceAvatar': { default: () => null },

@@ -20,6 +20,9 @@ import java.util.UUID;
 @Transactional
 public class OrganizationService {
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private kit.penny.clientbus.server.notification.outbox.UiDomainEvents uiEvents;
+
     private final OrganizationRepository organizationRepository;
     private final OrganizationMapper organizationMapper;
     private final CurrentUserService currentUserService;
@@ -139,6 +142,8 @@ public class OrganizationService {
                 entity,
                 request
         );
+
+        if (uiEvents != null) uiEvents.organization(id, "workspace.invalidated");
 
         return organizationMapper.toDto(entity);
     }

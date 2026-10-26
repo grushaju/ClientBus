@@ -25,6 +25,9 @@ import java.util.UUID;
 @Service
 public class ClientAccountService {
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private kit.penny.clientbus.server.notification.outbox.UiDomainEvents uiEvents;
+
     private final ClientAccountRepository clientAccountRepository;
     private final ClientRepository clientRepository;
     private final ClientAccountMapper clientAccountMapper;
@@ -108,6 +111,8 @@ public class ClientAccountService {
 
         entity =
                 clientAccountRepository.saveAndFlush(entity);
+
+        if (uiEvents != null) uiEvents.clientAccount(entity);
 
         return clientAccountMapper.toDto(entity);
     }
@@ -494,6 +499,8 @@ public class ClientAccountService {
                 request
         );
 
+        if (uiEvents != null) uiEvents.clientAccount(entity);
+
         return clientAccountMapper.toDto(entity);
     }
 
@@ -516,6 +523,7 @@ public class ClientAccountService {
                                 )
                         );
 
+        if (uiEvents != null) uiEvents.clientAccount(entity);
         clientAccountRepository.delete(entity);
     }
 
@@ -565,21 +573,27 @@ public class ClientAccountService {
             String displayName,
             String avatarUrl
     ) {
-        if (username != null && !username.isBlank()) {
+        boolean changed = false;
+        if (username != null && !username.isBlank() && !java.util.Objects.equals(username, entity.getUsername())) {
+            changed = true;
             entity.setUsername(username);
         }
 
-        if (phone != null && !phone.isBlank()) {
+        if (phone != null && !phone.isBlank() && !java.util.Objects.equals(phone, entity.getPhone())) {
+            changed = true;
             entity.setPhone(phone);
         }
 
-        if (displayName != null && !displayName.isBlank()) {
+        if (displayName != null && !displayName.isBlank() && !java.util.Objects.equals(displayName, entity.getDisplayName())) {
+            changed = true;
             entity.setDisplayName(displayName);
         }
 
-        if (avatarUrl != null && !avatarUrl.isBlank()) {
+        if (avatarUrl != null && !avatarUrl.isBlank() && !java.util.Objects.equals(avatarUrl, entity.getAvatarUrl())) {
+            changed = true;
             entity.setAvatarUrl(avatarUrl);
         }
+        if (changed && uiEvents != null) uiEvents.clientAccount(entity);
     }
 
     private ClientEntity getClient(UUID clientId) {

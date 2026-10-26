@@ -1,8 +1,10 @@
 package kit.penny.clientbus.server.security.config;
 
 import kit.penny.clientbus.server.security.jwt.JwtAuthenticationFilter;
+import kit.penny.clientbus.server.security.SseRequestSecurity;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -29,7 +31,7 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(
-            HttpSecurity http
+            HttpSecurity http, @Value("${server.error.path:/error}") String errorPath
     ) throws Exception {
 
         http
@@ -48,8 +50,12 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
 
                         // Only continuation of the already authenticated SSE request may bypass JWT re-auth.
-                        .requestMatchers(request -> request.getDispatcherType() == jakarta.servlet.DispatcherType.ASYNC
-                                && request.getRequestURI().equals(request.getContextPath() + "/api/events")).permitAll()
+                        .requestMatchers(SseRequestSecurity::isContinuation).permitAll()
+                        // Error rendering cannot require a fresh JWT: a dependency failure would become
+                        // an unrelated 401 and sign the browser out. Only the container's ERROR dispatch
+                        // to its dedicated error route is allowed, never a new /error or business request.
+                        .requestMatchers(request -> request.getDispatcherType() == jakarta.servlet.DispatcherType.ERROR
+                                && request.getRequestURI().equals(request.getContextPath() + errorPath)).permitAll()
 
                         // React SPA
                         .requestMatchers(
@@ -57,6 +63,7 @@ public class SecurityConfig {
                                 "/index.html",
                                 "/login",
                                 "/favicon.ico",
+                                "/notification.ogg",
                                 "/assets/**",
                                 "/inbox/**",
                                 "/clients/**",

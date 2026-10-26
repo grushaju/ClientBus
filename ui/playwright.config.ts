@@ -4,7 +4,8 @@ const baseURL = 'http://127.0.0.1:4173'
 
 export default defineConfig({
     testDir: './e2e',
-    testIgnore: ['**/live/**', '**/acceptance/**', '**/notifications/**'],
+    testIgnore: ['**/live/**', '**/acceptance/**', '**/notifications/**', '**/notification-acceptance/**',
+        '**/notification-center/**', '**/history/**', '**/new-conversation-avatar/**'],
     fullyParallel: true,
     forbidOnly: !!process.env.CI,
     retries: process.env.CI ? 1 : 0,

@@ -1,5 +1,6 @@
+import { useUiResource } from '../api/events/useUiResource'
+import { affectsWorkspace, isAccessEvent } from '../api/events/uiScope'
 import {
-    useEffect,
     useRef,
     useState,
 } from 'react'
@@ -11,7 +12,7 @@ import {
 } from 'react-router-dom'
 
 import {
-    getAllWorkspaces,
+    getWorkspace,
     deleteWorkspace,
 } from '../api/workspaceApi'
 
@@ -21,7 +22,7 @@ import {
 
 import {
     removeEmployeeWorkspace,
-    getEmployeeWorkspaces,
+    getWorkspaceMemberships,
 } from '../api/employeeWorkspaceApi'
 
 import {
@@ -107,7 +108,8 @@ function formatDate(
     ).format(new Date(value))
 }
 
-function WorkspaceDetailsPage() {
+function WorkspaceDetailsPageContent() {
+    const hasLoaded = useRef(false)
     const {
         workspaceId,
     } = useParams()
@@ -129,7 +131,6 @@ function WorkspaceDetailsPage() {
     const [employees, setEmployees] =
         useState<EmployeeDto[]>([])
     const [supervisorIds, setSupervisorIds] = useState<string[]>([])
-    const loadGeneration = useRef(0)
 
     const [channels, setChannels] =
         useState<ChannelDto[]>([])
@@ -164,139 +165,31 @@ function WorkspaceDetailsPage() {
     const [employeesOpen, setEmployeesOpen] =
         useState(false)
 
-    async function loadData() {
-        if (!workspaceId) {
-            return
-        }
-        const generation = ++loadGeneration.current
-        const isCurrent = () => loadGeneration.current === generation
-
-        setLoading(true)
-        setError(null)
-
-        try {
-            const allWorkspaces =
-                await getAllWorkspaces()
-            if (!isCurrent()) return
-
-            const current =
-                allWorkspaces.find(
-                    item =>
-                        item.id ===
-                        workspaceId,
-                )
-
-            if (!current) {
-                setWorkspace(null)
-
-                setError(
-                    'Рабочее пространство не найдено.',
-                )
-
-                return
-            }
-
-            setWorkspace(current)
-
-            const [
-                workspaceEmployees,
-                workspaceChannels,
-                conversations,
-            ] = await Promise.all([
-                getWorkspaceEmployees(
-                    workspaceId,
-                ),
-                getWorkspaceChannels(
-                    workspaceId,
-                ),
-                getWorkspaceConversations(
-                    workspaceId,
-                ),
+    const editSnapshot = useRef(workspace)
+    if (!editOpen) editSnapshot.current = workspace
+    const resource = useUiResource('workspace-details:' + workspaceId, !!workspaceId,
+        event => affectsWorkspace(event, workspaceId) && (isAccessEvent(event) ||
+            ['workspace.invalidated', 'employees.invalidated', 'channels.invalidated', 'inbox.invalidated', 'messages.invalidated'].includes(event.type)),
+        async signal => {
+            const [workspace, employees, channels, conversations, memberships] = await Promise.all([
+                getWorkspace(workspaceId!, signal), getWorkspaceEmployees(workspaceId!, signal),
+                getWorkspaceChannels(workspaceId!, signal), getWorkspaceConversations(workspaceId!, signal),
+                getWorkspaceMemberships(workspaceId!, signal),
             ])
-
-            if (!isCurrent()) return
-            const visibleEmployees = workspaceEmployees.filter(
-                    employee =>
-                        employee.role !==
-                        'SUPER_ADMIN',
-                )
-            const memberships = await Promise.all(visibleEmployees.map(employee => getEmployeeWorkspaces(employee.id)))
-            if (!isCurrent()) return
-            setEmployees(visibleEmployees)
-            setSupervisorIds(visibleEmployees.filter((_, index) => memberships[index].some(
-                membership => membership.workspaceId === workspaceId && membership.isSupervisor,
-            )).map(employee => employee.id))
-
-            setChannels(
-                workspaceChannels,
-            )
-
-            setConversationCount(
-                conversations.length,
-            )
-
-            setUnreadCount(
-                conversations.reduce(
-                    (
-                        total,
-                        conversation,
-                    ) =>
-                        total +
-                        conversation.unreadCount,
-                    0,
-                ),
-            )
-
-            const latestActivity =
-                conversations.reduce<
-                    string | null
-                >(
-                    (
-                        latest,
-                        conversation,
-                    ) => {
-                        if (
-                            !conversation.lastMessageAt
-                        ) {
-                            return latest
-                        }
-
-                        if (
-                            !latest ||
-                            new Date(
-                                conversation.lastMessageAt,
-                            ).getTime() >
-                            new Date(
-                                latest,
-                            ).getTime()
-                        ) {
-                            return conversation.lastMessageAt
-                        }
-
-                        return latest
-                    },
-                    null,
-                )
-
-            setLastActivity(
-                latestActivity,
-            )
-        } catch (err) {
-            if (!isCurrent()) return
-            setError(
-                err instanceof Error
-                    ? err.message
-                    : 'Не удалось загрузить рабочее пространство',
-            )
-        } finally {
-            if (isCurrent()) setLoading(false)
-        }
-    }
-
-    useEffect(() => {
-        loadData()
-        return () => { loadGeneration.current++ }
-    }, [workspaceId])
+            const visibleEmployees = employees.filter(employee => employee.role !== 'SUPER_ADMIN')
+            const supervisors = memberships.filter(item => item.isSupervisor).map(item => item.employeeId)
+            return { workspace, employees: visibleEmployees, supervisors, channels, conversations }
+        }, value => {
+            hasLoaded.current = true
+            setWorkspace(value.workspace); setEmployees(value.employees); setSupervisorIds(value.supervisors); setChannels(value.channels)
+            setConversationCount(value.conversations.length)
+            setUnreadCount(value.conversations.reduce((total, item) => total + item.unreadCount, 0))
+            setLastActivity(value.conversations.reduce<string | null>((latest, item) => item.lastMessageAt &&
+                (!latest || new Date(item.lastMessageAt) > new Date(latest)) ? item.lastMessageAt : latest, null))
+            setError(null)
+        }, error => setError(error instanceof Error ? error.message : 'Не удалось загрузить рабочее пространство'),
+        () => { setWorkspace(null); setEmployees([]); setChannels([]); setEditOpen(false); setDeleteOpen(false); setEmployeesOpen(false) }, value => { if (!value || !hasLoaded.current) setLoading(value) })
+    const loadData = resource.reload
 
     function handleWorkspaceUpdated(
         updated: WorkspaceDto,
@@ -658,7 +551,7 @@ function WorkspaceDetailsPage() {
 
             <EditWorkspaceDialog
                 open={editOpen}
-                workspace={workspace}
+                workspace={editSnapshot.current ?? workspace}
                 onClose={() =>
                     setEditOpen(false)
                 }
@@ -694,6 +587,13 @@ function WorkspaceDetailsPage() {
             />
         </div>
     )
+}
+
+function WorkspaceDetailsPage() {
+    const route = useParams()
+    const { currentEmployee, sessionEpoch } = useAuth()
+    const { currentWorkspace } = useWorkspace()
+    return <WorkspaceDetailsPageContent key={[sessionEpoch, currentEmployee?.id, currentEmployee?.role, currentWorkspace?.id, JSON.stringify(route)].join(':')} />
 }
 
 export default WorkspaceDetailsPage

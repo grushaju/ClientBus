@@ -4,6 +4,14 @@ import type {
     EmployeeWorkspaceDto,
 } from '../auth/types'
 
+export async function getOrganizationMemberships(organizationId: string, signal?: AbortSignal): Promise<EmployeeWorkspaceDto[]> {
+    return (await apiFetch(`/api/employees/organization/${organizationId}/memberships`, { signal })).json()
+}
+
+export async function getWorkspaceMemberships(workspaceId: string, signal?: AbortSignal): Promise<EmployeeWorkspaceDto[]> {
+    return (await apiFetch(`/api/workspaces/${workspaceId}/memberships`, { signal })).json()
+}
+
 export async function getCurrentEmployeeWorkspaces(signal?: AbortSignal): Promise<
     EmployeeWorkspaceDto[]
 > {
@@ -17,9 +25,11 @@ export async function getCurrentEmployeeWorkspaces(signal?: AbortSignal): Promis
 
 export async function getEmployeeWorkspaces(
     employeeId: string,
+    signal?: AbortSignal,
 ): Promise<EmployeeWorkspaceDto[]> {
     const response = await apiFetch(
         `/api/employees/${employeeId}/workspaces`,
+        { signal },
     )
 
     return response.json()

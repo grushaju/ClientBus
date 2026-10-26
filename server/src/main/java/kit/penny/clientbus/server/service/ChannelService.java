@@ -28,6 +28,9 @@ import java.util.UUID;
 @Service
 public class ChannelService {
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private kit.penny.clientbus.server.notification.outbox.UiDomainEvents uiEvents;
+
     private final ChannelRepository channelRepository;
     private final ChannelAccountRepository channelAccountRepository;
     private final WorkspaceRepository workspaceRepository;
@@ -99,6 +102,8 @@ public class ChannelService {
         channel.setAccount(account);
 
         channel = channelRepository.save(channel);
+
+        if (uiEvents != null) uiEvents.workspace(channel.getWorkspace(), "channels.invalidated");
 
         return channelMapper.toDto(channel);
     }
@@ -173,6 +178,8 @@ public class ChannelService {
                 request
         );
 
+        if (uiEvents != null) uiEvents.workspace(channel.getWorkspace(), "channels.invalidated");
+
         return channelMapper.toDto(channel);
     }
 
@@ -196,6 +203,7 @@ public class ChannelService {
                 .getLifecycle(channel.getType())
                 .disconnect(account.getId());
 
+        if (uiEvents != null) uiEvents.workspace(channel.getWorkspace(), "channels.invalidated");
         channelRepository.delete(channel);
     }
 
@@ -238,6 +246,8 @@ public class ChannelService {
                 request
         );
 
+        if (uiEvents != null) uiEvents.workspace(channel.getWorkspace(), "channels.invalidated");
+
         return channelMapper.toAccountDto(account);
     }
 
@@ -262,6 +272,7 @@ public class ChannelService {
                 .getLifecycle(channel.getType())
                 .disconnect(account.getId());
 
+        if (uiEvents != null) uiEvents.workspace(channel.getWorkspace(), "channels.invalidated");
         channelAccountRepository.delete(account);
     }
 

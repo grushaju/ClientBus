@@ -2077,11 +2077,8 @@ class MessageServiceTest {
         assertThat(message106.getReadAt()).isNull();
         assertThat(message200.getReadAt()).isNull();
 
-        verify(messageRepository)
-                .saveAll(List.of(
-                        message106,
-                        message200
-                ));
+        verify(messageRepository, never()).saveAll(any());
+        verifyNoInteractions(uiOutbox);
     }
 
     @Test

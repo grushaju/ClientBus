@@ -92,9 +92,11 @@ export async function deleteClient(
 
 export async function getClientConversations(
     clientId: string,
+    signal?: AbortSignal,
 ): Promise<ConversationDto[]> {
     const response = await apiFetch(
         `/api/clients/${clientId}/conversations`,
+        { signal },
     )
 
     return response.json()

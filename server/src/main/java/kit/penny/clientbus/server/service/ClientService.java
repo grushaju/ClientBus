@@ -40,6 +40,9 @@ import java.util.UUID;
 @Transactional
 public class ClientService {
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private kit.penny.clientbus.server.notification.outbox.UiDomainEvents uiEvents;
+
     private final ClientRepository clientRepository;
     private final OrganizationRepository organizationRepository;
     private final ClientAccountRepository clientAccountRepository;
@@ -112,6 +115,8 @@ public class ClientService {
 
         ClientEntity saved =
                 clientRepository.saveAndFlush(entity);
+
+        if (uiEvents != null) uiEvents.organization(saved.getOrganization().getId(), "clients.invalidated");
 
         return clientMapper.toDto(saved);
     }
@@ -188,6 +193,8 @@ public class ClientService {
         account.setClient(client);
 
         clientAccountRepository.saveAndFlush(account);
+
+        if (uiEvents != null) uiEvents.clientAccount(account);
 
         return clientMapper.toDto(client);
     }
@@ -494,6 +501,8 @@ public class ClientService {
         ClientEntity saved =
                 clientRepository.saveAndFlush(entity);
 
+        if (uiEvents != null) uiEvents.organization(saved.getOrganization().getId(), "clients.invalidated");
+
         return clientMapper.toDto(saved);
     }
 
@@ -517,6 +526,7 @@ public class ClientService {
 
         requireClientOrganizationAccess(entity);
 
+        if (uiEvents != null) uiEvents.organization(entity.getOrganization().getId(), "clients.invalidated");
         clientRepository.delete(entity);
     }
 
@@ -600,6 +610,8 @@ public class ClientService {
                         account
                 );
 
+        if (uiEvents != null) uiEvents.clientAccount(account);
+
         return clientAccountMapper.toDto(account);
     }
 
@@ -636,6 +648,8 @@ public class ClientService {
 
         account.setClient(client);
 
+        if (uiEvents != null) uiEvents.clientAccount(account);
+
         return clientAccountMapper.toDto(account);
     }
 
@@ -664,7 +678,11 @@ public class ClientService {
             return clientAccountMapper.toDto(account);
         }
 
+        if (uiEvents != null && oldClient != null)
+            uiEvents.organization(oldClient.getOrganization().getId(), "clients.invalidated");
         account.setClient(newClient);
+
+        if (uiEvents != null) uiEvents.clientAccount(account);
 
         return clientAccountMapper.toDto(account);
     }
@@ -700,7 +718,10 @@ public class ClientService {
 
         requireAccountAccess(account);
 
+        if (uiEvents != null) uiEvents.organization(client.getOrganization().getId(), "clients.invalidated");
         account.setClient(null);
+
+        if (uiEvents != null) uiEvents.clientAccount(account);
 
         return clientAccountMapper.toDto(account);
     }
@@ -896,6 +917,7 @@ public class ClientService {
                     );
 
             client.setAvatarUrl(stored.storageKey());
+            if (uiEvents != null) uiEvents.organization(client.getOrganization().getId(), "clients.invalidated");
 
             return clientMapper.toDto(
                     clientRepository.saveAndFlush(client)
@@ -935,6 +957,8 @@ public class ClientService {
 
         client.setAvatarUrl(account.getAvatarUrl());
 
+        if (uiEvents != null) uiEvents.organization(client.getOrganization().getId(), "clients.invalidated");
+
         return clientMapper.toDto(
                 clientRepository.saveAndFlush(client)
         );
@@ -944,6 +968,8 @@ public class ClientService {
         ClientEntity client = getAccessibleClient(clientId);
 
         client.setAvatarUrl(null);
+
+        if (uiEvents != null) uiEvents.organization(client.getOrganization().getId(), "clients.invalidated");
 
         return clientMapper.toDto(
                 clientRepository.saveAndFlush(client)

@@ -14,6 +14,9 @@ import java.util.UUID;
 /** Serializes effective connector state and the lifetime of its actionable incident. */
 @Service
 public class ChannelStatusService {
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private kit.penny.clientbus.server.notification.outbox.UiDomainEvents uiEvents;
     private final ChannelRepository channels;
     private final PersonalNotificationWriter notifications;
     public ChannelStatusService(ChannelRepository channels, PersonalNotificationWriter notifications) {
@@ -24,7 +27,9 @@ public class ChannelStatusService {
     public void beginConnecting(UUID accountId) {
         channels.findLockedByAccountId(accountId).ifPresent(channel -> {
             channel.setNotificationExpectedDisconnect(false);
+            boolean changed = channel.getStatus() != ChannelConnectionStatus.CONNECTING;
             channel.setStatus(ChannelConnectionStatus.CONNECTING);
+            if (changed && uiEvents != null) uiEvents.workspace(channel.getWorkspace(), "channels.invalidated");
             channels.save(channel);
         });
     }
@@ -37,7 +42,9 @@ public class ChannelStatusService {
         channels.findLockedByAccountId(accountId).ifPresent(channel -> {
             channel.setNotificationExpectedDisconnect(true);
             closeIncident(accountId, channel);
+            boolean changed = channel.getStatus() != status;
             channel.setStatus(status);
+            if (changed && uiEvents != null) uiEvents.workspace(channel.getWorkspace(), "channels.invalidated");
             channels.save(channel);
         });
     }
@@ -55,7 +62,9 @@ public class ChannelStatusService {
                 channel.setNotificationIncidentId(UUID.randomUUID());
                 channel.setNotificationIncidentReason(status == ChannelConnectionStatus.CONNECTING ? "REAUTH_REQUIRED" : reason);
             }
+            boolean changed = channel.getStatus() != status;
             channel.setStatus(status);
+            if (changed && uiEvents != null) uiEvents.workspace(channel.getWorkspace(), "channels.invalidated");
             // The writer uses the same row lock and transaction; recovery closes even when creation is disabled.
             channels.saveAndFlush(channel);
             if (actionable && channel.getNotificationIncidentStartedAt() != null) notifications.channelIncident(accountId, channel.getNotificationIncidentId(),

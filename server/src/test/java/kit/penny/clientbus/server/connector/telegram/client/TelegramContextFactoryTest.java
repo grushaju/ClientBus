@@ -15,10 +15,14 @@ import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.properties.TelegramProperties;
 import kit.penny.tdlib.updates.TelegramAuthorizationManager;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mockito;
 
 import java.nio.file.Path;
+import java.nio.file.Files;
+import java.time.Duration;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -29,6 +33,20 @@ class TelegramContextFactoryTest {
 
     @TempDir
     Path tempDirectory;
+
+    @AfterEach void awaitNativeFileRelease() {
+        // CLOSED can precede release of native Windows file handles by a few milliseconds.
+        // Only this test's explicitly owned JUnit directory may be removed.
+        Path root = tempDirectory.toAbsolutePath().normalize();
+        assertTrue(root.startsWith(Path.of(System.getProperty("java.io.tmpdir")).toAbsolutePath().normalize()));
+        assertTrue(root.getFileName().toString().startsWith("junit-"));
+        org.awaitility.Awaitility.await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertDoesNotThrow(() -> {
+            if (!Files.exists(root)) return;
+            List<Path> paths;
+            try (var entries = Files.walk(root)) { paths = entries.sorted(Comparator.reverseOrder()).toList(); }
+            for (Path path : paths) { assertTrue(path.normalize().startsWith(root)); Files.deleteIfExists(path); }
+        }));
+    }
 
     @Test
     void shouldCreateIndependentSpringContextsForMultipleAccounts() {

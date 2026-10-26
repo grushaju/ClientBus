@@ -83,7 +83,7 @@ export function UiEventsProvider({ children, policy: overrides }: { children: Re
                 }
                 else {
                     // Read/resolve on another client closes transient alerts immediately.
-                    if (event.type === 'notifications.invalidated') feed.invalidateAlerts()
+                    if (event.type === 'notifications.invalidated') feed.clearAlerts()
                     coordinator.invalidate(event)
                     if (event.type === 'notifications.created' && event.resource?.kind === 'notification') feed.created(event.resource.id)
                 }

@@ -25,6 +25,9 @@ import java.util.UUID;
 @Transactional
 public class WorkspaceService {
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private kit.penny.clientbus.server.notification.outbox.UiDomainEvents uiEvents;
+
     private final WorkspaceRepository workspaceRepository;
     private final OrganizationRepository organizationRepository;
     private final WorkspaceMapper workspaceMapper;
@@ -85,6 +88,8 @@ public class WorkspaceService {
 
         WorkspaceEntity saved =
                 workspaceRepository.saveAndFlush(entity);
+
+        if (uiEvents != null) uiEvents.organization(saved.getOrganization().getId(), "workspace.invalidated");
 
         return workspaceMapper.toDto(saved);
     }
@@ -226,6 +231,8 @@ public class WorkspaceService {
                 request
         );
 
+        if (uiEvents != null) uiEvents.organization(entity.getOrganization().getId(), "workspace.invalidated");
+
         return workspaceMapper.toDto(entity);
     }
 
@@ -241,6 +248,7 @@ public class WorkspaceService {
 
         currentUserService.requireWorkspaceAccess(id);
 
+        if (uiEvents != null) uiEvents.workspaceRemoved(entity);
         workspaceRepository.delete(entity);
     }
 
@@ -309,6 +317,8 @@ public class WorkspaceService {
                 attachmentStorage.delete(previousKey);
             }
 
+            if (uiEvents != null) uiEvents.organization(entity.getOrganization().getId(), "workspace.invalidated");
+
             return result;
         } catch (IOException e) {
             throw new IllegalStateException(
@@ -344,6 +354,8 @@ public class WorkspaceService {
         if (previousKey != null && !previousKey.isBlank()) {
             attachmentStorage.delete(previousKey);
         }
+
+        if (uiEvents != null) uiEvents.organization(entity.getOrganization().getId(), "workspace.invalidated");
 
         return result;
     }

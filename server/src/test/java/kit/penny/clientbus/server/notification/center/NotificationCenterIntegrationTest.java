@@ -97,6 +97,57 @@ class NotificationCenterIntegrationTest extends AbstractIntegrationTest {
         return jdbc.queryForObject("select count(*) from dbo." + table + " where organizationid=?", Long.class, organization);
     }
 
+    @Test void existingNotificationsResolveCurrentContactForListDetailAndReadWithoutPersistingNames() throws Exception {
+        incoming("presentation");
+        UUID id = first();
+        jdbc.update("""
+                update dbo.clientaccount set displayname=?,username=?,phone=? where clientaccountid=
+                    (select clientaccountid from dbo.conversation where conversationid=?)
+                """, "Анна Петрова", "anna", "+79990000001", conversation);
+        jdbc.update("update dbo.channel set name='Поддержка',type='TELEGRAM' where channelid=?", channel);
+
+        var args = Map.of("senderName", "Анна Петрова", "channelType", "TELEGRAM", "channelName", "Поддержка");
+        assertEquals(args, center.list(subject(), false, 30, null).items().getFirst().templateArgs());
+        assertEquals(args, center.get(subject(), id).templateArgs());
+        assertEquals(args, center.read(subject(), id).templateArgs());
+        assertEquals("{}", jdbc.queryForObject("select templateargs::text from dbo.notification where id=?", String.class, id));
+        assertEquals(0, jdbc.queryForObject("select count(*) from dbo.notificationoutbox where organizationid=? and position(? in payload::text)>0",
+                Integer.class, organization, "Анна Петрова"));
+
+        var client = HttpClient.newHttpClient();
+        var request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/api/notifications/" + id))
+                .header("Authorization", "Bearer " + token).GET().build();
+        var response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode());
+        assertEquals(args, mapper.readValue(response.body(), kit.penny.clientbus.common.dto.notification.NotificationDto.class).templateArgs());
+
+        assertTrue(center.list(AccessSubject.recipient(other), false, 30, null).items().isEmpty());
+        assertEquals(404, assertThrows(NotificationApiException.class, () -> center.get(AccessSubject.recipient(admin), id)).status());
+        jdbc.update("update dbo.conversation set assignedemployeeid=? where conversationid=?", other, conversation);
+        assertTrue(center.list(subject(), false, 30, null).items().isEmpty());
+        var denied = client.send(request, HttpResponse.BodyHandlers.ofString());
+        assertEquals(404, denied.statusCode());
+        assertFalse(denied.body().contains("Анна Петрова"));
+    }
+
+    @Test void contactPresentationFallsBackToUsernameThenPhoneAndHonorsTheUnicodeContractLimit() {
+        incoming("presentation-fallback");
+        UUID id = first();
+        String profile = """
+                update dbo.clientaccount set displayname=?,username=?,phone=? where clientaccountid=
+                    (select clientaccountid from dbo.conversation where conversationid=?)
+                """;
+        jdbc.update(profile, "  ", " @anna ", "+79990000001", conversation);
+        assertEquals("@anna", center.get(subject(), id).templateArgs().get("senderName"));
+        jdbc.update(profile, null, " ", " +79990000001 ", conversation);
+        assertEquals("+79990000001", center.get(subject(), id).templateArgs().get("senderName"));
+        jdbc.update(profile, null, null, null, conversation);
+        jdbc.update("update dbo.notification set templateargs=cast(? as jsonb) where id=?", "{\"senderName\":\"stale name\"}", id);
+        assertFalse(center.get(subject(), id).templateArgs().containsKey("senderName"), "Never reuse stale persisted presentation or expose a technical external ID");
+        jdbc.update(profile, "🙂".repeat(140), null, null, conversation);
+        assertEquals("🙂".repeat(128), center.get(subject(), id).templateArgs().get("senderName"));
+    }
+
     @Test void writerRequiresTheBusinessTransactionAndRollbackLeavesNoNotificationOrIntent() {
         assertThrows(IllegalTransactionStateException.class, () -> writer.incomingMessage(conversation, account, "outside", source(EventOrigin.LIVE)));
         installation();
@@ -504,6 +555,93 @@ class NotificationCenterIntegrationTest extends AbstractIntegrationTest {
                 assertEquals(401, unauthorized.statusCode());
                 assertTrue(unauthorized.body().contains("UNAUTHENTICATED"));
             }
+        }
+    }
+
+    @Test void clearDeletesOnlyTheOwnersEntireCenterAndDeliveriesAndRetainsDedup() {
+        installation(); incoming("clear-owned-read"); UUID read = first(); center.read(subject(), read);
+        incoming("clear-owned-unread"); UUID unread = first();
+        jdbc.update("update dbo.conversation set assignedemployeeid=? where conversationid=?", other, conversation);
+        incoming("clear-other");
+        assertEquals(0, center.summary(subject()).unreadCount(), "Owner targets are now hidden by ACL");
+        assertEquals(3, count("notification"));
+        assertEquals(0, center.clear(AccessSubject.recipient(admin), UUID.randomUUID().toString()).deletedCount(),
+                "SUPER_ADMIN clears only its own center");
+        long invalidations = jdbc.queryForObject("select count(*) from dbo.notificationoutbox where organizationid=? and eventtype='notifications.invalidated'", Long.class, organization);
+        var result = center.clear(subject(), UUID.randomUUID().toString());
+        assertEquals(2, result.deletedCount()); assertNotNull(result.clearedAt());
+        assertEquals(1, count("notification")); assertEquals(3, count("notificationdedup")); assertEquals(3, count("notificationoccurrence"));
+        assertEquals(0, jdbc.queryForObject("select count(*) from dbo.notificationdelivery where notificationid in (?,?)", Integer.class, read, unread));
+        assertEquals(1, center.summary(AccessSubject.recipient(other)).unreadCount());
+        assertEquals(invalidations + 1, jdbc.queryForObject("select count(*) from dbo.notificationoutbox where organizationid=? and eventtype='notifications.invalidated'", Long.class, organization));
+        jdbc.update("update dbo.conversation set assignedemployeeid=? where conversationid=?", owner, conversation);
+        incoming("clear-owned-read"); incoming("clear-owned-unread");
+        assertEquals(1, count("notification"), "Replaying the old business events must not recreate deleted notifications");
+        assertEquals(404, assertThrows(NotificationApiException.class, () -> center.get(subject(), read)).status());
+    }
+
+    @Test void clearRetryPreservesNewArrivalsAndRejectsCrossOperationKeyReuse() {
+        incoming("clear-first"); String key = UUID.randomUUID().toString();
+        var first = center.clear(subject(), key); assertEquals(1, first.deletedCount());
+        incoming("clear-fresh");
+        assertEquals(first, center.clear(subject(), key));
+        assertEquals(1, center.summary(subject()).unreadCount()); assertEquals(1, count("notification"));
+        assertEquals(409, assertThrows(NotificationApiException.class, () -> center.readAll(subject(), key)).status());
+        String readKey = UUID.randomUUID().toString(); center.readAll(subject(), readKey);
+        assertEquals(409, assertThrows(NotificationApiException.class, () -> center.clear(subject(), readKey)).status());
+        assertEquals(1, count("notification"));
+        assertEquals(1, center.clear(subject(), UUID.randomUUID().toString()).deletedCount());
+    }
+
+    @Test void clearRollbackRestoresNotificationsDeliveriesCommandAndInvalidation() {
+        installation(); incoming("clear-rollback"); UUID id = first();
+        long outbox = count("notificationoutbox");
+        tx.executeWithoutResult(status -> {
+            assertEquals(1, center.clear(subject(), UUID.randomUUID().toString()).deletedCount());
+            assertEquals(0, count("notification")); status.setRollbackOnly();
+        });
+        assertEquals(1, count("notification")); assertEquals(0, count("notificationcommand"));
+        assertEquals(outbox, count("notificationoutbox"));
+        assertEquals(1, jdbc.queryForObject("select count(*) from dbo.notificationdelivery where notificationid=?", Integer.class, id));
+    }
+
+    @Test void concurrentClearWithTheSameKeyReturnsOneCommittedResult() throws Exception {
+        incoming("clear-concurrent"); String key = UUID.randomUUID().toString();
+        try (var executor = Executors.newFixedThreadPool(4)) {
+            var calls = new ArrayList<Future<kit.penny.clientbus.common.dto.notification.NotificationClearResultDto>>();
+            for (int index = 0; index < 4; index++) calls.add(executor.submit(() -> center.clear(subject(), key)));
+            var result = calls.getFirst().get(10, TimeUnit.SECONDS);
+            for (var call : calls) assertEquals(result, call.get(10, TimeUnit.SECONDS));
+            assertEquals(1, result.deletedCount()); assertEquals(1, count("notificationcommand"));
+            assertEquals(0, count("notification"));
+        }
+    }
+
+    @Test void clearRejectsExpiredDisabledAndMalformedCommandsWithoutDeletingAnything() {
+        incoming("clear-denied");
+        assertEquals(401, assertThrows(NotificationApiException.class, () -> center.clear(AccessSubject.session(owner, Instant.now().minusSeconds(1)), UUID.randomUUID().toString())).status());
+        for (String key : Arrays.asList(null, "invalid", "", "1-1-1-1-1"))
+            assertEquals(400, assertThrows(NotificationApiException.class, () -> center.clear(subject(), key)).status());
+        jdbc.update("update dbo.users set isenabled=false where userid=(select userid from dbo.employee where employeeid=?)", owner);
+        assertEquals(403, assertThrows(NotificationApiException.class, () -> center.clear(subject(), UUID.randomUUID().toString())).status());
+        assertEquals(1, count("notification")); assertEquals(0, count("notificationcommand"));
+    }
+
+    @Test void clearHttpContractRequiresAuthenticationAndKeyHasNoBodyAndIsNoStore() throws Exception {
+        incoming("clear-http"); String key = UUID.randomUUID().toString();
+        try (var http = HttpClient.newHttpClient()) {
+            for (String credential : Arrays.asList(null, "invalid-bearer")) {
+                var response = http.send(request("/api/notifications", credential).header("Idempotency-Key", key).DELETE().build(), HttpResponse.BodyHandlers.ofString());
+                assertEquals(401, response.statusCode()); assertTrue(response.headers().firstValue("Cache-Control").orElseThrow().contains("no-store"));
+            }
+            assertEquals(400, http.send(request("/api/notifications", token).DELETE().build(), HttpResponse.BodyHandlers.ofString()).statusCode());
+            assertEquals(400, http.send(request("/api/notifications", token).header("Idempotency-Key", key)
+                    .method("DELETE", HttpRequest.BodyPublishers.ofString("{}" )).build(), HttpResponse.BodyHandlers.ofString()).statusCode());
+            assertEquals(1, count("notification"));
+            var response = http.send(request("/api/notifications?employeeId="+other, token).header("Idempotency-Key", key).DELETE().build(), HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, response.statusCode()); assertEquals("no-store", response.headers().firstValue("Cache-Control").orElseThrow());
+            var result = mapper.readValue(response.body(), kit.penny.clientbus.common.dto.notification.NotificationClearResultDto.class);
+            assertEquals(1, result.deletedCount()); assertNotNull(result.clearedAt()); assertEquals(0, count("notification"));
         }
     }
 

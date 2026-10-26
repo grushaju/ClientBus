@@ -161,6 +161,8 @@ Node/React-тесты из `ui/tests` и браузерные сценарии �
 
 ## Notification vertical (11.5)
 
+Приёмка 11.12: `mvn -o -pl server -am '-Dtest=NotificationStageBrowserAcceptance' '-Dsurefire.failIfNoSpecifiedTests=false' test-compile surefire:test` поднимает два полных BE, запускает desktop/mobile и удаляет временный manifest с тестовыми credentials. Отдельный нагрузочный профиль: такой же вызов с `-Dtest=NotificationLoadBrowserAcceptance`. Команды выполняются последовательно; фиксированные Docker имена/порт несовместимы с параллельным Maven-прогоном. Основной mock config исключает `notification-acceptance`; собственные конфиги — `playwright.notification-acceptance.config.ts` и `playwright.notification-load.config.ts`. Профиль длится более пяти минут, JSON/логи находятся в `server/target`, результаты и ограничения — [NOTIFICATION_ACCEPTANCE.md](../../NOTIFICATION_ACCEPTANCE.md).
+
 Изолированный реальный Kafka/PostgreSQL/SSE/browser E2E: mvn -o -pl server -am '-Dtest=NotificationBrowserAcceptance' '-Dsurefire.failIfNoSpecifiedTests=false' test-compile surefire:test. Перед запуском проверить TypeScript и собрать Vite. Отдельный конфиг — playwright.notifications.config.ts; test-only manifest создаёт и удаляет Java harness. Сценарии/ограничения — [NOTIFICATION_OUTBOX.md](../../NOTIFICATION_OUTBOX.md). Основной mock-набор явно отвечает 404 на optional /api/events и исключает папку notifications из discovery.
 
 В 11.6 набор расширен до 4 desktop/mobile проверок: смена аккаунта и storage logout между вкладками, очистка старой переписки, сохранение черновика и обновление мобильного списка при возвращении. Ожидание SSE привязано к ready выбранного Workspace. Протокол — [NOTIFICATION_UI.md](../../NOTIFICATION_UI.md).

@@ -25,6 +25,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /** External image I/O is outside the short transaction creating the account and conversation. */
 @Service
 public class OutboundConversationService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private kit.penny.clientbus.server.notification.outbox.UiDomainEvents uiEvents;
     private static final Logger log = LoggerFactory.getLogger(OutboundConversationService.class);
     private static final int MAX_AVATAR_BYTES = 5 * 1024 * 1024;
     private final ConversationService conversations;
@@ -109,6 +111,7 @@ public class OutboundConversationService {
                     }
                 });
                 account.setAvatarUrl(candidate);
+                if (uiEvents != null) uiEvents.clientAccount(account);
             }
             return new Saved(result, use);
         }));

@@ -29,6 +29,9 @@ import java.util.UUID;
 @Transactional
 public class ConversationGroupService {
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private kit.penny.clientbus.server.notification.outbox.UiDomainEvents uiEvents;
+
     private static final String DEFAULT_GROUP_ICON = "users.svg";
 
     private final ConversationGroupRepository groupRepository;
@@ -110,7 +113,9 @@ public class ConversationGroupService {
         group.setIcon(normalizeIcon(rawIcon));
 
         try {
-            return toDto(groupRepository.saveAndFlush(group));
+            groupRepository.saveAndFlush(group);
+            changed(group);
+            return toDto(group);
         } catch (DataIntegrityViolationException ex) {
             throw new IllegalArgumentException(
                     "A group with this name already exists",
@@ -154,7 +159,9 @@ public class ConversationGroupService {
         }
 
         try {
-            return toDto(groupRepository.saveAndFlush(group));
+            groupRepository.saveAndFlush(group);
+            changed(group);
+            return toDto(group);
         } catch (DataIntegrityViolationException ex) {
             throw new ConversationGroupNameExistsException();
         }
@@ -166,6 +173,7 @@ public class ConversationGroupService {
 
         membershipRepository.deleteAllByGroupId(group.getId());
         groupRepository.delete(group);
+        changed(group);
     }
 
     public void addConversation(
@@ -216,6 +224,7 @@ public class ConversationGroupService {
         membership.setConversation(conversation);
 
         membershipRepository.save(membership);
+        changed(group);
     }
 
     public void removeConversation(
@@ -238,7 +247,10 @@ public class ConversationGroupService {
                         group.getId(),
                         conversationId
                 )
-                .ifPresent(membershipRepository::delete);
+                .ifPresent(membership -> {
+                    membershipRepository.delete(membership);
+                    changed(group);
+                });
     }
 
 
@@ -321,6 +333,11 @@ public class ConversationGroupService {
                 .orElseThrow(() -> new EntityNotFoundException(
                         "Conversation group not found: " + groupId
                 ));
+    }
+
+    private void changed(ConversationGroupEntity group) {
+        if (uiEvents != null) uiEvents.personal(group.getWorkspace().getOrganization().getId(),
+                group.getOwnerEmployee().getId(), "groups.invalidated");
     }
 
     private UUID requireEmployee() {

@@ -1,13 +1,15 @@
+import { useRef } from 'react'
+import { useUiResource } from '../api/events/useUiResource'
+import { isAccessEvent } from '../api/events/uiScope'
 import {
-    useEffect,
     useMemo,
     useState,
 } from 'react'
 
 import {
     getEmployeesByOrganization,
-    getEmployeeWorkspaces,
 } from '../api/employeeApi'
+import { getOrganizationMemberships } from '../api/employeeWorkspaceApi'
 
 import {
     useAuth,
@@ -50,7 +52,8 @@ function getEmployeeName(
     )
 }
 
-function EmployeesPage() {
+function EmployeesPageContent() {
+    const hasLoaded = useRef(false)
     const {
         currentEmployee,
         isSuperAdmin,
@@ -95,67 +98,27 @@ function EmployeesPage() {
         setCreateOpen,
     ] = useState(false)
 
-    async function loadEmployees() {
-        if (!currentEmployee) {
-            return
-        }
-
-        setLoading(true)
-        setError(null)
-
-        try {
-            const allEmployees =
-                await getEmployeesByOrganization(
-                    currentEmployee.organizationId,
-                )
-
-            const employeeList =
-                allEmployees.filter(
-                    employee =>
-                        employee.role !==
-                        'SUPER_ADMIN',
-                )
-
-            const rows =
-                await Promise.all(
-                    employeeList.map(
-                        async employee => {
-                            const assignments =
-                                await getEmployeeWorkspaces(
-                                    employee.id,
-                                )
-
-                            return {
-                                employee,
-                                supervisorWorkspaceIds: assignments.filter(assignment => assignment.isSupervisor)
-                                    .map(assignment => assignment.workspaceId),
-                                workspaceIds:
-                                    assignments.map(
-                                        assignment =>
-                                            assignment.workspaceId,
-                                    ),
-                            }
-                        },
-                    ),
-                )
-
-            setEmployees(rows)
-        } catch (err) {
-            setError(
-                err instanceof Error
-                    ? err.message
-                    : 'Не удалось загрузить сотрудников',
-            )
-        } finally {
-            setLoading(false)
-        }
-    }
-
-    useEffect(() => {
-        loadEmployees()
-    }, [
-        currentEmployee?.organizationId,
-    ])
+    const resource = useUiResource('employees-page:' + currentEmployee?.organizationId, !!currentEmployee && isSuperAdmin,
+        event => isAccessEvent(event) || event.type === 'employees.invalidated' || event.type === 'workspace.invalidated',
+        async signal => {
+            const [people, memberships] = await Promise.all([
+                getEmployeesByOrganization(currentEmployee!.organizationId, signal),
+                getOrganizationMemberships(currentEmployee!.organizationId, signal),
+            ])
+            const byEmployee = new Map<string, typeof memberships>()
+            for (const membership of memberships) {
+                const rows = byEmployee.get(membership.employeeId) ?? []
+                rows.push(membership); byEmployee.set(membership.employeeId, rows)
+            }
+            return people.filter(employee => employee.role !== 'SUPER_ADMIN').map(employee => {
+                const assignments = byEmployee.get(employee.id) ?? []
+                return { employee, workspaceIds: assignments.map(item => item.workspaceId),
+                    supervisorWorkspaceIds: assignments.filter(item => item.isSupervisor).map(item => item.workspaceId) }
+            })
+        }, rows => { hasLoaded.current = true; setEmployees(rows); setError(null) },
+        error => setError(error instanceof Error ? error.message : 'Не удалось загрузить сотрудников'),
+        () => { setEmployees([]); setSelectedEmployee(null) }, value => { if (!value || !hasLoaded.current) setLoading(value) })
+    const loadEmployees = resource.reload
 
     const filteredEmployees =
         useMemo(() => {
@@ -517,6 +480,12 @@ function EmployeesPage() {
             )}
         </div>
     )
+}
+
+function EmployeesPage() {
+    const { currentEmployee, sessionEpoch } = useAuth()
+    const { currentWorkspace } = useWorkspace()
+    return <EmployeesPageContent key={[sessionEpoch, currentEmployee?.id, currentEmployee?.role, currentWorkspace?.id].join(':')} />
 }
 
 export default EmployeesPage

@@ -51,7 +51,7 @@ test('notification public interfaces and nullable fields match OpenAPI', () => {
         }
         checked++
     }
-    assert.equal(checked, 15)
+    assert.equal(checked, 18)
 })
 
 test('notification enum unions and known SSE events match OpenAPI', () => {

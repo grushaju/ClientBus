@@ -21,10 +21,12 @@ export async function getConversation(
 }
 
 export async function getWorkspaceConversations(
-    workspaceId: string
+    workspaceId: string,
+    signal?: AbortSignal,
 ): Promise<ConversationDto[]> {
     const response = await apiFetch(
-        `/api/conversations/workspace/${workspaceId}`
+        `/api/conversations/workspace/${workspaceId}`,
+        { signal },
     )
 
     return response.json()

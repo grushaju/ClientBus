@@ -17,6 +17,7 @@ export class InboxApi {
     calls: { method: string; path: string; body: unknown }[] = []
     unexpected: string[] = []
     pageErrors: string[] = []
+    soundEnabled = true
     account = { id: 'account-1', clientId: null as string | null, channelType: 'TELEGRAM', externalId: 'external-1', username: 'contact_one', phone: '70000000001', displayName: 'Контакт Один', avatarUrl: null }
     client = { id: 'client-1', organizationId: workspace.organizationId, firstName: 'Иван', lastName: 'Клиент', phoneList: ['70000000001'], avatarUrl: null, createdAt: timestamp, updatedAt: timestamp }
     groups: ConversationGroupDto[] = [{ id: 'group-1', workspaceId: workspace.id, ownerEmployeeId: employee.id, name: 'Важные', icon: 'heart.svg', createdAt: timestamp, updatedAt: timestamp }]
@@ -44,6 +45,11 @@ export class InboxApi {
         // These fixtures exercise Inbox with the optional backend transport disabled.
         if (path === '/api/events') return reply({}, 404)
         if (path === '/api/notifications/summary' && method === 'GET') return reply({ unreadCount: 0 })
+        if (path === '/api/notifications/preferences' && method === 'GET') return reply({ soundEnabled: this.soundEnabled })
+        if (path === '/api/notifications/preferences' && method === 'PUT' && typeof body?.soundEnabled === 'boolean') {
+            this.soundEnabled = body.soundEnabled
+            return reply({ soundEnabled: this.soundEnabled })
+        }
 
         if (path === '/api/auth/login') return reply({ accessToken: 'browser-fixture-token', tokenType: 'Bearer' })
         if (path === '/api/employees/me') return reply({ ...employee, role: this.role === 'admin' ? 'SUPER_ADMIN' : 'EMPLOYEE' })

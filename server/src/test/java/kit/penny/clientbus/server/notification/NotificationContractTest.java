@@ -54,7 +54,8 @@ class NotificationContractTest {
     void publicRecordsMatchOpenApiProperties() throws Exception {
         Map<String, Object> schemas = map(map(api().get("components")).get("schemas"));
         for (Class<?> type : List.of(NotificationDto.class, NotificationTargetDto.class,
-                NotificationPageDto.class, NotificationSummaryDto.class, NotificationReadAllResultDto.class,
+                NotificationPageDto.class, NotificationSummaryDto.class, NotificationReadAllResultDto.class, NotificationClearResultDto.class,
+                NotificationPreferencesDto.class, UpdateNotificationPreferencesRequest.class,
                 NotificationApiErrorDto.class, UiEventEnvelope.class, UiResourceRef.class, StreamReadyDto.class,
                 PushInstallationDto.class, PushInstallationRequest.class, HistorySyncRequest.class,
                 HistorySyncResultDto.class, HistorySyncOperationDto.class, HistorySyncOperationPageDto.class)) {
@@ -93,7 +94,7 @@ class NotificationContractTest {
                         map(value).get("x-implementation-status"));
             }
         }
-        assertEquals(11, operationIds.size());
+        assertEquals(14, operationIds.size());
     }
 
     private void visitReferences(Object value, Map<String, Object> api) {

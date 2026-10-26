@@ -1,3 +1,8 @@
+import { useRef } from 'react'
+import { useWorkspace } from '../workspace/WorkspaceContext'
+import { useAuth } from '../auth/AuthContext'
+import { useUiResource } from '../api/events/useUiResource'
+import { isAccessEvent } from '../api/events/uiScope'
 import {
     useEffect,
     useState,
@@ -23,7 +28,8 @@ import ClientCreateForm
 import ClientList
     from '../components/clients/ClientList'
 
-function ClientsPage() {
+function ClientsPageContent() {
+    const hasLoaded = useRef(false)
     const navigate = useNavigate()
 
     const [searchParams, setSearchParams] =
@@ -44,59 +50,17 @@ function ClientsPage() {
     const [showCreateForm, setShowCreateForm] =
         useState(false)
 
+    const [debouncedQuery, setDebouncedQuery] = useState(query.trim())
     useEffect(() => {
-        const controller =
-            new AbortController()
-
-        const timer =
-            window.setTimeout(async () => {
-                setLoading(true)
-                setError(null)
-
-                try {
-                    const result =
-                        query.trim()
-                            ? await searchClients(
-                                query.trim(),
-                                controller.signal,
-                            )
-                            : await getClients(
-                                controller.signal,
-                            )
-
-                    if (
-                        !controller.signal.aborted
-                    ) {
-                        setClients(result)
-                    }
-                } catch (err) {
-                    if (
-                        controller.signal.aborted
-                    ) {
-                        return
-                    }
-
-                    setError(
-                        err instanceof Error
-                            ? err.message
-                            : 'Не удалось загрузить клиентов',
-                    )
-
-                    setClients([])
-                } finally {
-                    if (
-                        !controller.signal.aborted
-                    ) {
-                        setLoading(false)
-                    }
-                }
-            }, 250)
-
-        return () => {
-            window.clearTimeout(timer)
-            controller.abort()
-        }
+        const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 250)
+        return () => window.clearTimeout(timer)
     }, [query])
+    useUiResource('clients-page:' + debouncedQuery, true,
+        event => isAccessEvent(event) || event.type === 'clients.invalidated',
+        signal => debouncedQuery ? searchClients(debouncedQuery, signal) : getClients(signal),
+        result => { hasLoaded.current = true; setClients(result); setError(null) },
+        error => setError(error instanceof Error ? error.message : 'Не удалось загрузить клиентов'),
+        () => setClients([]), value => { if (!value || !hasLoaded.current) setLoading(value) })
 
     const handleSearch = (
         value: string,
@@ -213,6 +177,12 @@ function ClientsPage() {
                 )}
         </div>
     )
+}
+
+function ClientsPage() {
+    const { currentEmployee, sessionEpoch } = useAuth()
+    const { currentWorkspace } = useWorkspace()
+    return <ClientsPageContent key={[sessionEpoch, currentEmployee?.id, currentEmployee?.role, currentWorkspace?.id].join(':')} />
 }
 
 export default ClientsPage

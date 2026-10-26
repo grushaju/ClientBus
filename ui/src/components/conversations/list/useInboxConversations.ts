@@ -78,7 +78,8 @@ export function useInboxConversations(workspaceId: string, request: Conversation
     }, [workspaceId, queryKey, enabled, version, scope])
 
     const invalidate = useUiInvalidation(queryKey, enabled, event => affectsWorkspace(event, workspaceId)
-        && (isAccessEvent(event) || event.type === 'inbox.invalidated' || event.type === 'messages.invalidated'),
+        && (isAccessEvent(event) || ['inbox.invalidated', 'messages.invalidated',
+            'clients.invalidated', 'channels.invalidated'].includes(event.type)),
         async signal => { if (!signal.aborted) await refresh.current(signal) }, event => {
             activeRequest.current?.abort()
             const id = event?.resource?.kind === 'conversation' ? event.resource.id : null

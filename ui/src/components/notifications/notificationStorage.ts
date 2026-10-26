@@ -28,22 +28,28 @@ export function clearNotificationAlertDedup(account: string): void {
     const key = prefix(account, 'alerts'); memory.delete(key)
     try { localStorage.removeItem(key) } catch { /* Logout must also work with blocked storage. */ }
 }
-export function pendingReadAll(account: string, now = Date.now()): PendingReadAll | null {
+function pendingCommand(account: string, kind: string, now = Date.now()): PendingReadAll | null {
     try {
-        const value = JSON.parse(sessionStorage.getItem(prefix(account, 'read-all')) ?? 'null')
+        const value = JSON.parse(sessionStorage.getItem(prefix(account, kind)) ?? 'null')
         if (value && typeof value.key === 'string' && /^[0-9a-f-]{36}$/i.test(value.key)
             && Number.isFinite(value.createdAt) && value.createdAt <= now && now - value.createdAt < COMMAND_TTL) return value
-        sessionStorage.removeItem(prefix(account, 'read-all'))
+        sessionStorage.removeItem(prefix(account, kind))
     } catch { /* An unreadable command is never retried. */ }
     return null
 }
-export function beginReadAll(account: string, now = Date.now()): PendingReadAll {
+function beginCommand(account: string, kind: string, now = Date.now()): PendingReadAll {
     const command = { key: crypto.randomUUID(), createdAt: now }
     // A tab owns its pending action, including when a duplicated tab starts a different action.
     // Session storage survives reload/logout; failure to persist prevents an unsafe send.
-    sessionStorage.setItem(prefix(account, 'read-all'), JSON.stringify(command))
+    sessionStorage.setItem(prefix(account, kind), JSON.stringify(command))
     return command
 }
-export function completeReadAll(account: string, key: string): void {
-    if (pendingReadAll(account)?.key === key) sessionStorage.removeItem(prefix(account, 'read-all'))
+function completeCommand(account: string, kind: string, key: string): void {
+    if (pendingCommand(account, kind)?.key === key) sessionStorage.removeItem(prefix(account, kind))
 }
+export const pendingReadAll = (account: string, now = Date.now()) => pendingCommand(account, 'read-all', now)
+export const beginReadAll = (account: string, now = Date.now()) => beginCommand(account, 'read-all', now)
+export const completeReadAll = (account: string, key: string) => completeCommand(account, 'read-all', key)
+export const pendingClear = (account: string, now = Date.now()) => pendingCommand(account, 'clear', now)
+export const beginClear = (account: string, now = Date.now()) => beginCommand(account, 'clear', now)
+export const completeClear = (account: string, key: string) => completeCommand(account, 'clear', key)

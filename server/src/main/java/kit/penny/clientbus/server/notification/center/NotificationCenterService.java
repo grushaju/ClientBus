@@ -27,8 +27,10 @@ import java.util.*;
 @Service
 public class NotificationCenterService {
     private static final String SUBJECT_ACTIVE = "u.isenabled and u.role in ('EMPLOYEE','SUPER_ADMIN')";
-    private static final String ACCESSIBLE = " from dbo.notification n join dbo.employee e on e.employeeid=:recipient "
-            + "join dbo.users u on u.userid=e.userid where " + SUBJECT_ACTIVE + " and " + AccessPolicy.NOTIFICATION_PREDICATE;
+    private static final String RECIPIENT_FROM = " from dbo.notification n join dbo.employee e on e.employeeid=:recipient "
+            + "join dbo.users u on u.userid=e.userid";
+    private static final String ACCESSIBLE_WHERE = " where " + SUBJECT_ACTIVE + " and " + AccessPolicy.NOTIFICATION_PREDICATE;
+    private static final String ACCESSIBLE = RECIPIENT_FROM + ACCESSIBLE_WHERE;
     private static final String ALERT_ACTIVE = """
             n.readat is null and n.alertinvalidatedat is null and n.alertexpiresat>clock_timestamp() and (
                 (n.type='ASSIGNMENT' and exists (select 1 from dbo.conversation ca
@@ -48,8 +50,22 @@ public class NotificationCenterService {
                       and not coalesce(ch.notificationexpecteddisconnect,false)))
             )
             """;
-    private static final String SELECT = "select n.*, (" + ALERT_ACTIVE + ") as alert_active";
+    // Resolve current presentation in the same snapshot as target ACL. Names never enter persisted
+    // notification/outbox/push payloads, and a page needs no per-notification lookup or UI request.
+    private static final String SELECT = "select n.*, (" + ALERT_ACTIVE + ") as alert_active," + """
+            left(coalesce(nullif(btrim(pcontact.displayname),''),
+                '@'||nullif(ltrim(btrim(pcontact.username),'@'),''),nullif(btrim(pcontact.phone),'')),128) as contextsender,
+            pchannel.type as contextchanneltype,pchannel.name as contextchannelname
+            """ + RECIPIENT_FROM + """
+             left join dbo.conversation pconversation on n.targetkind='CONVERSATION' and pconversation.conversationid=n.targetid
+             left join dbo.clientaccount pcontact on pcontact.clientaccountid=pconversation.clientaccountid
+             left join dbo.channelaccount paccount on paccount.channelaccountid=case
+                 when n.targetkind='CONVERSATION' then pconversation.channelaccountid
+                 when n.targetkind='CHANNEL_ACCOUNT' then n.targetid end
+             left join dbo.channel pchannel on pchannel.channelid=paccount.channelid
+            """ + ACCESSIBLE_WHERE;
     private static final String READ_ALL_HASH = NotificationIdentity.digest("READ_ALL/v1", "ALL_ACCESSIBLE");
+    private static final String CLEAR_HASH = NotificationIdentity.digest("CLEAR/v1", "ALL_OWN");
     public record PageCursor(int version, UUID recipient, UUID organization, boolean unreadOnly, Instant createdAt, UUID id) {}
 
     private final NamedParameterJdbcTemplate jdbc;
@@ -74,7 +90,7 @@ public class NotificationCenterService {
             parameters.addValue("created", Timestamp.from(decoded.createdAt())).addValue("id", decoded.id());
             boundary = " and (n.createdat,n.id)<(:created,:id)";
         }
-        var rows = jdbc.query(SELECT + ACCESSIBLE + (unreadOnly ? " and n.readat is null" : "") + boundary
+        var rows = jdbc.query(SELECT + (unreadOnly ? " and n.readat is null" : "") + boundary
                         + " order by n.createdat desc,n.id desc limit :limit", parameters, this::map);
         boolean more = rows.size() > limit;
         var items = List.copyOf(rows.subList(0, Math.min(limit, rows.size())));
@@ -103,7 +119,7 @@ public class NotificationCenterService {
     /** Explicit background identity; a worker cannot reuse a cached HTTP principal or bypass current target ACL. */
     @Transactional(readOnly = true)
     public Optional<NotificationDto> findForRecipient(UUID notificationId, UUID recipientId) {
-        return jdbc.query(SELECT + ACCESSIBLE + " and n.id=:id", parameters(recipientId).addValue("id", notificationId), this::map)
+        return jdbc.query(SELECT + " and n.id=:id", parameters(recipientId).addValue("id", notificationId), this::map)
                 .stream().findFirst();
     }
 
@@ -127,14 +143,7 @@ public class NotificationCenterService {
     @Transactional
     public NotificationReadAllResultDto readAll(AccessSubject subject, String idempotencyKey) {
         UUID organization = organization(subject);
-        String key;
-        try {
-            if (idempotencyKey == null || !idempotencyKey.matches("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"))
-                throw new IllegalArgumentException();
-            key = UUID.fromString(idempotencyKey).toString();
-        } catch (IllegalArgumentException error) {
-            throw new NotificationApiException(400, "INVALID_REQUEST");
-        }
+        String key = commandKey(idempotencyKey);
         var parameters = parameters(subject.employeeId()).addValue("organization", organization).addValue("key", key)
                 .addValue("id", UUID.randomUUID()).addValue("hash", READ_ALL_HASH)
                 .addValue("retention", config.commandIdempotencyWindow().toMillis());
@@ -172,6 +181,55 @@ public class NotificationCenterService {
         return result;
     }
 
+    /** Delete the owner's entire center, including hidden targets. Keep dedup so replays cannot recreate it. */
+    @Transactional
+    public NotificationClearResultDto clear(AccessSubject subject, String idempotencyKey) {
+        UUID organization = organization(subject);
+        var parameters = parameters(subject.employeeId()).addValue("organization", organization)
+                .addValue("key", commandKey(idempotencyKey)).addValue("id", UUID.randomUUID()).addValue("hash", CLEAR_HASH)
+                .addValue("retention", config.commandIdempotencyWindow().toMillis());
+        boolean claimed = jdbc.update("""
+                insert into dbo.notificationcommand (id,organizationid,recipientemployeeid,idempotencykey,requesthash,scope,readat,updatedcount,retainuntil)
+                values (:id,:organization,:recipient,:key,:hash,'ALL_OWN',clock_timestamp(),0,
+                    clock_timestamp()+(:retention*interval '1 millisecond'))
+                on conflict (organizationid,recipientemployeeid,idempotencykey) do nothing
+                """, parameters) == 1;
+        if (!claimed) return jdbc.queryForObject("""
+                select requesthash,scope,readat,updatedcount from dbo.notificationcommand
+                where organizationid=:organization and recipientemployeeid=:recipient and idempotencykey=:key
+                """, parameters, (rs, row) -> {
+            if (!CLEAR_HASH.equals(rs.getString("requesthash")) || !"ALL_OWN".equals(rs.getString("scope")))
+                throw new NotificationApiException(409, "IDEMPOTENCY_CONFLICT");
+            return new NotificationClearResultDto(rs.getTimestamp("readat").toInstant(), rs.getLong("updatedcount"));
+        });
+        // One statement snapshot selects the owner's rows. Delivery children are removed first;
+        // late worker completions then fail their existing claim/version guard. New arrivals survive retries.
+        var result = jdbc.queryForObject("""
+                with moment as materialized (select clock_timestamp() as at), targets as materialized (
+                    select n.id from dbo.notification n join dbo.employee e on e.employeeid=:recipient
+                    join dbo.users u on u.userid=e.userid where n.recipientemployeeid=e.employeeid
+                        and n.organizationid=e.organizationid and e.organizationid=:organization and
+                """ + SUBJECT_ACTIVE + """
+                    order by n.id for update of n
+                ), removeddeliveries as (
+                    delete from dbo.notificationdelivery d using targets t where d.notificationid=t.id returning d.id
+                ), removed as (
+                    delete from dbo.notification n using targets t where n.id=t.id
+                        and (select count(*) from removeddeliveries)>=0 returning n.id
+                ) select moment.at as clearedat,(select count(*) from removed) as deletedcount from moment
+                """, parameters, (rs, row) -> new NotificationClearResultDto(rs.getTimestamp("clearedat").toInstant(), rs.getLong("deletedcount")));
+        jdbc.update("update dbo.notificationcommand set readat=:at,updatedcount=:count where id=:id",
+                parameters.addValue("at", Timestamp.from(result.clearedAt())).addValue("count", result.deletedCount()));
+        if (result.deletedCount() > 0) events.publish(organization, subject.employeeId(), null, false);
+        return result;
+    }
+
+    private String commandKey(String key) {
+        if (key == null || !key.matches("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"))
+            throw new NotificationApiException(400, "INVALID_REQUEST");
+        return UUID.fromString(key).toString();
+    }
+
     private void recordRead(String scope) {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override public void afterCommit() { meters.counter("clientbus.notification.read", "scope", scope).increment(); }
@@ -203,10 +261,18 @@ public class NotificationCenterService {
 
     private NotificationDto map(ResultSet rs, int row) throws SQLException {
         Instant readAt = rs.getTimestamp("readat") == null ? null : rs.getTimestamp("readat").toInstant();
-        Map<String, String> args = mapper.readValue(rs.getString("templateargs"), new TypeReference<>() {});
+        Map<String, String> args = new HashMap<>(mapper.readValue(rs.getString("templateargs"), new TypeReference<Map<String, String>>() {}));
+        presentationArg(args, "senderName", rs.getString("contextsender"));
+        presentationArg(args, "channelType", rs.getString("contextchanneltype"));
+        presentationArg(args, "channelName", rs.getString("contextchannelname"));
         return new NotificationDto(rs.getObject("id", UUID.class), NotificationType.valueOf(rs.getString("type")),
                 rs.getObject("workspaceid", UUID.class), new NotificationTargetDto(NotificationTargetKind.valueOf(rs.getString("targetkind")),
                 rs.getObject("targetid", UUID.class)), args, rs.getTimestamp("createdat").toInstant(), readAt,
                 rs.getTimestamp("alertexpiresat").toInstant(), rs.getBoolean("alert_active"));
+    }
+
+    private void presentationArg(Map<String, String> args, String key, String value) {
+        args.remove(key);
+        if (value != null && !value.isBlank()) args.put(key, value.strip());
     }
 }

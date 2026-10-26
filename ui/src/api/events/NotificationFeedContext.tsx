@@ -23,6 +23,10 @@ export class NotificationFeed {
     health(healthy: boolean) { if (!this.reconciling && this.boundary !== undefined) this.ready = healthy }
     invalidateAlerts() {
         this.ready = false
+        this.clearAlerts()
+    }
+    /** Read-state changes cancel pending alerts without discarding an established stream boundary. */
+    clearAlerts() {
         for (const listener of this.listeners) listener({ kind: 'reset' })
     }
     reset() {

@@ -220,6 +220,21 @@ class AccessPolicyIntegrationTest extends AbstractIntegrationTest {
         assertNotNull(routing.forRecipient(subject(owner),event(UiInvalidation.Audience.CONVERSATION,"conversation",conversation.getId())).orElseThrow().resource());
     }
 
+    @Test void knownScopeMetadataKeepsItsTypeWithoutAnyResourceOrPrivateScopeData() {
+        for (var audience : List.of(UiInvalidation.Audience.WORKSPACE, UiInvalidation.Audience.ORGANIZATION)) {
+            for (String type : List.of("clients.invalidated", "channels.invalidated", "inbox.invalidated", "filters.invalidated", "groups.invalidated")) {
+                var source = event(audience, "conversation", conversation.getId());
+                var hint = new UiInvalidation(source.eventId(), 1, type, source.occurredAt(), source.organizationId(),
+                        source.workspaceId(), source.resource(), audience, source.recipientEmployeeIds(),
+                        source.origin(), source.actorEmployeeId(), source.correlationId());
+                var output = routing.forRecipient(subject(other), hint).orElseThrow();
+                assertEquals(type, output.type()); assertNull(output.resource()); assertNull(output.workspaceId());
+                assertNull(output.correlationId()); assertNull(output.stream());
+                assertTrue(routing.forRecipient(subject(outsider), hint).isEmpty());
+            }
+        }
+    }
+
     @Test void unknownTypeOrSchemaResyncsOnlyAuthorizedAudienceWithoutResourceData() {
         for (var audience:UiInvalidation.Audience.values()) {
             for (int schema:List.of(1,2)) {

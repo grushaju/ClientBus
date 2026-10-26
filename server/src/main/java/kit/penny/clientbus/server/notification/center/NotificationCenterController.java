@@ -45,6 +45,13 @@ public class NotificationCenterController {
         return ok(center.readAll(access.sessionSubject(), key));
     }
 
+    @DeleteMapping
+    public ResponseEntity<NotificationClearResultDto> clear(@RequestHeader("Idempotency-Key") String key,
+            @RequestBody(required = false) String body) {
+        if (body != null && !body.isBlank()) throw new NotificationApiException(400, "INVALID_REQUEST");
+        return ok(center.clear(access.sessionSubject(), key));
+    }
+
     private <T> ResponseEntity<T> ok(T body) { return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(body); }
 
     @ExceptionHandler(NotificationApiException.class)

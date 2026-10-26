@@ -28,6 +28,9 @@ import java.util.UUID;
 @Transactional
 public class SavedConversationFilterService {
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private kit.penny.clientbus.server.notification.outbox.UiDomainEvents uiEvents;
+
     private static final int MAX_NAME_LENGTH = 100;
 
     private final SavedConversationFilterRepository filterRepository;
@@ -123,7 +126,9 @@ public class SavedConversationFilterService {
         );
         entity.setFilterDefinition(serialize(request));
 
-        return toDto(filterRepository.save(entity));
+        filterRepository.save(entity);
+        changed(entity);
+        return toDto(entity);
     }
 
     public SavedConversationFilterDto updateFilter(
@@ -158,6 +163,8 @@ public class SavedConversationFilterService {
         entity.setName(name);
         entity.setFilterDefinition(serialize(request));
 
+        changed(entity);
+
         return toDto(entity);
     }
 
@@ -171,6 +178,7 @@ public class SavedConversationFilterService {
                 findEditableFilter(workspaceId, filterId);
 
         filterRepository.delete(entity);
+        changed(entity);
     }
 
     private SavedConversationFilterEntity findEditableFilter(
@@ -201,6 +209,14 @@ public class SavedConversationFilterService {
         }
 
         return entity;
+    }
+
+    private void changed(SavedConversationFilterEntity filter) {
+        if (uiEvents == null) return;
+        if (filter.getFilterType() == SavedFilterType.PRIVATE)
+            uiEvents.personal(filter.getWorkspace().getOrganization().getId(),
+                    filter.getOwnerEmployee().getId(), "filters.invalidated");
+        else uiEvents.workspace(filter.getWorkspace(), "filters.invalidated");
     }
 
     private void requireWorkspaceAccess(UUID workspaceId) {

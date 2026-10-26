@@ -56,6 +56,9 @@ logging:
 #    org.springframework.kafka.config: DEBUG
 
 clientbus:
+  notifications:
+    # Individual transport acceptance tests opt in explicitly.
+    sse-enabled: false
   kafka:
     outbound:
       enabled-channels:

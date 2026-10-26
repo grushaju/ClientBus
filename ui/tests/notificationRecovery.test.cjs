@@ -111,7 +111,8 @@ test('REST fallback failure backs off to its cap and successful reconciliation r
     } finally {recovery.stop()}
 })
 
-test('one failed resource does not reject tolerant ready or discard another successful resource',async()=>{
+test('one failed resource does not reject tolerant ready or discard another successful resource',async t=>{
+    t.mock.timers.enable({apis:['setTimeout','Date'],now:100000})
     const manager=new InvalidationCoordinator(()=>true,1,1,100,{retryMs:20,retryMaxMs:80})
     let failed=0,succeeded=0
     manager.subscribe(()=>true,async()=>{failed++;throw new Error('optional service down')})
@@ -122,7 +123,8 @@ test('one failed resource does not reject tolerant ready or discard another succ
         await manager.reconcileAvailable(undefined,true)
         assert.equal(failed,1,'Periodic reconciliation must respect resource error backoff')
         assert.equal(succeeded,2)
-        await pause(25);assert.equal(failed,2)
+        t.mock.timers.tick(19);await flush();assert.equal(failed,1)
+        t.mock.timers.tick(1);await flush();assert.equal(failed,2)
     } finally {manager.close()}
 })
 

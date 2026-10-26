@@ -20,6 +20,7 @@ management:
 clientbus:
   notifications:
     creation-enabled: true
+    sse-enabled: true
     history-submission-enabled: true
     metrics-poll-ms: 10000
     metrics-query-timeout-seconds: 2

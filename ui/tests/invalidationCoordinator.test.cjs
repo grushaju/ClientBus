@@ -2,6 +2,21 @@ const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const load = require('./loadInboxModule.cjs')
 const { InvalidationCoordinator } = load('../../api/events/invalidationCoordinator.ts')
+
+test('optional invalidation fences run synchronously and remain separate from revoke resets', async () => {
+    const manager = new InvalidationCoordinator(() => false)
+    const observed = [], event = { type: 'notifications.invalidated' }
+    const subscription = manager.subscribe(value => value.type === event.type, async () => {},
+        () => observed.push('reset'), () => true, value => observed.push(value ?? 'local'))
+    manager.subscribe(() => true, async () => {})
+    manager.invalidate({ type: 'unrelated' }); assert.deepEqual(observed, [])
+    manager.invalidate(event); assert.deepEqual(observed, [event])
+    subscription.invalidate(); assert.deepEqual(observed, [event, 'local'])
+    manager.revoke(event); assert.deepEqual(observed, [event, 'local', 'reset'])
+    subscription(); manager.invalidate(event)
+    assert.deepEqual(observed, [event, 'local', 'reset'])
+    manager.close()
+})
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms))
 
 test('invalidations during REST preserve response and request one follow-up without parallel calls', async () => {
@@ -79,18 +94,29 @@ test('hidden resources retain dirty state and resume via reconciliation; cleanup
     await manager.reconcile(); assert.equal(calls, 2); manager.close()
 })
 
-test('continuous events allow responses and respect request frequency without parallel reads', async () => {
+test('continuous events allow responses and respect request frequency without parallel reads', async t => {
+    let now = 100000
+    t.mock.method(Date, 'now', () => now)
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] })
     const manager = new InvalidationCoordinator(() => true, 2, 30)
     let active=0,max=0,completed=0,requests=0
+    const starts = []
     manager.subscribe(() => true, async () => {
-        requests++; active++; max=Math.max(max,active)
+        starts.push(Date.now()); requests++; active++; max=Math.max(max,active)
         await pause(10); completed++; active--
     })
     const events=setInterval(()=>manager.invalidate(),2)
     try {
-        await manager.reconcile();await pause(220)
+        const initial = manager.reconcile()
+        // Advance timers and promise continuations together; host CPU scheduling is not the clock.
+        for (let elapsed = 0; elapsed < 240; elapsed++) {
+            for (let step = 0; step < 20; step++) await Promise.resolve()
+            now++; t.mock.timers.tick(1)
+        }
+        await initial
         assert.equal(max,1);assert.ok(completed>=4);assert.ok(requests<=10)
-    } finally { clearInterval(events);manager.close() }
+        for (let index = 1; index < starts.length; index++) assert.ok(starts[index] - starts[index - 1] >= 30)
+    } finally { clearInterval(events);manager.close();t.mock.timers.reset() }
 })
 
 test('hidden resources keep dirty and receive immediate revoke before being resumed', async () => {

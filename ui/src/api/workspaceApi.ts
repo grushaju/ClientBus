@@ -4,6 +4,13 @@ import type {
     WorkspaceDto,
 } from '../auth/types'
 
+export interface WorkspaceStatisticsDto {
+    workspaceId: string; employees: number; channels: number; conversations: number; unread: number; lastActivity: string | null
+}
+export async function getWorkspaceStatistics(signal?: AbortSignal): Promise<WorkspaceStatisticsDto[]> {
+    return (await apiFetch('/api/workspaces/statistics', { signal })).json()
+}
+
 export async function getCurrentUserWorkspaces(signal?: AbortSignal): Promise<
     WorkspaceDto[]
 > {
@@ -15,11 +22,12 @@ export async function getCurrentUserWorkspaces(signal?: AbortSignal): Promise<
     return response.json()
 }
 
-export async function getAllWorkspaces(): Promise<
+export async function getAllWorkspaces(signal?: AbortSignal): Promise<
     WorkspaceDto[]
 > {
     const response = await apiFetch(
         '/api/workspaces/all',
+        { signal },
     )
 
     return response.json()
@@ -27,9 +35,11 @@ export async function getAllWorkspaces(): Promise<
 
 export async function getWorkspace(
     workspaceId: string,
+    signal?: AbortSignal,
 ): Promise<WorkspaceDto> {
     const response = await apiFetch(
         `/api/workspaces/${workspaceId}`,
+        { signal },
     )
 
     return response.json()

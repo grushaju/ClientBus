@@ -9,11 +9,16 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.Optional;
+import java.util.Set;
 import static kit.penny.clientbus.server.security.policy.AccessPolicy.Resource.*;
 
 /** Re-evaluate immediately before enqueue/send. Socket I/O belongs to the later gateway stage. */
 @Service
 public class NotificationRoutingPolicy {
+    // Safe scope-wide hints retain their type, never their unverified resource/recipient data.
+    // A metadata change must not reset unrelated resources such as notification preferences.
+    private static final Set<String> SCOPE_HINTS = Set.of("inbox.invalidated", "clients.invalidated",
+            "channels.invalidated", "filters.invalidated", "groups.invalidated");
     private final AccessPolicy policy;
     public NotificationRoutingPolicy(AccessPolicy policy) { this.policy = policy; }
 
@@ -31,10 +36,12 @@ public class NotificationRoutingPolicy {
 
         if (event.audience() == UiInvalidation.Audience.WORKSPACE) {
             if (event.workspaceId() == null || !policy.allows(subject, WORKSPACE, event.workspaceId())) return Optional.empty();
-            return Optional.of(minimal(event, "stream.resync-required"));
+            return Optional.of(minimal(event, !needsResync && SCOPE_HINTS.contains(event.type())
+                    ? event.type() : "stream.resync-required"));
         }
         if (event.audience() == UiInvalidation.Audience.ORGANIZATION)
-            return Optional.of(minimal(event, "stream.resync-required"));
+            return Optional.of(minimal(event, !needsResync && SCOPE_HINTS.contains(event.type())
+                    ? event.type() : "stream.resync-required"));
 
         if (event.resource() == null) return personal
                 ? Optional.of(minimal(event, "stream.resync-required")) : Optional.empty();

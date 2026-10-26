@@ -8,6 +8,7 @@ export interface NotificationDto {
     type: NotificationType
     workspaceId: string | null
     target: NotificationTargetDto
+    /** REST adds current senderName/channelType/channelName after checking target access. */
     templateArgs: Record<string, string>
     createdAt: string
     readAt: string | null
@@ -16,5 +17,8 @@ export interface NotificationDto {
 }
 export interface NotificationPageDto { items: NotificationDto[]; nextCursor: string | null }
 export interface NotificationSummaryDto { unreadCount: number }
+export interface NotificationPreferencesDto { soundEnabled: boolean }
+export interface UpdateNotificationPreferencesRequest { soundEnabled: boolean }
 export interface NotificationReadAllResultDto { readAt: string; updatedCount: number }
+export interface NotificationClearResultDto { clearedAt: string; deletedCount: number }
 export interface NotificationApiErrorDto { code: string; correlationId: string | null }

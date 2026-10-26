@@ -180,9 +180,11 @@ export async function getEmployee(
 
 export async function getEmployeesByOrganization(
     organizationId: string,
+    signal?: AbortSignal,
 ): Promise<EmployeeDto[]> {
     const response = await apiFetch(
         `/api/employees/organization/${organizationId}`,
+        { signal },
     )
 
     return response.json()
@@ -318,9 +320,11 @@ export async function deleteEmployee(
 
 export async function getEmployeeWorkspaces(
     employeeId: string,
+    signal?: AbortSignal,
 ): Promise<EmployeeWorkspaceDto[]> {
     const response = await apiFetch(
         `/api/employees/${employeeId}/workspaces`,
+        { signal },
     )
 
     return response.json()

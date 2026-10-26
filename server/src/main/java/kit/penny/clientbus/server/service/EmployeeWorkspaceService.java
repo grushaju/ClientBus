@@ -22,6 +22,9 @@ import java.util.UUID;
 @Transactional
 public class EmployeeWorkspaceService {
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private kit.penny.clientbus.server.notification.outbox.UiDomainEvents uiEvents;
+
     private final EmployeeRepository employeeRepository;
     private final WorkspaceRepository workspaceRepository;
     private final EmployeeWorkspaceRepository employeeWorkspaceRepository;
@@ -87,6 +90,11 @@ public class EmployeeWorkspaceService {
                 employeeWorkspaceRepository.saveAndFlush(
                         entity
                 );
+
+        if (uiEvents != null) {
+            uiEvents.identity(workspace.getOrganization().getId(), employeeId);
+            uiEvents.workspace(workspace, "employees.invalidated");
+        }
 
         return new EmployeeWorkspaceDto(
                 saved.getEmployee().getId(),
@@ -197,6 +205,10 @@ public class EmployeeWorkspaceService {
                         employeeId,
                         workspaceId
                 );
+        if (uiEvents != null) {
+            uiEvents.identity(workspace.getOrganization().getId(), employeeId);
+            uiEvents.workspace(workspace, "employees.invalidated");
+        }
     }
 
 
@@ -236,6 +248,11 @@ public class EmployeeWorkspaceService {
 
         saved.setSupervisor(supervisor);
         saved = employeeWorkspaceRepository.save(saved);
+
+        if (uiEvents != null) {
+            uiEvents.identity(workspace.getOrganization().getId(), employeeId);
+            uiEvents.workspace(workspace, "employees.invalidated");
+        }
 
         return new EmployeeWorkspaceDto(
                 saved.getEmployee().getId(),

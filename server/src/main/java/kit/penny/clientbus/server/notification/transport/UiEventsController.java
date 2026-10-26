@@ -1,6 +1,7 @@
 package kit.penny.clientbus.server.notification.transport;
 
 import kit.penny.clientbus.server.security.policy.HttpAccessPolicy;
+import kit.penny.clientbus.server.security.SseRequestSecurity;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
@@ -16,9 +17,12 @@ public class UiEventsController {
     private final UiSseGateway gateway; private final HttpAccessPolicy access;
     public UiEventsController(UiSseGateway gateway,HttpAccessPolicy access) { this.gateway=gateway;this.access=access; }
     @GetMapping(value="/api/events",produces=MediaType.TEXT_EVENT_STREAM_VALUE)
-    public ResponseEntity<SseEmitter> events(@RequestParam(required=false) UUID workspaceId, jakarta.servlet.http.HttpServletResponse response) {
+    public ResponseEntity<SseEmitter> events(@RequestParam(required=false) UUID workspaceId,
+            jakarta.servlet.http.HttpServletRequest request, jakarta.servlet.http.HttpServletResponse response) {
+        var emitter = gateway.open(access.sessionSubject(),workspaceId,response);
+        request.setAttribute(SseRequestSecurity.ADMITTED, true);
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).header("X-Accel-Buffering","no")
-                .body(gateway.open(access.sessionSubject(),workspaceId,response));
+                .body(emitter);
     }
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<NotificationApiErrorDto> status(ResponseStatusException error) {

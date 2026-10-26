@@ -2,6 +2,19 @@ const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const load = require('./loadInboxModule.cjs')
 
+test('notification presentation handles unnamed contacts, missing metadata and all channel types', () => {
+    const { notificationContact, notificationSource } = load('../notifications/notificationPresentation.ts')
+    const item = { target: { kind: 'CONVERSATION', id: 'technical-id' }, templateArgs: {} }
+    assert.equal(notificationContact(item), 'Контакт без имени')
+    assert.equal(notificationSource(item), null)
+    assert.equal(notificationContact({ ...item, templateArgs: null }), 'Контакт без имени')
+    assert.equal(notificationSource({ ...item, templateArgs: null }), null)
+    assert.equal(notificationContact({ ...item, target: { kind: 'CHANNEL_ACCOUNT' } }), null)
+    assert.equal(notificationSource({ ...item, templateArgs: { channelType: 'WHATSAPP', channelName: ' Продажи ' } }), 'WhatsApp · Продажи')
+    assert.equal(notificationSource({ ...item, templateArgs: { channelType: 'FUTURE', channelName: 'Канал' } }), 'Канал')
+    assert.equal(notificationContact({ ...item, templateArgs: { senderName: '<b>Анна</b>' } }), '<b>Анна</b>')
+})
+
 function storageEnvironment(t) {
     const previous = global.localStorage
     const previousSession = global.sessionStorage
@@ -48,6 +61,20 @@ test('blocked or corrupt local storage retains in-session alert protection', t =
     assert.equal(storage.claimNotificationAlert('A', 'notification'), false)
     assert.doesNotThrow(() => storage.clearNotificationAlertDedup('A'))
     assert.equal(storage.claimNotificationAlert('A', 'notification'), true)
+})
+
+test('clear retry is isolated from read-all and other accounts, survives reload and expires after seven days', t => {
+    storageEnvironment(t)
+    const storage = load('../notifications/notificationStorage.ts'), now = Date.now()
+    const read = storage.beginReadAll('A', now), first = storage.beginClear('A', now), other = storage.beginClear('B', now)
+    assert.deepEqual(load('../notifications/notificationStorage.ts').pendingClear('A', now), first)
+    const second = storage.beginClear('A', now)
+    storage.completeClear('A', first.key)
+    assert.equal(storage.pendingClear('A', now).key, second.key)
+    assert.equal(storage.pendingReadAll('A', now).key, read.key); assert.equal(storage.pendingClear('B', now).key, other.key)
+    assert.equal(storage.pendingClear('A', now + 7 * 24 * 60 * 60 * 1000), null)
+    global.sessionStorage.setItem = () => { throw Error('storage unavailable') }
+    assert.throws(() => storage.beginClear('A'), /storage unavailable/)
 })
 
 test('read-all command survives reload for seven days and completing an old response preserves a newer command', t => {
@@ -157,6 +184,7 @@ test('API uses all-workspace routes, forwards opaque cursor and sends read-all k
         await api.getNotification('id/value', controller.signal)
         await api.readNotification('id/value', controller.signal)
         await api.readAllNotifications('00000000-0000-4000-8000-000000000001', controller.signal)
+        await api.clearNotifications('00000000-0000-4000-8000-000000000002', controller.signal)
         const url = new URL(calls[0].url, 'https://clientbus.test')
         assert.equal(url.searchParams.get('unreadOnly'), 'true')
         assert.equal(url.searchParams.get('limit'), '30')
@@ -168,6 +196,10 @@ test('API uses all-workspace routes, forwards opaque cursor and sends read-all k
         assert.equal(calls[4].init.method, 'PUT')
         assert.equal(new Headers(calls[4].init.headers).get('Idempotency-Key'), '00000000-0000-4000-8000-000000000001')
         assert.equal(calls[4].init.body, undefined)
+        assert.equal(calls[5].url, '/api/notifications')
+        assert.equal(calls[5].init.method, 'DELETE')
+        assert.equal(new Headers(calls[5].init.headers).get('Idempotency-Key'), '00000000-0000-4000-8000-000000000002')
+        assert.equal(calls[5].init.body, undefined)
         assert.equal(limiter.snapshot().started, 3, 'Only real GETs consume the recovery budget')
         assert.equal(limiter.snapshot().active, 0, 'Every body is consumed before releasing its permit')
     } finally { limiter.close() }

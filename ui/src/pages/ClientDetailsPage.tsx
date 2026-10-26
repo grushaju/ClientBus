@@ -1,3 +1,7 @@
+import { useRef } from 'react'
+import { useAuth } from '../auth/AuthContext'
+import { useUiResource } from '../api/events/useUiResource'
+import { isAccessEvent } from '../api/events/uiScope'
 import {
     useEffect,
     useState,
@@ -43,7 +47,8 @@ import {
     useWorkspace,
 } from '../workspace/WorkspaceContext'
 
-function ClientDetailsPage() {
+function ClientDetailsPageContent() {
+    const hasLoaded = useRef(false)
     const navigate = useNavigate()
 
     const { clientId } =
@@ -114,64 +119,21 @@ function ClientDetailsPage() {
         account.phone ||
         account.externalId
 
+    useUiResource('client-details:' + clientId, !!clientId,
+        event => isAccessEvent(event) || ['clients.invalidated', 'inbox.invalidated', 'messages.invalidated'].includes(event.type),
+        async signal => {
+            const [client, accounts, conversations] = await Promise.all([
+                getClient(clientId!, signal), getClientAccountsByClient(clientId!, signal), getClientConversations(clientId!, signal),
+            ])
+            return { client, accounts, conversations }
+        }, value => { hasLoaded.current = true; setClient(value.client); setAccounts(value.accounts); setConversations(value.conversations); setError(null) },
+        error => setError(error instanceof Error ? error.message : 'Не удалось загрузить клиента'),
+        () => { setClient(null); setAccounts([]); setConversations([]); setEditing(false) }, value => { if (!value || !hasLoaded.current) setLoading(value) })
+    // Background metadata updates must not overwrite an employee's unsaved form.
     useEffect(() => {
-        if (!clientId) {
-            return
-        }
-
-        const load = async () => {
-            setLoading(true)
-            setError(null)
-
-            try {
-                const [
-                    clientResult,
-                    accountsResult,
-                    conversationsResult,
-                ] = await Promise.all([
-                    getClient(clientId),
-                    getClientAccountsByClient(
-                        clientId,
-                    ),
-                    getClientConversations(
-                        clientId,
-                    ),
-                ])
-
-                setClient(clientResult)
-                setAccounts(accountsResult)
-                setConversations(
-                    conversationsResult,
-                )
-
-                setFirstName(
-                    clientResult.firstName,
-                )
-
-                setLastName(
-                    clientResult.lastName,
-                )
-
-                setPhoneList(
-                    clientResult.phoneList,
-                )
-
-                setEnabled(
-                    clientResult.enabled,
-                )
-            } catch (err) {
-                setError(
-                    err instanceof Error
-                        ? err.message
-                        : 'Не удалось загрузить клиента',
-                )
-            } finally {
-                setLoading(false)
-            }
-        }
-
-        void load()
-    }, [clientId])
+        if (editing || !client) return
+        setFirstName(client.firstName); setLastName(client.lastName); setPhoneList(client.phoneList); setEnabled(client.enabled)
+    }, [client, editing])
 
     useEffect(() => {
         if (!clientId || !client?.avatarUrl) {
@@ -931,6 +893,13 @@ function formatDate(
             minute: '2-digit',
         },
     ).format(new Date(value))
+}
+
+function ClientDetailsPage() {
+    const route = useParams()
+    const { currentEmployee, sessionEpoch } = useAuth()
+    const { currentWorkspace } = useWorkspace()
+    return <ClientDetailsPageContent key={[sessionEpoch, currentEmployee?.id, currentEmployee?.role, currentWorkspace?.id, JSON.stringify(route)].join(':')} />
 }
 
 export default ClientDetailsPage

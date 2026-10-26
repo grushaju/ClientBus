@@ -101,8 +101,14 @@ public class MessageService {
         return markRead(messageId);
     }
 
+    private MessageEntity saveUiMessage(MessageEntity message) {
+        MessageEntity saved = messageRepository.save(message);
+        uiOutbox.messageSaved(saved.getConversation(), kit.penny.clientbus.common.notification.EventOrigin.LIVE);
+        return saved;
+    }
+
     private MessageDto saveTerminalFailure(MessageEntity message) {
-        messageRepository.save(message);
+        saveUiMessage(message);
         if (personalNotifications != null && message.getSendAttemptId() != null) {
             messageRepository.flush();
             personalNotifications.outboundFailed(message.getId(), message.getSendAttemptId());
@@ -501,7 +507,7 @@ public class MessageService {
         }
 
         message =
-                messageRepository.save(message);
+                saveUiMessage(message);
 
         Instant messageTime =
                 message.getSentAt() != null
@@ -606,7 +612,7 @@ public class MessageService {
         );
 
         message =
-                messageRepository.save(message);
+                saveUiMessage(message);
 
         Instant messageTime =
                 message.getSentAt() != null
@@ -649,7 +655,7 @@ public class MessageService {
         );
 
         return messageMapper.toDto(
-                messageRepository.save(message)
+                saveUiMessage(message)
         );
     }
 
@@ -682,7 +688,7 @@ public class MessageService {
         );
 
         return messageMapper.toDto(
-                messageRepository.save(message)
+                saveUiMessage(message)
         );
     }
 
@@ -749,7 +755,7 @@ public class MessageService {
         );
 
         return messageMapper.toDto(
-                messageRepository.save(message)
+                saveUiMessage(message)
         );
     }
 
@@ -899,7 +905,7 @@ public class MessageService {
         );
 
         return messageMapper.toDto(
-                messageRepository.save(message)
+                saveUiMessage(message)
         );
     }
 
@@ -1023,7 +1029,7 @@ public class MessageService {
         );
 
         return messageMapper.toDto(
-                messageRepository.save(message)
+                saveUiMessage(message)
         );
     }
 
@@ -1066,7 +1072,7 @@ public class MessageService {
         );
 
         return messageMapper.toDto(
-                messageRepository.save(message)
+                saveUiMessage(message)
         );
     }
 
@@ -1112,7 +1118,7 @@ public class MessageService {
         );
 
         return messageMapper.toDto(
-                messageRepository.save(message)
+                saveUiMessage(message)
         );
     }
 
@@ -1141,6 +1147,7 @@ public class MessageService {
                         );
 
         Instant readAt = Instant.now();
+        boolean changed = false;
         for (MessageEntity candidate : messages) {
             UUID attempt = candidate.getSendAttemptId();
             MessageEntity message = lockedMessage(candidate.getId());
@@ -1168,6 +1175,7 @@ public class MessageService {
             }
 
             if (telegramMessageId <= lastReadOutboxMessageId) {
+                changed = true;
 
                 message.setDeliveryStatus(
                         MessageDeliveryStatus.READ
@@ -1179,9 +1187,10 @@ public class MessageService {
             }
         }
 
-        if (!messages.isEmpty()) {
+        if (changed) {
 
             messageRepository.saveAll(messages);
+            uiOutbox.messageSaved(messages.getFirst().getConversation(), kit.penny.clientbus.common.notification.EventOrigin.LIVE);
         }
     }
 
@@ -1331,6 +1340,7 @@ public class MessageService {
                 getMessageEntity(messageId);
         retriedMessage.setSendAttemptId(UUID.randomUUID());
         messageRepository.saveAndFlush(retriedMessage);
+        uiOutbox.messageSaved(retriedMessage.getConversation(), kit.penny.clientbus.common.notification.EventOrigin.LIVE);
         if (personalNotifications != null && previousAttempt != null)
             personalNotifications.closeOutboundAttempt(messageId, previousAttempt);
 
