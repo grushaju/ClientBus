@@ -26,6 +26,9 @@ import java.util.UUID;
 public class WorkspaceService {
 
     @org.springframework.beans.factory.annotation.Autowired
+    private kit.penny.clientbus.server.crm.CrmDeletionGuard crmDeletionGuard;
+
+    @org.springframework.beans.factory.annotation.Autowired
     private kit.penny.clientbus.server.notification.outbox.UiDomainEvents uiEvents;
 
     private final WorkspaceRepository workspaceRepository;
@@ -248,6 +251,7 @@ public class WorkspaceService {
 
         currentUserService.requireWorkspaceAccess(id);
 
+        if (crmDeletionGuard != null) crmDeletionGuard.workspace(entity);
         if (uiEvents != null) uiEvents.workspaceRemoved(entity);
         workspaceRepository.delete(entity);
     }

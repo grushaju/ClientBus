@@ -1,3 +1,5 @@
+import CrmSettingsPanel from '../components/crm/CrmSettingsPanel'
+import { useSearchParams } from 'react-router-dom'
 import {
     useEffect,
     useRef,
@@ -26,8 +28,10 @@ type SettingsSection =
     | 'PROFILE'
     | 'SECURITY'
     | 'ORGANIZATION'
+    | 'CRM'
 
 function SettingsPage() {
+    const [params, setParams] = useSearchParams()
     const {
         currentEmployee,
         currentOrganization,
@@ -39,8 +43,9 @@ function SettingsPage() {
         section,
         setSection,
     ] = useState<SettingsSection>(
-        'PROFILE',
+        params.get('section') === 'crm' && isSuperAdmin ? 'CRM' : 'PROFILE',
     )
+    useEffect(() => { if (params.get('section') === 'crm') setSection(isSuperAdmin ? 'CRM' : 'PROFILE') }, [params, isSuperAdmin])
 
     const [
         firstName,
@@ -504,9 +509,12 @@ function SettingsPage() {
                             Организация
                         </button>
                     )}
+                    {isSuperAdmin && <button type="button" className={section === 'CRM' ? 'active' : ''}
+                        onClick={() => { setParams({ section: 'crm' }); setSection('CRM'); clearMessages() }}>CRM</button>}
                 </aside>
 
                 <main className="settings-content">
+                    {section === 'CRM' && <CrmSettingsPanel />}
                     {section ===
                         'PROFILE' && (
                             <section className="settings-section">

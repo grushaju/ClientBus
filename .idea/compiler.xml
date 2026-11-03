@@ -6,9 +6,11 @@
         <sourceOutputDir name="target/generated-sources/annotations" />
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
+        <module name="crm-dikidi" />
         <module name="server" />
         <module name="common" />
         <module name="Server" />
+        <module name="crm-api" />
         <module name="Common" />
       </profile>
     </annotationProcessing>

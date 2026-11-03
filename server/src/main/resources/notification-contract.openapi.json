@@ -2099,7 +2099,8 @@
               "access.invalidated",
               "notifications.created",
               "notifications.invalidated",
-              "history-operation.invalidated"
+              "history-operation.invalidated",
+              "crm.invalidated"
             ]
           },
           "occurredAt": {

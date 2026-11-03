@@ -12,6 +12,11 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(kit.penny.clientbus.server.crm.CrmException.class)
+    public ResponseEntity<ErrorResponse> handleCrm(kit.penny.clientbus.server.crm.CrmException exception) {
+        return ResponseEntity.status(exception.status()).body(new ErrorResponse(exception.code(), exception.getMessage()));
+    }
+
     @ExceptionHandler(ConversationAssignmentConflictException.class)
     public ResponseEntity<ErrorResponse> handleAssignmentConflict(ConversationAssignmentConflictException exception) {
         return ResponseEntity.status(HttpStatus.CONFLICT)

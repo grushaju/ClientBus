@@ -127,6 +127,7 @@ test('workspace employee list marks supervisors only for the displayed workspace
     const workspace = { id: 'workspace', name: 'Workspace', createdAt: '2026-10-18T12:00:00Z', updatedAt: '2026-10-18T12:00:00Z' }
     const employees = ['a', 'b'].map(id => ({ id, firstName: id, email: `${id}@example.com`, role: 'EMPLOYEE' }))
     const Page = load('../../pages/WorkspaceDetailsPage.tsx', {
+        '../components/crm/WorkspaceCrmPanel': { default: () => null },
         'react-router-dom': { useParams: () => ({ workspaceId: 'workspace' }), useNavigate: () => () => {}, Link: props => React.createElement('a', null, props.children) },
         '../auth/AuthContext': { useAuth: () => ({ currentEmployee: { organizationId: 'org' } }) },
         '../workspace/WorkspaceContext': { useWorkspace: () => ({ removeWorkspace() {}, setCurrentWorkspaceId() {} }) },

@@ -18,6 +18,12 @@ management:
           include: uiPipeline
 
 clientbus:
+  crm:
+    secret-key: ${CLIENTBUS_CRM_SECRET_KEY:}
+    secret-key-id: ${CLIENTBUS_CRM_SECRET_KEY_ID:primary}
+    connect-timeout-ms: 5000
+    request-timeout-ms: 15000
+    max-response-bytes: 4194304
   notifications:
     creation-enabled: true
     sse-enabled: true
@@ -120,6 +126,11 @@ springdoc:
 
 spring:
 
+  config:
+    import:
+      - optional:file:./server/data/crm-secrets.properties
+      - optional:file:./data/crm-secrets.properties
+
   application:
     name: server
 
@@ -171,7 +182,7 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
-    schemas: dbo,system
+    schemas: dbo,system,crm
     default-schema: system
     create-schemas: true
     baseline-on-migrate: true

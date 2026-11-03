@@ -1,5 +1,7 @@
 /common/target/
 /server/target/
+/crm/api/target/
+/crm/dikidi/target/
 /fe/dist/
 /fe/node_modules/
 /server/data/

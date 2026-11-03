@@ -25,7 +25,7 @@ const known = new Set(['stream.ready', 'stream.heartbeat', 'stream.resync-requir
     'messages.invalidated', 'inbox.invalidated', 'groups.invalidated', 'filters.invalidated',
     'clients.invalidated', 'channels.invalidated', 'workspace.invalidated', 'employees.invalidated',
     'identity.invalidated', 'access.invalidated', 'notifications.created', 'notifications.invalidated',
-    'history-operation.invalidated'])
+    'history-operation.invalidated', 'crm.invalidated'])
 const uuid = (value: unknown): value is string => typeof value === 'string'
     && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
 const date = (value: unknown): boolean => typeof value === 'string' && Number.isFinite(Date.parse(value))

@@ -6,7 +6,7 @@ export type KnownUiEventType = 'stream.ready' | 'stream.heartbeat' | 'stream.res
     | 'filters.invalidated' | 'clients.invalidated' | 'channels.invalidated'
     | 'workspace.invalidated' | 'employees.invalidated' | 'identity.invalidated'
     | 'access.invalidated' | 'notifications.created' | 'notifications.invalidated'
-    | 'history-operation.invalidated'
+    | 'history-operation.invalidated' | 'crm.invalidated'
 export interface StreamReadyDto {
     streamId: string
     alertsAfter: string

@@ -22,6 +22,7 @@ function Sidebar() {
                 <NavLink to="/channels">
                     Каналы
                 </NavLink>
+                <NavLink to="/crm">CRM</NavLink>
 
                 {isSuperAdmin && (
                     <>

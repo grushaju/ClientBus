@@ -36,6 +36,7 @@ import WorkspaceDetailsPage
 
 import SettingsPage
     from '../pages/SettingsPage'
+import CrmPage from '../pages/CrmPage'
 
 export const router =
     createBrowserRouter([
@@ -98,6 +99,7 @@ export const router =
                             element:
                                 <SettingsPage />,
                         },
+                        { path: 'crm', element: <CrmPage /> },
                         {
                             element: (
                                 <RoleProtectedLayout

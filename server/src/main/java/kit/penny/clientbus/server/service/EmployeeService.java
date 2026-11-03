@@ -33,6 +33,9 @@ import java.util.UUID;
 public class EmployeeService {
 
     @org.springframework.beans.factory.annotation.Autowired
+    private kit.penny.clientbus.server.crm.CrmDeletionGuard crmDeletionGuard;
+
+    @org.springframework.beans.factory.annotation.Autowired
     private kit.penny.clientbus.server.notification.outbox.UiDomainEvents uiEvents;
 
     private final EmployeeRepository employeeRepository;
@@ -455,6 +458,7 @@ public class EmployeeService {
                 employee.getUser();
 
         changed(employee);
+        if (crmDeletionGuard != null) crmDeletionGuard.employee(employee);
         employeeRepository.delete(employee);
         userRepository.delete(user);
     }

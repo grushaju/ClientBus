@@ -11,5 +11,5 @@ public final class UiEventTypes {
             "filters.invalidated", "clients.invalidated", "channels.invalidated",
             "workspace.invalidated", "employees.invalidated", "identity.invalidated",
             "access.invalidated", "notifications.created", "notifications.invalidated",
-            "history-operation.invalidated");
+            "history-operation.invalidated", "crm.invalidated");
 }

@@ -14,7 +14,8 @@ public final class NotificationSchemaNaming implements Integrator {
         for (var entity : metadata.getEntityBindings()) {
             Class<?> mappedClass = entity.getMappedClass();
             if (mappedClass == null || (!NotificationRecord.class.isAssignableFrom(mappedClass)
-                    && mappedClass != OutboundCallbackEntity.class)) continue;
+                    && mappedClass != OutboundCallbackEntity.class
+                    && !kit.penny.clientbus.server.persistence.entity.crm.CrmRecord.class.isAssignableFrom(mappedClass))) continue;
             var table = entity.getTable();
             for (var column : table.getColumns()) {
                 int number = 0;

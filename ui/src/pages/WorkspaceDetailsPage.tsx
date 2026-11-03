@@ -1,4 +1,5 @@
 import { useUiResource } from '../api/events/useUiResource'
+import WorkspaceCrmPanel from '../components/crm/WorkspaceCrmPanel'
 import { affectsWorkspace, isAccessEvent } from '../api/events/uiScope'
 import {
     useRef,
@@ -548,6 +549,8 @@ function WorkspaceDetailsPageContent() {
                     </div>
                 )}
             </section>
+
+            <WorkspaceCrmPanel workspaceId={workspace.id} />
 
             <EditWorkspaceDialog
                 open={editOpen}
