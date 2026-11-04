@@ -75,7 +75,7 @@ public class CrmStore {
         for (String code : List.of("LIST_PROJECTS", "READ_MASTERS", "READ_SERVICES", "READ_CLIENTS", "READ_APPOINTMENTS",
                 "READ_CLIENT_HISTORY", "READ_WORK_INTERVALS", "READ_AVAILABILITY", "READ_FINANCIAL_CONTEXT",
                 "CREATE_APPOINTMENT", "MOVE_APPOINTMENT", "CANCEL_APPOINTMENT")) {
-            boolean implemented = code.equals("READ_MASTERS") || code.equals("READ_SERVICES");
+            boolean implemented = code.equals("READ_MASTERS") || code.equals("READ_SERVICES") || code.equals("READ_CLIENTS");
             String state = !implemented ? "UNVERIFIED" : !row.isEnabled() || row.getConnection().getStatus() == CrmConnectionStatus.DISABLED
                     ? "CONFIGURATION_REQUIRED" : row.getConnection().getStatus() == CrmConnectionStatus.REAUTH_REQUIRED
                     ? "REAUTH_REQUIRED" : "AVAILABLE";

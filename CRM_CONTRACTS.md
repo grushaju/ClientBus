@@ -2,7 +2,7 @@
 
 Дата: 27.10.2026; исправления двух ревью и уточнения по повторному чтению каталога/графиков внесены 28.10.2026. Основания: [Stage 12.txt](Stage%2012.txt), [CRM_SEMANTICS.md](CRM_SEMANTICS.md), [CRM_DIKIDI_PROTOCOL.md](CRM_DIKIDI_PROTOCOL.md).
 
-Статус: спецификация 12.2 зафиксирована с исправлением восьми согласованных замечаний. По согласованному плану 12.3 реализованы модули, подключение DIKIDI, ручная привязка проекта, чтение мастеров, сопоставления Employee и четыре таблицы connection/project/master/syncstate. В 12.4.1 добавлены service/masterservice, согласованный R01-каталог, наблюдаемость и локальное чтение услуг. Проверки перечислены в [CRM_SETUP.md](CRM_SETUP.md). Остальные модели, REST чтения и команды ниже остаются спецификацией подэтапов 12.4.2–12.6. A/W-проверки протокола сохраняют фактические статусы; непроверенные команды DIKIDI не включены.
+Статус: спецификация 12.2 зафиксирована с исправлением восьми согласованных замечаний. По согласованному плану 12.3 реализованы модули, подключение DIKIDI, ручная привязка проекта, чтение мастеров, сопоставления Employee и четыре таблицы connection/project/master/syncstate. В 12.4.1 добавлены service/masterservice, согласованный R01-каталог, наблюдаемость и локальное чтение услуг. В 12.4.2 добавлены crm.client, порционный импорт CLIENTS и REST ручных сопоставлений; действующие ограничения описаны в [CRM_CLIENTS.md](CRM_CLIENTS.md). Проверки перечислены в [CRM_SETUP.md](CRM_SETUP.md). Остальные модели, REST чтения и команды ниже остаются спецификацией подэтапов 12.4.3–12.6. A/W-проверки протокола сохраняют фактические статусы; непроверенные команды DIKIDI не включены.
 
 ## 1. Модули
 
@@ -47,7 +47,7 @@ Registry выбирает провайдер по коду. Авторизаци
 | `CrmReadPort` | `readAvailability(scope, request)`, `readFinancialContext(scope, externalAppointmentId)` |
 | `CrmAppointmentCommandPort` | `create(scope, command)`, `move(scope, command)`, `cancel(scope, command)`, `reconcile(scope, operationReference)` |
 
-Реализованный SPI 12.4.1 использует `readCatalog(access, externalProjectId)` → `CrmCatalogSnapshot`: masters/services/offers, observedAt, completeness и scope. DIKIDI получает все три коллекции одним R01; отдельное чтение мастеров сохранено для совместимости. Будущие постраничные методы в таблице выше пока остаются спецификацией.
+Реализованный SPI 12.4.1 использует `readCatalog(access, externalProjectId)` → `CrmCatalogSnapshot`: masters/services/offers, observedAt, completeness и scope. DIKIDI получает все три коллекции одним R01; отдельное чтение мастеров сохранено для совместимости. В 12.4.2 добавлен `readClients(access, externalProjectId, cursor)` → `CrmClientPage`: items, nextCursor, observedAt, completeness, scope. Поиск выполняется по локально сохранённым клиентам; DIKIDI R08 возвращает offset-порции без доказательства полного снимка. Остальные будущие постраничные методы в таблице выше пока остаются спецификацией.
 
 `access` — внутренний доступ к авторизационным данным конкретного подключения и их версии. Он не сериализуется в REST/логи; секрет не попадает в обычный `toString`. `scope` содержит этот доступ, внешний project ID и неизменяемый ContextSnapshot: локальный projectId, provider, externalProjectId, connectionId, credentialVersion, contextVersion, zoneRevision. Бизнес-права пользователя проверяет server, а доступ учётной записи к проекту — адаптер. Вызов не меняет глобальный «текущий проект» общей сессии; последовательность страниц использует один снимок контекста.
 

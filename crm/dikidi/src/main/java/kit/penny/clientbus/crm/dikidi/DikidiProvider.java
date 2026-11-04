@@ -100,6 +100,36 @@ public final class DikidiProvider implements CrmProvider, AutoCloseable {
             return new CrmReadResult<>(parseMasters(result), Instant.now(), CrmReadResult.Completeness.COMPLETE, externalProjectId + ":MASTERS");
         });
     }
+    @Override public CrmClientPage readClients(CrmAccess access, String externalProjectId, String cursor) {
+        projectId(externalProjectId);
+        final int offset;
+        try {
+            offset = cursor == null ? 0 : Integer.parseInt(cursor);
+            if (offset < 0 || offset > 1000000) throw new NumberFormatException();
+        } catch (NumberFormatException error) { throw new CrmFailure(INVALID_RESPONSE); }
+        return execute(access, externalProjectId, false, (session, deadline) -> {
+            // Establish and verify the selected owner project on every portion.
+            catalog(session, externalProjectId, deadline);
+            var result = tree(call(session, "POST", "https://dikidi.ru/ru/owner/ajax/clients/filter/?company="+externalProjectId,
+                    List.of(Map.entry("company",externalProjectId), Map.entry("limit","50"), Map.entry("offset",Integer.toString(offset)),
+                            Map.entry("filter","username"), Map.entry("order","asc"), Map.entry("more","1"), Map.entry("query","")),
+                    true, externalProjectId, deadline));
+            String html = null;
+            if (result.path("html").isString()) html=result.path("html").asString();
+            if (result.path("script").isArray()) for (var script : result.path("script")) {
+                if (script.path("html").isString()) {
+                    if (html != null) throw new CrmFailure(INVALID_RESPONSE);
+                    html=script.path("html").asString();
+                }
+            }
+            if (html == null) throw new CrmFailure(INVALID_RESPONSE);
+            var clients = DikidiClientsHtml.parse(html);
+            if (clients.size()>50 || clients.isEmpty() && !html.isBlank()) throw new CrmFailure(INVALID_RESPONSE);
+            // Offset paging has no snapshot token. Even a terminal page cannot prove a complete snapshot.
+            return new CrmClientPage(clients, clients.isEmpty() ? null : Integer.toString(offset+clients.size()), Instant.now(),
+                    CrmReadResult.Completeness.UNKNOWN, externalProjectId+":CLIENTS");
+        });
+    }
     @Override public CrmCatalogSnapshot readCatalog(CrmAccess access, String externalProjectId) {
         projectId(externalProjectId);
         return execute(access, externalProjectId, false, (session, deadline) -> {

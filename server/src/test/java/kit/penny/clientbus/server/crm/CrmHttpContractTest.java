@@ -17,11 +17,32 @@ class CrmHttpContractTest {
     private CrmService service;
     private CrmCatalogSync sync;
     private CrmCatalogReader catalog;
+    private CrmClientSync clientSync;
+    private CrmClientService clients;
     private MockMvc mvc;
     @BeforeEach void setup() {
         service = mock(CrmService.class); sync = mock(CrmCatalogSync.class); catalog = mock(CrmCatalogReader.class);
-        mvc = MockMvcBuilders.standaloneSetup(new CrmController(service,sync), new CrmCatalogController(catalog))
+        clientSync = mock(CrmClientSync.class); clients = mock(CrmClientService.class);
+        mvc = MockMvcBuilders.standaloneSetup(new CrmController(service,sync,clientSync), new CrmCatalogController(catalog), new CrmClientController(clients))
                 .setControllerAdvice(new CrmRequestErrors(), new GlobalExceptionHandler()).build();
+    }
+    @Test void clientRefreshAndMutationsHaveExplicitValidatedContracts() throws Exception {
+        UUID id=UUID.randomUUID();
+        mvc.perform(post("/api/crm/projects/"+id+"/refresh").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"dataset\":\"CLIENTS\"}")).andExpect(status().isAccepted());
+        verify(service).requireProjectAccess(id); verify(clientSync).refresh(id); verifyNoInteractions(sync);
+        mvc.perform(delete("/api/crm/clients/"+id+"/client-link")).andExpect(status().isBadRequest());
+        mvc.perform(delete("/api/crm/clients/"+id+"/client-link?expectedVersion=-1")).andExpect(status().isBadRequest());
+        mvc.perform(put("/api/crm/clients/"+id+"/client-link").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"clientId\":\""+UUID.randomUUID()+"\"}")).andExpect(status().isBadRequest());
+        mvc.perform(post("/api/crm/clients/"+id+"/client").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"firstName\":\"\",\"lastName\":\"Name\",\"phoneList\":[],\"expectedVersion\":0}"))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(clients);
+        mvc.perform(post("/api/crm/clients/"+id+"/client").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"firstName\":\"Confirmed\",\"lastName\":\"Name\",\"phoneList\":[],\"expectedVersion\":0}"))
+                .andExpect(status().isCreated());
+        verify(clients).create(eq(id),any());
     }
     @Test void onlyAvailableTypesAreReturned() throws Exception {
         when(service.types()).thenReturn(AvailableCrmType.types());

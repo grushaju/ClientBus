@@ -15,7 +15,8 @@ import java.util.*;
 public class CrmController {
     private final CrmService service;
     private final CrmCatalogSync sync;
-    public CrmController(CrmService service, CrmCatalogSync sync) { this.service = service; this.sync = sync; }
+    private final CrmClientSync clients;
+    public CrmController(CrmService service, CrmCatalogSync sync, CrmClientSync clients) { this.service = service; this.sync = sync; this.clients=clients; }
     @GetMapping("/types") @PreAuthorize("hasRole('SUPER_ADMIN')")
     public List<CrmType> types() { return service.types(); }
     @GetMapping("/connections") @PreAuthorize("hasRole('SUPER_ADMIN')")
@@ -80,10 +81,11 @@ public class CrmController {
     @PostMapping("/projects/{id}/refresh")
     public ResponseEntity<CrmSyncStateDto> refresh(@PathVariable UUID id, @Valid @RequestBody RefreshCrmRequest request) {
         service.requireProjectAccess(id);
+        if ("CLIENTS".equals(request.dataset())) return ResponseEntity.accepted().body(clients.refresh(id));
         if (!Set.of("MASTERS", "SERVICES", "CATALOG").contains(request.dataset()))
             throw new CrmException(409, "CRM_CAPABILITY_UNVERIFIED", "Этот набор CRM ещё не реализован.");
         return ResponseEntity.accepted().body("MASTERS".equals(request.dataset()) ? sync.refresh(id) : sync.refresh(id, request.dataset()));
     }
     @GetMapping("/projects/{id}/sync-state")
-    public List<CrmSyncStateDto> state(@PathVariable UUID id) { return List.of(sync.state(id), sync.state(id, "CATALOG")); }
+    public List<CrmSyncStateDto> state(@PathVariable UUID id) { return List.of(sync.state(id), sync.state(id, "CATALOG"), clients.state(id)); }
 }

@@ -39,6 +39,8 @@ import java.util.UUID;
 @Service
 @Transactional
 public class ClientService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private kit.penny.clientbus.server.crm.CrmDeletionGuard crmDeletionGuard;
 
     @org.springframework.beans.factory.annotation.Autowired
     private kit.penny.clientbus.server.notification.outbox.UiDomainEvents uiEvents;
@@ -526,6 +528,7 @@ public class ClientService {
 
         requireClientOrganizationAccess(entity);
 
+        if (crmDeletionGuard != null) crmDeletionGuard.client(entity);
         if (uiEvents != null) uiEvents.organization(entity.getOrganization().getId(), "clients.invalidated");
         clientRepository.delete(entity);
     }

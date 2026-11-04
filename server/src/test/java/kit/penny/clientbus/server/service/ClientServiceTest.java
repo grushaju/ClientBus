@@ -466,6 +466,9 @@ class ClientServiceTest {
     @Test
     void deleteClient_success() {
 
+        var crm = mock(kit.penny.clientbus.server.crm.CrmDeletionGuard.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(clientService, "crmDeletionGuard", crm);
+
         when(clientRepository.findById(clientId))
                 .thenReturn(Optional.of(client));
 
@@ -483,8 +486,19 @@ class ClientServiceTest {
         verify(currentUserService)
                 .getCurrentOrganizationId();
 
-        verify(clientRepository)
-                .delete(client);
+        var order = inOrder(crm, clientRepository);
+        order.verify(crm).client(client);
+        order.verify(clientRepository).delete(client);
+    }
+
+    @Test void crmDeletionFailurePreventsCoreDeletion() {
+        var crm = mock(kit.penny.clientbus.server.crm.CrmDeletionGuard.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(clientService, "crmDeletionGuard", crm);
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
+        when(currentUserService.getCurrentOrganizationId()).thenReturn(organizationId);
+        doThrow(new IllegalStateException("storage unavailable")).when(crm).client(client);
+        assertThrows(IllegalStateException.class, () -> clientService.deleteClient(clientId));
+        verify(clientRepository, never()).delete(any());
     }
 
     @Test

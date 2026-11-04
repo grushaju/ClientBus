@@ -50,6 +50,8 @@ class CrmFoundationIntegrationTest {
     private CrmService service;
     private CrmCatalogSync sync;
     private CrmCatalogReader catalog;
+    private CrmClientSync clientSync;
+    private CrmClientService clients;
     private CrmStore store;
     private CrmDeletionGuard deletion;
     private FakeProvider provider;
@@ -57,6 +59,7 @@ class CrmFoundationIntegrationTest {
     private CrmStorage storage;
     private CrmMasterRepository masterRepository;
     private final AtomicReference<UUID> actor = new AtomicReference<>();
+    private final AtomicLong clientNanoTime = new AtomicLong();
     private final ThreadLocal<UUID> requestActor = new ThreadLocal<>();
     private volatile BiConsumer<Method, Object[]> afterJpaCall = (method, args) -> {};
     private volatile Runnable afterMasterPage = () -> {};
@@ -78,7 +81,7 @@ class CrmFoundationIntegrationTest {
         for (var type : List.of(OrganizationEntity.class, UserEntity.class, EmployeeEntity.class,
                 WorkspaceEntity.class, EmployeeWorkspaceEntity.class, CrmConnectionEntity.class,
                 CrmProjectEntity.class, CrmMasterEntity.class, CrmServiceEntity.class, CrmMasterServiceEntity.class,
-                CrmSyncStateEntity.class)) metadata.addAnnotatedClass(type);
+                CrmSyncStateEntity.class, ClientEntity.class, ClientAccountEntity.class, CrmClientEntity.class)) metadata.addAnnotatedClass(type);
         return metadata.buildMetadata().buildSessionFactory();
     }
     @AfterAll static void closeDatabase() {
@@ -90,6 +93,7 @@ class CrmFoundationIntegrationTest {
         EntityManager shared = SharedEntityManagerCreator.createSharedEntityManager(factory);
         afterJpaCall = (method, args) -> {};
         afterMasterPage = () -> {};
+        clientNanoTime.set(0);
         em = (EntityManager)Proxy.newProxyInstance(EntityManager.class.getClassLoader(), new Class<?>[]{EntityManager.class},
                 (proxy, method, args) -> {
                     try {
@@ -129,6 +133,8 @@ class CrmFoundationIntegrationTest {
         sync = new CrmCatalogSync(store, jdbc, manager, registry, cipher, events,
                 new CrmCatalogWriter(store));
         catalog = new CrmCatalogReader(store, serviceRepository, offerRepository, sync, manager);
+        clientSync = new CrmClientSync(store, jdbc, manager, registry, cipher, events, new CrmClientWriter(store), clientNanoTime::get);
+        clients = new CrmClientService(store, clientSync, events, manager);
         service = new CrmService(store, registry, cipher, sync, manager, events);
         deletion = new CrmDeletionGuard(store, events);
         tx.executeWithoutResult(status -> {
@@ -150,6 +156,8 @@ class CrmFoundationIntegrationTest {
         provider.release.countDown(); sync.close();
         var executor = (ThreadPoolExecutor)ReflectionTestUtils.getField(sync, "executor");
         assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
+        clientSync.close();
+        assertTrue(((ThreadPoolExecutor)ReflectionTestUtils.getField(clientSync, "executor")).awaitTermination(5, TimeUnit.SECONDS));
     }
     private final AtomicLong connectionNumber = new AtomicLong(70000000000L);
     private CrmConnectionDto connection() {
@@ -368,6 +376,9 @@ class CrmFoundationIntegrationTest {
         final AtomicInteger reads = new AtomicInteger(), inspections = new AtomicInteger();
         volatile Function<CrmAccess, CrmReadResult<CrmMaster>> reader = access -> masters("initial");
         volatile Function<CrmAccess, CrmCatalogSnapshot> catalogReader;
+        volatile Function<String, CrmClientPage> clientReader = cursor -> new CrmClientPage(List.of(), null,
+                Instant.now(), CrmReadResult.Completeness.UNKNOWN, "100:CLIENTS");
+        public CrmClientPage readClients(CrmAccess access, String id, String cursor) { return clientReader.apply(cursor); }
         volatile Function<String, CrmProjectInfo> inspector = id -> new CrmProjectInfo(id, "Test project", "RUB", null);
         final CountDownLatch entered = new CountDownLatch(1), release = new CountDownLatch(1);
         public String code() { return "DIKIDI"; }
@@ -849,7 +860,7 @@ class CrmFoundationIntegrationTest {
     @Test void hibernateUpdatePreservesExistingDboAndCrmAndNamesHaveNoUnderscores() throws Exception {
         var connection = connection(); var project = bind(connection); awaitIdle();
         var mapped = first(project.id()); service.linkEmployee(mapped.id(), target, mapped.version());
-        assertEquals(Set.of("connection","project","master","service","masterservice","syncstate"),
+        assertEquals(Set.of("connection","project","master","service","masterservice","syncstate","client"),
                 new HashSet<>(jdbc.queryForList("select tablename from pg_tables where schemaname='crm'",String.class)));
         for (String sql : List.of("select column_name from information_schema.columns where table_schema='crm'",
                 "select indexname from pg_indexes where schemaname='crm'",
@@ -859,6 +870,7 @@ class CrmFoundationIntegrationTest {
         factory.close(); StandardServiceRegistryBuilder.destroy(hibernate);
         // Reproduce the deployed 12.3 shape before allowing Hibernate to add 12.4.1.
         jdbc.execute("drop table crm.masterservice"); jdbc.execute("drop table crm.service");
+        jdbc.execute("drop table crm.client");
         jdbc.execute("alter table crm.master drop column lastobservedgeneration, drop column observationstate");
         assertEquals(4, jdbc.queryForObject("select count(*) from pg_tables where schemaname='crm'", Integer.class));
         factory = buildFactory();
@@ -867,7 +879,221 @@ class CrmFoundationIntegrationTest {
         assertEquals(1,jdbc.queryForObject("select count(*) from dbo.workspace where workspaceid=?",Integer.class,workspace));
         assertEquals(target, jdbc.queryForObject("select employeeid from crm.master where id=?", UUID.class, mapped.id()));
         assertEquals("initial one", jdbc.queryForObject("select displayname from crm.master where id=?", String.class, mapped.id()));
-        assertEquals(6, jdbc.queryForObject("select count(*) from pg_tables where schemaname='crm'", Integer.class));
+        assertEquals(7, jdbc.queryForObject("select count(*) from pg_tables where schemaname='crm'", Integer.class));
+    }
+    private static CrmClient externalClient(String id, String name) {
+        return new CrmClient(id,"PROJECT",name,Map.of("phone","+7 (999) 123-45-67"),Map.of("source","R08"),Set.of("displayName","phone"));
+    }
+    private static CrmClientPage clientPage(List<CrmClient> items, String next) {
+        return new CrmClientPage(items,next,Instant.now(),CrmReadResult.Completeness.UNKNOWN,"100:CLIENTS");
+    }
+    private void awaitClients() throws Exception {
+        var executor=(ThreadPoolExecutor)ReflectionTestUtils.getField(clientSync,"executor");
+        long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(10);
+        while (executor.getActiveCount()>0 && System.nanoTime()<until) Thread.sleep(10);
+        assertEquals(0,executor.getActiveCount());
+    }
+    private CrmClientDto importClient() throws Exception {
+        var project=bind(connection()); awaitIdle();
+        provider.clientReader=cursor -> clientPage(List.of(externalClient("1","External name")),null);
+        clientSync.refresh(project.id()); awaitClients();
+        assertEquals("PARTIAL",clientSync.state(project.id()).status());
+        return clients.clients(project.id(),null,false,null).items().getFirst();
+    }
+    private UUID coreClient(String name, String phone) {
+        return tx.execute(status -> {
+            var row=new ClientEntity(name,"Surname",em.getReference(OrganizationEntity.class,organization));
+            row.setPhoneList(new ArrayList<>(List.of(phone))); em.persist(row); return row.getId();
+        });
+    }
+    @Test void clientsImportPagesAndFailurePreservesEarlierRowsWithoutClaimingCompleteness() throws Exception {
+        var project=bind(connection()); awaitIdle();
+        provider.clientReader=cursor -> {
+            if (cursor==null) return clientPage(List.of(externalClient("1","First")),"second");
+            throw new CrmFailure(CrmFailure.Code.TEMPORARY_FAILURE);
+        };
+        clientSync.refresh(project.id()); awaitClients();
+        var page=clients.clients(project.id(),null,false,null);
+        assertEquals(1,page.items().size()); assertEquals("FAILED",page.syncState().status());
+        assertEquals("PARTIAL",page.syncState().completeness()); assertNotNull(page.syncState().lastSuccessAt());
+        provider.clientReader=cursor -> clientPage(List.of(externalClient("2","Second")),null);
+        clientSync.refresh(project.id()); awaitClients();
+        assertEquals(2,clients.clients(project.id(),null,false,null).items().size());
+        assertEquals("PARTIAL",clientSync.state(project.id()).status());
+    }
+    @Test void employeeCanConfirmFirstLinkButOnlySupervisorCanReplaceOrRemoveIt() throws Exception {
+        var row=importClient(); var first=coreClient("First","79991234567"); var second=coreClient("Second","11111111111");
+        actor.set(member);
+        var linked=clients.link(row.id(),first,row.version()); assertEquals(first,linked.clientId());
+        assertEquals(member,linked.mappingUpdatedBy());
+        assertEquals(linked.version(),clients.link(row.id(),first,linked.version()).version());
+        assertThrows(AccessDeniedException.class,()->clients.link(row.id(),second,linked.version()));
+        assertThrows(AccessDeniedException.class,()->clients.link(row.id(),null,linked.version()));
+        jdbc.update("update dbo.employeeworkspace set issupervisor=true where employeeid=? and workspaceid=?",member,workspace);
+        var replaced=clients.link(row.id(),second,linked.version());
+        assertEquals(first,replaced.mappingPreviousId()); assertEquals("RELINK",replaced.mappingReason());
+        assertEquals("CRM_VERSION_CONFLICT",assertThrows(CrmException.class,()->clients.link(row.id(),first,linked.version())).code());
+        var detached=clients.link(row.id(),null,replaced.version()); assertNull(detached.clientId());
+        assertEquals(second,detached.mappingPreviousId()); assertEquals("UNLINK",detached.mappingReason());
+        jdbc.update("delete from dbo.employeeworkspace where employeeid=?",member);
+        assertThrows(AccessDeniedException.class,()->clients.client(row.id()));
+        assertThrows(AccessDeniedException.class,()->clients.candidates(row.id(),"First"));
+    }
+    @Test void clientImportPreservesManualMappingCoreProfileAndMissingContactFields() throws Exception {
+        var row=importClient(); var target=coreClient("Confirmed name","12345678901");
+        var linked=clients.link(row.id(),target,row.version());
+        Instant persistedMappingTime=clients.client(row.id()).mappingUpdatedAt();
+        String longName="Long name ".repeat(200);
+        provider.clientReader=cursor -> clientPage(List.of(new CrmClient("1","PROJECT",longName,Map.of(),Map.of(),Set.of("displayName"))),null);
+        clientSync.refresh(row.projectId()); awaitClients();
+        var updated=clients.client(row.id());
+        assertEquals(target,updated.clientId()); assertEquals(persistedMappingTime,updated.mappingUpdatedAt());
+        assertEquals(longName,updated.displayName()); assertEquals("79991234567",updated.normalizedPhone());
+        assertEquals("Confirmed name",jdbc.queryForObject("select firstname from dbo.client where clientid=?",String.class,target));
+        provider.clientReader=cursor -> clientPage(List.of(new CrmClient("1","PROJECT",null,Map.of("phone",""),Map.of(),Set.of("phone"))),null);
+        clientSync.refresh(row.projectId()); awaitClients();
+        assertEquals(longName,clients.client(row.id()).displayName()); assertNull(clients.client(row.id()).normalizedPhone());
+    }
+    @Test void candidatePhonesAreNormalizedButNeverAutomaticallyLinkedAndExactMatchesPrecedeLimit() throws Exception {
+        var row=importClient(); var matched=coreClient("Match","+7 999 123 45 67");
+        coreClient("Other country format","89991234567");
+        for (int i=0;i<55;i++) coreClient("Match text "+i,"12345678901");
+        assertEquals(List.of(matched),clients.candidates(row.id(),null).stream().map(CrmClientCandidateDto::id).toList());
+        var candidates=clients.candidates(row.id(),"Match");
+        assertEquals(50,candidates.size()); assertEquals(matched,candidates.getFirst().id()); assertTrue(candidates.getFirst().phoneMatch());
+        assertNull(clients.client(row.id()).clientId());
+    }
+    @Test void concurrentCreateAndLinkHasOneWinnerAndNoOrphanClient() throws Exception {
+        var row=importClient(); actor.set(member); var barrier=new CyclicBarrier(2);
+        try (var workers=Executors.newFixedThreadPool(2)) {
+            Callable<String> create=()-> {
+                barrier.await(5,TimeUnit.SECONDS);
+                try { clients.create(row.id(),new CreateCrmClientRequest("Confirmed","Name",List.of("12345678901"),row.version())); return "created"; }
+                catch (CrmException error) { return error.code(); }
+            };
+            var one=workers.submit(create); var two=workers.submit(create);
+            assertEquals(Set.of("created","CRM_VERSION_CONFLICT"),Set.of(one.get(10,TimeUnit.SECONDS),two.get(10,TimeUnit.SECONDS)));
+        }
+        assertEquals(1,jdbc.queryForObject("select count(*) from dbo.client",Integer.class));
+        assertEquals("CREATE",clients.client(row.id()).mappingReason());
+    }
+    @Test void candidatePhoneSearchNormalizesQueryIndependentlyOfExternalPhone() throws Exception {
+        var row=importClient();
+        var formatted=coreClient("Target","+7 (999) 765-43-21");
+        var unicode=coreClient("Unicode","+7\u00a0(999)\u202f555-44-33");
+        coreClient("Extension","+7(999)765-43-21x4");
+        assertEquals(List.of(formatted),clients.candidates(row.id(),"79997654321").stream().map(CrmClientCandidateDto::id).toList());
+        assertEquals(List.of(formatted),clients.candidates(row.id(),"+7\u202f999\u00a0765 43 21").stream().map(CrmClientCandidateDto::id).toList());
+        assertEquals(List.of(unicode),clients.candidates(row.id(),"79995554433").stream().map(CrmClientCandidateDto::id).toList());
+        assertFalse(clients.candidates(row.id(),"79997654321").getFirst().phoneMatch());
+        jdbc.update("update crm.client set normalizedphone=null where id=?",row.id());
+        assertEquals(List.of(formatted),clients.candidates(row.id(),"79997654321").stream().map(CrmClientCandidateDto::id).toList());
+    }
+    @Test void unicodeFormattingIsIdenticalForAutomaticSqlCandidatesAndPhoneMatchFlag() throws Exception {
+        var row=importClient();
+        var unicode=coreClient("Unicode","+7\u00a0(999)\u202f123-45-67");
+        coreClient("Extension","+79991234567 ext 4");
+        coreClient("Other prefix","89991234567");
+        var candidates=clients.candidates(row.id(),null);
+        assertEquals(List.of(unicode),candidates.stream().map(CrmClientCandidateDto::id).toList());
+        assertTrue(candidates.getFirst().phoneMatch());
+    }
+    @Test void clientDeletionDetachesWithAuditAndCoreForeignKeyFailureRollsEverythingBack() throws Exception {
+        var row=importClient(); var target=coreClient("Target","12345678901");
+        clients.link(row.id(),target,row.version());
+        tx.executeWithoutResult(status -> em.persist(new ClientAccountEntity(em.getReference(ClientEntity.class,target),ChannelType.TELEGRAM,"account","user","12345678901","Account")));
+        assertThrows(RuntimeException.class,()->tx.executeWithoutResult(status -> {
+            var core=em.find(ClientEntity.class,target); deletion.client(core); em.remove(core); em.flush();
+        }));
+        assertEquals(target,clients.client(row.id()).clientId());
+        jdbc.update("delete from dbo.clientaccount where clientid=?",target);
+        tx.executeWithoutResult(status -> { var core=em.find(ClientEntity.class,target); deletion.client(core); em.remove(core); });
+        var detached=clients.client(row.id()); assertNull(detached.clientId()); assertEquals(target,detached.mappingPreviousId());
+        assertEquals("TARGET_DELETED",detached.mappingReason()); assertEquals(admin,detached.mappingUpdatedBy());
+        assertEquals("CRM_RESOURCE_IN_USE",assertThrows(CrmException.class,()->tx.executeWithoutResult(status -> deletion.employee(em.find(EmployeeEntity.class,admin)))).code());
+    }
+    @Test void clientCursorIsBoundToRevisionAndSearchAndNewMappingInvalidatesIt() throws Exception {
+        var project=bind(connection()); awaitIdle(); var source=new ArrayList<CrmClient>();
+        for (int i=0;i<105;i++) source.add(externalClient(Integer.toString(i),"Needle "+i));
+        source.add(externalClient("literal","100%_literal!"));
+        provider.clientReader=cursor -> clientPage(source,null);
+        clientSync.refresh(project.id()); awaitClients();
+        var page=clients.clients(project.id(),"NEEDLE",false,null); assertEquals(100,page.items().size()); assertTrue(page.hasMore());
+        assertEquals(5,clients.clients(project.id(),"needle",false,page.nextCursor()).items().size());
+        assertEquals(1,clients.clients(project.id(),"%_",false,null).items().size());
+        assertThrows(CrmException.class,()->clients.clients(project.id(),null,false,page.nextCursor()));
+        var row=page.items().getFirst(); clients.link(row.id(),coreClient("Core","12345678901"),row.version());
+        assertEquals("CRM_CONTEXT_CHANGED",assertThrows(CrmException.class,()->clients.clients(project.id(),"needle",false,page.nextCursor())).code());
+        assertEquals(100,clients.clients(project.id(),"needle",true,null).items().size());
+    }
+    @Test void changedCredentialsDiscardClientPageAndDuplicateRefreshCoalesces() throws Exception {
+        var connection=connection(); var project=bind(connection); awaitIdle(); var calls=new AtomicInteger();
+        provider.clientReader=cursor -> { calls.incrementAndGet(); provider.block("wait"); return clientPage(List.of(externalClient("1","Late")),null); };
+        clientSync.refresh(project.id()); assertTrue(provider.entered.await(2,TimeUnit.SECONDS));
+        long generation=clientSync.state(project.id()).generation(); assertEquals(generation,clientSync.refresh(project.id()).generation());
+        var current=service.connection(connection.id());
+        service.updateConnection(connection.id(),new UpdateCrmConnectionRequest(current.version(),null,"changed-secret",null));
+        provider.release.countDown(); awaitClients();
+        assertEquals(1,calls.get()); assertTrue(clients.clients(project.id(),null,false,null).items().isEmpty());
+        assertEquals("CRM_CONTEXT_CHANGED",clientSync.state(project.id()).errorCode());
+    }
+    @Test void repeatedClientCursorFailsAndImportLimitIsExplicit() throws Exception {
+        var project=bind(connection()); awaitIdle(); var calls=new AtomicInteger();
+        provider.clientReader=cursor -> clientPage(List.of(externalClient(Integer.toString(calls.incrementAndGet()),"Row")),"same");
+        clientSync.refresh(project.id()); awaitClients();
+        assertEquals(2,calls.get()); assertEquals("FAILED",clientSync.state(project.id()).status());
+        calls.set(0);
+        provider.clientReader=cursor -> { int i=calls.incrementAndGet(); return clientPage(List.of(externalClient(Integer.toString(i),"Row")),Integer.toString(i)); };
+        clientSync.refresh(project.id()); awaitClients();
+        assertEquals(100,calls.get()); assertEquals("PARTIAL",clientSync.state(project.id()).status());
+        assertEquals("CRM_SYNC_LIMIT_REACHED",clientSync.state(project.id()).errorCode());
+    }
+    @Test void leaseExpiringDuringIntermediateClientPageRollsBackThatPage() throws Exception {
+        var project=bind(connection()); awaitIdle();
+        var expire=new AtomicBoolean(true);
+        afterJpaCall=(method,args) -> {
+            if (method.getName().equals("flush") && Thread.currentThread().getName().equals("crm-clients")
+                    && expire.compareAndSet(true,false))
+                jdbc.update("update crm.syncstate set claimuntil=clock_timestamp()-interval '1 second' where projectid=? and dataset='WRITER:CLIENTS'",project.id());
+        };
+        provider.clientReader=cursor -> clientPage(List.of(externalClient("1","Must roll back")),"second");
+        clientSync.refresh(project.id()); awaitClients();
+        assertFalse(expire.get());
+        assertTrue(clients.clients(project.id(),null,false,null).items().isEmpty());
+        assertNotEquals("CURRENT",clientSync.state(project.id()).freshness());
+    }
+    @Test void timeLimitReachedDuringPageWriteKeepsRowsAndDoesNotReadAnotherPage() throws Exception {
+        var project=bind(connection()); awaitIdle(); var calls=new AtomicInteger();
+        provider.clientReader=cursor -> {
+            calls.incrementAndGet(); clientNanoTime.set(TimeUnit.MINUTES.toNanos(5)-TimeUnit.SECONDS.toNanos(1));
+            return clientPage(List.of(externalClient("1","Accepted page")),"second");
+        };
+        var advanceOnce=new AtomicBoolean(true);
+        afterJpaCall=(method,args) -> {
+            if (method.getName().equals("flush") && Thread.currentThread().getName().equals("crm-clients")
+                    && advanceOnce.compareAndSet(true,false)) clientNanoTime.addAndGet(TimeUnit.SECONDS.toNanos(2));
+        };
+        clientSync.refresh(project.id()); awaitClients();
+        assertFalse(advanceOnce.get()); assertEquals(1,calls.get());
+        var page=clients.clients(project.id(),null,false,null);
+        assertEquals(1,page.items().size()); assertEquals("PARTIAL",page.syncState().status());
+        assertEquals("CRM_SYNC_LIMIT_REACHED",page.syncState().errorCode()); assertNotNull(page.syncState().lastSuccessAt());
+        assertEquals(1,jdbc.queryForObject("select (attemptcoverage->>'pages')::int from crm.syncstate where projectid=? and dataset='CLIENTS'",Integer.class,project.id()));
+        assertEquals(0,jdbc.queryForObject("select count(*) from crm.syncstate where projectid=? and claimtoken is not null",Integer.class,project.id()));
+    }
+    @Test void timeLimitReachedWhileAcquiringRenewalLocksDoesNotCallProvider() throws Exception {
+        var project=bind(connection()); awaitIdle(); var calls=new AtomicInteger(); var refreshes=new AtomicInteger();
+        provider.clientReader=cursor -> { calls.incrementAndGet(); return clientPage(List.of(),null); };
+        afterJpaCall=(method,args) -> {
+            if (method.getName().equals("refresh") && args[0] instanceof CrmProjectEntity
+                    && Thread.currentThread().getName().equals("crm-clients") && refreshes.incrementAndGet()==2)
+                clientNanoTime.set(TimeUnit.MINUTES.toNanos(5));
+        };
+        clientSync.refresh(project.id()); awaitClients();
+        assertTrue(refreshes.get()>=2); assertEquals(0,calls.get());
+        var state=clientSync.state(project.id()); assertEquals("PARTIAL",state.status());
+        assertEquals("CRM_SYNC_LIMIT_REACHED",state.errorCode()); assertEquals("NEVER_LOADED",state.freshness());
+        assertEquals(0,jdbc.queryForObject("select count(*) from crm.syncstate where projectid=? and claimtoken is not null",Integer.class,project.id()));
     }
     @Test void incorrectlyDefinedExistingPartialIndexIsRejected() {
         jdbc.execute("drop index crm.uqprojectdikidiworkspace");
