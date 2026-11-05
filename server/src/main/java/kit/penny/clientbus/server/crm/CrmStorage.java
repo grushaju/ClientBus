@@ -5,7 +5,7 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
-/** Runs after Hibernate DDL. CRM endpoints/workers remain gated until the index is verified. */
+/** Runs after Hibernate DDL. CRM remains gated until the index and price storage are ready. */
 @Component
 public class CrmStorage implements ApplicationRunner {
     private final JdbcTemplate jdbc;
@@ -33,10 +33,23 @@ public class CrmStorage implements ApplicationRunner {
                 || !"crm".equals(row.get("tableschema")) || !"project".equals(row.get("tablename"))
                 || !"workspaceid".equals(row.get("keycolumn")) || !"provider='DIKIDI'".equals(predicate))
             throw new IllegalStateException("CRM index does not match its contract");
+        normalizePrices();
         ready = true;
+    }
+    private void normalizePrices() {
+        var column=jdbc.queryForMap("""
+                select data_type,numeric_scale from information_schema.columns
+                where table_schema='crm' and table_name='masterservice' and column_name='price'
+                """);
+        if (!"numeric".equals(column.get("data_type"))) throw new IllegalStateException("CRM price column is not numeric");
+        if (column.get("numeric_scale") != null) {
+            // Hibernate can consider numeric(19,4) compatible with numeric and leave its padding in place.
+            jdbc.execute("alter table crm.masterservice alter column price type numeric using trim_scale(price)");
+        }
+        // Also handles padded writes made by an older instance during an application upgrade.
+        jdbc.update("update crm.masterservice set price=trim_scale(price) where scale(price)>scale(trim_scale(price))");
     }
     public void requireReady() {
         if (!ready) throw new CrmException(503, "CRM_STORAGE_NOT_READY", "Хранилище CRM ещё не готово.");
     }
 }
-

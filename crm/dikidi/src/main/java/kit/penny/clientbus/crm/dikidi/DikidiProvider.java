@@ -41,6 +41,48 @@ public final class DikidiProvider implements CrmProvider, AutoCloseable {
     public DikidiProvider(Settings settings, Supplier<DikidiTransport> factory) { this.settings = settings; this.factory = factory; }
     @Override public String code() { return "DIKIDI"; }
 
+    @Override public CrmAppointmentPage readAppointments(CrmAccess access,String project,CrmAppointmentQuery query,String cursor) {
+        if (query==null || query.client()!=null) throw new CrmFailure(INVALID_RESPONSE);
+        return appointments(access,project,query,cursor);
+    }
+    @Override public CrmAppointmentPage readClientHistory(CrmAccess access,String project,CrmAppointmentQuery query,String cursor) {
+        if (query==null || query.client()==null) throw new CrmFailure(INVALID_RESPONSE);
+        return appointments(access,project,query,cursor);
+    }
+    private CrmAppointmentPage appointments(CrmAccess access,String project,CrmAppointmentQuery query,String cursor) {
+        projectId(project);
+        LocalDate day;
+        try { day=cursor==null ? query.dateFrom() : LocalDate.parse(cursor); }
+        catch (DateTimeException error) { throw new CrmFailure(INVALID_RESPONSE); }
+        if (day.isBefore(query.dateFrom()) || day.isAfter(query.dateTo())) throw new CrmFailure(INVALID_RESPONSE);
+        return execute(access,project,false,(session,deadline) -> {
+            call(session,"GET","https://dikidi.ru/ru/owner/journal/?company="+project,null,false,project,deadline);
+            var form=new ArrayList<>(List.of(Map.entry("request[get][]","company.accesses"),Map.entry("request[get][]","masters.info"),
+                    Map.entry("request[get][]","masters.records"),Map.entry("request[options][company][accesses][]",project),
+                    Map.entry("request[options][masters][records][0][date_from]",day.toString()),
+                    Map.entry("request[options][masters][records][0][date_to]",day.toString())));
+            var result=tree(call(session,"POST","https://dikidi.ru/ru/owner/ajax/journal/api/?company="+project,form,true,project,deadline));
+            if (!result.path("company").path("accesses").path(project).isContainer()
+                    || result.path("company").path("accesses").path(project).isEmpty()) throw new CrmFailure(CONTEXT_MISMATCH);
+            parseMasters(result);
+            var items=DikidiAppointments.parse(result,project,day);
+            if (query.client()!=null) items=items.stream().filter(item -> "APPOINTMENT".equals(item.kind()) && query.client().equals(item.client())).toList();
+            return new CrmAppointmentPage(items,day.isBefore(query.dateTo()) ? day.plusDays(1).toString() : null,
+                    Instant.now(),CrmReadResult.Completeness.UNKNOWN,project,query);
+        });
+    }
+
+    @Override public CrmScheduleSnapshot readWorkIntervals(CrmAccess access, String externalProjectId, CrmWorkIntervalQuery query) {
+        projectId(externalProjectId);
+        if (query == null) throw new CrmFailure(INVALID_RESPONSE);
+        return execute(access, externalProjectId, false, (session, deadline) -> {
+            JsonNode result = catalog(session, externalProjectId, deadline, false, query);
+            if (parseMasters(result).stream().noneMatch(master -> master.externalId().equals(query.externalMasterId())))
+                throw new CrmFailure(CONTEXT_MISMATCH);
+            return DikidiSchedules.parse(result, externalProjectId, query);
+        });
+    }
+
     private Session session(CrmAccess access) {
         var key = new Key(access.connectionId(), access.credentialVersion());
         synchronized (sessions) {
@@ -60,7 +102,7 @@ public final class DikidiProvider implements CrmProvider, AutoCloseable {
         long started = System.nanoTime(), deadline = started + Duration.ofSeconds(75).toNanos();
         var session = session(access);
         try {
-            if (!session.lock.tryLock(2, TimeUnit.SECONDS)) throw new CrmFailure(RATE_LIMITED);
+            if (!session.lock.tryLock(2, TimeUnit.SECONDS)) throw new CrmFailure(CONNECTION_BUSY);
         } catch (InterruptedException error) { Thread.currentThread().interrupt(); throw new CrmFailure(TEMPORARY_FAILURE); }
         try {
             for (int attempt = 0; attempt < 2; attempt++) {
@@ -83,9 +125,7 @@ public final class DikidiProvider implements CrmProvider, AutoCloseable {
         projectId(externalProjectId);
         return execute(access, externalProjectId, false, (session, deadline) -> {
             catalog(session, externalProjectId, deadline);
-            var profile = tree(call(session, "GET", "https://dikidi.ru/ru/owner/ajax/profile/index/?company=" + externalProjectId,
-                    null, true, externalProjectId, deadline));
-            String name = DikidiHtml.parse(profile.path("html").asString("")).heading();
+            String name = projectName(session, externalProjectId, deadline);
             var online = tree(call(session, "GET", "https://dikidi.ru/mobile/ajax/newrecord/company_services?company="
                     + externalProjectId + "&array=1&lang=ru", null, true, externalProjectId, deadline));
             String currency = online.path("data").path("currency").path("iso").asString("");
@@ -118,13 +158,21 @@ public final class DikidiProvider implements CrmProvider, AutoCloseable {
             if (result.path("html").isString()) html=result.path("html").asString();
             if (result.path("script").isArray()) for (var script : result.path("script")) {
                 if (script.path("html").isString()) {
+                    // R08 updates both the row list and a separate count element. The count is not a page.
+                    if (script.has("container")) {
+                        if (!".company-clients .count-items".equals(script.path("container").asString("")) || script.has("append"))
+                            throw new CrmFailure(INVALID_RESPONSE);
+                        continue;
+                    }
+                    if (script.has("append") && !".company-clients tbody".equals(script.path("append").asString("")))
+                        throw new CrmFailure(INVALID_RESPONSE);
                     if (html != null) throw new CrmFailure(INVALID_RESPONSE);
                     html=script.path("html").asString();
                 }
             }
             if (html == null) throw new CrmFailure(INVALID_RESPONSE);
             var clients = DikidiClientsHtml.parse(html);
-            if (clients.size()>50 || clients.isEmpty() && !html.isBlank()) throw new CrmFailure(INVALID_RESPONSE);
+            if (clients.size()>50 || clients.isEmpty() && !DikidiClientsHtml.emptyPage(html)) throw new CrmFailure(INVALID_RESPONSE);
             // Offset paging has no snapshot token. Even a terminal page cannot prove a complete snapshot.
             return new CrmClientPage(clients, clients.isEmpty() ? null : Integer.toString(offset+clients.size()), Instant.now(),
                     CrmReadResult.Completeness.UNKNOWN, externalProjectId+":CLIENTS");
@@ -174,9 +222,28 @@ public final class DikidiProvider implements CrmProvider, AutoCloseable {
                 }
             }
             if (!expected.isEmpty()) throw new CrmFailure(INVALID_RESPONSE);
+            Instant observedAt = Instant.now();
+            String name = null;
+            CrmFailure.Code projectError = null;
+            try {
+                name = projectName(session, externalProjectId, deadline);
+                if (name.isBlank()) throw new CrmFailure(INVALID_RESPONSE);
+            } catch (CrmFailure error) {
+                // The verified catalog remains usable when the separate profile read fails.
+                if (error.code() == CONTEXT_MISMATCH) throw error;
+                if (error.code() == AUTH_REQUIRED) session.authenticated = false;
+                name = null; projectError = error.code();
+            }
             return new CrmCatalogSnapshot(masters, new ArrayList<>(services.values()), offers,
-                    Instant.now(), CrmReadResult.Completeness.COMPLETE, externalProjectId + ":CATALOG");
+                    observedAt, CrmReadResult.Completeness.COMPLETE, externalProjectId + ":CATALOG", name, projectError);
         });
+    }
+    private String projectName(Session session, String project, long deadline) {
+        var profile = tree(call(session, "GET", "https://dikidi.ru/ru/owner/ajax/profile/index/?company=" + project,
+                null, true, project, deadline));
+        String name = DikidiHtml.parse(profile.path("html").asString("")).heading();
+        if (name.length() > 65536) throw new CrmFailure(INVALID_RESPONSE);
+        return name;
     }
     private static String catalogText(JsonNode value) {
         if (value.isMissingNode() || value.isNull()) return null;
@@ -247,11 +314,19 @@ public final class DikidiProvider implements CrmProvider, AutoCloseable {
         return catalog(session, project, deadline, false);
     }
     private JsonNode catalog(Session session, String project, long deadline, boolean includeServices) {
+        return catalog(session, project, deadline, includeServices, null);
+    }
+    private JsonNode catalog(Session session, String project, long deadline, boolean includeServices, CrmWorkIntervalQuery schedule) {
         // The journal GET initializes project cookies before interpreting ACCESS_DENIED.
         call(session, "GET", "https://dikidi.ru/ru/owner/journal/?company=" + project, null, false, project, deadline);
         var form = new ArrayList<>(List.of(Map.entry("request[get][]", "company.accesses"),
                 Map.entry("request[get][]", "masters.info"), Map.entry("request[options][company][accesses][]", project)));
         if (includeServices) form.add(Map.entry("request[get][]", "masters.services"));
+        if (schedule != null) {
+            form.add(Map.entry("request[get][]", "masters.schedules"));
+            form.add(Map.entry("request[options][masters][schedules][0][date_from]", schedule.dateFrom().toString()));
+            form.add(Map.entry("request[options][masters][schedules][0][date_to]", schedule.dateTo().toString()));
+        }
         JsonNode result = tree(call(session, "POST", "https://dikidi.ru/ru/owner/ajax/journal/api/?company=" + project,
                 form, true, project, deadline));
         JsonNode projectAccess = result.path("company").path("accesses").path(project);
@@ -287,7 +362,7 @@ public final class DikidiProvider implements CrmProvider, AutoCloseable {
         boolean acquired = false;
         try {
             acquired = requests.tryAcquire(1, TimeUnit.SECONDS);
-            if (!acquired) throw new CrmFailure(RATE_LIMITED);
+            if (!acquired) throw new CrmFailure(CONNECTION_BUSY);
             var result = session.transport.exchange(method, URI.create(address), form, ajax, project,
                     Duration.ofNanos(Math.min(remaining, settings.requestTimeout().toNanos())));
             if (result.status() == 429) throw new CrmFailure(RATE_LIMITED);

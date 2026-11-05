@@ -14,6 +14,7 @@ public class CrmCatalogWriter {
     public CrmCatalogWriter(CrmStore store) { this.store = store; }
     public void apply(CrmProjectEntity project, CrmCatalogSnapshot snapshot, long generation) {
         validate(snapshot);
+        if (snapshot.projectDisplayName() != null) project.setDisplayName(snapshot.projectDisplayName());
         Map<String, CrmMasterEntity> existingMasters = new HashMap<>();
         store.em.createQuery("from CrmMasterEntity where project.id=:project", CrmMasterEntity.class)
                 .setParameter("project", project.getId()).getResultList().forEach(row -> existingMasters.put(row.getExternalId(), row));
@@ -79,6 +80,9 @@ public class CrmCatalogWriter {
         var result = new LinkedHashMap<String, Object>(previous); result.putAll(values); return result;
     }
     private static void validate(CrmCatalogSnapshot snapshot) {
+        if (snapshot.projectDisplayName() != null && snapshot.projectError() != null) invalid();
+        if (snapshot.projectDisplayName() != null
+                && (snapshot.projectDisplayName().isBlank() || snapshot.projectDisplayName().length() > 65536)) invalid();
         Set<String> masters = new HashSet<>(), services = new HashSet<>();
         for (var row : snapshot.masters()) if (!masters.add(id(row.externalId())) || row.displayName() == null || row.displayName().isBlank()) invalid();
         for (var row : snapshot.services()) if (!services.add(id(row.externalId())) || row.displayName() == null || row.displayName().isBlank()) invalid();

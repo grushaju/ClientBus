@@ -25,6 +25,7 @@ async function setup(t, kind, overrides = {}, props = {}, admin = true, scope = 
         getCrmTypes: async () => ['DIKIDI'], getCrmConnections: async () => [connection], getOrganizationCrmProjects: async () => [project],
         createCrmConnection: async (...args) => { calls.push(['create', ...args]); return connection },
         patchCrmConnection: async (...args) => { calls.push(['patch', ...args]); return { ...connection, ...args[1], version: 5 } },
+        deleteCrmConnection: async (...args) => { calls.push(['delete', ...args]) },
         verifyCrmConnection: async (...args) => { calls.push(['verify', ...args]); return connection },
         getCrmProjects: async () => [project], getCrmMasters: async () => page(), getCrmServices: async () => page([]),
         getCrmEmployeeCandidates: async () => { calls.push(['candidates']); return [candidate] },
@@ -54,6 +55,7 @@ async function setup(t, kind, overrides = {}, props = {}, admin = true, scope = 
     await act(async () => { ui = create(render()) })
     t.after(() => act(() => ui.unmount()))
     return { ui, api, calls, params,
+        invalidate(prefix) { return invalidations.get([...invalidations.keys()].find(key => key.startsWith(prefix))).read() },
         async refresh(prefix) { await act(async () => invalidations.get([...invalidations.keys()].find(key => key.startsWith(prefix))).read()) },
         async revoke(prefix) { await act(async () => invalidations.get([...invalidations.keys()].find(key => key.startsWith(prefix))).reset()) },
         async auth(value) { auth = value; await act(async () => ui.update(render())) },
@@ -61,6 +63,21 @@ async function setup(t, kind, overrides = {}, props = {}, admin = true, scope = 
     }
 }
 async function newAccount(ui) { await act(async () => button(ui, 'Добавить аккаунт').props.onClick()) }
+
+test('a failed project profile warns without hiding a successful catalog and clears after recovery', async t => {
+    let failedProfile = true
+    const fixture = await setup(t, 'CrmMasters', {
+        getCrmMasters: async () => page([master], { dataState: { ...state,
+            attemptCoverage: failedProfile ? { projectErrorCode: 'CRM_PROVIDER_FORBIDDEN' } : {} } }),
+    })
+    assert.match(text(fixture.ui), /Test master/)
+    assert.match(text(fixture.ui), /название проекта не обновлено/)
+    assert.doesNotMatch(text(fixture.ui), /Обновление не удалось/)
+    failedProfile = false
+    await fixture.refresh('crm-masters:')
+    assert.match(text(fixture.ui), /Test master/)
+    assert.doesNotMatch(text(fixture.ui), /название проекта не обновлено/)
+})
 
 test('only available CRM providers are offered; credentials submit once and immediately clear', async t => {
     const pending = deferred(), sent = []
@@ -131,6 +148,120 @@ test('employee cannot load settings, even if the settings component is mounted d
     }
     assert.equal(reads, 0)
 })
+test('an unused account is deleted only after confirmation and old reads do not restore it', async t => {
+    const { ui, calls, refresh } = await setup(t, 'CrmConnections', { getOrganizationCrmProjects: async () => [],
+        getCrmConnections: async () => [{ ...connection, status: 'DISABLED' }] })
+    assert.equal(button(ui, 'Удалить').props.disabled, false)
+    await act(async () => button(ui, 'Удалить').props.onClick())
+    assert.deepEqual(calls, [])
+    await act(async () => button(ui, 'Отмена').props.onClick())
+    assert.equal(button(ui, 'Подтвердить удаление'), undefined)
+    await act(async () => button(ui, 'Удалить').props.onClick())
+    await act(async () => button(ui, 'Подтвердить удаление').props.onClick())
+    assert.deepEqual(calls[0].slice(0,3), ['delete', connection.id, connection.version])
+    assert.equal(ui.root.findAllByProps({ className: 'crm-connection' }).length, 0)
+    assert.match(text(ui), /Аккаунт CRM удалён/)
+    await refresh('crm-connections:')
+    assert.equal(ui.root.findAllByProps({ className: 'crm-connection' }).length, 0)
+})
+
+test('even a disabled project prevents account deletion', async t => {
+    const { ui, calls } = await setup(t, 'CrmConnections', { getOrganizationCrmProjects: async () => [{ ...project, enabled: false }] })
+    assert.equal(button(ui, 'Удалить').props.disabled, true)
+    assert.match(button(ui, 'Удалить').props.title, /смените аккаунт.*проектов/)
+    assert.deepEqual(calls, [])
+})
+
+test('deletion uses the confirmed version; a conflict preserves the account and requires a fresh confirmation', async t => {
+    let version = connection.version; const attempts = []
+    const { ui, refresh } = await setup(t, 'CrmConnections', { getOrganizationCrmProjects: async () => [],
+        getCrmConnections: async () => [{ ...connection, version }],
+        deleteCrmConnection: async (id, expected) => {
+            attempts.push([id, expected])
+            if (expected !== version) throw Object.assign(Error('Version conflict'), { code: 'CRM_VERSION_CONFLICT', status: 409 })
+        } })
+    await act(async () => button(ui, 'Удалить').props.onClick())
+    version++; await refresh('crm-connections:')
+    await act(async () => button(ui, 'Подтвердить удаление').props.onClick())
+    assert.deepEqual(attempts, [[connection.id, connection.version]])
+    assert.match(text(ui), /Version conflict/)
+    assert.equal(button(ui, 'Подтвердить удаление'), undefined)
+    assert.equal(ui.root.findAllByProps({ className: 'crm-connection' }).length, 1)
+    await act(async () => button(ui, 'Удалить').props.onClick())
+    await act(async () => button(ui, 'Подтвердить удаление').props.onClick())
+    assert.deepEqual(attempts[1], [connection.id, version])
+    assert.equal(ui.root.findAllByProps({ className: 'crm-connection' }).length, 0)
+})
+
+test('a late delete response cannot change another employee session', async t => {
+    const pending = deferred(); let signal
+    const fixture = await setup(t, 'CrmConnections', { getOrganizationCrmProjects: async () => [],
+        deleteCrmConnection: (_, __, value) => { signal = value; return pending.promise } })
+    await act(async () => button(fixture.ui, 'Удалить').props.onClick())
+    await act(async () => button(fixture.ui, 'Подтвердить удаление').props.onClick())
+    await fixture.auth({ currentEmployee: { ...employee, id: 'other-admin', role: 'SUPER_ADMIN' }, isSuperAdmin: true, sessionEpoch: 2 })
+    assert.equal(signal.aborted, true)
+    await act(async () => pending.resolve())
+    assert.equal(fixture.ui.root.findAllByProps({ className: 'crm-connection' }).length, 1)
+    assert.doesNotMatch(text(fixture.ui), /Аккаунт CRM удалён/)
+})
+
+test('external deletion closes the account editor and clears its credential draft', async t => {
+    let rows = [connection]
+    const { ui, refresh } = await setup(t, 'CrmConnections', { getCrmConnections: async () => rows, getOrganizationCrmProjects: async () => [] })
+    await act(async () => button(ui, 'Изменить данные').props.onClick())
+    await change(ui, 'Пароль DIKIDI', 'test-only-draft-password')
+    rows = []; await refresh('crm-connections:')
+    assert.equal(ui.root.findAllByType('form').length, 0)
+    assert.equal(ui.root.findAllByProps({ className: 'crm-connection' }).length, 0)
+    await newAccount(ui)
+    assert.equal(ui.root.findByProps({ 'aria-label': 'Пароль DIKIDI' }).props.value, '')
+    assert.equal(ui.root.findByProps({ 'aria-label': 'Телефон DIKIDI' }).props.value, '')
+})
+
+test('external deletion removes the created-account project-binding prompt', async t => {
+    let rows = []
+    const { ui, refresh } = await setup(t, 'CrmConnections', { getCrmConnections: async () => rows, getOrganizationCrmProjects: async () => [],
+        createCrmConnection: async () => { rows = [connection]; return connection } })
+    await newAccount(ui); await change(ui, 'Телефон DIKIDI', '70000000000'); await change(ui, 'Пароль DIKIDI', 'test-only-password')
+    await act(async () => ui.root.findByType('form').props.onSubmit({ preventDefault() {} }))
+    await change(ui, 'Рабочее пространство', 'workspace')
+    rows = []; await refresh('crm-connections:')
+    assert.equal(ui.root.findAllByType('a').filter(node => node.children.join('') === 'Подключить проект').length, 0)
+    assert.doesNotMatch(text(ui), /Аккаунт добавлен/)
+})
+
+test('a pre-creation GET cannot remove the new account or its binding prompt while a fresh GET is pending', async t => {
+    const previous = deferred(), fresh = deferred()
+    const fixture = await setup(t, 'CrmConnections', { getCrmConnections: async () => [], getOrganizationCrmProjects: async () => [] })
+    await newAccount(fixture.ui); await change(fixture.ui, 'Телефон DIKIDI', '70000000000'); await change(fixture.ui, 'Пароль DIKIDI', 'test-only-password')
+    fixture.api.getCrmConnections = () => previous.promise
+    let reading
+    await act(async () => { reading = fixture.invalidate('crm-connections:') })
+    fixture.api.getCrmConnections = () => fresh.promise
+    await act(async () => fixture.ui.root.findByType('form').props.onSubmit({ preventDefault() {} }))
+    await change(fixture.ui, 'Рабочее пространство', 'workspace')
+    await act(async () => { previous.resolve([]); await reading })
+    assert.equal(fixture.ui.root.findAllByProps({ className: 'crm-connection' }).length, 1)
+    assert.equal(fixture.ui.root.findAllByType('a').filter(node => node.children.join('') === 'Подключить проект').length, 1)
+    await act(async () => fresh.resolve([connection]))
+    assert.match(text(fixture.ui), /Аккаунт добавлен/)
+})
+
+test('a delayed save response cannot restore an externally deleted account', async t => {
+    let rows = [connection]; const pending = deferred()
+    const { ui, refresh } = await setup(t, 'CrmConnections', { getCrmConnections: async () => rows, getOrganizationCrmProjects: async () => [],
+        patchCrmConnection: () => pending.promise })
+    await act(async () => button(ui, 'Изменить данные').props.onClick())
+    await change(ui, 'Название аккаунта', 'Draft name')
+    await act(async () => ui.root.findByType('form').props.onSubmit({ preventDefault() {} }))
+    rows = []; await refresh('crm-connections:')
+    await act(async () => pending.resolve({ ...connection, displayName: 'Draft name', version: 5 }))
+    assert.equal(ui.root.findAllByProps({ className: 'crm-connection' }).length, 0)
+    assert.equal(ui.root.findAllByType('form').length, 0)
+    assert.doesNotMatch(text(ui), /Изменения сохранены/)
+})
+
 test('binding requires an explicit preview and changing the ID discards it', async t => {
     const { ui, calls } = await setup(t, 'WorkspaceCrmPanel', { getCrmProjects: async () => [] })
     await change(ui, 'Подключение DIKIDI', 'connection'); await change(ui, 'ID проекта DIKIDI', '100')
@@ -236,9 +367,13 @@ test('service offers show actual price and duration; unknown is distinct from fr
         return page([{ id: 's1', displayName: 'Service', category: 'Care', offers: [
             { id: 'o1', masterId: 'master', masterDisplayName: 'Master A', price: '0', currency: 'RUB', durationSeconds: 1800, offerState: {}, warnings: [] },
             { id: 'o2', masterId: 'm2', masterDisplayName: 'Master B', price: null, currency: null, durationSeconds: null, offerState: {}, warnings: [] },
+            { id: 'o3', masterId: 'm3', masterDisplayName: 'Master C', price: '1200.0000', currency: 'RUB', durationSeconds: 600, offerState: {}, warnings: [] },
+            { id: 'o4', masterId: 'm4', masterDisplayName: 'Master D', price: '9007199254740993.2500', currency: 'RUB', durationSeconds: 600, offerState: {}, warnings: [] },
         ] }])
     } })
     assert.match(text(ui), /0 RUB/); assert.match(text(ui), /30 мин/); assert.match(text(ui), /Цена не указана/); assert.match(text(ui), /Master A/)
+    assert.match(text(ui), /1200 RUB/); assert.doesNotMatch(text(ui), /1200\.0000/)
+    assert.match(text(ui), /9007199254740993\.25 RUB/)
     await act(async () => ui.root.findByType('input').props.onChange({ target: { value: 'needle' } }))
     assert.equal(reads.at(-1).q, 'needle')
 })

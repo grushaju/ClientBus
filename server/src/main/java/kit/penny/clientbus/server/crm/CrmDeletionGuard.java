@@ -7,6 +7,7 @@ import kit.penny.clientbus.server.persistence.entity.crm.*;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.*;
 import java.time.Instant;
+import java.util.*;
 
 @Component
 @Transactional(propagation = Propagation.MANDATORY)
@@ -27,15 +28,22 @@ public class CrmDeletionGuard {
                 "select count(c) from CrmClientEntity c where c.mappingUpdatedBy.id=:id",Long.class)
                 .setParameter("id",employee.getId()).getSingleResult()>0)
             throw new CrmException(409, "CRM_RESOURCE_IN_USE", "Сотрудник указан автором сопоставлений CRM. Отключите его учётную запись.");
-        var linked = store.masters.findAllByEmployeeId(employee.getId());
+        var linked = store.masters.findAllByEmployeeId(employee.getId()).stream()
+                .sorted(Comparator.comparing((CrmMasterEntity master) -> master.getProject().getId().toString())
+                        .thenComparing(master -> master.getId().toString())).toList();
+        Set<UUID> changedProjects=new HashSet<>();
         var actor = store.em.getReference(EmployeeEntity.class, store.guard.actor());
         for (var master : linked) {
+            store.em.refresh(master.getProject(), LockModeType.PESSIMISTIC_WRITE);
             store.guard.workspace(master.getProject().getWorkspace().getId(), true);
             store.em.refresh(master, LockModeType.PESSIMISTIC_WRITE);
             if (master.getEmployee() == null || !master.getEmployee().getId().equals(employee.getId())) continue;
             master.setEmployee(null); master.setMappingPreviousId(employee.getId());
             master.setMappingUpdatedBy(actor); master.setMappingUpdatedAt(Instant.now()); master.setMappingReason("TARGET_DELETED");
-            events.workspace(master.getProject().getWorkspace(), "crm.invalidated");
+            if (changedProjects.add(master.getProject().getId())) {
+                CrmCatalogSync.bumpRevision(store,master.getProject().getId());
+                events.workspace(master.getProject().getWorkspace(), "crm.invalidated");
+            }
         }
         store.em.flush(); // Link updates precede the core delete and roll back with it.
     }

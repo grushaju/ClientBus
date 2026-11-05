@@ -20,11 +20,13 @@ export function CrmFreshness({ state }: { state?: CrmSyncState | null }) {
         {state.freshness === 'STALE' && ' · требуют обновления'}
         {state.completeness === 'PARTIAL' && ' · загрузка неполная'}
         {['QUEUED', 'RUNNING'].includes(state.status) && ' · обновляем…'}
+        {state.attemptCoverage?.projectErrorCode && ' · название проекта не обновлено'}
         {state.status === 'FAILED' && <span className="crm-error-text"> · Обновление не удалось. Сохранённые данные доступны.</span>}
     </div>
 }
 export function OfferTerms({ offer }: { offer: CrmServiceOffer }) {
-    const price = offer.price === null ? 'Цена не указана' : `${offer.price} ${offer.currency ?? '(валюта не указана)'}`
+    const amount = offer.price?.replace(/(\.\d*?[1-9])0+$|\.0+$/, '$1')
+    const price = offer.price === null ? 'Цена не указана' : `${amount} ${offer.currency ?? '(валюта не указана)'}`
     const duration = offer.durationSeconds === null ? 'Длительность не указана'
         : offer.durationSeconds % 60 ? `${offer.durationSeconds} сек` : `${offer.durationSeconds / 60} мин`
     return <span className="crm-terms"><strong>{price}</strong><span>{duration}</span>

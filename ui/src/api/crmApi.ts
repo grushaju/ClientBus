@@ -22,6 +22,7 @@ export interface CrmMaster {
 export interface CrmSyncState {
     dataset: string; status: string; lastAttemptAt: string | null; lastSuccessAt: string | null
     freshness: 'NEVER_LOADED' | 'CURRENT' | 'STALE'; completeness: string; errorCode: string | null; generation: number
+    attemptCoverage?: { projectErrorCode?: string }
 }
 export interface CrmMasterPage { items: CrmMaster[]; nextCursor: string | null; hasMore: boolean; dataState: CrmSyncState; revision: number }
 export interface CrmServiceOffer {
@@ -48,6 +49,9 @@ export const patchCrmConnection = (id: string, value: { expectedVersion: number;
     json<CrmConnection>(`/api/crm/connections/${path(id)}`, body('PATCH', value, signal))
 export const verifyCrmConnection = (id: string, signal?: AbortSignal) =>
     json<CrmConnection>(`/api/crm/connections/${path(id)}/verify`, { method: 'POST', signal })
+export const deleteCrmConnection = async (id: string, expectedVersion: number, signal?: AbortSignal): Promise<void> => {
+    await apiFetch(`/api/crm/connections/${path(id)}?expectedVersion=${expectedVersion}`, { method: 'DELETE', signal })
+}
 export const checkCrmProject = (id: string, externalProjectId: string, signal?: AbortSignal) =>
     json<CrmProjectCheck>(`/api/crm/connections/${path(id)}/project-checks`, body('POST', { externalProjectId }, signal))
 export const getCrmProjects = (workspaceId: string, signal?: AbortSignal) =>

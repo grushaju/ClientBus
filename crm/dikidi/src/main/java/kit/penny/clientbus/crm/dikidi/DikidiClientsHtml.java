@@ -9,6 +9,11 @@ import java.util.*;
 
 /** R08 HTML is data only; script content, links and image URLs are never executed. */
 final class DikidiClientsHtml extends HTMLEditorKit.ParserCallback {
+    // Observed R08 terminal row. An arbitrary empty/error table is not an end-of-list marker.
+    private static final java.util.regex.Pattern EMPTY_PAGE=java.util.regex.Pattern.compile(
+            "\\s*<tr\\s*>\\s*<td(?=[^>]*\\bclass=(['\"])red text-center\\1)(?=[^>]*\\bcolspan=(['\"])[0-9]{1,3}\\2)[^>]*>"
+                    +"\\s*Ничего не найдено\\s*</td>\\s*</tr>\\s*",java.util.regex.Pattern.CASE_INSENSITIVE);
+    static boolean emptyPage(String html) { return html.isBlank() || EMPTY_PAGE.matcher(html).matches(); }
     final List<CrmClient> clients = new ArrayList<>();
     final Set<String> ids = new HashSet<>();
     private String id;

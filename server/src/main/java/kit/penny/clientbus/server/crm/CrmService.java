@@ -91,7 +91,8 @@ public class CrmService {
                 boolean enabled = request.enabled() == null ? wasEnabled : request.enabled();
                 row.setStatus(enabled ? CrmConnectionStatus.CONFIGURED : CrmConnectionStatus.DISABLED);
                 row.setLastCheckedAt(null); row.setLastErrorCode(null);
-                for (var project : store.projects.findAllByConnectionId(id)) {
+                // Match the project UUID order used when unlinking mappings during core deletion.
+                for (var project : store.projects.findAllByConnectionIdOrderByIdAsc(id)) {
                     store.em.lock(project, LockModeType.PESSIMISTIC_WRITE);
                     sync.invalidateProject(project.getId());
                     events.workspace(project.getWorkspace(), "crm.invalidated");
@@ -101,6 +102,23 @@ public class CrmService {
             if (changed || renamed) events.organization(row.getOrganization().getId(), "crm.invalidated");
             store.em.flush(); return CrmStore.dto(row);
         }));
+    }
+    public void deleteConnection(UUID id, long expectedVersion) {
+        store.storage.requireReady();
+        tx.executeWithoutResult(status -> {
+            UUID organization = store.guard.admin();
+            // Project binding takes the same connection lock before creating/changing its reference.
+            var row = store.connections.findLockedByIdAndOrganizationId(id, organization).orElseThrow(CrmStore::notFound);
+            store.em.refresh(row, LockModeType.PESSIMISTIC_WRITE);
+            // Lock waits may outlive the administrator's access or organization membership.
+            if (!organization.equals(store.guard.admin())) throw CrmStore.notFound();
+            version(row, expectedVersion);
+            if (store.projects.existsByConnectionId(id))
+                throw new CrmException(409, "CRM_CONNECTION_IN_USE", "К аккаунту привязаны проекты. Сначала смените аккаунт в настройках этих проектов.");
+            store.connections.delete(row); store.em.flush();
+            registry.invalidate(id);
+            events.organization(organization, "crm.invalidated");
+        });
     }
     private static CrmException duplicateLogin() {
         return new CrmException(409, "CRM_CONNECTION_LOGIN_CONFLICT", "Аккаунт этой CRM с таким логином уже добавлен в организацию, возможно, он отключён. Используйте существующий аккаунт.");
@@ -119,26 +137,31 @@ public class CrmService {
         store.storage.requireReady();
         return tx.execute(status -> store.credentials(store.connection(id, store.guard.admin())));
     }
-    private <T> T read(CrmCredentials credentials, Function<CrmAccess, T> action) {
-        try (var access = credentials.open(cipher)) { return action.apply(access); }
+    private record Read<T>(T value,CrmHealthCheck health) {}
+    private <T> Read<T> read(CrmCredentials credentials, Function<CrmAccess, T> action) {
+        var check=tx.execute(status -> {
+            store.guard.admin(); store.requireCredentials(credentials);
+            return CrmHealthCheck.begin(store.connection(credentials.id,credentials.organizationId));
+        });
+        try (var access = credentials.open(cipher)) { return new Read<>(action.apply(access),check); }
         catch (CrmFailure error) {
-            health(credentials, error.code() == CrmFailure.Code.AUTH_REQUIRED ? CrmConnectionStatus.REAUTH_REQUIRED : CrmConnectionStatus.DEGRADED,
-                    CrmStore.failure(error).code());
+            if (error.code() != CrmFailure.Code.CONNECTION_BUSY)
+                health(credentials,check,error.code() == CrmFailure.Code.AUTH_REQUIRED ? CrmConnectionStatus.REAUTH_REQUIRED : CrmConnectionStatus.DEGRADED,
+                        CrmStore.failure(error).code());
             throw CrmStore.failure(error);
         }
     }
-    private void health(CrmCredentials credentials, CrmConnectionStatus status, String errorCode) {
+    private void health(CrmCredentials credentials,CrmHealthCheck check, CrmConnectionStatus status, String errorCode) {
         tx.executeWithoutResult(transaction -> {
             store.guard.admin(); store.requireCredentials(credentials);
             var row = store.connection(credentials.id, credentials.organizationId);
-            row.setStatus(status); row.setLastCheckedAt(Instant.now()); row.setLastErrorCode(errorCode);
-            events.organization(row.getOrganization().getId(), "crm.invalidated");
+            if (check.apply(row,status,errorCode)) events.organization(row.getOrganization().getId(), "crm.invalidated");
         });
     }
     public CrmConnectionDto verify(UUID id) {
         var credentials = adminCredentials(id);
-        read(credentials, access -> { registry.require(credentials.provider).verifyConnection(access); return true; });
-        health(credentials, CrmConnectionStatus.CONNECTED, null);
+        var result=read(credentials, access -> { registry.require(credentials.provider).verifyConnection(access); return true; });
+        health(credentials,result.health(), CrmConnectionStatus.CONNECTED, null);
         return connection(id);
     }
     public CrmProjectCheckDto check(UUID connectionId, CheckCrmProjectRequest request) {
@@ -146,10 +169,11 @@ public class CrmService {
         String externalId = externalId(request.externalProjectId());
         var result = inspect(credentials, externalId);
         tx.executeWithoutResult(status -> { store.guard.admin(); store.requireCredentials(credentials); });
-        health(credentials, CrmConnectionStatus.CONNECTED, null);
-        return new CrmProjectCheckDto(result.externalId(), result.displayName(), result.currency(), result.zoneId());
+        health(credentials,result.health(), CrmConnectionStatus.CONNECTED, null);
+        var info=result.value();
+        return new CrmProjectCheckDto(info.externalId(), info.displayName(), info.currency(), info.zoneId());
     }
-    private CrmProjectInfo inspect(CrmCredentials credentials, String externalId) {
+    private Read<CrmProjectInfo> inspect(CrmCredentials credentials, String externalId) {
         return read(credentials, access -> {
             var info = registry.require(credentials.provider).inspectProject(access, externalId);
             if (info == null || !externalId.equals(info.externalId()))
@@ -180,7 +204,7 @@ public class CrmService {
         tx.executeWithoutResult(status -> store.guard.workspace(workspaceId, false));
         String externalId = externalId(request.externalProjectId());
         String zone = zone(request.zoneId());
-        CrmProjectInfo info = inspect(credentials, externalId);
+        CrmProjectInfo info = inspect(credentials, externalId).value();
         Binding result;
         try {
             result = tx.execute(status -> {
@@ -244,7 +268,7 @@ public class CrmService {
         });
         CrmCredentials credentials = adminCredentials(request.connectionId());
         if (!context.provider().equals(credentials.provider.name())) throw CrmException.conflict("CRM_PROJECT_BINDING_CONFLICT");
-        CrmProjectInfo info = inspect(credentials, context.externalProjectId());
+        CrmProjectInfo info = inspect(credentials, context.externalProjectId()).value();
         var result = tx.execute(status -> {
             store.guard.admin(); store.requireCredentials(credentials);
             var project = store.project(projectId, credentials.organizationId);
@@ -322,6 +346,8 @@ public class CrmService {
                 employee = store.em.find(EmployeeEntity.class, employeeId);
                 if (employee == null || !organization.equals(employee.getOrganization().getId())) throw CrmStore.notFound();
             }
+            store.em.refresh(project, LockModeType.PESSIMISTIC_WRITE);
+            store.guard.workspace(project.getWorkspace().getId(), true);
             store.em.refresh(original, LockModeType.PESSIMISTIC_WRITE);
             version(original, expectedVersion);
             UUID previous = original.getEmployee() == null ? null : original.getEmployee().getId();
@@ -329,6 +355,7 @@ public class CrmService {
                 original.setEmployee(employee); original.setMappingPreviousId(previous);
                 original.setMappingUpdatedBy(author); original.setMappingUpdatedAt(Instant.now());
                 original.setMappingReason(employeeId == null ? "UNLINK" : previous == null ? "LINK" : "RELINK");
+                CrmCatalogSync.bumpRevision(store,project.getId());
                 events.workspace(project.getWorkspace(), "crm.invalidated");
             }
             store.em.flush(); return CrmStore.dto(original);

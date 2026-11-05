@@ -2,6 +2,26 @@ import { test, expect } from './fixtures/inbox'
 import type { Page } from '@playwright/test'
 import type { CrmConnection, CrmProject, CrmMaster, CrmSyncState } from '../src/api/crmApi'
 
+test('Настройки: профиль и длинный список CRM прокручиваются до нижних действий', async ({ page, api }) => {
+    api.role = 'admin'
+    const fixture = await installCrm(page)
+    for (let i = 1; i <= 15; i++) fixture.connections.push({ ...fixture.connections[0], id: 'scroll-account-' + i, displayName: 'Аккаунт ' + i })
+    await page.setViewportSize({ width: page.viewportSize()!.width, height: 600 })
+    for (const path of ['/settings', '/settings?section=crm']) {
+        await page.goto(path)
+        const container = page.locator('.app-main')
+        const bottom = path.includes('crm') ? page.locator('.crm-connection').last() : page.locator('.settings-actions').last()
+        await expect(bottom).toBeAttached()
+        await expect.poll(() => container.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true)
+        const box = (await container.boundingBox())!
+        await page.mouse.move(box.x + box.width / 2, box.y + Math.min(200, box.height / 2))
+        await page.mouse.wheel(0, 20000)
+        await expect.poll(() => container.evaluate(element => element.scrollTop)).toBeGreaterThan(0)
+        await expect(bottom).toBeInViewport()
+        expect(await container.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+    }
+})
+
 async function installCrm(page: Page, existing = true) {
     const connections: CrmConnection[] = existing ? [{ id: 'crm-connection', provider: 'DIKIDI', displayName: 'Основной аккаунт', loginHint: '••••0000',
         credentialConfigured: true, status: 'CONNECTED', lastCheckedAt: null, errorCode: null, version: 0 }] : []
@@ -12,7 +32,7 @@ async function installCrm(page: Page, existing = true) {
         projectId: 'crm-project', externalId: 'master-' + index, displayName: 'Мастер ' + name, employeeId: null,
         mappingUpdatedAt: null, mappingUpdatedBy: null, mappingPreviousId: null, mappingReason: null,
         lastObservedAt: '2026-10-28T10:00:00Z', version: 0 }))
-    const counters = { creates: 0, checks: 0, bindings: 0, links: 0, credentialReads: 0, refreshes: 0, candidates: 0, unknown: [] as string[] }
+    const counters = { creates: 0, checks: 0, bindings: 0, links: 0, credentialReads: 0, refreshes: 0, candidates: 0, deletions: 0, unknown: [] as string[] }
     const employee = { id: 'employee-2', organizationId: 'organization-1', username: 'crm-employee', firstName: 'Анна', lastName: 'Иванова', email: 'other@example.test', enabled: true, role: 'EMPLOYEE' }
     function makeProject(): CrmProject {
         return { id: 'crm-project', workspaceId: 'workspace-1', connectionId: 'crm-connection', provider: 'DIKIDI', externalId: '100', displayName: 'Салон №17',
@@ -21,7 +41,7 @@ async function installCrm(page: Page, existing = true) {
     }
     const services = ['Стрижка', 'Окрашивание', 'Укладка'].map((name, i) => ({ id: 's' + i, projectId: 'crm-project', externalId: String(i), displayName: name, category: 'Волосы',
         offers: [{ id: 'o' + i, serviceId: 's' + i, masterId: masters[i].id, masterDisplayName: masters[i].displayName, externalMasterId: masters[i].externalId,
-            price: String(1500 + i * 500), currency: 'RUB', durationSeconds: 1800, offerState: { active: true, online: true }, attributes: {}, warnings: [] }] }))
+            price: String(1500 + i * 500) + '.0000', currency: 'RUB', durationSeconds: 1800, offerState: { active: true, online: true }, attributes: {}, warnings: [] }] }))
     await page.route('**/api/**', async route => {
         const request = route.request(), url = new URL(request.url()), path = url.pathname, method = request.method()
         const body = request.postData() ? request.postDataJSON() : null
@@ -38,6 +58,11 @@ async function installCrm(page: Page, existing = true) {
             return reply(connections[0], 201)
         }
         if (path === '/api/crm/projects') return reply(project ? [project] : [])
+        if (path === '/api/crm/connections/crm-connection' && method === 'DELETE') {
+            expect(Number(url.searchParams.get('expectedVersion'))).toBe(connections[0].version)
+            if (project?.connectionId === connections[0].id) return reply({ code: 'CRM_CONNECTION_IN_USE', message: 'К аккаунту привязаны проекты.' },409)
+            connections.splice(0,1); counters.deletions++; return route.fulfill({ status: 204 })
+        }
         if (path === '/api/crm/connections/crm-connection/verify') { connections[0].status = 'CONNECTED'; connections[0].version++; return reply(connections[0]) }
         if (path === '/api/crm/connections/crm-connection' && method === 'PATCH') {
             expect(body.expectedVersion).toBe(connections[0].version)
@@ -75,6 +100,25 @@ async function installCrm(page: Page, existing = true) {
     return { counters, connections, masters, services, get project() { return project } }
 }
 
+test('CRM: администратор удаляет неиспользуемый аккаунт после подтверждения', async ({ page, api }) => {
+    api.role = 'admin'; const fixture = await installCrm(page, false)
+    fixture.connections.push({ id: 'crm-connection', provider: 'DIKIDI', displayName: 'Неиспользуемый аккаунт', loginHint: '••••0000',
+        credentialConfigured: true, status: 'DISABLED', lastCheckedAt: null, errorCode: null, version: 2 })
+    await page.goto('/settings?section=crm')
+    const settings = page.getByRole('region', { name: 'Подключения CRM', exact: true })
+    await expect(settings.getByRole('button', { name: 'Удалить', exact: true })).toBeEnabled()
+    await settings.getByRole('button', { name: 'Удалить', exact: true }).click()
+    expect(fixture.counters.deletions).toBe(0)
+    await settings.getByRole('button', { name: 'Отмена', exact: true }).click()
+    await expect(settings.getByRole('button', { name: 'Подтвердить удаление' })).toHaveCount(0)
+    await settings.getByRole('button', { name: 'Удалить', exact: true }).click()
+    await settings.getByRole('button', { name: 'Подтвердить удаление' }).click()
+    await expect(settings.getByText('Аккаунт CRM удалён.', { exact: true })).toBeVisible()
+    await expect(settings.locator('.crm-connection')).toHaveCount(0)
+    expect(fixture.counters.deletions).toBe(1); expect(fixture.counters.unknown).toEqual([])
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+})
+
 test('CRM: администратор добавляет аккаунт, подключает проект и меняет связь в рабочем разделе', async ({ page, api }, info) => {
     api.role = 'admin'; const fixture = await installCrm(page, false)
     await page.goto('/settings?section=crm'); await page.getByRole('button', { name: 'Добавить аккаунт', exact: true }).click()
@@ -87,7 +131,7 @@ test('CRM: администратор добавляет аккаунт, под�
     const settings = page.getByRole('region', { name: 'Настройки CRM рабочего пространства', exact: true })
     await expect(settings.getByLabel('Подключение DIKIDI')).toHaveValue('crm-connection')
     await settings.getByLabel('ID проекта DIKIDI').fill('100'); await settings.getByRole('button', { name: 'Проверить проект', exact: true }).click()
-    expect(fixture.counters.bindings).toBe(0); await settings.getByLabel('Часовой пояс проекта').fill('Europe/Moscow')
+    expect(fixture.counters.bindings).toBe(0); await settings.getByLabel('Часовой пояс проекта').selectOption('Europe/Moscow')
     await settings.getByRole('button', { name: 'Привязать проект', exact: true }).click(); await settings.getByRole('link', { name: 'Открыть каталог' }).click()
     await expect(page.getByText('Стрижка', { exact: true })).toBeVisible(); await page.getByRole('tab', { name: 'Мастера', exact: true }).click()
     await page.getByRole('button', { name: 'Связи с сотрудниками', exact: true }).click()

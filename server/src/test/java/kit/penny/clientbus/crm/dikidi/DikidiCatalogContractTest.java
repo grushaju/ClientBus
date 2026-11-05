@@ -21,19 +21,32 @@ class DikidiCatalogContractTest {
     private record Request(String address, List<Map.Entry<String, String>> form) {}
     private final List<Request> requests = new ArrayList<>();
     private CrmCatalogSnapshot read(String response) {
-        var responses = new ArrayDeque<>(List.of("<input name='telegram_csrf' type='hidden' value='first'>",
+        return read(response, "{\"html\":\"<h2>Project &amp; title</h2>\"}");
+    }
+    private CrmCatalogSnapshot read(String response, String profile) {
+        return read(response, new DikidiTransport.Response(200, profile));
+    }
+    private CrmCatalogSnapshot read(String response, DikidiTransport.Response profile) {
+        var responses = new ArrayDeque<DikidiTransport.Response>();
+        for (String body : List.of("<input name='telegram_csrf' type='hidden' value='first'>",
                 "{\"html\":\"<input name='csrf' type='hidden' value='second'>\"}",
-                "{\"callback\":[\"sw.auth.complete();\"]}", "journal", response));
+                "{\"callback\":[\"sw.auth.complete();\"]}", "journal", response))
+            responses.add(new DikidiTransport.Response(200, body));
+        responses.add(profile);
         try (var provider = new DikidiProvider(new DikidiProvider.Settings(Duration.ofSeconds(2), Duration.ofSeconds(15), 65536),
                 () -> (method, uri, form, ajax, project, timeout) -> {
                     requests.add(new Request(uri.getPath(), form == null ? List.of() : List.copyOf(form)));
-                    return new DikidiTransport.Response(200, responses.removeFirst());
+                    if (uri.getPath().equals("/ru/owner/ajax/profile/index/")) {
+                        assertEquals("company=100", uri.getQuery()); assertEquals("100", project);
+                    }
+                    return responses.removeFirst();
                 }); var access = new CrmAccess(UUID.randomUUID(), 1, "70000000000", "test-secret".toCharArray())) {
             return provider.readCatalog(access, "100");
         }
     }
     @Test void mastersServicesAndOffersComeFromOneR01WithMasterSpecificValues() {
         var result = read(CATALOG);
+        assertEquals("Project & title", result.projectDisplayName());
         assertEquals("100:CATALOG", result.scope()); assertEquals(CrmReadResult.Completeness.COMPLETE, result.completeness());
         assertEquals(2, result.masters().size()); assertEquals(1, result.services().size()); assertEquals(2, result.offers().size());
         assertEquals("Service", result.services().getFirst().displayName()); assertNull(result.services().getFirst().category());
@@ -46,8 +59,56 @@ class DikidiCatalogContractTest {
         assertEquals(2700L, second.durationSeconds()); assertNull(first.currency());
         assertEquals(Set.of("price", "durationSeconds"), first.presentFields());
         assertEquals(1, requests.stream().filter(r -> r.address().equals("/ru/owner/ajax/journal/api/")).count());
-        assertEquals(List.of("company.accesses", "masters.info", "masters.services"), requests.getLast().form().stream()
+        assertEquals(List.of("company.accesses", "masters.info", "masters.services"), requests.stream()
+                .filter(r -> r.address().equals("/ru/owner/ajax/journal/api/")).findFirst().orElseThrow().form().stream()
                 .filter(e -> e.getKey().equals("request[get][]")).map(Map.Entry::getValue).toList());
+    }
+    @Test void projectNameIsReadAgainWhenAnAuthenticatedSessionIsReused() {
+        var responses = new ArrayDeque<>(List.of("<input name='telegram_csrf' type='hidden' value='first'>",
+                "{\"html\":\"<input name='csrf' type='hidden' value='second'>\"}",
+                "{\"callback\":[\"sw.auth.complete();\"]}", "journal", CATALOG,
+                "{\"html\":\"<h2>Old name</h2>\"}", "journal", CATALOG,
+                "{\"html\":\"<h2>Новое название</h2>\"}"));
+        try (var provider = new DikidiProvider(new DikidiProvider.Settings(Duration.ofSeconds(2), Duration.ofSeconds(15), 65536),
+                () -> (method, uri, form, ajax, project, timeout) -> new DikidiTransport.Response(200, responses.removeFirst()));
+             var access = new CrmAccess(UUID.randomUUID(), 1, "70000000000", "test-secret".toCharArray())) {
+            assertEquals("Old name", provider.readCatalog(access, "100").projectDisplayName());
+            assertEquals("Новое название", provider.readCatalog(access, "100").projectDisplayName());
+            assertTrue(responses.isEmpty());
+        }
+    }
+    @Test void missingProjectNameDoesNotBecomeAnIdOrAnEmptySuccessfulName() {
+        for (String profile : List.of("{}", "{\"html\":\"<h2> </h2>\"}")) {
+            var result=read(CATALOG,profile);
+            assertNull(result.projectDisplayName()); assertEquals(CrmFailure.Code.INVALID_RESPONSE,result.projectError());
+            assertEquals(CrmReadResult.Completeness.COMPLETE,result.completeness()); assertEquals(2,result.offers().size());
+        }
+    }
+    @Test void profileAccessErrorsDoNotDiscardTheVerifiedCatalog() {
+        for (var failure : Map.of(401,CrmFailure.Code.AUTH_REQUIRED,403,CrmFailure.Code.ACCESS_DENIED,
+                429,CrmFailure.Code.RATE_LIMITED,500,CrmFailure.Code.TEMPORARY_FAILURE).entrySet()) {
+            var result=read(CATALOG,new DikidiTransport.Response(failure.getKey(),"unavailable"));
+            assertNull(result.projectDisplayName()); assertEquals(failure.getValue(),result.projectError());
+            assertEquals(2,result.masters().size()); assertEquals(1,result.services().size()); assertEquals(2,result.offers().size());
+            assertEquals(CrmReadResult.Completeness.COMPLETE,result.completeness());
+        }
+    }
+    @Test void authenticationLostOnTheProfileIsRecoveredBeforeTheNextCatalogRead() {
+        var responses=new ArrayDeque<DikidiTransport.Response>();
+        for (int read=0;read<2;read++) {
+            for (String body : List.of("<input name='telegram_csrf' type='hidden' value='first'>",
+                    "{\"html\":\"<input name='csrf' type='hidden' value='second'>\"}",
+                    "{\"callback\":[\"sw.auth.complete();\"]}","journal",CATALOG))
+                responses.add(new DikidiTransport.Response(200,body));
+            responses.add(new DikidiTransport.Response(read==0 ? 401 : 200,read==0 ? "expired" : "{\"html\":\"<h2>Fresh name</h2>\"}"));
+        }
+        try (var provider=new DikidiProvider(new DikidiProvider.Settings(Duration.ofSeconds(2),Duration.ofSeconds(15),65536),
+                () -> (method,uri,form,ajax,project,timeout) -> responses.removeFirst());
+             var access=new CrmAccess(UUID.randomUUID(),1,"70000000000","test-secret".toCharArray())) {
+            assertEquals(CrmFailure.Code.AUTH_REQUIRED,provider.readCatalog(access,"100").projectError());
+            var current=provider.readCatalog(access,"100");
+            assertEquals("Fresh name",current.projectDisplayName()); assertNull(current.projectError()); assertTrue(responses.isEmpty());
+        }
     }
     @Test void missingAndExplicitUnknownFieldsHaveDifferentPresence() {
         var result = read(CATALOG.replace("\"cost\":\"1500.25\",\"time\":\"30.5\",", "")

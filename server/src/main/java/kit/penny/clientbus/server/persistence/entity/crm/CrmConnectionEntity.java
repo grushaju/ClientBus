@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import kit.penny.clientbus.common.enums.*;
 import kit.penny.clientbus.server.persistence.entity.*;
 import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.annotations.OptimisticLock;
 import org.hibernate.type.SqlTypes;
 import java.time.Instant;
 import java.util.Map;
@@ -39,6 +40,12 @@ public class CrmConnectionEntity extends CrmRecord {
     @Column(name = "credentialversion", nullable = false)
     private long credentialVersion = 1;
 
+    @Column(name = "healthgeneration", nullable = false, columnDefinition = "bigint default 0")
+    @OptimisticLock(excluded = true) // Allocated under the row lock; a reservation is not a health result.
+    private long healthGeneration;
+    @Column(name = "healthappliedgeneration", nullable = false, columnDefinition = "bigint default 0")
+    private long healthAppliedGeneration;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 24)
     private CrmConnectionStatus status;
@@ -63,6 +70,10 @@ public class CrmConnectionEntity extends CrmRecord {
     public void setSecretKeyId(String secretKeyId) { this.secretKeyId = secretKeyId; }
     public long getCredentialVersion() { return credentialVersion; }
     public void setCredentialVersion(long credentialVersion) { this.credentialVersion = credentialVersion; }
+    public long getHealthGeneration() { return healthGeneration; }
+    public void setHealthGeneration(long value) { healthGeneration=value; }
+    public long getHealthAppliedGeneration() { return healthAppliedGeneration; }
+    public void setHealthAppliedGeneration(long value) { healthAppliedGeneration=value; }
     public CrmConnectionStatus getStatus() { return status; }
     public void setStatus(CrmConnectionStatus status) { this.status = status; }
     public Instant getLastCheckedAt() { return lastCheckedAt; }

@@ -5,6 +5,7 @@
 .settings-page {
     width: 100%;
     max-width: 1180px;
+    min-height: 100%;
 
     margin: 0 auto;
     padding: 28px 30px 40px;

@@ -80,6 +80,10 @@ export class InboxApi {
             return reply(this.conversation)
         }
         if (path === '/api/conversations/conversation-1/read') return reply(this.conversation)
+        if (method === 'GET' && path === '/api/conversations/conversation-1/history-sync-operations') return reply({ items: [], nextCursor: null })
+        if (method === 'POST' && path === '/api/conversations/conversation-1/history-sync') return reply({ id: 'history-1',
+            conversationId: this.conversation.id, status: 'SUCCEEDED', createdAt: timestamp, updatedAt: timestamp,
+            deadlineAt: timestamp, result: { importedCount: 0, historyStartReached: true }, errorCode: null })
         if (path === '/api/messages/conversation/conversation-1/history/sync') return reply({ messages: [], historyStartReached: true })
         if (path.startsWith('/api/conversations/conversation-1/assignment')) {
             this.conversation.assignedEmployeeId = method === 'DELETE' ? null : employee.id

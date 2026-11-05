@@ -15,6 +15,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.LongSupplier;
 
 /** A single durable CLIENTS writer. No transaction is held while calling DIKIDI. */
@@ -101,6 +102,7 @@ public class CrmClientSync {
                 context.credentialVersion(), context.contextVersion(), context.zoneRevision());
     }
     private void run(Claim claim) {
+        var health=new AtomicReference<CrmHealthCheck>();
         try {
             CrmCredentials credentials = tx.execute(status -> {
                 var project = store.requireContext(claim.context());
@@ -122,6 +124,7 @@ public class CrmClientSync {
                     var project = store.requireContext(claim.context());
                     store.guard.workspace(claim.actorId(), project.getWorkspace().getId());
                     requireClaim(claim);
+                    health.set(CrmHealthCheck.begin(project.getConnection()));
                     jdbc.update("update crm.syncstate set claimuntil=clock_timestamp()+interval '120 seconds' where projectid=? and dataset='WRITER:CLIENTS' and generation=? and claimtoken=?",
                             project.getId(), claim.generation(), claim.token());
                 });
@@ -151,7 +154,7 @@ public class CrmClientSync {
                     requireClaim(claim);
                     writer.apply(project, result);
                     var connection=project.getConnection();
-                    connection.setStatus(CrmConnectionStatus.CONNECTED); connection.setLastCheckedAt(Instant.now()); connection.setLastErrorCode(null);
+                    health.get().apply(connection,CrmConnectionStatus.CONNECTED,null);
                     store.em.flush();
                     requireClaim(claim);
                     if (finished && release(claim, "SUCCEEDED")!=1) throw CrmException.conflict("CRM_CONTEXT_CHANGED");
@@ -171,9 +174,9 @@ public class CrmClientSync {
                     throw new CrmFailure(CrmFailure.Code.INVALID_RESPONSE);
                 cursor=result.nextCursor();
             }
-        } catch (CrmFailure error) { fail(claim, CrmStore.failure(error).code()); }
-        catch (CrmException error) { fail(claim, error.code()); }
-        catch (RuntimeException error) { fail(claim, "CRM_TEMPORARILY_UNAVAILABLE"); }
+        } catch (CrmFailure error) { fail(claim,CrmStore.failure(error).code(),health.get()); }
+        catch (CrmException error) { fail(claim,error.code(),health.get()); }
+        catch (RuntimeException error) { fail(claim,"CRM_TEMPORARILY_UNAVAILABLE",health.get()); }
     }
     private boolean expired(long deadline) { return nanoTime.getAsLong()-deadline>=0; }
     private void finishLimited(Claim claim) {
@@ -205,6 +208,9 @@ public class CrmClientSync {
                 """, status, claim.context().projectId(), claim.generation(), claim.token());
     }
     private void fail(Claim claim, String code) {
+        fail(claim,code,null);
+    }
+    private void fail(Claim claim,String code,CrmHealthCheck health) {
         try {
             tx.executeWithoutResult(status -> {
                 var project = store.requireContext(claim.context());
@@ -213,11 +219,7 @@ public class CrmClientSync {
                         update crm.syncstate set status='FAILED', lasterrorcode=?, claimtoken=null,version=version+1,updatedat=clock_timestamp()
                         where projectid=? and dataset='CLIENTS' and scopekey='ALL' and generation=? and claimtoken=?
                         """, code, project.getId(), claim.generation(), claim.token());
-                if ("CRM_REAUTH_REQUIRED".equals(code)) {
-                    project.getConnection().setStatus(CrmConnectionStatus.REAUTH_REQUIRED);
-                    project.getConnection().setLastErrorCode(code);
-                    project.getConnection().setLastCheckedAt(Instant.now());
-                }
+                if (health!=null && "CRM_REAUTH_REQUIRED".equals(code)) health.apply(project.getConnection(),CrmConnectionStatus.REAUTH_REQUIRED,code);
                 events.workspace(project.getWorkspace(), "crm.invalidated");
             });
         } catch (RuntimeException ignored) {

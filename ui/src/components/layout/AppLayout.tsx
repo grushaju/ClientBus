@@ -2,7 +2,7 @@ import type {
     ReactNode,
 } from 'react'
 
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 import {
@@ -29,6 +29,16 @@ function AppLayout({
                    }: AppLayoutProps) {
     const navigate = useNavigate()
     const location = useLocation()
+    const main = useRef<HTMLElement>(null)
+    useLayoutEffect(() => {
+        if (main.current) {
+            main.current.scrollTop = 0
+            main.current.scrollLeft = 0
+            if (!main.current.contains(document.activeElement)) {
+                main.current.focus({ preventScroll: true })
+            }
+        }
+    }, [location.pathname])
     const {
         currentEmployee,
         currentOrganization,
@@ -171,7 +181,7 @@ function AppLayout({
                     </div>
                 </header>
 
-                <main className="app-main">
+                <main ref={main} className="app-main" tabIndex={-1}>
                     {children}
                 </main>
             </div>

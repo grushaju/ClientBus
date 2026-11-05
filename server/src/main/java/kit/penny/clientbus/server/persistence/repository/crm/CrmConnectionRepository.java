@@ -8,4 +8,6 @@ public interface CrmConnectionRepository extends JpaRepository<CrmConnectionEnti
     boolean existsByOrganizationIdAndProviderAndLoginAndIdNot(UUID organizationId, kit.penny.clientbus.common.enums.CrmType provider, String login, UUID id);
     List<CrmConnectionEntity> findAllByOrganizationIdOrderByCreatedAtAsc(UUID organizationId);
     Optional<CrmConnectionEntity> findByIdAndOrganizationId(UUID id, UUID organizationId);
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    Optional<CrmConnectionEntity> findLockedByIdAndOrganizationId(UUID id, UUID organizationId);
 }

@@ -22,7 +22,7 @@ public class CrmMasterServiceEntity extends CrmRecord {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "serviceid", nullable = false, foreignKey = @ForeignKey(name = "fkmasterserviceservice"))
     private CrmServiceEntity service;
-    @Column(name = "price", precision = 19, scale = 4)
+    @Column(name = "price", columnDefinition = "numeric")
     private BigDecimal price;
     @Column(name = "currency", length = 3)
     private String currency;
@@ -47,7 +47,7 @@ public class CrmMasterServiceEntity extends CrmRecord {
     public CrmServiceEntity getService() { return service; }
     public void setService(CrmServiceEntity value) { service = value; }
     public BigDecimal getPrice() { return price; }
-    public void setPrice(BigDecimal value) { price = value; }
+    public void setPrice(BigDecimal value) { price = value == null ? null : value.stripTrailingZeros(); }
     public String getCurrency() { return currency; }
     public void setCurrency(String value) { currency = value; }
     public Long getDurationSeconds() { return durationSeconds; }

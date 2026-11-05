@@ -19,12 +19,99 @@ class CrmHttpContractTest {
     private CrmCatalogReader catalog;
     private CrmClientSync clientSync;
     private CrmClientService clients;
+    private CrmScheduleSync schedules;
+    private CrmScheduleReader scheduleReader;
+    private CrmAppointmentSync appointments;
+    private CrmAppointmentReader appointmentReader;
     private MockMvc mvc;
     @BeforeEach void setup() {
         service = mock(CrmService.class); sync = mock(CrmCatalogSync.class); catalog = mock(CrmCatalogReader.class);
         clientSync = mock(CrmClientSync.class); clients = mock(CrmClientService.class);
-        mvc = MockMvcBuilders.standaloneSetup(new CrmController(service,sync,clientSync), new CrmCatalogController(catalog), new CrmClientController(clients))
+        schedules=mock(CrmScheduleSync.class); scheduleReader=mock(CrmScheduleReader.class);
+        appointments=mock(CrmAppointmentSync.class); appointmentReader=mock(CrmAppointmentReader.class);
+        mvc = MockMvcBuilders.standaloneSetup(new CrmController(service,sync,clientSync,schedules,appointments), new CrmCatalogController(catalog), new CrmClientController(clients),new CrmScheduleController(scheduleReader),new CrmAppointmentController(appointmentReader))
                 .setControllerAdvice(new CrmRequestErrors(), new GlobalExceptionHandler()).build();
+    }
+    @Test void deletingAConnectionRequiresAValidVersionAndReturnsNoContentOrAnInUseConflict() throws Exception {
+        UUID id=UUID.randomUUID(); String route="/api/crm/connections/"+id;
+        mvc.perform(delete(route)).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        for (String version : List.of("-1","invalid")) mvc.perform(delete(route).param("expectedVersion",version))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        verifyNoInteractions(service);
+        mvc.perform(delete(route).param("expectedVersion","0")).andExpect(status().isNoContent()).andExpect(content().string(""));
+        verify(service).deleteConnection(id,0);
+        doThrow(new CrmException(409,"CRM_CONNECTION_IN_USE","К аккаунту привязаны проекты.")).when(service).deleteConnection(id,1);
+        mvc.perform(delete(route).param("expectedVersion","1")).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CRM_CONNECTION_IN_USE"));
+    }
+    @Test void appointmentRefreshValidatesPeriodAndProjectClientBeforeCallingWorkers() throws Exception {
+        UUID project=UUID.randomUUID(),client=UUID.randomUUID();
+        String route="/api/crm/projects/"+project+"/refresh";
+        for (String body : List.of("{\"dataset\":\"APPOINTMENTS\"}",
+                "{\"dataset\":\"CLIENT_HISTORY\",\"dateFrom\":\"2026-11-01\",\"dateTo\":\"2026-11-02\"}",
+                "{\"dataset\":\"APPOINTMENTS\",\"dateFrom\":\"2026-11-01\",\"dateTo\":\"2026-12-02\"}",
+                "{\"dataset\":\"APPOINTMENTS\",\"crmClientId\":\""+client+"\",\"dateFrom\":\"2026-11-01\",\"dateTo\":\"2026-11-02\"}"))
+            mvc.perform(post(route).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isBadRequest());
+        verifyNoInteractions(service,appointments);
+        mvc.perform(post(route).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"dataset\":\"CLIENT_HISTORY\",\"crmClientId\":\""+client+"\",\"dateFrom\":\"2026-11-01\",\"dateTo\":\"2026-11-02\"}"))
+                .andExpect(status().isAccepted());
+        verify(appointments).refresh(project,"CLIENT_HISTORY",client,java.time.LocalDate.parse("2026-11-01"),java.time.LocalDate.parse("2026-11-02"));
+        verifyNoInteractions(sync,clientSync,schedules);
+    }
+    @Test void appointmentReadRoutesValidateDatesAndStatesAndDoNotStartRefresh() throws Exception {
+        UUID project=UUID.randomUUID(),client=UUID.randomUUID(),id=UUID.randomUUID();
+        String route="/api/crm/projects/"+project+"/appointments";
+        mvc.perform(get(route).param("dateFrom","2026-11-01").param("dateTo","2026-11-02").param("crmClientId",client.toString()))
+                .andExpect(status().isOk());
+        verify(appointmentReader).appointments(eq(project),eq(new CrmAppointmentFilter(java.time.LocalDate.parse("2026-11-01"),java.time.LocalDate.parse("2026-11-02"),client,null,null,null,null,null,null)),isNull());
+        mvc.perform(get(route).param("dateFrom","2026-11-01").param("dateTo","2026-11-02").param("appointmentState","PAID"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        mvc.perform(get(route).param("dateFrom","2026-11-01").param("dateTo","2026-12-02")).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/crm/appointments/"+id)).andExpect(status().isOk()); verify(appointmentReader).appointment(id);
+        mvc.perform(get("/api/clients/"+client+"/crm/appointments").param("dateFrom","2026-11-01").param("dateTo","2026-11-02"))
+                .andExpect(status().isOk()); verify(appointmentReader).history(eq(client),isNull(),any(),isNull());
+        verifyNoInteractions(service,appointments,schedules,sync,clientSync);
+    }
+    @Test void appointmentStateRequiresAnExplicitDatasetAndScope() throws Exception {
+        UUID project=UUID.randomUUID();
+        String route="/api/crm/projects/"+project+"/sync-state";
+        var from=java.time.LocalDate.parse("2026-11-01");
+        when(appointments.state(project,"APPOINTMENTS",null,from,from)).thenReturn(new CrmSyncStateDto("APPOINTMENTS","IDLE",null,null,"NEVER_LOADED","UNKNOWN",null,0));
+        mvc.perform(get(route).param("dataset","APPOINTMENTS").param("dateFrom",from.toString()).param("dateTo",from.toString()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[0].dataset").value("APPOINTMENTS"));
+        verify(appointments).state(project,"APPOINTMENTS",null,from,from);
+        mvc.perform(get(route).param("dataset","UNSUPPORTED")).andExpect(status().isBadRequest());
+        mvc.perform(get(route).param("dataset","CLIENT_HISTORY").param("dateFrom",from.toString()).param("dateTo",from.toString())).andExpect(status().isBadRequest());
+        mvc.perform(get(route).param("dataset","APPOINTMENTS").param("dateFrom",from.toString())).andExpect(status().isBadRequest());
+        verifyNoMoreInteractions(appointments);
+        verifyNoInteractions(sync,clientSync,schedules);
+    }
+    @Test void scheduleRefreshRequiresOneMasterAndAnInclusiveBoundedPeriod() throws Exception {
+        UUID id=UUID.randomUUID(), master=UUID.randomUUID();
+        for (String fields : List.of("", ",\"masterId\":\""+master+"\"", ",\"masterId\":\""+master+"\",\"dateFrom\":\"2026-11-01\",\"dateTo\":\"2026-12-02\"")) {
+            mvc.perform(post("/api/crm/projects/"+id+"/refresh").contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"dataset\":\"WORK_INTERVALS\""+fields+"}"))
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        }
+        verifyNoInteractions(schedules,service);
+        mvc.perform(post("/api/crm/projects/"+id+"/refresh").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"dataset\":\"WORK_INTERVALS\",\"masterId\":\""+master+"\",\"dateFrom\":\"2026-11-01\",\"dateTo\":\"2026-11-30\"}"))
+                .andExpect(status().isAccepted());
+        verify(service).requireProjectAccess(id);
+        verify(schedules).refresh(id,master,java.time.LocalDate.parse("2026-11-01"),java.time.LocalDate.parse("2026-11-30"));
+        verifyNoInteractions(sync,clientSync);
+    }
+    @Test void scheduleReadUsesLocalMasterAndDatesAndRejectsBadPeriods() throws Exception {
+        UUID id=UUID.randomUUID(), master=UUID.randomUUID();
+        String route="/api/crm/projects/"+id+"/work-intervals";
+        mvc.perform(get(route).param("masterId",master.toString()).param("dateFrom","2026-11-01").param("dateTo","2026-11-02"))
+                .andExpect(status().isOk());
+        verify(scheduleReader).intervals(id,master,java.time.LocalDate.parse("2026-11-01"),java.time.LocalDate.parse("2026-11-02"),null);
+        for (String to : List.of("invalid","2026-10-31","2026-12-02"))
+            mvc.perform(get(route).param("masterId",master.toString()).param("dateFrom","2026-11-01").param("dateTo",to))
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        mvc.perform(get(route).param("dateFrom","2026-11-01").param("dateTo","2026-11-02")).andExpect(status().isBadRequest());
+        verifyNoMoreInteractions(scheduleReader);
     }
     @Test void clientRefreshAndMutationsHaveExplicitValidatedContracts() throws Exception {
         UUID id=UUID.randomUUID();
@@ -43,6 +130,20 @@ class CrmHttpContractTest {
                 .content("{\"firstName\":\"Confirmed\",\"lastName\":\"Name\",\"phoneList\":[],\"expectedVersion\":0}"))
                 .andExpect(status().isCreated());
         verify(clients).create(eq(id),any());
+    }
+    @Test void scheduleStateEchoesThePeriodAndPreservesTheLegacyStateList() throws Exception {
+        UUID project=UUID.randomUUID(), master=UUID.randomUUID();
+        var state=new CrmSyncStateDto("CATALOG","IDLE",null,null,"NEVER_LOADED","UNKNOWN",null,0);
+        when(sync.state(project)).thenReturn(state); when(sync.state(project,"CATALOG")).thenReturn(state); when(clientSync.state(project)).thenReturn(state);
+        var from=java.time.LocalDate.parse("2026-11-01"); var to=from.plusDays(1);
+        when(schedules.state(project,master,from,to)).thenReturn(new CrmSyncStateDto("WORK_INTERVALS","PARTIAL",null,null,"STALE","UNKNOWN",null,1,
+                Map.of("masterId",master.toString(),"dateFrom",from.toString(),"dateTo",to.toString()),Map.of(),Map.of("completeness","UNKNOWN")));
+        mvc.perform(get("/api/crm/projects/"+project+"/sync-state")).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(3));
+        mvc.perform(get("/api/crm/projects/"+project+"/sync-state").param("masterId",master.toString()).param("dateFrom",from.toString()).param("dateTo",to.toString()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[3].scope.masterId").value(master.toString()))
+                .andExpect(jsonPath("$[3].scope.dateTo").value(to.toString())).andExpect(jsonPath("$[3].attemptCoverage.completeness").value("UNKNOWN"));
+        mvc.perform(get("/api/crm/projects/"+project+"/sync-state").param("dateFrom",from.toString())).andExpect(status().isBadRequest());
+        verifyNoInteractions(scheduleReader);
     }
     @Test void onlyAvailableTypesAreReturned() throws Exception {
         when(service.types()).thenReturn(AvailableCrmType.types());
@@ -76,7 +177,7 @@ class CrmHttpContractTest {
     }
     @Test void unimplementedRefreshDoesNotCallProviderAndChecksScopeFirst() throws Exception {
         UUID id = UUID.randomUUID();
-        mvc.perform(post("/api/crm/projects/"+id+"/refresh").contentType(MediaType.APPLICATION_JSON).content("{\"dataset\":\"APPOINTMENTS\"}"))
+        mvc.perform(post("/api/crm/projects/"+id+"/refresh").contentType(MediaType.APPLICATION_JSON).content("{\"dataset\":\"FINANCIAL_CONTEXT\"}"))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CRM_CAPABILITY_UNVERIFIED"));
         verify(service).requireProjectAccess(id); verifyNoInteractions(sync);
     }

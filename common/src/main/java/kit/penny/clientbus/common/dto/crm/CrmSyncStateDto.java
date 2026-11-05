@@ -4,5 +4,14 @@ import kit.penny.clientbus.common.enums.*;
 import java.time.Instant;
 import java.util.*;
 
-public record CrmSyncStateDto(String dataset, String status, Instant lastAttemptAt, Instant lastSuccessAt, String freshness, String completeness, String errorCode, long generation) {}
-
+public record CrmSyncStateDto(String dataset, String status, Instant lastAttemptAt, Instant lastSuccessAt, String freshness,
+                              String completeness, String errorCode, long generation, Map<String, Object> scope,
+                              Map<String, Object> successfulCoverage, Map<String, Object> attemptCoverage) {
+    public CrmSyncStateDto(String dataset, String status, Instant lastAttemptAt, Instant lastSuccessAt, String freshness,
+                           String completeness, String errorCode, long generation) {
+        this(dataset, status, lastAttemptAt, lastSuccessAt, freshness, completeness, errorCode, generation, Map.of(), Map.of(), Map.of());
+    }
+    public CrmSyncStateDto {
+        scope = Map.copyOf(scope); successfulCoverage = Map.copyOf(successfulCoverage); attemptCoverage = Map.copyOf(attemptCoverage);
+    }
+}

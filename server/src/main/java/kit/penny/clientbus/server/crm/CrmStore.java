@@ -75,7 +75,7 @@ public class CrmStore {
         for (String code : List.of("LIST_PROJECTS", "READ_MASTERS", "READ_SERVICES", "READ_CLIENTS", "READ_APPOINTMENTS",
                 "READ_CLIENT_HISTORY", "READ_WORK_INTERVALS", "READ_AVAILABILITY", "READ_FINANCIAL_CONTEXT",
                 "CREATE_APPOINTMENT", "MOVE_APPOINTMENT", "CANCEL_APPOINTMENT")) {
-            boolean implemented = code.equals("READ_MASTERS") || code.equals("READ_SERVICES") || code.equals("READ_CLIENTS");
+            boolean implemented = Set.of("READ_MASTERS","READ_SERVICES","READ_CLIENTS","READ_WORK_INTERVALS","READ_APPOINTMENTS","READ_CLIENT_HISTORY").contains(code);
             String state = !implemented ? "UNVERIFIED" : !row.isEnabled() || row.getConnection().getStatus() == CrmConnectionStatus.DISABLED
                     ? "CONFIGURATION_REQUIRED" : row.getConnection().getStatus() == CrmConnectionStatus.REAUTH_REQUIRED
                     ? "REAUTH_REQUIRED" : "AVAILABLE";
@@ -101,7 +101,7 @@ public class CrmStore {
         };
         int status = switch (error.code()) {
             case RATE_LIMITED -> 429;
-            case TEMPORARY_FAILURE -> 503;
+            case TEMPORARY_FAILURE, CONNECTION_BUSY -> 503;
             case INVALID_RESPONSE, CONTEXT_MISMATCH -> 502;
             default -> 409;
         };
@@ -109,6 +109,7 @@ public class CrmStore {
             case AUTH_REQUIRED -> "DIKIDI требует повторной авторизации. Проверьте данные подключения.";
             case ACCESS_DENIED -> "У подключения нет доступа к выбранным данным DIKIDI.";
             case RATE_LIMITED -> "Лимит обращений к CRM. Повторите позже.";
+            case CONNECTION_BUSY -> "Подключение CRM занято другим запросом. Повторите позже.";
             case TEMPORARY_FAILURE -> "CRM временно недоступна.";
             case INVALID_RESPONSE, CONTEXT_MISMATCH -> "Ответ CRM не прошёл проверку.";
             default -> "Возможность CRM пока недоступна.";

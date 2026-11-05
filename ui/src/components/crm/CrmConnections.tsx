@@ -22,30 +22,49 @@ function CrmConnectionsContent() {
     const [error, setError] = useState<string | null>(null), [actionError, setActionError] = useState<string | null>(null)
     const [search, setSearch] = useState(''), [attention, setAttention] = useState(false)
     const [confirm, setConfirm] = useState<string | null>(null), [created, setCreated] = useState<string | null>(null)
+    const [deleting, setDeleting] = useState<api.CrmConnection | null>(null)
     const [workspaceId, setWorkspaceId] = useState(params.get('returnWorkspace') ?? '')
     const [notice, setNotice] = useState('')
     const mutation = useRef<AbortController>(), nameInput = useRef<HTMLInputElement>(null), focusedAccount = useRef<string | null>(null)
+    const deletedConnections = useRef(new Set<string>())
+    const knownConnections = useRef(new Set<string>()), writeRevision = useRef(0)
+    const drafts = useRef({ editing, created, confirm, deleting }); drafts.current = { editing, created, confirm, deleting }
     function clearForm() { setEditing(null); setLogin(''); setSecret(''); setDisplayName(''); setFormOpen(false) }
     const resource = useUiResource('crm-connections:' + sessionEpoch + ':' + currentEmployee?.id, isSuperAdmin,
         event => event.type === 'crm.invalidated' || isAccessEvent(event),
         async signal => {
+            const revision = writeRevision.current
             const [types, connections, projects] = await Promise.all([api.getCrmTypes(signal), api.getCrmConnections(signal), api.getOrganizationCrmProjects(signal)])
-            return { types, connections, projects }
+            return { types, connections, projects, revision }
         }, value => {
+            // A pre-mutation GET cannot establish that a newly saved account was deleted.
+            if (value.revision !== writeRevision.current) return
+            const available = value.connections.filter(row => !deletedConnections.current.has(row.id))
+            const ids = new Set(available.map(row => row.id)), currentDrafts = drafts.current
+            for (const id of knownConnections.current) if (!ids.has(id)) deletedConnections.current.add(id)
+            knownConnections.current = ids
+            const editorRemoved = !!currentDrafts.editing && !ids.has(currentDrafts.editing.id)
+            const createdRemoved = !!currentDrafts.created && !ids.has(currentDrafts.created)
+            if (editorRemoved) clearForm()
+            if (createdRemoved) setCreated(null)
+            if (currentDrafts.confirm && !ids.has(currentDrafts.confirm)) setConfirm(null)
+            if (currentDrafts.deleting && !ids.has(currentDrafts.deleting.id)) setDeleting(null)
+            if (editorRemoved || createdRemoved) setNotice('Аккаунт CRM удалён.')
             setTypes(value.types)
-            setConnections(previous => value.connections.map(row => {
+            setConnections(previous => available.map(row => {
                 const local = previous.find(item => item.id === row.id)
                 return local && local.version > row.version ? local : row
             }))
             setProjects(value.projects); setError(null)
         },
         error => setError(api.crmError(error)),
-        () => { setTypes([]); setConnections([]); setProjects([]); clearForm(); setBusy(false); setCreated(null); setConfirm(null); setActionError(null); mutation.current?.abort(); mutation.current = undefined }, setLoading)
+        () => { deletedConnections.current.clear(); knownConnections.current.clear(); setTypes([]); setConnections([]); setProjects([]); clearForm(); setBusy(false); setCreated(null); setConfirm(null); setDeleting(null); setActionError(null); mutation.current?.abort(); mutation.current = undefined }, setLoading)
     useEffect(() => {
-        setBusy(false); setActionError(null); clearForm(); setConfirm(null)
+        deletedConnections.current.clear(); knownConnections.current.clear(); setBusy(false); setActionError(null); clearForm(); setConfirm(null); setDeleting(null)
         return () => { mutation.current?.abort(); mutation.current = undefined }
     }, [scope])
     function edit(connection: api.CrmConnection) {
+        setDeleting(null)
         setEditing(connection); setDisplayName(connection.displayName ?? ''); setProvider(connection.provider); setLogin(''); setSecret(''); setActionError(null); setFormOpen(true)
     }
     useEffect(() => { if (formOpen) nameInput.current?.focus() }, [formOpen, editing?.id])
@@ -57,18 +76,25 @@ function CrmConnectionsContent() {
         if (account.status === 'REAUTH_REQUIRED') edit(account)
         else document.getElementById('crm-account-' + id)?.focus()
     }, [params, connections])
-    async function run(action: (signal: AbortSignal) => Promise<api.CrmConnection>, onSuccess?: (value: api.CrmConnection) => void) {
+    async function run(action: (signal: AbortSignal) => Promise<api.CrmConnection | void>, onSuccess?: (value: api.CrmConnection | void) => void,
+        successNotice = 'Изменения сохранены.') {
         if (mutation.current) return
         const current = resource.capture(), controller = new AbortController()
         mutation.current = controller; setBusy(true); setActionError(null); setNotice('')
         try {
             const value = await action(controller.signal)
             if (current() && !controller.signal.aborted) {
-                setConnections(previous => previous.some(row => row.id === value.id) ? previous.map(row => row.id === value.id ? value : row) : [...previous, value])
-                onSuccess?.(value); setConfirm(null); setNotice('Изменения сохранены.'); resource.reload()
+                if (value && deletedConnections.current.has(value.id)) { resource.reload(); return }
+                writeRevision.current++
+                if (value) {
+                    knownConnections.current.add(value.id)
+                    setConnections(previous => previous.some(row => row.id === value.id) ? previous.map(row => row.id === value.id ? value : row) : [...previous, value])
+                }
+                onSuccess?.(value); setConfirm(null); setDeleting(null); setNotice(successNotice); resource.reload()
             }
         } catch (error) { if (current() && !controller.signal.aborted) {
             if (getApiErrorCode(error) === 'CRM_VERSION_CONFLICT') clearForm()
+            setDeleting(null)
             setActionError(api.crmError(error)); resource.reload()
         } }
         finally { if (mutation.current === controller) mutation.current = undefined; if (current() && !controller.signal.aborted) setBusy(false) }
@@ -80,17 +106,18 @@ function CrmConnectionsContent() {
             expectedVersion: snapshot.version, displayName: displayName.trim(), ...(login.trim() ? { login: login.trim() } : {}),
             ...(submittedSecret ? { secret: submittedSecret } : {}),
         }, signal) : api.createCrmConnection({ provider, displayName: displayName.trim(), login: login.trim(), secret: submittedSecret }, signal),
-        value => { clearForm(); if (!snapshot) setCreated(value.id) })
+        value => { clearForm(); if (!snapshot && value) setCreated(value.id) })
     }
     if (!isSuperAdmin) return null
     const needle = search.trim().toLocaleLowerCase()
     const visible = connections.filter(row => (!attention || row.status !== 'CONNECTED') &&
         [api.crmAccountName(row), row.loginHint, row.provider, ...projects.filter(project => project.connectionId === row.id).map(project => project.displayName)].join(' ').toLocaleLowerCase().includes(needle))
     const changed = !editing || displayName.trim() !== (editing.displayName ?? '') || !!login.trim() || !!secret
+    const usedConnections = new Set(projects.map(project => project.connectionId))
     const workspaceOccupied = workspaceId && projects.some(row => row.workspaceId === workspaceId && row.provider === 'DIKIDI')
     return <section className="settings-section crm-panel" aria-label="Подключения CRM">
         <div className="crm-heading"><div><h2>Аккаунты CRM</h2><p>Доступы организации. Проекты подключаются к рабочим пространствам.</p></div>
-            <button type="button" className="ui-button ui-button-primary" disabled={busy} onClick={() => { clearForm(); setFormOpen(true); setCreated(null) }}>Добавить аккаунт</button></div>
+            <button type="button" className="ui-button ui-button-primary" disabled={busy} onClick={() => { clearForm(); setFormOpen(true); setCreated(null); setDeleting(null) }}>Добавить аккаунт</button></div>
         <ReturnToCrm />
         {(actionError || error) && <p role="alert" className="crm-error">{actionError || error}</p>}
         {notice && <p role="status" className="crm-action-status">{notice}</p>}
@@ -128,12 +155,29 @@ function CrmConnectionsContent() {
             <div className="crm-actions">
                 <button type="button" className="ui-button ui-button-secondary" disabled={busy || connection.status === 'DISABLED'} onClick={() => void run(signal => api.verifyCrmConnection(connection.id, signal))}>Проверить</button>
                 <button type="button" className="ui-button ui-button-secondary" disabled={busy || loading} onClick={() => edit(connection)}>{connection.status === 'REAUTH_REQUIRED' ? 'Восстановить доступ' : 'Изменить данные'}</button>
-                <button type="button" className="ui-button ui-button-secondary" disabled={busy || loading} onClick={() => connection.status === 'DISABLED'
-                    ? void run(signal => api.patchCrmConnection(connection.id, { expectedVersion: connection.version, enabled: true }, signal)) : setConfirm(connection.id)}>{connection.status === 'DISABLED' ? 'Включить аккаунт' : 'Отключить аккаунт'}</button>
+                <button type="button" className="ui-button ui-button-secondary" disabled={busy || loading} onClick={() => {
+                    setDeleting(null)
+                    if (connection.status === 'DISABLED') void run(signal => api.patchCrmConnection(connection.id, { expectedVersion: connection.version, enabled: true }, signal))
+                    else setConfirm(connection.id)
+                }}>{connection.status === 'DISABLED' ? 'Включить аккаунт' : 'Отключить аккаунт'}</button>
+                <button type="button" className="ui-button ui-button-danger" disabled={busy || loading || !!error || usedConnections.has(connection.id)}
+                    title={usedConnections.has(connection.id) ? 'Сначала смените аккаунт в настройках привязанных проектов.' : 'Удалить аккаунт CRM'}
+                    onClick={() => { setConfirm(null); setDeleting(connection) }}>Удалить</button>
             </div>
             {confirm === connection.id && <div className="crm-notice"><p>Остановить обновление всех проектов этого аккаунта? Привязки, данные и история сохранятся.</p>
                 <button type="button" className="ui-button ui-button-secondary" disabled={busy} onClick={() => void run(signal => api.patchCrmConnection(connection.id, { expectedVersion: connection.version, enabled: false }, signal))}>Подтвердить отключение</button>{' '}
                 <button type="button" className="ui-button ui-button-secondary" disabled={busy} onClick={() => setConfirm(null)}>Отмена</button></div>}
+            {deleting?.id === connection.id && !usedConnections.has(connection.id) && <div className="crm-notice">
+                <p>Удалить аккаунт «{api.crmAccountName(deleting)}»? Его сохранённые учётные данные будут удалены.</p>
+                <div className="crm-actions"><button type="button" className="ui-button ui-button-danger" disabled={busy || loading || !!error}
+                    onClick={() => void run(signal => api.deleteCrmConnection(deleting.id, deleting.version, signal), () => {
+                        deletedConnections.current.add(deleting.id)
+                        setConnections(previous => previous.filter(row => row.id !== deleting.id))
+                        if (editing?.id === deleting.id) clearForm()
+                        if (created === deleting.id) setCreated(null)
+                    }, 'Аккаунт CRM удалён.')}>Подтвердить удаление</button>
+                    <button type="button" className="ui-button ui-button-secondary" disabled={busy} onClick={() => setDeleting(null)}>Отмена</button></div>
+            </div>}
         </li>)}</ul>
         {error && <button type="button" className="ui-button ui-button-secondary" onClick={resource.reload}>Повторить загрузку</button>}
     </section>

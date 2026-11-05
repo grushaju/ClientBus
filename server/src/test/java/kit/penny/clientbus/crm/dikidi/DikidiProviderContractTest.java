@@ -161,6 +161,36 @@ class DikidiProviderContractTest {
         }
         assertTrue(fake.calls.isEmpty());
     }
+    @Test void localHttpCapacityIsBusyWhileAnUpstream429RemainsRateLimited() throws Exception {
+        var entered=new CountDownLatch(4); var release=new CountDownLatch(1);
+        var workers=Executors.newFixedThreadPool(4);
+        try (var isolated=provider(() -> (method,uri,form,ajax,project,timeout) -> {
+            String body;
+            if (uri.getPath().equals("/ru/")) {
+                entered.countDown();
+                try { assertTrue(release.await(5,TimeUnit.SECONDS)); }
+                catch (InterruptedException error) { Thread.currentThread().interrupt(); throw new AssertionError(error); }
+                body=PUBLIC;
+            } else if (uri.getPath().equals("/ajax/check/auth/")) body=CHECK;
+            else body=AUTH;
+            return new DikidiTransport.Response(200,body);
+        })) {
+            var pending=new ArrayList<Future<?>>();
+            try {
+                for (int index=0;index<4;index++) pending.add(workers.submit(() -> {
+                    try (var access=access(UUID.randomUUID(),1)) { isolated.verifyConnection(access); }
+                }));
+                assertTrue(entered.await(3,TimeUnit.SECONDS));
+                try (var access=access(UUID.randomUUID(),1)) {
+                    assertEquals(CONNECTION_BUSY,assertThrows(CrmFailure.class,() -> isolated.verifyConnection(access)).code());
+                }
+            } finally { release.countDown(); for (var task : pending) task.get(5,TimeUnit.SECONDS); }
+        } finally { workers.shutdownNow(); assertTrue(workers.awaitTermination(5,TimeUnit.SECONDS)); }
+        var limited=new Fake(); limited.responses.add(new DikidiTransport.Response(429,"limited"));
+        try (var isolated=provider(() -> limited); var access=access(UUID.randomUUID(),1)) {
+            assertEquals(RATE_LIMITED,assertThrows(CrmFailure.class,() -> isolated.verifyConnection(access)).code());
+        }
+    }
     @Test void parallelVerificationCoalescesOneLogin() throws Exception {
         CountDownLatch publicEntered = new CountDownLatch(1), release = new CountDownLatch(1);
         AtomicInteger count = new AtomicInteger();
@@ -191,4 +221,3 @@ class DikidiProviderContractTest {
         } finally { release.countDown(); executor.shutdownNow(); }
     }
 }
-

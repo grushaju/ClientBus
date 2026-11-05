@@ -5,7 +5,9 @@
 .sidebar {
     width: 146.667px;
     min-width: 146.667px;
-    min-height: 100vh;
+    min-height: 0;
+    flex-shrink: 0;
+    overflow-y: auto;
 
     display: flex;
     flex-direction: column;

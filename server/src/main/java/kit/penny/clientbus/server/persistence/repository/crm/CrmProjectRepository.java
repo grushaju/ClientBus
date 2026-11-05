@@ -10,6 +10,7 @@ public interface CrmProjectRepository extends JpaRepository<CrmProjectEntity, UU
     Optional<CrmProjectEntity> findByIdAndOrganizationId(UUID id, UUID organizationId);
     Optional<CrmProjectEntity> findByOrganizationIdAndProviderAndExternalId(UUID organizationId, CrmType provider, String externalId);
     boolean existsByWorkspaceId(UUID workspaceId);
+    boolean existsByConnectionId(UUID connectionId);
     boolean existsByWorkspaceIdAndProvider(UUID workspaceId, CrmType provider);
-    List<CrmProjectEntity> findAllByConnectionId(UUID connectionId);
+    List<CrmProjectEntity> findAllByConnectionIdOrderByIdAsc(UUID connectionId);
 }

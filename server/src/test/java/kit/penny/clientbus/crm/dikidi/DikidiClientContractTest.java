@@ -63,4 +63,40 @@ class DikidiClientContractTest {
                 "{\"html\":\"\",\"script\":[{\"html\":\""+ROW+"\"}]}"))
             assertThrows(CrmFailure.class,()->read(response,null));
     }
+    @Test void targetedClientRowsIgnoreTheSeparateCountUpdateWithoutExecutingCallbacks() {
+        var page=read("{\"script\":[{\"append\":\".company-clients tbody\",\"html\":\""+ROW+"\"},"
+                +"{\"container\":\".company-clients .count-items\",\"html\":\"<b>1</b>\"},{\"callback\":\"throw new Error('never execute')\"}]}",null);
+        assertEquals(1,page.items().size()); assertEquals("123",page.items().getFirst().externalId());
+        assertEquals("1",page.nextCursor()); assertEquals(CrmReadResult.Completeness.UNKNOWN,page.completeness());
+    }
+    @Test void explicitEmptyTargetedRowsTerminateEvenWhenTheCountFragmentIsNotEmpty() {
+        var page=read("{\"script\":[{\"container\":\".company-clients .count-items\",\"html\":\"<b>1</b>\"},"
+                +"{\"append\":\".company-clients tbody\",\"html\":\"\\n  \"}]}","1");
+        assertTrue(page.items().isEmpty()); assertNull(page.nextCursor());
+        assertEquals(CrmReadResult.Completeness.UNKNOWN,page.completeness());
+    }
+    @Test void unknownConflictingOrMissingRowTargetsNeverBecomeSuccessfulOrEmptyPages() {
+        for (String scripts:List.of(
+                "{\"append\":\".other-table tbody\",\"html\":\""+ROW+"\"}",
+                "{\"container\":\".company-clients .count-items\",\"html\":\"\"}",
+                "{\"container\":\".other-table .count-items\",\"html\":\"\"}",
+                "{\"append\":\".company-clients tbody\",\"html\":\"\"},{\"html\":\"\"}",
+                "{\"append\":\".company-clients tbody\",\"html\":\"\"},{\"append\":\".company-clients tbody\",\"html\":\"\"}",
+                "{\"append\":\".company-clients tbody\",\"container\":\".company-clients .count-items\",\"html\":\"\"}"))
+            assertEquals(CrmFailure.Code.INVALID_RESPONSE,assertThrows(CrmFailure.class,()->read("{\"script\":["+scripts+"]}",null)).code());
+    }
+    @Test void reviewedNoResultsRowTerminatesTheOffsetListWithoutClaimingCompleteness() {
+        for (String attributes:List.of("class='red text-center' colspan='10'","colspan='10' class='red text-center'")) {
+            var page=read("{\"script\":[{\"append\":\".company-clients tbody\",\"html\":\"<tr><td "+attributes+">Ничего не найдено</td></tr>\"},"
+                    +"{\"container\":\".company-clients .count-items\",\"html\":\"1\"}]}","1");
+            assertTrue(page.items().isEmpty()); assertNull(page.nextCursor());
+            assertEquals(CrmReadResult.Completeness.UNKNOWN,page.completeness());
+        }
+    }
+    @Test void errorsAndOtherEmptyMarkupCannotMasqueradeAsTheReviewedTerminalRow() {
+        for (String html:List.of("<tr><td class='red text-center' colspan='10'>Недостаточно прав</td></tr>",
+                "<tr><td>Ничего не найдено</td></tr>","<div>Ничего не найдено</div>",
+                "<tr><td class='red text-center' colspan='10'>Ничего не найдено</td></tr><div>Unexpected content</div>"))
+            assertEquals(CrmFailure.Code.INVALID_RESPONSE,assertThrows(CrmFailure.class,()->read("{\"html\":\""+html+"\"}","1")).code());
+    }
 }

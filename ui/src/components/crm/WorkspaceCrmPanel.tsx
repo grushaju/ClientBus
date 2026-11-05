@@ -6,6 +6,7 @@ import { affectsWorkspace, isAccessEvent, useUiScope } from '../../api/events/ui
 import { getApiErrorCode } from '../../api/apiClient'
 import * as api from '../../api/crmApi'
 import { crmLocation, ReturnToCrm, recoveryQuery } from './CrmShared'
+import CrmTimeZoneSelect from './CrmTimeZoneSelect'
 import './crm.css'
 
 interface Props { workspaceId: string }
@@ -59,6 +60,10 @@ function WorkspaceCrmContent({ workspaceId }: Props) {
         if (unusable || conflict || occupied) return
         void run(signal => api.checkCrmProject(connectionId, externalId.trim(), signal), setPreview)
     }
+    function saveZone(project: api.CrmProject) {
+        void run(signal => api.patchCrmProject(project.id, { expectedVersion: project.version, zoneId: zone.trim() }, signal),
+            () => { setEditing(null); setNotice('Часовой пояс сохранён.') })
+    }
     if (!isSuperAdmin) return null
     return <section id="crm" ref={panel} tabIndex={-1} className="crm-panel" aria-label="Настройки CRM рабочего пространства">
         <div className="crm-heading"><h2>Проекты CRM</h2><ReturnToCrm /></div>
@@ -70,7 +75,10 @@ function WorkspaceCrmContent({ workspaceId }: Props) {
             <p>{project.provider} · ID {project.externalId} · {connections.find(row => row.id === project.connectionId) ? api.crmAccountName(connections.find(row => row.id === project.connectionId)!) : 'Аккаунт CRM'}
                 <span className="crm-state">{api.crmConnectionLabel(project.connectionState)}</span></p>
             <p>Обновление: {project.enabled ? 'включено' : 'выключено'} · Часовой пояс: {project.zoneId ?? 'не указан'}</p>
-            {!project.zoneId && <p className="crm-notice">Укажите часовой пояс перед работой с записями.</p>}
+            {!project.zoneId && editing?.id !== project.id && <div className="crm-notice crm-time-zone-field">
+                <label>Часовой пояс проекта<CrmTimeZoneSelect label="Часовой пояс проекта" value={zone} disabled={busy || loading} onChange={setZone} /></label>
+                <button type="button" className="ui-button ui-button-secondary" disabled={busy || loading || !zone} onClick={() => saveZone(project)}>Сохранить часовой пояс</button>
+            </div>}
             {['DISABLED', 'REAUTH_REQUIRED'].includes(project.connectionState) && <Link to={`/settings?section=crm&account=${encodeURIComponent(project.connectionId)}&${recoveryQuery(project, params.get('returnTab') ?? 'services')}`}>
                 {project.connectionState === 'DISABLED' ? 'Включить аккаунт' : 'Восстановить доступ к аккаунту'}</Link>}
             <div className="crm-actions">
@@ -82,9 +90,9 @@ function WorkspaceCrmContent({ workspaceId }: Props) {
                 <button type="button" className="ui-button ui-button-secondary" disabled={busy} onClick={() => void run(signal => api.patchCrmProject(project.id, { expectedVersion: project.version, enabled: false }, signal), () => { setConfirm(null); setNotice('Обновление проекта выключено.') })}>Подтвердить выключение</button>{' '}
                 <button type="button" className="ui-button ui-button-secondary" disabled={busy} onClick={() => setConfirm(null)}>Отмена</button></div>}
             {editing?.id === project.id && <div className="crm-form">
-                <label>Часовой пояс<input aria-label="Изменить часовой пояс" value={zone} maxLength={128} disabled={busy} placeholder="Europe/Moscow" onChange={event => setZone(event.target.value)} /></label>
+                <label>Часовой пояс<CrmTimeZoneSelect label="Изменить часовой пояс" value={zone} disabled={busy} onChange={setZone} /></label>
                 <button type="button" className="ui-button ui-button-secondary" disabled={busy || zone.trim() === (editing.zoneId ?? '')}
-                    onClick={() => void run(signal => api.patchCrmProject(editing.id, { expectedVersion: editing.version, zoneId: zone.trim() }, signal), () => { setEditing(null); setNotice('Часовой пояс сохранён.') })}>Сохранить часовой пояс</button>
+                    onClick={() => saveZone(editing)}>Сохранить часовой пояс</button>
                 <label>Аккаунт для доступа<select aria-label="Новое подключение DIKIDI" value={connectionId} disabled={busy} onChange={event => setConnectionId(event.target.value)}>
                     {connections.filter(row => row.provider === project.provider).map(row => <option key={row.id} value={row.id} disabled={['DISABLED', 'REAUTH_REQUIRED'].includes(row.status)}>{api.crmAccountName(row)} · {api.crmConnectionLabel(row.status)}</option>)}</select></label>
                 <button type="button" className="ui-button ui-button-secondary" disabled={busy || unusable || connectionId === editing.connectionId}
@@ -106,7 +114,7 @@ function WorkspaceCrmContent({ workspaceId }: Props) {
                     {conflict && <p role="alert" className="crm-notice">Этот проект уже связан с другим пространством. <Link to={`/workspaces/${encodeURIComponent(conflict.workspaceId)}#crm`}>Открыть его настройки</Link></p>}
                     {!preview && <button className="ui-button ui-button-secondary" disabled={busy || unusable || !externalId.trim() || !!conflict}>Проверить проект</button>}
                     {preview && <div className="crm-form"><div className="crm-notice"><strong>{preview.displayName}</strong><p>ID {preview.externalId} · Валюта: {preview.currency ?? 'не указана'}</p></div>
-                        <label>Часовой пояс проекта<input aria-label="Часовой пояс проекта" value={zone} maxLength={128} placeholder="Например, Europe/Moscow" disabled={busy} onChange={event => setZone(event.target.value)} /></label>
+                        <label>Часовой пояс проекта<CrmTimeZoneSelect label="Часовой пояс проекта" value={zone} disabled={busy} onChange={setZone} /></label>
                         <div className="crm-actions"><button type="button" className="ui-button ui-button-primary" disabled={busy || unusable || !!conflict} onClick={() => void run(signal => api.bindCrmProject(workspaceId,
                             { connectionId, externalProjectId: preview.externalId, ...(zone.trim() ? { zoneId: zone.trim() } : {}) }, signal), () => { setPreview(null); setExternalId(''); setZone(''); setNotice('Проект подключён. Каталог загружается.') })}>Привязать проект</button>
                             <button type="button" className="ui-button ui-button-secondary" disabled={busy} onClick={() => setPreview(null)}>Назад</button></div>
