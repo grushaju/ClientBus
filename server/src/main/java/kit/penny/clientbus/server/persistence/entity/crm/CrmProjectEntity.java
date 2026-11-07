@@ -56,6 +56,10 @@ public class CrmProjectEntity extends CrmRecord {
     @Column(name = "enabled", nullable = false)
     private boolean enabled = true;
 
+    // Keep the original workspace and connection for archived history and its access checks.
+    @Column(name = "archived", nullable = false, columnDefinition = "boolean default false")
+    private boolean archived;
+
     public OrganizationEntity getOrganization() { return organization; }
     public void setOrganization(OrganizationEntity organization) { this.organization = organization; }
     public CrmConnectionEntity getConnection() { return connection; }
@@ -80,5 +84,6 @@ public class CrmProjectEntity extends CrmRecord {
     public void setContextVersion(long contextVersion) { this.contextVersion = contextVersion; }
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
+    public boolean isArchived() { return archived; }
+    public void setArchived(boolean archived) { this.archived = archived; }
 }
-

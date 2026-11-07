@@ -138,7 +138,7 @@ R17 `/ajax/newrecord/to_master_get_datetime/` подтверждён как чт
 | Entity / таблица | Основные поля и связи | Уникальность / основной индекс |
 |---|---|---|
 | CrmConnectionEntity / `crm.connection` | organizationid → dbo.organization, provider, login, secretciphertext, secretkeyid, credentialversion, status, lastcheckedat, lasterrorcode | Индекс organizationid/provider |
-| CrmProjectEntity / `crm.project` | organizationid → dbo.organization, connectionid → crm.connection, workspaceid → dbo.workspace, provider, externalid, displayname, currency, zoneid, zonesource, zonerevision, contextversion, enabled | UNIQUE organizationid/provider/externalid; частичный UNIQUE workspaceid только для DIKIDI |
+| CrmProjectEntity / `crm.project` | organizationid → dbo.organization, connectionid → crm.connection, workspaceid → dbo.workspace, provider, externalid, displayname, currency, zoneid, zonesource, zonerevision, contextversion, enabled, archived | UNIQUE organizationid/provider/externalid; частичный UNIQUE workspaceid только для DIKIDI с archived=false; CHECK not archived or not enabled |
 | CrmMasterEntity / `crm.master` | projectid, externalid, displayname, profile, employeeid → dbo.employee NULL, mappingupdatedat, mappingupdatedby → dbo.employee NULL, mappingpreviousid NULL, mappingreason NULL, lastobservedat | UNIQUE projectid/externalid |
 | CrmClientEntity / `crm.client` | projectid, identitykind, externalid, displayname, contacts, normalizedphone, profile, clientid → dbo.client NULL, mappingupdatedat, mappingupdatedby → dbo.employee NULL, mappingpreviousid NULL, mappingreason NULL, lastobservedat | UNIQUE projectid/identitykind/externalid; индексы clientid и projectid/normalizedphone |
 | CrmServiceEntity / `crm.service` | projectid, externalid, displayname, category, attributes, lastobservedat | UNIQUE projectid/externalid |
@@ -169,12 +169,12 @@ R17 `/ajax/newrecord/to_master_get_datetime/` подтверждён как чт
 
 Новые таблицы создаёт Hibernate `ddl-auto=update`. В 12.3 необходимо обеспечить существование схемы `crm` до DDL таблиц и проверить права на неё. Текущий bootstrap создаёт только dbo/system; общий default_schema, существующие миграции и dbo-таблицы не меняются ради переключения схемы. Проверяются пустая БД и уже работающая БД. Межсхемные FK направлены на существующие Organization/Workspace/Employee/Client; бизнес-таблицы не переносятся.
 
-Ограничение одного проекта DIKIDI на Workspace задаётся частичным уникальным индексом PostgreSQL, включая отключённые проекты:
+Ограничение одного активного проекта DIKIDI на Workspace задаётся частичным уникальным индексом PostgreSQL. Отключённый проект занимает привязку, архивный — нет:
 
 ```sql
 CREATE UNIQUE INDEX IF NOT EXISTS uqprojectdikidiworkspace
     ON crm.project (workspaceid)
-    WHERE provider = 'DIKIDI';
+    WHERE provider = 'DIKIDI' AND archived = false;
 ```
 
 Индекс ограничивает только строки, удовлетворяющие предикату; это соответствует [семантике partial unique index PostgreSQL](https://www.postgresql.org/docs/18/indexes-partial.html). Общий UNIQUE(workspaceid,provider) не вводится. Стандартное JPA UniqueConstraint не подменяет этот DDL. В 12.3 идемпотентная инициализация создаёт/проверяет индекс после создания таблиц Hibernate и до готовности CRM REST/воркеров; проверяются определение индекса и отсутствие конфликтующих данных, а не только его имя. При несоответствии CRM не активируется; автоматического удаления дублей или переноса Workspace нет. Файлы миграций не добавляются.
@@ -272,12 +272,13 @@ NOT_OBSERVED означает необходимость сверки, не CANC
 | GET/PATCH `/api/crm/connections/{connectionId}` | Чтение / явное изменение логина, секрета или enabled с expectedVersion | SUPER_ADMIN |
 | DELETE `/api/crm/connections/{connectionId}?expectedVersion=...` | Удаление аккаунта без привязанных проектов, вместе с сохранёнными credentials; 204 без тела | SUPER_ADMIN своей Organization |
 | POST `/api/crm/connections/{connectionId}/verify` | Проверка авторизации, без команд визитов | SUPER_ADMIN |
-| GET `/api/crm/connections/{connectionId}/projects` | Перечисление только при LIST_PROJECTS | SUPER_ADMIN |
+| GET `/api/crm/connections/{connectionId}/projects?workspaceId=...` | Доступные проекты аккаунта без занятых привязок своей Organization; архив целевого Workspace доступен для восстановления; DIKIDI реализован в 12.4.8 | SUPER_ADMIN своей Organization |
 | POST `/api/crm/connections/{connectionId}/project-checks` | externalProjectId → проверенные метаданные доступного проекта | SUPER_ADMIN |
 | GET `/api/crm/workspaces/{workspaceId}/projects` | Список привязок с необязательным фильтром provider; для DIKIDI 0 или 1 элемент | Доступ к Workspace |
-| POST `/api/crm/workspaces/{workspaceId}/projects` | connectionId, externalProjectId, optional zoneId → привязка 201 | SUPER_ADMIN |
+| POST `/api/crm/workspaces/{workspaceId}/projects` | connectionId, externalProjectId, optional zoneId; для явного восстановления архива — expectedArchiveVersion; привязка/восстановление 201 | SUPER_ADMIN |
 | PATCH `/api/crm/projects/{projectId}` | expectedVersion, enabled, явный zoneId override; внешний ID/Workspace не подменяются | SUPER_ADMIN |
 | PUT `/api/crm/projects/{projectId}/connection` | connectionId, expectedVersion → явная смена доступа после проверки того же внешнего проекта | SUPER_ADMIN |
+| POST `/api/crm/projects/{projectId}/detach?expectedVersion=...` | Архивирование без удаления истории/сопоставлений и освобождение активной привязки; CrmProjectDto с archived=true | SUPER_ADMIN своей Organization |
 
 Для подключения отсутствие secret в PATCH сохраняет секрет; явный новый непустой secret меняет его и credentialversion. Пустой secret отклоняется. Удаление секрета не совмещается неявно с отключением. При смене login требуется явно указать секрет для нового доступа. PATCH не изменяет provider/Organization.
 

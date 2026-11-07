@@ -10,7 +10,7 @@ export interface CrmConnection {
 export interface CrmProject {
     id: string; connectionId: string; workspaceId: string; provider: CrmType; externalId: string
     displayName: string; currency: string | null; zoneId: string | null; zoneSource: string | null
-    zoneRevision: number; contextVersion: number; enabled: boolean; connectionState: CrmConnection['status']
+    zoneRevision: number; contextVersion: number; enabled: boolean; archived: boolean; connectionState: CrmConnection['status']
     version: number; capabilities: { code: string; availability: string; reasonCode: string | null }[]
 }
 export interface CrmProjectCheck { externalId: string; displayName: string; currency: string | null; zoneId: string | null }
@@ -54,15 +54,19 @@ export const deleteCrmConnection = async (id: string, expectedVersion: number, s
 }
 export const checkCrmProject = (id: string, externalProjectId: string, signal?: AbortSignal) =>
     json<CrmProjectCheck>(`/api/crm/connections/${path(id)}/project-checks`, body('POST', { externalProjectId }, signal))
+export const getAvailableCrmProjects = (id: string, workspaceId: string, signal?: AbortSignal) =>
+    json<CrmProjectCheck[]>(`/api/crm/connections/${path(id)}/projects?workspaceId=${path(workspaceId)}`, { signal })
 export const getCrmProjects = (workspaceId: string, signal?: AbortSignal) =>
     json<CrmProject[]>(`/api/crm/workspaces/${path(workspaceId)}/projects`, { signal })
 export const getOrganizationCrmProjects = (signal?: AbortSignal) => json<CrmProject[]>('/api/crm/projects', { signal })
-export const bindCrmProject = (workspaceId: string, value: { connectionId: string; externalProjectId: string; zoneId?: string }, signal?: AbortSignal) =>
+export const bindCrmProject = (workspaceId: string, value: { connectionId: string; externalProjectId: string; zoneId?: string; expectedArchiveVersion?: number }, signal?: AbortSignal) =>
     json<CrmProject>(`/api/crm/workspaces/${path(workspaceId)}/projects`, body('POST', value, signal))
 export const patchCrmProject = (id: string, value: { expectedVersion: number; enabled?: boolean; zoneId?: string }, signal?: AbortSignal) =>
     json<CrmProject>(`/api/crm/projects/${path(id)}`, body('PATCH', value, signal))
 export const changeCrmProjectConnection = (id: string, connectionId: string, expectedVersion: number, signal?: AbortSignal) =>
     json<CrmProject>(`/api/crm/projects/${path(id)}/connection`, body('PUT', { connectionId, expectedVersion }, signal))
+export const detachCrmProject = (id: string, expectedVersion: number, signal?: AbortSignal) =>
+    json<CrmProject>(`/api/crm/projects/${path(id)}/detach?expectedVersion=${expectedVersion}`, { method: 'POST', signal })
 export const getCrmMasters = (id: string, signal?: AbortSignal, cursor?: string | null,
     query: { q?: string; unlinked?: boolean; includeNotObserved?: boolean } = {}) => {
     const params = new URLSearchParams()

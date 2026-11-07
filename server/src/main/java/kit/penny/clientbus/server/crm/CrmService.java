@@ -114,7 +114,7 @@ public class CrmService {
             if (!organization.equals(store.guard.admin())) throw CrmStore.notFound();
             version(row, expectedVersion);
             if (store.projects.existsByConnectionId(id))
-                throw new CrmException(409, "CRM_CONNECTION_IN_USE", "К аккаунту привязаны проекты. Сначала смените аккаунт в настройках этих проектов.");
+                throw new CrmException(409, "CRM_CONNECTION_IN_USE", "К аккаунту привязаны проекты или их архивы. Сначала смените аккаунт в настройках проектов; архивный проект для этого нужно восстановить.");
             store.connections.delete(row); store.em.flush();
             registry.invalidate(id);
             events.organization(organization, "crm.invalidated");
@@ -173,6 +173,32 @@ public class CrmService {
         var info=result.value();
         return new CrmProjectCheckDto(info.externalId(), info.displayName(), info.currency(), info.zoneId());
     }
+    public List<CrmProjectCheckDto> availableProjects(UUID connectionId,UUID workspaceId) {
+        var credentials=adminCredentials(connectionId);
+        tx.executeWithoutResult(status -> store.guard.workspace(workspaceId,false));
+        var read=read(credentials,access -> registry.require(credentials.provider).listProjects(access));
+        var result=tx.execute(status -> {
+            if (!credentials.organizationId.equals(store.guard.admin())) throw CrmStore.notFound();
+            store.guard.workspace(workspaceId,false); store.requireCredentials(credentials);
+            var bindings=store.projects.findAllByOrganizationIdOrderByCreatedAtAsc(credentials.organizationId).stream()
+                    .filter(row -> row.getProvider()==credentials.provider).toList();
+            if (credentials.provider==CrmType.DIKIDI && bindings.stream().anyMatch(row -> row.getWorkspace().getId().equals(workspaceId) && !row.isArchived())) return List.<CrmProjectCheckDto>of();
+            if (read.value()==null || read.value().size()>1000) throw new CrmException(502,"CRM_INVALID_RESPONSE","Некорректный список проектов CRM.");
+            var seen=new HashSet<String>(); var available=new ArrayList<CrmProjectCheckDto>();
+            for (var project:read.value()) {
+                if (project==null || project.externalId()==null || !project.externalId().matches("[1-9][0-9]{0,19}")
+                        || project.displayName()==null || project.displayName().isBlank() || project.displayName().length()>4096 || !seen.add(project.externalId()))
+                    throw new CrmException(502,"CRM_INVALID_RESPONSE","Некорректный список проектов CRM.");
+                if (bindings.stream().anyMatch(row -> row.getExternalId().equals(project.externalId())
+                        && !(row.isArchived() && row.getWorkspace().getId().equals(workspaceId)))) continue;
+                available.add(new CrmProjectCheckDto(project.externalId(),project.displayName(),project.currency(),project.zoneId()));
+            }
+            available.sort(Comparator.comparing(CrmProjectCheckDto::displayName,String.CASE_INSENSITIVE_ORDER).thenComparing(CrmProjectCheckDto::externalId));
+            return List.copyOf(available);
+        });
+        health(credentials,read.health(),CrmConnectionStatus.CONNECTED,null);
+        return result;
+    }
     private Read<CrmProjectInfo> inspect(CrmCredentials credentials, String externalId) {
         return read(credentials, access -> {
             var info = registry.require(credentials.provider).inspectProject(access, externalId);
@@ -215,12 +241,35 @@ public class CrmService {
                 var existing = store.projects.findByOrganizationIdAndProviderAndExternalId(organization, credentials.provider, externalId);
                 if (existing.isPresent()) {
                     var row = existing.get();
-                    if (!workspaceId.equals(row.getWorkspace().getId()) || !credentials.id.equals(row.getConnection().getId()))
+                    store.em.refresh(row, LockModeType.PESSIMISTIC_WRITE);
+                    if (!workspaceId.equals(row.getWorkspace().getId()) || !row.isArchived() && !credentials.id.equals(row.getConnection().getId()))
                         throw CrmException.conflict("CRM_PROJECT_BINDING_CONFLICT");
+                    if (row.isArchived()) {
+                        // An old bind request must not silently undo a later detachment.
+                        if (request.expectedArchiveVersion() == null) throw CrmException.conflict("CRM_PROJECT_ARCHIVED");
+                        version(row, request.expectedArchiveVersion());
+                        if (store.projects.existsByWorkspaceIdAndProviderAndArchivedFalse(workspaceId, credentials.provider))
+                            throw CrmException.conflict("CRM_PROJECT_BINDING_CONFLICT");
+                        if (!organization.equals(store.guard.admin())) throw CrmStore.notFound();
+                        store.guard.workspace(workspaceId, false);
+                        row.setArchived(false); row.setEnabled(true);
+                        row.setConnection(store.connection(credentials.id, organization));
+                        row.setContextVersion(row.getContextVersion()+1);
+                        if (zone != null && !zone.equals(row.getZoneId())) {
+                            row.setZoneId(zone); row.setZoneSource("MANUAL"); row.setZoneRevision(row.getZoneRevision()+1);
+                        }
+                        row.setDisplayName(info.displayName()); row.setCurrency(info.currency());
+                        sync.invalidateProject(row.getId()); store.em.flush(); events.workspace(workspace, "crm.invalidated");
+                        return new Binding(CrmStore.dto(row), true);
+                    }
+                    if (request.expectedArchiveVersion() != null) throw CrmException.conflict("CRM_VERSION_CONFLICT");
                     return new Binding(CrmStore.dto(row), false);
                 }
-                if (credentials.provider == CrmType.DIKIDI && store.projects.existsByWorkspaceIdAndProvider(workspaceId, CrmType.DIKIDI))
+                if (request.expectedArchiveVersion() != null) throw CrmException.conflict("CRM_VERSION_CONFLICT");
+                if (credentials.provider == CrmType.DIKIDI && store.projects.existsByWorkspaceIdAndProviderAndArchivedFalse(workspaceId, CrmType.DIKIDI))
                     throw CrmException.conflict("CRM_PROJECT_BINDING_CONFLICT");
+                if (!organization.equals(store.guard.admin())) throw CrmStore.notFound();
+                store.guard.workspace(workspaceId, false);
                 var row = new CrmProjectEntity();
                 row.setOrganization(workspace.getOrganization()); row.setWorkspace(workspace);
                 row.setConnection(store.connection(credentials.id, organization)); row.setProvider(credentials.provider);
@@ -239,10 +288,34 @@ public class CrmService {
         try { sync.refresh(projectId); }
         catch (CrmException ignored) { /* Binding is committed; refresh failures remain independently retryable. */ }
     }
+    public CrmProjectDto detachProject(UUID projectId, long expectedVersion) {
+        store.storage.requireReady();
+        return tx.execute(status -> {
+            UUID organization = store.guard.admin();
+            var project = store.project(projectId, organization);
+            UUID workspaceId = project.getWorkspace().getId(), connectionId = project.getConnection().getId();
+            // Binding takes workspace, connection, then project; workers take connection, then project.
+            store.em.find(WorkspaceEntity.class, workspaceId, LockModeType.PESSIMISTIC_WRITE);
+            var connection = store.connection(connectionId, organization);
+            store.em.refresh(connection, LockModeType.PESSIMISTIC_WRITE);
+            store.em.refresh(project, LockModeType.PESSIMISTIC_WRITE);
+            if (!organization.equals(store.guard.admin())) throw CrmStore.notFound();
+            store.guard.workspace(workspaceId, false);
+            version(project, expectedVersion);
+            CrmStore.requireMutable(project);
+            project.setEnabled(false); project.setArchived(true);
+            project.setContextVersion(project.getContextVersion()+1);
+            sync.invalidateProject(projectId);
+            store.em.flush(); events.workspace(project.getWorkspace(), "crm.invalidated");
+            return CrmStore.dto(project);
+        });
+    }
     public CrmProjectDto updateProject(UUID projectId, UpdateCrmProjectRequest request) {
         store.storage.requireReady();
         return tx.execute(status -> {
             var project = store.project(projectId, store.guard.admin()); store.em.refresh(project, LockModeType.PESSIMISTIC_WRITE);
+            if (!project.getOrganization().getId().equals(store.guard.admin())) throw CrmStore.notFound();
+            store.guard.workspace(project.getWorkspace().getId(), false); CrmStore.requireMutable(project);
             version(project, request.expectedVersion());
             boolean changed = false;
             if (request.enabled() != null && request.enabled() != project.isEnabled()) { project.setEnabled(request.enabled()); changed = true; }
@@ -264,6 +337,7 @@ public class CrmService {
         store.storage.requireReady();
         CrmContext context = tx.execute(status -> {
             var project = store.project(projectId, store.guard.admin());
+            CrmStore.requireMutable(project);
             version(project, request.expectedVersion()); return store.context(project);
         });
         CrmCredentials credentials = adminCredentials(request.connectionId());
@@ -273,6 +347,8 @@ public class CrmService {
             store.guard.admin(); store.requireCredentials(credentials);
             var project = store.project(projectId, credentials.organizationId);
             store.em.refresh(project, LockModeType.PESSIMISTIC_WRITE);
+            if (!credentials.organizationId.equals(store.guard.admin())) throw CrmStore.notFound();
+            store.guard.workspace(project.getWorkspace().getId(), false); CrmStore.requireMutable(project);
             version(project, request.expectedVersion());
             if (!context.equals(store.context(project))) throw CrmException.conflict("CRM_CONTEXT_CHANGED");
             if (!project.getConnection().getId().equals(credentials.id)) {
@@ -347,6 +423,7 @@ public class CrmService {
                 if (employee == null || !organization.equals(employee.getOrganization().getId())) throw CrmStore.notFound();
             }
             store.em.refresh(project, LockModeType.PESSIMISTIC_WRITE);
+            CrmStore.requireMutable(project);
             store.guard.workspace(project.getWorkspace().getId(), true);
             store.em.refresh(original, LockModeType.PESSIMISTIC_WRITE);
             version(original, expectedVersion);

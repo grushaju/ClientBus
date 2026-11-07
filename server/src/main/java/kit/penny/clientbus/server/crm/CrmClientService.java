@@ -120,6 +120,7 @@ public class CrmClientService {
     private void lock(CrmClientEntity row, long expectedVersion) {
         if (expectedVersion<0) throw CrmException.invalid();
         store.em.refresh(row.getProject(),LockModeType.PESSIMISTIC_WRITE);
+        CrmStore.requireMutable(row.getProject());
         store.em.refresh(row,LockModeType.PESSIMISTIC_WRITE);
         store.guard.workspace(row.getProject().getWorkspace().getId(),false);
         if (row.getVersion()!=expectedVersion) throw CrmException.conflict("CRM_VERSION_CONFLICT");

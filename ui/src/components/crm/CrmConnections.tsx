@@ -114,7 +114,7 @@ function CrmConnectionsContent() {
         [api.crmAccountName(row), row.loginHint, row.provider, ...projects.filter(project => project.connectionId === row.id).map(project => project.displayName)].join(' ').toLocaleLowerCase().includes(needle))
     const changed = !editing || displayName.trim() !== (editing.displayName ?? '') || !!login.trim() || !!secret
     const usedConnections = new Set(projects.map(project => project.connectionId))
-    const workspaceOccupied = workspaceId && projects.some(row => row.workspaceId === workspaceId && row.provider === 'DIKIDI')
+    const workspaceOccupied = workspaceId && projects.some(row => row.workspaceId === workspaceId && row.provider === 'DIKIDI' && !row.archived)
     return <section className="settings-section crm-panel" aria-label="Подключения CRM">
         <div className="crm-heading"><div><h2>Аккаунты CRM</h2><p>Доступы организации. Проекты подключаются к рабочим пространствам.</p></div>
             <button type="button" className="ui-button ui-button-primary" disabled={busy} onClick={() => { clearForm(); setFormOpen(true); setCreated(null); setDeleting(null) }}>Добавить аккаунт</button></div>
@@ -150,7 +150,7 @@ function CrmConnectionsContent() {
             <div><strong>{api.crmAccountName(connection)}</strong><span className="crm-state">{api.crmConnectionLabel(connection.status)}</span></div>
             <small>{connection.provider} · {connection.loginHint}{connection.lastCheckedAt && ' · Проверено: ' + new Date(connection.lastCheckedAt).toLocaleString('ru-RU')}</small>
             <ul className="crm-project-links">{projects.filter(row => row.connectionId === connection.id).map(row => <li key={row.id}>
-                <Link to={`/workspaces/${encodeURIComponent(row.workspaceId)}#crm`}>{row.displayName} · {workspaces.find(workspace => workspace.id === row.workspaceId)?.name ?? 'Рабочее пространство'}{!row.enabled ? ' · обновление выключено' : ''}</Link></li>)}</ul>
+                <Link to={`/workspaces/${encodeURIComponent(row.workspaceId)}#crm`}>{row.displayName} · {workspaces.find(workspace => workspace.id === row.workspaceId)?.name ?? 'Рабочее пространство'}{row.archived ? ' · архив' : !row.enabled ? ' · обновление выключено' : ''}</Link></li>)}</ul>
             {!projects.some(row => row.connectionId === connection.id) && <span>Проекты пока не подключены.</span>}
             <div className="crm-actions">
                 <button type="button" className="ui-button ui-button-secondary" disabled={busy || connection.status === 'DISABLED'} onClick={() => void run(signal => api.verifyCrmConnection(connection.id, signal))}>Проверить</button>
@@ -161,7 +161,7 @@ function CrmConnectionsContent() {
                     else setConfirm(connection.id)
                 }}>{connection.status === 'DISABLED' ? 'Включить аккаунт' : 'Отключить аккаунт'}</button>
                 <button type="button" className="ui-button ui-button-danger" disabled={busy || loading || !!error || usedConnections.has(connection.id)}
-                    title={usedConnections.has(connection.id) ? 'Сначала смените аккаунт в настройках привязанных проектов.' : 'Удалить аккаунт CRM'}
+                    title={usedConnections.has(connection.id) ? 'Сначала смените аккаунт в настройках привязанных проектов. Для архивного проекта сначала восстановите его.' : 'Удалить аккаунт CRM'}
                     onClick={() => { setConfirm(null); setDeleting(connection) }}>Удалить</button>
             </div>
             {confirm === connection.id && <div className="crm-notice"><p>Остановить обновление всех проектов этого аккаунта? Привязки, данные и история сохранятся.</p>

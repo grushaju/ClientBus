@@ -32,6 +32,28 @@ class CrmHttpContractTest {
         mvc = MockMvcBuilders.standaloneSetup(new CrmController(service,sync,clientSync,schedules,appointments), new CrmCatalogController(catalog), new CrmClientController(clients),new CrmScheduleController(scheduleReader),new CrmAppointmentController(appointmentReader))
                 .setControllerAdvice(new CrmRequestErrors(), new GlobalExceptionHandler()).build();
     }
+    @Test void detachingAProjectRequiresAValidVersionAndIsASeparateOperationFromDisabling() throws Exception {
+        UUID id=UUID.randomUUID(); String route="/api/crm/projects/"+id+"/detach";
+        mvc.perform(post(route)).andExpect(status().isBadRequest());
+        for (String version : List.of("-1","invalid")) mvc.perform(post(route).param("expectedVersion",version)).andExpect(status().isBadRequest());
+        verifyNoInteractions(service);
+        mvc.perform(post(route).param("expectedVersion","0")).andExpect(status().isOk());
+        verify(service).detachProject(id,0); verifyNoMoreInteractions(service);
+    }
+    @Test void restorationRejectsANegativeArchiveVersionBeforeCallingTheService() throws Exception {
+        mvc.perform(post("/api/crm/workspaces/"+UUID.randomUUID()+"/projects").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"connectionId\":\""+UUID.randomUUID()+"\",\"externalProjectId\":\"100\",\"expectedArchiveVersion\":-1}"))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(service);
+    }
+    @Test void projectDiscoveryRequiresATargetWorkspaceAndCallsOnlyTheReadService() throws Exception {
+        UUID connection=UUID.randomUUID(), workspace=UUID.randomUUID(); String route="/api/crm/connections/"+connection+"/projects";
+        mvc.perform(get(route)).andExpect(status().isBadRequest());
+        mvc.perform(get(route).param("workspaceId","invalid")).andExpect(status().isBadRequest()); verifyNoInteractions(service);
+        when(service.availableProjects(connection,workspace)).thenReturn(List.of(new CrmProjectCheckDto("100","Salon",null,null)));
+        mvc.perform(get(route).param("workspaceId",workspace.toString())).andExpect(status().isOk()).andExpect(jsonPath("$[0].displayName").value("Salon"));
+        verify(service).availableProjects(connection,workspace); verifyNoMoreInteractions(service);
+    }
     @Test void deletingAConnectionRequiresAValidVersionAndReturnsNoContentOrAnInUseConflict() throws Exception {
         UUID id=UUID.randomUUID(); String route="/api/crm/connections/"+id;
         mvc.perform(delete(route)).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));

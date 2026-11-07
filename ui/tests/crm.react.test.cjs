@@ -6,7 +6,7 @@ const load = require('./loadInboxModule.cjs')
 const uiScope = load('../../api/events/uiScope.ts')
 const connection = { id: 'connection', provider: 'DIKIDI', displayName: 'Main account', loginHint: '••••0000', credentialConfigured: true, status: 'CONNECTED', version: 4 }
 const project = { id: 'project', workspaceId: 'workspace', connectionId: 'connection', provider: 'DIKIDI', externalId: '100', displayName: 'Test project',
-    zoneId: null, enabled: true, connectionState: 'CONNECTED', version: 3, capabilities: [{ code: 'READ_SERVICES', availability: 'AVAILABLE' }] }
+    zoneId: null, enabled: true, archived: false, contextVersion: 1, connectionState: 'CONNECTED', version: 3, capabilities: [{ code: 'READ_SERVICES', availability: 'AVAILABLE' }] }
 const master = { id: 'master', projectId: 'project', externalId: 'm1', displayName: 'Test master', employeeId: null, version: 7 }
 const state = { dataset: 'CATALOG', status: 'SUCCEEDED', freshness: 'CURRENT', lastSuccessAt: '2026-10-28T10:00:00Z', completeness: 'COMPLETE', generation: 1 }
 const employee = { id: 'employee', organizationId: 'organization', firstName: 'Test', lastName: 'Employee', role: 'EMPLOYEE' }
@@ -22,7 +22,7 @@ async function setup(t, kind, overrides = {}, props = {}, admin = true, scope = 
     let auth = { currentEmployee: { ...employee, id: 'actor', role: admin ? 'SUPER_ADMIN' : 'EMPLOYEE' }, isSuperAdmin: admin, sessionEpoch: 1, employeeWorkspaces: [] }
     const calls = [], invalidations = new Map(), params = new URLSearchParams()
     const api = {
-        getCrmTypes: async () => ['DIKIDI'], getCrmConnections: async () => [connection], getOrganizationCrmProjects: async () => [project],
+        getCrmTypes: async () => ['DIKIDI'], getCrmConnections: async () => [connection], getOrganizationCrmProjects: async signal => api.getCrmProjects('workspace', signal),
         createCrmConnection: async (...args) => { calls.push(['create', ...args]); return connection },
         patchCrmConnection: async (...args) => { calls.push(['patch', ...args]); return { ...connection, ...args[1], version: 5 } },
         deleteCrmConnection: async (...args) => { calls.push(['delete', ...args]) },
@@ -30,9 +30,11 @@ async function setup(t, kind, overrides = {}, props = {}, admin = true, scope = 
         getCrmProjects: async () => [project], getCrmMasters: async () => page(), getCrmServices: async () => page([]),
         getCrmEmployeeCandidates: async () => { calls.push(['candidates']); return [candidate] },
         checkCrmProject: async (_, id) => ({ externalId: id, displayName: 'Verified project', currency: 'RUB', zoneId: null }),
+        getAvailableCrmProjects: async () => ['100','200','300'].map(id => ({ externalId: id, displayName: 'Available project ' + id, currency: null, zoneId: null })),
         bindCrmProject: async (...args) => { calls.push(['bind', ...args]); return project },
         patchCrmProject: async (...args) => { calls.push(['patchProject', ...args]); return project },
         changeCrmProjectConnection: async (...args) => { calls.push(['rebind', ...args]); return project },
+        detachCrmProject: async (...args) => { calls.push(['detach', ...args]); return { ...project, archived: true, enabled: false, contextVersion: 2, version: 4 } },
         linkCrmMaster: async (row, id) => { calls.push(['link', row, id]); return { ...row, employeeId: id, version: row.version + 1 } },
         refreshCrmCatalog: async (...args) => { calls.push(['refresh', ...args]); return state },
         crmAccountName: row => row.displayName || row.provider + ' · ' + row.loginHint,
@@ -262,21 +264,315 @@ test('a delayed save response cannot restore an externally deleted account', asy
     assert.doesNotMatch(text(ui), /Изменения сохранены/)
 })
 
+test('detachment requires confirmation; cancellation preserves the binding and success keeps the archive despite stale GETs', async t => {
+    const { ui, calls } = await setup(t, 'WorkspaceCrmPanel')
+    await act(async () => button(ui, 'Отвязать проект').props.onClick())
+    assert.match(text(ui), /Каталог, клиенты CRM, графики, визиты, финансы и сопоставления останутся в архиве/)
+    assert.equal(calls.length, 0)
+    await act(async () => button(ui, 'Отмена').props.onClick())
+    assert.equal(button(ui, 'Подтвердить отвязку'), undefined); assert.equal(calls.length, 0)
+    await act(async () => button(ui, 'Отвязать проект').props.onClick())
+    await act(async () => button(ui, 'Подтвердить отвязку').props.onClick())
+    assert.deepEqual(calls[0].slice(0,3), ['detach', 'project', 3])
+    assert.match(text(ui), /В архиве/); assert.match(text(ui), /Test project/)
+    assert.equal(button(ui, 'Настроить проект'), undefined); assert.equal(button(ui, 'Включить обновление'), undefined)
+    assert.ok(button(ui, 'Проверить проект')); assert.equal(ui.root.findAllByType('form').length, 1)
+})
+test('a project detached in another session closes the editor and confirmation and frees the slot', async t => {
+    let rows = [project]
+    const fixture = await setup(t, 'WorkspaceCrmPanel', { getCrmProjects: async () => rows, getOrganizationCrmProjects: async () => rows })
+    await act(async () => button(fixture.ui, 'Настроить проект').props.onClick())
+    rows = [{ ...project, archived: true, enabled: false, contextVersion: 2, version: 4 }]
+    await fixture.refresh('workspace-crm-settings:')
+    assert.equal(button(fixture.ui, 'Закрыть настройки'), undefined)
+    assert.equal(button(fixture.ui, 'Отвязать проект'), undefined)
+    assert.ok(button(fixture.ui, 'Проверить проект'))
+})
+test('a version conflict cancels project detachment without changing the current binding', async t => {
+    const { ui } = await setup(t, 'WorkspaceCrmPanel', { detachCrmProject: async () => { throw Object.assign(Error('Version conflict'), { code: 'CRM_VERSION_CONFLICT' }) } })
+    await act(async () => button(ui, 'Отвязать проект').props.onClick())
+    await act(async () => button(ui, 'Подтвердить отвязку').props.onClick())
+    assert.match(text(ui), /Version conflict/); assert.equal(button(ui, 'Подтвердить отвязку'), undefined)
+    assert.ok(button(ui, 'Настроить проект')); assert.equal(ui.root.findAllByType('form').length, 0)
+})
+test('late detach response is discarded after access revocation', async t => {
+    const pending = deferred(); let signal
+    const fixture = await setup(t, 'WorkspaceCrmPanel', { detachCrmProject: (_, __, value) => { signal = value; return pending.promise } })
+    await act(async () => button(fixture.ui, 'Отвязать проект').props.onClick())
+    await act(async () => button(fixture.ui, 'Подтвердить отвязку').props.onClick())
+    await fixture.revoke('workspace-crm-settings:')
+    assert.equal(signal.aborted, true)
+    await act(async () => pending.resolve({ ...project, archived: true, enabled: false, version: 4 }))
+    assert.doesNotMatch(text(fixture.ui), /Test project|Проект отвязан/)
+})
+test('restoring an archive requires preview and sends its version with the selected account', async t => {
+    const archive = { ...project, archived: true, enabled: false, contextVersion: 2, version: 4 }
+    const { ui, calls } = await setup(t, 'WorkspaceCrmPanel', { getCrmProjects: async () => [archive], getOrganizationCrmProjects: async () => [archive],
+        bindCrmProject: async (...args) => { calls.push(['restore', ...args]); return { ...project, contextVersion: 3, version: 5 } } })
+    await change(ui, 'Подключение DIKIDI', 'connection'); await change(ui, 'Проект DIKIDI', '100')
+    await act(async () => ui.root.findByType('form').props.onSubmit({ preventDefault() {} }))
+    assert.match(text(ui), /восстановлен из архива с прежней историей/)
+    await act(async () => button(ui, 'Восстановить проект').props.onClick())
+    assert.deepEqual(calls[0].slice(0,3), ['restore', 'workspace', { connectionId: 'connection', externalProjectId: '100', expectedArchiveVersion: 4 }])
+    assert.ok(button(ui, 'Отвязать проект')); assert.equal(ui.root.findAllByType('form').length, 0)
+})
+test('the detach API sends version and cancellation without invoking external CRM writes', async () => {
+    const calls = [], controller = new AbortController()
+    const api = load('../../api/crmApi.ts', { './apiClient': { apiFetch: async (...args) => { calls.push(args); return { json: async () => ({ archived: true }) } } } })
+    await api.detachCrmProject('project/id', 7, controller.signal)
+    assert.equal(calls[0][0], '/api/crm/projects/project%2Fid/detach?expectedVersion=7')
+    assert.equal(calls[0][1].method, 'POST'); assert.equal(calls[0][1].signal, controller.signal)
+})
+test('a restoration preview keeps its reviewed archive version after a newer GET', async t => {
+    let rows = [{ ...project, archived: true, enabled: false, contextVersion: 2, version: 4 }]
+    const fixture = await setup(t, 'WorkspaceCrmPanel', { getCrmProjects: async () => rows, getOrganizationCrmProjects: async () => rows })
+    await change(fixture.ui, 'Подключение DIKIDI', 'connection'); await change(fixture.ui, 'Проект DIKIDI', '100')
+    await act(async () => fixture.ui.root.findByType('form').props.onSubmit({ preventDefault() {} }))
+    rows = [{ ...rows[0], version: 6, contextVersion: 4 }]
+    await fixture.refresh('workspace-crm-settings:')
+    await act(async () => button(fixture.ui, 'Восстановить проект').props.onClick())
+    assert.equal(fixture.calls[0][2].expectedArchiveVersion, 4)
+})
+test('archived employee mappings are visible but cannot be edited even through an old callback', async t => {
+    const { ui, calls } = await setup(t, 'CrmMasters', { getCrmMasters: async () => page([{ ...master, employeeId: 'employee' }]) },
+        { project: { ...project, archived: true, enabled: false }, mapping: true })
+    const picker = ui.root.findByProps({ 'aria-label': 'Сотрудник: Test master' })
+    assert.equal(picker.props.disabled, true); assert.equal(picker.props.value, 'employee')
+    await act(async () => picker.props.onChange({ target: { value: '' } }))
+    assert.equal(calls.filter(call => call[0] === 'link').length, 0)
+    assert.match(text(ui), /архив/); assert.doesNotMatch(text(ui), /требуют обновления/)
+})
+test('a successful detachment survives empty old lists and later observed restoration cannot regress', async t => {
+    let rows = [project]
+    const fixture = await setup(t, 'WorkspaceCrmPanel', { getCrmProjects: async () => rows, getOrganizationCrmProjects: async () => rows })
+    await act(async () => button(fixture.ui, 'Отвязать проект').props.onClick())
+    rows = []
+    await act(async () => button(fixture.ui, 'Подтвердить отвязку').props.onClick())
+    assert.match(text(fixture.ui), /В архиве/)
+    rows = [{ ...project, version: 5, contextVersion: 3 }]
+    await fixture.refresh('workspace-crm-settings:')
+    assert.ok(button(fixture.ui, 'Отвязать проект'))
+    rows = [{ ...project, archived: true, enabled: false, version: 4, contextVersion: 2 }]
+    await fixture.refresh('workspace-crm-settings:')
+    assert.ok(button(fixture.ui, 'Отвязать проект')); assert.doesNotMatch(text(fixture.ui), /В архиве/)
+})
+test('a late detach reply cannot replace a newer restoration even when the following GET fails', async t => {
+    const pending = deferred()
+    let rows = [project], failReload = false
+    const fixture = await setup(t, 'WorkspaceCrmPanel', {
+        getCrmProjects: async () => { if (failReload) throw Error('Unavailable'); return rows },
+        getOrganizationCrmProjects: async () => rows, detachCrmProject: () => pending.promise,
+    })
+    await act(async () => button(fixture.ui, 'Отвязать проект').props.onClick())
+    await act(async () => button(fixture.ui, 'Подтвердить отвязку').props.onClick())
+    rows = [{ ...project, archived: false, enabled: true, version: 5, contextVersion: 3 }]
+    await fixture.refresh('workspace-crm-settings:')
+    assert.ok(button(fixture.ui, 'Отвязать проект'))
+    failReload = true
+    await act(async () => pending.resolve({ ...project, archived: true, enabled: false, version: 4, contextVersion: 2 }))
+    assert.ok(button(fixture.ui, 'Отвязать проект')); assert.equal(fixture.ui.root.findAllByType('form').length, 0)
+    assert.doesNotMatch(text(fixture.ui), /В архиве|Проект отвязан\./)
+    failReload = false; rows = [{ ...project, archived: true, enabled: false, version: 4, contextVersion: 2 }]
+    await fixture.refresh('workspace-crm-settings:')
+    assert.ok(button(fixture.ui, 'Отвязать проект')); assert.doesNotMatch(text(fixture.ui), /В архиве/)
+})
+test('a late restore reply cannot replace a newer detachment', async t => {
+    const pending = deferred()
+    let rows = [{ ...project, archived: true, enabled: false, version: 4, contextVersion: 2 }], failReload = false
+    const fixture = await setup(t, 'WorkspaceCrmPanel', {
+        getCrmProjects: async () => { if (failReload) throw Error('Unavailable'); return rows },
+        getOrganizationCrmProjects: async () => rows, bindCrmProject: () => pending.promise,
+    })
+    await change(fixture.ui, 'Подключение DIKIDI', 'connection'); await change(fixture.ui, 'Проект DIKIDI', '100')
+    await act(async () => fixture.ui.root.findByType('form').props.onSubmit({ preventDefault() {} }))
+    await act(async () => button(fixture.ui, 'Восстановить проект').props.onClick())
+    rows = [{ ...project, archived: true, enabled: false, version: 6, contextVersion: 4 }]
+    await fixture.refresh('workspace-crm-settings:')
+    failReload = true
+    await act(async () => pending.resolve({ ...project, archived: false, enabled: true, version: 5, contextVersion: 3 }))
+    assert.match(text(fixture.ui), /В архиве/); assert.equal(button(fixture.ui, 'Отвязать проект'), undefined)
+    assert.doesNotMatch(text(fixture.ui), /Проект подключён\./)
+})
+test('initial workspace and organization reads use the latest version without mixing workspaces', async t => {
+    const newer = { ...project, archived: true, enabled: false, version: 4, contextVersion: 2 }
+    const { ui } = await setup(t, 'WorkspaceCrmPanel', {
+        getCrmProjects: async () => [project],
+        getOrganizationCrmProjects: async () => [newer, { ...project, id: 'foreign', workspaceId: 'other-workspace', displayName: 'Other workspace project' }],
+    })
+    assert.match(text(ui), /В архиве/); assert.doesNotMatch(text(ui), /Other workspace project/)
+    assert.equal(button(ui, 'Отвязать проект'), undefined)
+})
+test('an older GET cannot regress a project before any local mutation', async t => {
+    let rows = [{ ...project, archived: true, enabled: false, version: 4, contextVersion: 2 }]
+    const fixture = await setup(t, 'WorkspaceCrmPanel', { getCrmProjects: async () => rows, getOrganizationCrmProjects: async () => rows })
+    rows = [project]
+    await fixture.refresh('workspace-crm-settings:')
+    assert.match(text(fixture.ui), /В архиве/); assert.equal(button(fixture.ui, 'Отвязать проект'), undefined)
+})
 test('binding requires an explicit preview and changing the ID discards it', async t => {
     const { ui, calls } = await setup(t, 'WorkspaceCrmPanel', { getCrmProjects: async () => [] })
-    await change(ui, 'Подключение DIKIDI', 'connection'); await change(ui, 'ID проекта DIKIDI', '100')
+    await change(ui, 'Подключение DIKIDI', 'connection'); await change(ui, 'Проект DIKIDI', '100')
     await act(async () => ui.root.findByType('form').props.onSubmit({ preventDefault() {} }))
     assert.ok(button(ui, 'Привязать проект')); assert.equal(calls.length, 0)
-    await act(async () => button(ui, 'Назад').props.onClick()); await change(ui, 'ID проекта DIKIDI', '200')
+    await act(async () => button(ui, 'Назад').props.onClick()); await change(ui, 'Проект DIKIDI', '200')
     assert.equal(button(ui, 'Привязать проект'), undefined)
     await act(async () => ui.root.findByType('form').props.onSubmit({ preventDefault() {} }))
     await change(ui, 'Часовой пояс проекта', 'Europe/Moscow')
     await act(async () => button(ui, 'Привязать проект').props.onClick())
     assert.deepEqual(calls[0].slice(0,3), ['bind', 'workspace', { connectionId: 'connection', externalProjectId: '200', zoneId: 'Europe/Moscow' }])
 })
+test('health invalidations preserve project selection and preview without another remote list read', async t => {
+    let listCalls = 0, pending
+    const fixture = await setup(t, 'WorkspaceCrmPanel', {
+        getCrmProjects: async () => pending ? pending.promise : [], getOrganizationCrmProjects: async () => [],
+        getAvailableCrmProjects: async () => { listCalls++; return [{ externalId: '100', displayName: 'Salon' }] },
+    })
+    await change(fixture.ui, 'Подключение DIKIDI', 'connection')
+    await change(fixture.ui, 'Проект DIKIDI', '100')
+    for (const preview of [false, true]) {
+        if (preview) await act(async () => fixture.ui.root.findByType('form').props.onSubmit({ preventDefault() {} }))
+        pending = deferred(); let refreshing
+        await act(async () => { refreshing = fixture.invalidate('workspace-crm-settings:'); await Promise.resolve() })
+        assert.equal(fixture.ui.root.findByProps({ 'aria-label': 'Проект DIKIDI' }).props.value, '100')
+        assert.equal(fixture.ui.root.findByProps({ 'aria-label': 'Проект DIKIDI' }).props.disabled, preview)
+        assert.equal(fixture.ui.root.findByProps({ 'aria-label': 'Подключение DIKIDI' }).props.disabled, preview)
+        assert.equal(button(fixture.ui, preview ? 'Привязать проект' : 'Проверить проект').props.disabled, true)
+        await act(async () => fixture.ui.root.findByType('form').props.onSubmit({ preventDefault() {} }))
+        assert.ok(button(fixture.ui, preview ? 'Привязать проект' : 'Проверить проект'))
+        await act(async () => { pending.resolve([]); await refreshing }); pending = undefined
+        assert.equal(listCalls, 1, 'parent health refresh must not restart the remote project list')
+        assert.equal(fixture.ui.root.findByProps({ 'aria-label': 'Проект DIKIDI' }).props.value, '100')
+        assert.equal(button(fixture.ui, preview ? 'Привязать проект' : 'Проверить проект').props.disabled, false)
+    }
+})
+
+test('project discovery stays interactive through fallback and reconnect reconciliation; manual refresh and access revoke still work', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+    const flush = async () => { for (let i = 0; i < 60; i++) await Promise.resolve() }
+    const invalidation = load('../../api/events/InvalidationContext.tsx')
+    const { InvalidationCoordinator } = load('../../api/events/invalidationCoordinator.ts')
+    const { UiRecovery } = load('../../api/events/uiRecovery.ts')
+    const { recoveryPolicy } = load('../../api/events/recoveryPolicy.ts')
+    const manager = new InvalidationCoordinator(() => true, 0, 0)
+    const recovery = new UiRecovery(manager, recoveryPolicy({ jitter: 0 }))
+    let reads = 0, ui, signal, hold = false
+    const pending = deferred()
+    const Select = load('../crm/CrmProjectSelect.tsx', {
+        '../../api/crmApi': {
+            getAvailableCrmProjects: async (_id, _workspace, requestSignal) => {
+                signal = requestSignal
+                reads++
+                if (hold) return pending.promise
+                return [{ externalId: String(reads), displayName: 'Salon ' + reads }]
+            }, crmError: error => error.message,
+        }, './InvalidationContext': invalidation, './uiScope': uiScope, '../../api/events/uiScope': uiScope,
+    }).default
+    function Form() {
+        const [value, onChange] = React.useState('')
+        return React.createElement(Select, { connection, workspaceId: 'workspace', bindings: [], value, onChange, disabled: false })
+    }
+    t.after(async () => { recovery.stop(); manager.close(); await act(async () => ui?.unmount()) })
+    await act(async () => { ui = create(React.createElement(invalidation.InvalidationContext.Provider, { value: manager }, React.createElement(Form))); await flush() })
+    await change(ui, 'Проект DIKIDI', '1')
+    await act(async () => { await manager.reconcileAvailable(); await flush() })
+    assert.equal(reads, 1, 'stream ready must not repeat external discovery')
+    recovery.state('disabled')
+    await act(async () => { t.mock.timers.tick(10_000); await flush() })
+    assert.equal(reads, 1, 'notification fallback must not poll external discovery')
+    recovery.state('open')
+    await act(async () => { t.mock.timers.tick(120_000); await flush(); recovery.request(); t.mock.timers.tick(0); await flush() })
+    assert.equal(reads, 1, 'control reconciliation and visibility resync must not poll external discovery')
+    assert.equal(ui.root.findByProps({ 'aria-label': 'Проект DIKIDI' }).props.disabled, false)
+    assert.equal(ui.root.findByProps({ 'aria-label': 'Проект DIKIDI' }).props.value, '1')
+    hold = true
+    await act(async () => { button(ui, 'Обновить список проектов').props.onClick(); await flush() })
+    assert.equal(reads, 2)
+    const oldSignal = signal
+    hold = false
+    await act(async () => { manager.revoke({ type: 'access.invalidated', workspaceId: 'workspace' }); await flush(); t.mock.timers.tick(0); await flush() })
+    assert.equal(oldSignal.aborted, true); assert.equal(reads, 3)
+    assert.equal(ui.root.findByProps({ 'aria-label': 'Проект DIKIDI' }).props.value, '')
+    await act(async () => { pending.resolve([{ externalId: '2', displayName: 'Obsolete salon' }]); await flush() })
+    assert.doesNotMatch(text(ui), /Obsolete salon/)
+})
+
+test('a failed background settings refresh preserves the project draft through retry', async t => {
+    let fail = false, listCalls = 0
+    const fixture = await setup(t, 'WorkspaceCrmPanel', {
+        getCrmProjects: async () => { if (fail) throw Error('Settings unavailable'); return [] },
+        getOrganizationCrmProjects: async () => [],
+        getAvailableCrmProjects: async () => { listCalls++; return [{ externalId: '100', displayName: 'Salon' }] },
+    })
+    await change(fixture.ui, 'Подключение DIKIDI', 'connection')
+    await change(fixture.ui, 'Проект DIKIDI', '100')
+    fail = true
+    await assert.rejects(fixture.refresh('workspace-crm-settings:'), /Settings unavailable/)
+    assert.equal(button(fixture.ui, 'Проверить проект').props.disabled, true)
+    assert.equal(fixture.ui.root.findByProps({ 'aria-label': 'Проект DIKIDI' }).props.value, '100')
+    await act(async () => fixture.ui.root.findByType('form').props.onSubmit({ preventDefault() {} }))
+    assert.equal(button(fixture.ui, 'Привязать проект'), undefined)
+    fail = false
+    await act(async () => button(fixture.ui, 'Повторить загрузку').props.onClick())
+    assert.equal(listCalls, 1); assert.equal(button(fixture.ui, 'Проверить проект').props.disabled, false)
+    assert.equal(fixture.ui.root.findByProps({ 'aria-label': 'Проект DIKIDI' }).props.value, '100')
+})
+
+test('initial settings load and revoked access keep the binding form hidden and abort pending project options', async t => {
+    const initial = deferred(), options = deferred(); let optionSignal
+    const fixture = await setup(t, 'WorkspaceCrmPanel', {
+        getCrmProjects: async () => initial.promise, getOrganizationCrmProjects: async () => [],
+        getAvailableCrmProjects: (_, __, signal) => { optionSignal = signal; return options.promise },
+    })
+    assert.equal(fixture.ui.root.findAllByType('form').length, 0)
+    await act(async () => initial.resolve([]))
+    await change(fixture.ui, 'Подключение DIKIDI', 'connection')
+    await fixture.revoke('workspace-crm-settings:')
+    assert.equal(optionSignal.aborted, true)
+    assert.equal(fixture.ui.root.findAllByType('form').length, 0)
+    await act(async () => options.resolve([{ externalId: '100', displayName: 'Old salon' }]))
+    assert.doesNotMatch(text(fixture.ui), /Old salon/)
+})
+
+test('project choices exclude occupied bindings and mark this workspaces archive', async t => {
+    const { ui } = await setup(t, 'WorkspaceCrmPanel', { getCrmProjects: async () => [],
+        getOrganizationCrmProjects: async () => [{ ...project, archived: true, enabled: false },
+            { ...project, id: 'busy', externalId: '200', workspaceId: 'other' },
+            { ...project, id: 'archive-other', externalId: '300', workspaceId: 'other', archived: true, enabled: false }],
+        getAvailableCrmProjects: async () => ['100','200','300','400'].map(id => ({ externalId: id, displayName: id === '400' ? 'Free salon' : 'Salon ' + id })),
+    })
+    await change(ui, 'Подключение DIKIDI', 'connection')
+    const options = ui.root.findByProps({ 'aria-label': 'Проект DIKIDI' }).findAllByType('option')
+    assert.deepEqual(options.map(row => row.props.value), ['', '100', '400'])
+    assert.match(options[1].children.join(''), /восстановить/)
+})
+test('switching CRM accounts clears the selection and ignores late options from the old account', async t => {
+    const pending = deferred(); let oldSignal
+    const fixture = await setup(t, 'WorkspaceCrmPanel', { getCrmProjects: async () => [],
+        getCrmConnections: async () => [connection, { ...connection, id: 'second' }],
+        getAvailableCrmProjects: (id, _, signal) => { if (id === 'connection') { oldSignal = signal; return pending.promise }
+            return Promise.resolve([{ externalId: '200', displayName: 'Current account project' }]) },
+    })
+    await change(fixture.ui, 'Подключение DIKIDI', 'connection')
+    await change(fixture.ui, 'Подключение DIKIDI', 'second')
+    assert.equal(oldSignal.aborted, true)
+    await act(async () => pending.resolve([{ externalId: '100', displayName: 'Old account project' }]))
+    assert.match(text(fixture.ui), /Current account project/); assert.doesNotMatch(text(fixture.ui), /Old account project/)
+    assert.equal(fixture.ui.root.findByProps({ 'aria-label': 'Проект DIKIDI' }).props.value, '')
+    assert.equal(button(fixture.ui, 'Проверить проект').props.disabled, true)
+})
+test('a failed project list has an explicit retry and cannot submit a previously selected project', async t => {
+    let failed = true
+    const { ui } = await setup(t, 'WorkspaceCrmPanel', { getCrmProjects: async () => [],
+        getAvailableCrmProjects: async () => { if (failed) throw Error('Project list unavailable'); return [] },
+    })
+    await change(ui, 'Подключение DIKIDI', 'connection')
+    assert.match(text(ui), /Project list unavailable/); assert.equal(button(ui, 'Проверить проект').props.disabled, true)
+    failed = false; await act(async () => button(ui, 'Повторить загрузку проектов').props.onClick())
+    assert.match(text(ui), /Нет свободных проектов/); assert.doesNotMatch(text(ui), /Project list unavailable/)
+})
 test('disabled binding occupies the workspace; disabling requires confirmation and preserves identity', async t => {
     const { ui, calls } = await setup(t, 'WorkspaceCrmPanel')
-    assert.equal(ui.root.findAllByProps({ 'aria-label': 'ID проекта DIKIDI' }).length, 0)
+    assert.equal(ui.root.findAllByProps({ 'aria-label': 'Проект DIKIDI' }).length, 0)
     await act(async () => button(ui, 'Выключить обновление').props.onClick())
     assert.equal(calls.length, 0); assert.match(text(ui), /Привязка, история и связи сохранятся/)
     await act(async () => button(ui, 'Подтвердить выключение').props.onClick())
@@ -288,7 +584,7 @@ test('disabled binding occupies the workspace; disabling requires confirmation a
 test('disabled account is explained before the project ID form and links to that account', async t => {
     const { ui } = await setup(t, 'WorkspaceCrmPanel', { getCrmProjects: async () => [], getCrmConnections: async () => [{ ...connection, status: 'DISABLED' }] })
     await change(ui, 'Подключение DIKIDI', 'connection')
-    assert.equal(ui.root.findAllByProps({ 'aria-label': 'ID проекта DIKIDI' }).length, 0)
+    assert.equal(ui.root.findAllByProps({ 'aria-label': 'Проект DIKIDI' }).length, 0)
     assert.equal(button(ui, 'Проверить проект').props.disabled, true)
     assert.match(text(ui), /account=connection/)
 })

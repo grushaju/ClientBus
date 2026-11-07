@@ -48,6 +48,40 @@ class DikidiProviderContractTest {
     }
     private void loginThen(String... bodies) { fake.add(PUBLIC, CHECK, AUTH); fake.add(bodies); }
 
+    private static String projectPage(String html) {
+        return tools.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(Map.of("append",".project-list","html",html));
+    }
+    @Test void listsAccountProjectsAcrossPagesWithoutSelectingOrChangingAProject() {
+        loginThen(DikidiProjectsHtmlTest.BUSINESS,projectPage(DikidiProjectsHtmlTest.row("100","First")+DikidiProjectsHtmlTest.row("200","Second")),projectPage(DikidiProjectsHtmlTest.EMPTY));
+        try (var access=access(UUID.randomUUID(),1)) {
+            assertEquals(List.of("100","200"),provider.listProjects(access).stream().map(CrmProjectInfo::externalId).toList());
+        }
+        assertEquals("/ru/business/projects",fake.calls.get(3).uri().getPath());
+        assertEquals("0",field(fake.calls.get(4),"offset")); assertEquals("2",field(fake.calls.get(5),"offset"));
+        assertTrue(fake.calls.subList(3,fake.calls.size()).stream().allMatch(call -> call.project()==null));
+    }
+    @Test void emptyProjectListIsSuccessfulButUnknownOrRepeatedPagesAreRejected() {
+        loginThen(DikidiProjectsHtmlTest.BUSINESS,projectPage(DikidiProjectsHtmlTest.EMPTY));
+        try (var access=access(UUID.randomUUID(),1)) { assertTrue(provider.listProjects(access).isEmpty()); }
+        loginThen(DikidiProjectsHtmlTest.BUSINESS,projectPage(DikidiProjectsHtmlTest.row("100","A")),projectPage(DikidiProjectsHtmlTest.row("100","A")));
+        try (var access=access(UUID.randomUUID(),1)) { assertEquals(INVALID_RESPONSE,assertThrows(CrmFailure.class,() -> provider.listProjects(access)).code()); }
+        loginThen(DikidiProjectsHtmlTest.BUSINESS,"{\"append\":\".other\",\"html\":\"\"}");
+        try (var access=access(UUID.randomUUID(),1)) { assertEquals(INVALID_RESPONSE,assertThrows(CrmFailure.class,() -> provider.listProjects(access)).code()); }
+    }
+    @Test void blankProjectHtmlIsTerminalOnlyAfterANonemptyVerifiedPage() {
+        loginThen(DikidiProjectsHtmlTest.BUSINESS,projectPage(DikidiProjectsHtmlTest.row("100","A")),projectPage("\n\t   "));
+        try (var access=access(UUID.randomUUID(),1)) { assertEquals(1,provider.listProjects(access).size()); }
+        loginThen(DikidiProjectsHtmlTest.BUSINESS,projectPage("\n\t   "));
+        try (var access=access(UUID.randomUUID(),1)) { assertEquals(INVALID_RESPONSE,assertThrows(CrmFailure.class,() -> provider.listProjects(access)).code()); }
+    }
+    @Test void projectListRecoversAnExpiredSessionButDoesNotTreatAnUnknownPageAsEmpty() {
+        loginThen(PUBLIC,PUBLIC,CHECK,AUTH,DikidiProjectsHtmlTest.BUSINESS,projectPage(DikidiProjectsHtmlTest.EMPTY));
+        try (var access=access(UUID.randomUUID(),1)) { assertTrue(provider.listProjects(access).isEmpty()); }
+        assertEquals(2,passwordLogins());
+        loginThen("<html>Unexpected</html>");
+        try (var access=access(UUID.randomUUID(),1)) { assertEquals(INVALID_RESPONSE,assertThrows(CrmFailure.class,() -> provider.listProjects(access)).code()); }
+    }
+
     @Test void verificationReadsCurrentSessionWithoutAnotherPasswordLogin() {
         loginThen("journal", CATALOG, ACCOUNT, ACCOUNT);
         try (var access = access(UUID.randomUUID(), 1)) {

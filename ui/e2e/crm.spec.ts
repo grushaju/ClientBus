@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures/inbox'
 import type { Page } from '@playwright/test'
 import type { CrmConnection, CrmProject, CrmMaster, CrmSyncState } from '../src/api/crmApi'
+import type {} from '../src/api/events/uiDiagnostics'
 
 test('Настройки: профиль и длинный список CRM прокручиваются до нижних действий', async ({ page, api }) => {
     api.role = 'admin'
@@ -26,17 +27,19 @@ async function installCrm(page: Page, existing = true) {
     const connections: CrmConnection[] = existing ? [{ id: 'crm-connection', provider: 'DIKIDI', displayName: 'Основной аккаунт', loginHint: '••••0000',
         credentialConfigured: true, status: 'CONNECTED', lastCheckedAt: null, errorCode: null, version: 0 }] : []
     let project: CrmProject | null = existing ? makeProject() : null
+    const archives: CrmProject[] = []
+    const projects = () => [...archives, ...(project ? [project] : [])]
     let state: CrmSyncState = { dataset: 'CATALOG', status: 'SUCCEEDED', lastAttemptAt: '2026-10-28T10:00:00Z', lastSuccessAt: '2026-10-28T10:00:00Z',
         freshness: 'CURRENT', completeness: 'COMPLETE', errorCode: null, generation: 1 }
     const masters = ['Один', 'Два', 'Три'].map((name, index): CrmMaster => ({ id: 'crm-master-' + index,
         projectId: 'crm-project', externalId: 'master-' + index, displayName: 'Мастер ' + name, employeeId: null,
         mappingUpdatedAt: null, mappingUpdatedBy: null, mappingPreviousId: null, mappingReason: null,
         lastObservedAt: '2026-10-28T10:00:00Z', version: 0 }))
-    const counters = { creates: 0, checks: 0, bindings: 0, links: 0, credentialReads: 0, refreshes: 0, candidates: 0, deletions: 0, unknown: [] as string[] }
+    const counters = { creates: 0, checks: 0, bindings: 0, links: 0, credentialReads: 0, refreshes: 0, candidates: 0, deletions: 0, detachments: 0, projectLists: 0, projectReads: 0, unknown: [] as string[] }
     const employee = { id: 'employee-2', organizationId: 'organization-1', username: 'crm-employee', firstName: 'Анна', lastName: 'Иванова', email: 'other@example.test', enabled: true, role: 'EMPLOYEE' }
     function makeProject(): CrmProject {
         return { id: 'crm-project', workspaceId: 'workspace-1', connectionId: 'crm-connection', provider: 'DIKIDI', externalId: '100', displayName: 'Салон №17',
-            currency: 'RUB', zoneId: 'Europe/Moscow', zoneSource: 'MANUAL', zoneRevision: 1, contextVersion: 1, enabled: true, connectionState: 'CONNECTED', version: 0,
+            currency: 'RUB', zoneId: 'Europe/Moscow', zoneSource: 'MANUAL', zoneRevision: 1, contextVersion: 1, enabled: true, archived: false, connectionState: 'CONNECTED', version: 0,
             capabilities: [{ code: 'READ_SERVICES', availability: 'AVAILABLE', reasonCode: null }] }
     }
     const services = ['Стрижка', 'Окрашивание', 'Укладка'].map((name, i) => ({ id: 's' + i, projectId: 'crm-project', externalId: String(i), displayName: name, category: 'Волосы',
@@ -57,10 +60,10 @@ async function installCrm(page: Page, existing = true) {
             connections.push({ id: 'crm-connection', provider: 'DIKIDI', displayName: body.displayName, loginHint: '••••0000', credentialConfigured: true, status: 'CONFIGURED', lastCheckedAt: null, errorCode: null, version: 0 })
             return reply(connections[0], 201)
         }
-        if (path === '/api/crm/projects') return reply(project ? [project] : [])
+        if (path === '/api/crm/projects') return reply(projects())
         if (path === '/api/crm/connections/crm-connection' && method === 'DELETE') {
             expect(Number(url.searchParams.get('expectedVersion'))).toBe(connections[0].version)
-            if (project?.connectionId === connections[0].id) return reply({ code: 'CRM_CONNECTION_IN_USE', message: 'К аккаунту привязаны проекты.' },409)
+            if (projects().some(row => row.connectionId === connections[0].id)) return reply({ code: 'CRM_CONNECTION_IN_USE', message: 'К аккаунту привязаны проекты.' },409)
             connections.splice(0,1); counters.deletions++; return route.fulfill({ status: 204 })
         }
         if (path === '/api/crm/connections/crm-connection/verify') { connections[0].status = 'CONNECTED'; connections[0].version++; return reply(connections[0]) }
@@ -73,9 +76,29 @@ async function installCrm(page: Page, existing = true) {
             connections[0].version++; return reply(connections[0])
         }
         if (path === '/api/crm/connections/crm-connection/project-checks') { counters.checks++; return reply({ externalId: body.externalProjectId, displayName: 'Салон №17', currency: 'RUB', zoneId: null }) }
+        if (path === '/api/crm/connections/crm-connection/projects') {
+            counters.projectLists++
+            expect(url.searchParams.get('workspaceId')).toBe('workspace-1')
+            return reply(['100','200'].filter(id => !projects().some(row => row.externalId === id && !row.archived))
+                .map(id => ({ externalId: id, displayName: id === '100' ? 'Салон №17' : 'Другой проект', currency: null, zoneId: null })))
+        }
         if (path === '/api/crm/workspaces/workspace-1/projects') {
-            if (method === 'GET') return reply(project ? [project] : [])
-            counters.bindings++; expect(body.externalProjectId).toBe('100'); project = makeProject(); project.zoneId = body.zoneId ?? null; return reply(project, 201)
+            if (method === 'GET') { counters.projectReads++; return reply(projects()) }
+            counters.bindings++
+            const index = archives.findIndex(row => row.externalId === body.externalProjectId)
+            if (index >= 0) {
+                const archive = archives.splice(index, 1)[0]; expect(body.expectedArchiveVersion).toBe(archive.version)
+                project = { ...archive, archived: false, enabled: true, contextVersion: archive.contextVersion + 1, version: archive.version + 1 }
+            } else {
+                project = { ...makeProject(), externalId: body.externalProjectId,
+                    id: body.externalProjectId === '100' ? 'crm-project' : 'crm-project-' + body.externalProjectId }
+            }
+            project.zoneId = body.zoneId ?? project.zoneId; return reply(project, 201)
+        }
+        if (path === '/api/crm/projects/crm-project/detach' && method === 'POST') {
+            expect(Number(url.searchParams.get('expectedVersion'))).toBe(project!.version)
+            const archive = { ...project!, archived: true, enabled: false, contextVersion: project!.contextVersion + 1, version: project!.version + 1 }
+            archives.push(archive); project = null; counters.detachments++; return reply(archive)
         }
         if (path === '/api/crm/projects/crm-project' && method === 'PATCH') { Object.assign(project!, body); project!.version++; return reply(project) }
         if (path === '/api/crm/projects/crm-project/masters') {
@@ -100,6 +123,160 @@ async function installCrm(page: Page, existing = true) {
     return { counters, connections, masters, services, get project() { return project } }
 }
 
+test('CRM: health и нотификации сохраняют доступность списка проектов и не повторяют чтение DIKIDI', async ({ page, api }) => {
+    api.role = 'admin'; const fixture = await installCrm(page, false)
+    fixture.connections.push({ id: 'crm-connection', provider: 'DIKIDI', displayName: 'Основной аккаунт', loginHint: '••••0000',
+        credentialConfigured: true, status: 'CONNECTED', lastCheckedAt: null, errorCode: null, version: 0 })
+    await page.addInitScript(() => {
+        const original = window.fetch.bind(window)
+        window.fetch = async (...args) => {
+            if (new URL(String(args[0]), location.href).pathname !== '/api/events') return original(...args)
+            const body = new ReadableStream<Uint8Array>({ start(controller) {
+                const emit = (type: string) => {
+                    const envelope = { eventId: crypto.randomUUID(), schemaVersion: 1, type, occurredAt: new Date().toISOString(),
+                        workspaceId: null, resource: null, correlationId: null,
+                        stream: type === 'stream.ready' ? { streamId: crypto.randomUUID(), alertsAfter: new Date().toISOString(), heartbeatSeconds: 60 } : null }
+                    controller.enqueue(new TextEncoder().encode(`event: ${type}\ndata: ${JSON.stringify(envelope)}\n\n`))
+                }
+                const invalidate = (event: Event) => emit((event as CustomEvent<string>).detail || 'crm.invalidated')
+                window.addEventListener('test:crm-health', invalidate)
+                args[1]?.signal?.addEventListener('abort', () => {
+                    window.removeEventListener('test:crm-health', invalidate); controller.close()
+                }, { once: true })
+                emit('stream.ready')
+            } })
+            return new Response(body, { headers: { 'Content-Type': 'text/event-stream' } })
+        }
+    })
+    await page.goto('/workspaces/workspace-1#crm')
+    await expect.poll(() => page.evaluate(() => window.clientbusNotificationDiagnostics?.()?.transport.state)).toMatch(/^(open|degraded)$/)
+    const settings = page.getByRole('region', { name: 'Настройки CRM рабочего пространства', exact: true })
+    await settings.getByLabel('Подключение DIKIDI').selectOption('crm-connection')
+    await settings.getByLabel('Проект DIKIDI').selectOption('100')
+    const select = settings.getByLabel('Проект DIKIDI')
+    await select.evaluate(node => {
+        node.setAttribute('data-test-disabled-changes', '0')
+        new MutationObserver(records => node.setAttribute('data-test-disabled-changes', String(Number(node.getAttribute('data-test-disabled-changes')) + records.length)))
+            .observe(node, { attributes: true, attributeFilter: ['disabled'] })
+    })
+    let release!: () => void, started = false
+    const gate = new Promise<void>(resolve => { release = resolve })
+    await page.route('**/api/crm/workspaces/workspace-1/projects', async route => { started = true; await gate; await route.fallback() })
+    await select.focus()
+    try {
+        await page.evaluate(() => window.dispatchEvent(new Event('test:crm-health')))
+        await expect.poll(() => started).toBe(true)
+        await expect(settings.getByRole('button', { name: 'Проверить проект', exact: true })).toBeDisabled()
+        await expect(select).toBeEnabled(); await expect(select).toBeFocused()
+        await expect(select).toHaveAttribute('data-test-disabled-changes', '0')
+    } finally { release() }
+    await expect(settings.getByRole('button', { name: 'Проверить проект', exact: true })).toBeEnabled()
+    await expect(select).toHaveAttribute('data-test-disabled-changes', '0')
+    const beforeNotification = fixture.counters.projectReads
+    const startedBeforeNotification = await page.evaluate(() => window.clientbusNotificationDiagnostics?.()?.reconciliation.started ?? 0)
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('test:crm-health', { detail: 'notifications.invalidated' })))
+    await expect.poll(() => page.evaluate(() => window.clientbusNotificationDiagnostics?.()?.reconciliation.started ?? 0)).toBeGreaterThan(startedBeforeNotification)
+    await expect.poll(() => page.evaluate(() => {
+        const state = window.clientbusNotificationDiagnostics?.()?.reconciliation
+        return state && state.running === 0 && state.dirty === 0
+    })).toBe(true)
+    expect(fixture.counters.projectReads).toBe(beforeNotification)
+    await expect(select).toHaveAttribute('data-test-disabled-changes', '0')
+    await settings.getByRole('button', { name: 'Проверить проект', exact: true }).click()
+    await expect(settings.getByRole('button', { name: 'Привязать проект', exact: true })).toBeEnabled()
+    const reads = fixture.counters.projectReads
+    await page.evaluate(() => window.dispatchEvent(new Event('test:crm-health')))
+    await expect.poll(() => fixture.counters.projectReads).toBeGreaterThan(reads)
+    await expect.poll(() => page.evaluate(() => {
+        const state = window.clientbusNotificationDiagnostics?.()?.reconciliation
+        return state && state.running === 0 && state.dirty === 0
+    })).toBe(true)
+    await expect(settings.getByRole('button', { name: 'Привязать проект', exact: true })).toBeEnabled()
+    await expect(settings.getByLabel('Проект DIKIDI')).toHaveValue('100')
+    expect(fixture.counters.projectLists).toBe(1); expect(fixture.counters.unknown).toEqual([])
+})
+
+test('CRM: резервный опрос нотификаций не закрывает список проектов и не опрашивает DIKIDI', async ({ page, api }) => {
+    test.setTimeout(45_000)
+    api.role = 'admin'; const fixture = await installCrm(page, false)
+    fixture.connections.push({ id: 'crm-connection', provider: 'DIKIDI', displayName: 'Основной аккаунт', loginHint: '••••0000',
+        credentialConfigured: true, status: 'CONNECTED', lastCheckedAt: null, errorCode: null, version: 0 })
+    await page.goto('/workspaces/workspace-1#crm')
+    const settings = page.getByRole('region', { name: 'Настройки CRM рабочего пространства', exact: true })
+    await settings.getByLabel('Подключение DIKIDI').selectOption('crm-connection')
+    const select = settings.getByLabel('Проект DIKIDI')
+    await select.selectOption('100')
+    await select.evaluate(node => {
+        node.setAttribute('data-test-disabled-changes', '0')
+        new MutationObserver(records => node.setAttribute('data-test-disabled-changes', String(Number(node.getAttribute('data-test-disabled-changes')) + records.length)))
+            .observe(node, { attributes: true, attributeFilter: ['disabled'] })
+    })
+    let release!: () => void, started = false
+    const gate = new Promise<void>(resolve => { release = resolve })
+    await page.route('**/api/crm/workspaces/workspace-1/projects', async route => { started = true; await gate; await route.fallback() })
+    await select.focus()
+    try {
+        await expect.poll(() => started, { timeout: 18_000 }).toBe(true)
+        await expect(settings.getByRole('button', { name: 'Проверить проект', exact: true })).toBeDisabled()
+        await expect(select).toBeEnabled(); await expect(select).toBeFocused()
+        await expect(select).toHaveAttribute('data-test-disabled-changes', '0')
+        expect(fixture.counters.projectLists).toBe(1)
+    } finally { release() }
+    await expect(settings.getByRole('button', { name: 'Проверить проект', exact: true })).toBeEnabled()
+    await expect(select).toHaveAttribute('data-test-disabled-changes', '0')
+    await expect(select).toHaveValue('100')
+    expect(fixture.counters.projectLists).toBe(1); expect(fixture.counters.unknown).toEqual([])
+})
+
+test('CRM: отвязка сохраняет архив и связи, а восстановление требует подтверждения', async ({ page, api }) => {
+    api.role = 'admin'; const fixture = await installCrm(page)
+    fixture.masters[0].employeeId = 'employee-2'
+    await page.goto('/workspaces/workspace-1#crm')
+    const settings = page.getByRole('region', { name: 'Настройки CRM рабочего пространства', exact: true })
+    await settings.getByRole('button', { name: 'Отвязать проект', exact: true }).click()
+    await settings.getByRole('button', { name: 'Отмена', exact: true }).click()
+    expect(fixture.counters.detachments).toBe(0)
+    await settings.getByRole('button', { name: 'Отвязать проект', exact: true }).click()
+    await settings.getByRole('button', { name: 'Подтвердить отвязку' }).click()
+    await expect(settings.getByText(/В архиве\. История/)).toBeVisible()
+    await expect(settings.getByRole('button', { name: 'Настроить проект' })).toHaveCount(0)
+    await expect(settings.getByLabel('Подключение DIKIDI')).toBeVisible()
+    await settings.getByRole('link', { name: 'Открыть каталог' }).click()
+    await expect(page.getByText('Стрижка', { exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Обновить', exact: true })).toBeDisabled()
+    await page.getByRole('tab', { name: 'Мастера', exact: true }).click()
+    await page.getByRole('button', { name: 'Связи с сотрудниками', exact: true }).click()
+    await expect(page.getByLabel('Сотрудник: Мастер Один', { exact: true })).toBeDisabled()
+    await expect(page.getByLabel('Сотрудник: Мастер Один', { exact: true })).toHaveValue('employee-2')
+    await page.goto('/workspaces/workspace-1#crm')
+    await settings.getByLabel('Подключение DIKIDI').selectOption('crm-connection')
+    await settings.getByLabel('Проект DIKIDI').selectOption('100')
+    await settings.getByRole('button', { name: 'Проверить проект', exact: true }).click()
+    expect(fixture.counters.bindings).toBe(0)
+    await settings.getByRole('button', { name: 'Восстановить проект' }).click()
+    await expect(settings.getByRole('button', { name: 'Настроить проект' })).toBeVisible()
+    expect(fixture.project!.id).toBe('crm-project'); expect(fixture.project!.archived).toBe(false)
+    expect(fixture.masters[0].employeeId).toBe('employee-2')
+    expect(fixture.counters.detachments).toBe(1); expect(fixture.counters.refreshes).toBe(0); expect(fixture.counters.links).toBe(0)
+    expect(fixture.counters.unknown).toEqual([])
+})
+test('CRM: после отвязки можно подключить другой проект, архив остаётся доступен', async ({ page, api }) => {
+    api.role = 'admin'; const fixture = await installCrm(page)
+    await page.goto('/workspaces/workspace-1#crm')
+    const settings = page.getByRole('region', { name: 'Настройки CRM рабочего пространства', exact: true })
+    await settings.getByRole('button', { name: 'Отвязать проект', exact: true }).click()
+    await settings.getByRole('button', { name: 'Подтвердить отвязку' }).click()
+    await settings.getByLabel('Подключение DIKIDI').selectOption('crm-connection')
+    await expect(settings.getByLabel('Проект DIKIDI').locator('option')).toHaveText(['Выберите проект', 'Салон №17 · восстановить', 'Другой проект'])
+    await settings.getByLabel('Проект DIKIDI').selectOption('200')
+    await settings.getByRole('button', { name: 'Проверить проект', exact: true }).click()
+    await settings.getByRole('button', { name: 'Привязать проект', exact: true }).click()
+    await expect(settings.locator('.crm-project-card')).toHaveCount(2)
+    await expect(settings.getByRole('button', { name: 'Настроить проект' })).toHaveCount(1)
+    await expect(settings.getByText(/В архиве\. История/)).toBeVisible()
+    expect(fixture.project!.externalId).toBe('200'); expect(fixture.counters.bindings).toBe(1)
+    expect(fixture.counters.unknown).toEqual([])
+})
 test('CRM: администратор удаляет неиспользуемый аккаунт после подтверждения', async ({ page, api }) => {
     api.role = 'admin'; const fixture = await installCrm(page, false)
     fixture.connections.push({ id: 'crm-connection', provider: 'DIKIDI', displayName: 'Неиспользуемый аккаунт', loginHint: '••••0000',
@@ -130,7 +307,7 @@ test('CRM: администратор добавляет аккаунт, под�
     await page.getByLabel('Рабочее пространство', { exact: true }).selectOption('workspace-1'); await page.getByRole('link', { name: 'Подключить проект', exact: true }).click()
     const settings = page.getByRole('region', { name: 'Настройки CRM рабочего пространства', exact: true })
     await expect(settings.getByLabel('Подключение DIKIDI')).toHaveValue('crm-connection')
-    await settings.getByLabel('ID проекта DIKIDI').fill('100'); await settings.getByRole('button', { name: 'Проверить проект', exact: true }).click()
+    await settings.getByLabel('Проект DIKIDI').selectOption('100'); await settings.getByRole('button', { name: 'Проверить проект', exact: true }).click()
     expect(fixture.counters.bindings).toBe(0); await settings.getByLabel('Часовой пояс проекта').selectOption('Europe/Moscow')
     await settings.getByRole('button', { name: 'Привязать проект', exact: true }).click(); await settings.getByRole('link', { name: 'Открыть каталог' }).click()
     await expect(page.getByText('Стрижка', { exact: true })).toBeVisible(); await page.getByRole('tab', { name: 'Мастера', exact: true }).click()

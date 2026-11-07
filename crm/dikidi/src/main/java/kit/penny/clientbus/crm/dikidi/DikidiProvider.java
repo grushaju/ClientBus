@@ -215,6 +215,31 @@ public final class DikidiProvider implements CrmProvider, AutoCloseable {
                     currency.matches("[A-Z]{3}") ? currency : null, null);
         });
     }
+    @Override public List<CrmProjectInfo> listProjects(CrmAccess access) {
+        return execute(access,null,(session,deadline) -> {
+            String page=call(session,"GET","https://dikidi.ru/ru/business/projects",null,false,null,deadline);
+            if (!DikidiProjectsHtml.businessPage(page))
+                throw new CrmFailure(DikidiHtml.parse(page).hidden.containsKey("telegram_csrf") ? AUTH_REQUIRED : INVALID_RESPONSE);
+            var result=new ArrayList<CrmProjectInfo>(); var ids=new HashSet<String>();
+            // Require a terminal page: never present a capped or repeated page as the full list.
+            for (int portion=0;portion<100;portion++) {
+                var response=tree(call(session,"POST","https://dikidi.ru/ru/business/ajax/projects/list/",
+                        List.of(Map.entry("offset",Integer.toString(result.size())),Map.entry("limit","10"),Map.entry("more","1")),true,null,deadline));
+                if (!".project-list".equals(response.path("append").asString("")) || !response.path("html").isString()) throw new CrmFailure(INVALID_RESPONSE);
+                String html=response.path("html").asString();
+                // Observed EOF after nonempty pages; an initially blank/unknown response is not an empty account.
+                if (!result.isEmpty() && html.isBlank()) return List.copyOf(result);
+                var rows=DikidiProjectsHtml.projects(html);
+                if (rows.isEmpty()) return List.copyOf(result);
+                if (rows.size()>10) throw new CrmFailure(INVALID_RESPONSE);
+                for (var row:rows) {
+                    if (!ids.add(row.externalId())) throw new CrmFailure(INVALID_RESPONSE);
+                    result.add(row);
+                }
+            }
+            throw new CrmFailure(INVALID_RESPONSE);
+        });
+    }
     @Override public CrmReadResult<CrmMaster> readMasters(CrmAccess access, String externalProjectId) {
         projectId(externalProjectId);
         return execute(access, externalProjectId, (session, deadline) -> {

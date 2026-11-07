@@ -45,9 +45,8 @@ public class CrmController {
         return ResponseEntity.noContent().build();
     }
     @GetMapping("/connections/{id}/projects") @PreAuthorize("hasRole('SUPER_ADMIN')")
-    public Object discover(@PathVariable UUID id) {
-        service.connection(id);
-        throw new CrmException(409, "CRM_CAPABILITY_UNVERIFIED", "Укажите ID проекта DIKIDI вручную.");
+    public List<CrmProjectCheckDto> discover(@PathVariable UUID id,@RequestParam UUID workspaceId) {
+        return service.availableProjects(id,workspaceId);
     }
     @PostMapping("/connections/{id}/project-checks") @PreAuthorize("hasRole('SUPER_ADMIN')")
     public CrmProjectCheckDto check(@PathVariable UUID id, @Valid @RequestBody CheckCrmProjectRequest request) {
@@ -70,6 +69,10 @@ public class CrmController {
     @PutMapping("/projects/{id}/connection") @PreAuthorize("hasRole('SUPER_ADMIN')")
     public CrmProjectDto changeConnection(@PathVariable UUID id, @Valid @RequestBody ChangeCrmConnectionRequest request) {
         return service.changeConnection(id, request);
+    }
+    @PostMapping("/projects/{id}/detach") @PreAuthorize("hasRole('SUPER_ADMIN')")
+    public CrmProjectDto detachProject(@PathVariable UUID id, @RequestParam @Min(0) long expectedVersion) {
+        return service.detachProject(id, expectedVersion);
     }
     @GetMapping("/projects/{id}/masters")
     public CrmMasterPageDto masters(@PathVariable UUID id, @RequestParam(required = false) String cursor,

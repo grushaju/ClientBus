@@ -51,6 +51,7 @@ final class JdkDikidiTransport implements DikidiTransport {
             if (ajax) {
                 builder.header("X-Requested-With", "XMLHttpRequest").header("Origin", "https://dikidi.ru")
                         .header("Referer", uri.getHost().startsWith("auth.") ? "https://dikidi.ru/ru/"
+                                : uri.getPath().equals("/ru/business/ajax/projects/list/") ? "https://dikidi.ru/ru/business/projects"
                                 : "https://dikidi.ru/ru/owner/journal/?company=" + encode(projectId));
                 cookies.getCookieStore().get(uri).stream().filter(c -> "XSRF-TOKEN".equals(c.getName()))
                         .findFirst().ifPresent(c -> builder.header("X-XSRF-TOKEN", URLDecoder.decode(c.getValue(), StandardCharsets.UTF_8)));

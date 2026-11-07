@@ -91,6 +91,12 @@ class CrmDikidiConnectionAcceptance {
         })) {
             provider.verifyConnection(access); int initial=logins.get();
             provider.verifyConnection(access); assertEquals(initial,logins.get(),"Repeated verification re-authenticated.");
+            if (Boolean.getBoolean("clientbus.crm.projects.live")) {
+                var projects=provider.listProjects(access);
+                assertEquals(projects.size(),projects.stream().map(CrmProjectInfo::externalId).distinct().count());
+                assertTrue(projects.stream().allMatch(project -> project.displayName()!=null && !project.displayName().isBlank()));
+                System.out.printf("PROJECT_LIST_PROBE PASSED projects=%d localWrites=0%n",projects.size());
+            }
             System.out.printf("CONNECTION_PROBE PASSED passwordLogins=%d httpCalls=%d localWrites=0%n",logins.get(),policy.calls());
         } catch (CrmFailure failure) {
             for (var frame:failure.getStackTrace()) if (frame.getClassName().equals(DikidiProvider.class.getName())) {

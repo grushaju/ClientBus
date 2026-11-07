@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /** One shared budget across sessions and redirects in the opt-in live read. */
 final class DikidiAcceptancePolicy implements JdkDikidiTransport.RequestPolicy {
     private static final Map<String,Set<String>> READS=Map.of(
-            "dikidi.ru",Set.of("GET /ru/","GET /ru/owner/journal/","POST /ru/owner/ajax/journal/api/",
+            "dikidi.ru",Set.of("GET /ru/","GET /ru/business/projects","GET /ru/business/projects/","POST /ru/business/ajax/projects/list/","GET /ru/owner/journal/","POST /ru/owner/ajax/journal/api/",
                     "GET /ru/owner/ajax/profile/index/","POST /ru/owner/ajax/clients/filter/",
                     "GET /mobile/ajax/newrecord/company_services","POST /owner/ajax/sales_payments/get_list/",
                     "GET /ru/owner/ajax/sales_payments/form/"),
@@ -38,6 +38,11 @@ final class DikidiAcceptancePolicy implements JdkDikidiTransport.RequestPolicy {
             assertTrue(form!=null && form.size()==3 && form.stream().allMatch(field ->
                     (field.getKey().equals("company") || field.getKey().equals("sale_id")) && field.getValue().matches("[1-9][0-9]{0,17}")
                     || field.getKey().equals("isEdit") && field.getValue().equals("false")),"Payment list payload is read only.");
+        if (uri.getPath().equals("/ru/business/ajax/projects/list/"))
+            assertTrue(form!=null && form.stream().allMatch(field ->
+                    field.getKey().equals("offset") && field.getValue().matches("[0-9]{1,4}")
+                    || field.getKey().equals("limit") && Set.of("10","50").contains(field.getValue())
+                    || field.getKey().equals("more") && field.getValue().equals("1")),"Project list payload is read only.");
         assertTrue(calls.getAndUpdate(count -> count<limit ? count+1 : count)<limit,"Live HTTP read budget exceeded.");
     }
 }

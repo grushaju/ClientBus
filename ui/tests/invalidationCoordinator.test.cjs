@@ -19,6 +19,30 @@ test('optional invalidation fences run synchronously and remain separate from re
 })
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms))
 
+test('explicit discovery skips blanket recovery while ordinary resources, targeted events and revocation still refresh', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+    const manager = new InvalidationCoordinator(() => true, 0, 0)
+    let ordinary = 0, discovery = 0, resets = 0
+    const flush = async () => { for (let i = 0; i < 60; i++) await Promise.resolve() }
+    manager.subscribe(() => true, async () => { ordinary++ })
+    const subscription = manager.subscribe(event => ['discovery.changed', 'access.invalidated'].includes(event.type),
+        async () => { discovery++ }, () => { resets++ }, () => true, undefined, false)
+    t.after(() => manager.close())
+    await manager.reconcile(); await manager.reconcileAvailable()
+    assert.equal(ordinary, 2); assert.equal(discovery, 0)
+    manager.invalidate(); t.mock.timers.tick(0); await flush()
+    manager.invalidate({ type: 'notifications.invalidated' }); t.mock.timers.tick(0); await flush()
+    assert.equal(ordinary, 4); assert.equal(discovery, 0)
+    subscription.invalidate(); t.mock.timers.tick(0); await flush()
+    assert.equal(discovery, 1)
+    manager.invalidate({ type: 'discovery.changed' }); t.mock.timers.tick(0); await flush()
+    assert.equal(discovery, 2)
+    manager.revoke({ type: 'access.invalidated' }); t.mock.timers.tick(0); await flush()
+    assert.equal(resets, 1); assert.equal(discovery, 3)
+    manager.revoke(); t.mock.timers.tick(0); await flush()
+    assert.equal(resets, 2); assert.equal(discovery, 4)
+})
+
 test('invalidations during REST preserve response and request one follow-up without parallel calls', async () => {
     const manager = new InvalidationCoordinator(() => true, 1, 1)
     let release, calls = 0, active = 0, max = 0

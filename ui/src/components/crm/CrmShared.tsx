@@ -13,15 +13,15 @@ export function ReturnToCrm() {
 export function recoveryQuery(project: CrmProject, tab: string) {
     return new URLSearchParams({ returnWorkspace: project.workspaceId, returnProject: project.id, returnTab: tab })
 }
-export function CrmFreshness({ state }: { state?: CrmSyncState | null }) {
+export function CrmFreshness({ state, archived = false }: { state?: CrmSyncState | null; archived?: boolean }) {
     if (!state) return null
     return <div className="crm-freshness" role="status">
         {state.lastSuccessAt ? <>Данные от {new Date(state.lastSuccessAt).toLocaleString('ru-RU')}</> : 'Каталог ещё не загружен'}
-        {state.freshness === 'STALE' && ' · требуют обновления'}
+        {archived ? ' · архив' : state.freshness === 'STALE' && ' · требуют обновления'}
         {state.completeness === 'PARTIAL' && ' · загрузка неполная'}
-        {['QUEUED', 'RUNNING'].includes(state.status) && ' · обновляем…'}
-        {state.attemptCoverage?.projectErrorCode && ' · название проекта не обновлено'}
-        {state.status === 'FAILED' && <span className="crm-error-text"> · Обновление не удалось. Сохранённые данные доступны.</span>}
+        {!archived && ['QUEUED', 'RUNNING'].includes(state.status) && ' · обновляем…'}
+        {!archived && state.attemptCoverage?.projectErrorCode && ' · название проекта не обновлено'}
+        {!archived && state.status === 'FAILED' && <span className="crm-error-text"> · Обновление не удалось. Сохранённые данные доступны.</span>}
     </div>
 }
 export function OfferTerms({ offer }: { offer: CrmServiceOffer }) {

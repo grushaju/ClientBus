@@ -357,8 +357,182 @@ class CrmFoundationIntegrationTest {
         assertEquals(2, jdbc.queryForObject("select count(*) from crm.connection", Integer.class));
         assertEquals(1, service.connections().size());
     }
+    @Test void detachmentArchivesAllLocalDataAndMappingsAndFreesOnlyTheActiveSlot() throws Exception {
+        var crmClient=importClient(); UUID projectId=crmClient.projectId();
+        var core=coreClient("Keep core client","79991234567");
+        clients.link(crmClient.id(),core,crmClient.version()); var linkedClient=clients.client(crmClient.id());
+        var master=first(projectId); service.linkEmployee(master.id(),target,master.version()); var linkedMaster=service.master(master.id());
+        UUID appointment=financeAppointment(projectId); var snapshot=finance.refresh(appointment).snapshot();
+        provider.scheduleReader=query -> new CrmScheduleSnapshot(List.of(shift("m1",0,12)),Instant.now(),CrmReadResult.Completeness.COMPLETE,"100",query);
+        scheduleSync.refresh(projectId,master.id(),SCHEDULE_DAY,SCHEDULE_DAY.plusDays(1)); awaitSchedule();
+        Map<String,List<Map<String,Object>>> before=new HashMap<>();
+        for (String table : List.of("master","service","masterservice","client","workinterval","appointment","appointmentmaster","appointmentservice"))
+            before.put(table,jdbc.queryForList("select * from crm."+table+" order by id"));
+        var project=service.projects(workspace,null).getFirst();
+        var archived=service.detachProject(projectId,project.version());
+        assertTrue(archived.archived()); assertFalse(archived.enabled()); assertEquals(project.contextVersion()+1,archived.contextVersion());
+        for (var entry : before.entrySet()) assertEquals(entry.getValue(),jdbc.queryForList("select * from crm."+entry.getKey()+" order by id"),entry.getKey());
+        assertEquals(linkedClient,clients.client(crmClient.id())); assertEquals(linkedMaster,service.master(master.id()));
+        assertEquals(snapshot,finance.read(appointment).snapshot()); assertEquals(appointment,appointmentReader.appointment(appointment).id());
+        assertEquals(1,jdbc.queryForObject("select count(*) from dbo.client where clientid=?",Integer.class,core));
+        assertEquals(1,jdbc.queryForObject("select count(*) from dbo.employee where employeeid=?",Integer.class,target));
+        var account=service.connection(project.connectionId());
+        assertEquals("CRM_CONNECTION_IN_USE",assertThrows(CrmException.class,() -> service.deleteConnection(account.id(),account.version())).code());
+        assertEquals("CRM_RESOURCE_IN_USE",assertThrows(CrmException.class,() -> tx.executeWithoutResult(status -> deletion.workspace(em.find(WorkspaceEntity.class,workspace)))).code());
+        assertEquals(0,sync.refreshDue(1000));
+        assertEquals(0,scheduleSync.refreshDue(1000)); assertEquals(0,appointmentSync.refreshDue(1000));
+        assertThrows(CrmException.class,() -> sync.refresh(projectId));
+        assertThrows(CrmException.class,() -> clientSync.refresh(projectId));
+        assertThrows(CrmException.class,() -> finance.refresh(appointment));
+        assertEquals("CRM_PROJECT_ARCHIVED",assertThrows(CrmException.class,() -> service.updateProject(projectId,new UpdateCrmProjectRequest(archived.version(),true,null))).code());
+        assertEquals("CRM_PROJECT_ARCHIVED",assertThrows(CrmException.class,() -> service.linkEmployee(master.id(),null,linkedMaster.version())).code());
+        assertEquals("CRM_PROJECT_ARCHIVED",assertThrows(CrmException.class,() -> clients.link(crmClient.id(),null,linkedClient.version())).code());
+        assertEquals("CRM_PROJECT_ARCHIVED",assertThrows(CrmException.class,() -> service.changeConnection(projectId,new ChangeCrmConnectionRequest(project.connectionId(),archived.version()))).code());
+        var other=service.bind(workspace,new BindCrmProjectRequest(project.connectionId(),"200",null)).project(); awaitIdle();
+        assertFalse(other.archived()); assertNotEquals(projectId,other.id()); assertEquals(2,service.projects(workspace,null).size());
+        assertEquals("CRM_PROJECT_BINDING_CONFLICT",assertThrows(CrmException.class,() -> service.bind(workspace,new BindCrmProjectRequest(project.connectionId(),"300",null))).code());
+        assertEquals(snapshot,finance.read(appointment).snapshot());
+    }
+    @Test void archiveRestorationIsExplicitVersionedAndPreservesIdentityAndMappings() throws Exception {
+        var connection=connection(); var project=bind(connection); awaitIdle();
+        var master=first(project.id()); var linked=service.linkEmployee(master.id(),target,master.version());
+        var archived=service.detachProject(project.id(),project.version());
+        assertEquals("CRM_PROJECT_ARCHIVED",assertThrows(CrmException.class,() -> bind(connection)).code());
+        assertEquals("CRM_VERSION_CONFLICT",assertThrows(CrmException.class,() -> service.bind(workspace,new BindCrmProjectRequest(connection.id(),"100",null,project.version()))).code());
+        var secondWorkspace=tx.execute(status -> { var row=new WorkspaceEntity(em.find(OrganizationEntity.class,organization),"another workspace"); em.persist(row); return row.getId(); });
+        assertEquals("CRM_PROJECT_BINDING_CONFLICT",assertThrows(CrmException.class,() -> service.bind(secondWorkspace,new BindCrmProjectRequest(connection.id(),"100",null,archived.version()))).code());
+        var replacement=connection();
+        var restored=service.bind(workspace,new BindCrmProjectRequest(replacement.id(),"100",null,archived.version())).project(); awaitIdle();
+        assertEquals(project.id(),restored.id()); assertFalse(restored.archived()); assertTrue(restored.enabled());
+        assertEquals(replacement.id(),restored.connectionId()); assertEquals(archived.contextVersion()+1,restored.contextVersion());
+        assertEquals(linked.employeeId(),service.master(master.id()).employeeId());
+        assertEquals("CRM_VERSION_CONFLICT",assertThrows(CrmException.class,() -> service.detachProject(project.id(),project.version())).code());
+        assertEquals("CRM_VERSION_CONFLICT",assertThrows(CrmException.class,() -> service.bind(workspace,new BindCrmProjectRequest(replacement.id(),"100",null,archived.version()))).code());
+    }
+    @Test void detachmentChecksRoleOrganizationVersionAndPermissionsAfterLockWait() throws Exception {
+        var project=bind(connection()); awaitIdle();
+        actor.set(member); assertThrows(AccessDeniedException.class,() -> service.detachProject(project.id(),project.version()));
+        actor.set(tx.execute(status -> employee(em.find(WorkspaceEntity.class,otherWorkspace).getOrganization(),UserRole.SUPER_ADMIN,"foreign-admin").getId()));
+        assertEquals(404,assertThrows(CrmException.class,() -> service.detachProject(project.id(),project.version())).status());
+        actor.set(admin);
+        assertEquals("CRM_VERSION_CONFLICT",assertThrows(CrmException.class,() -> service.detachProject(project.id(),project.version()+1)).code());
+        afterJpaCall=(method,args) -> {
+            if (method.getName().equals("refresh") && args[0] instanceof CrmProjectEntity) {
+                jdbc.update("update dbo.users set isenabled=false where userid=(select userid from dbo.employee where employeeid=?)",admin);
+            }
+        };
+        try { assertThrows(AccessDeniedException.class,() -> service.detachProject(project.id(),project.version())); }
+        finally { afterJpaCall=(method,args) -> {}; jdbc.update("update dbo.users set isenabled=true where userid=(select userid from dbo.employee where employeeid=?)",admin); }
+        assertFalse(service.projects(workspace,null).getFirst().archived());
+    }
+    @Test void bindingStartedBeforeDetachmentCannotRestoreTheArchiveWhenInspectionReturns() throws Exception {
+        var connection=connection(); var project=bind(connection); awaitIdle();
+        var entered=new CountDownLatch(1); var release=new CountDownLatch(1);
+        provider.inspector=id -> { entered.countDown(); await(release); return new CrmProjectInfo(id,"Old preview","RUB",null); };
+        try (var executor=Executors.newSingleThreadExecutor()) {
+            var pending=executor.submit(() -> assertThrows(CrmException.class,() -> bind(connection)));
+            try { await(entered); service.detachProject(project.id(),project.version()); }
+            finally { release.countDown(); }
+            assertEquals("CRM_PROJECT_ARCHIVED",pending.get(10,TimeUnit.SECONDS).code());
+        }
+        assertTrue(service.projects(workspace,null).getFirst().archived());
+    }
+    @Test void detachmentRejectsLateCatalogResultEvenAfterRestoration() throws Exception { lateReadAfterDetachment("CATALOG"); }
+    @Test void detachmentRejectsLateClientResultEvenAfterRestoration() throws Exception { lateReadAfterDetachment("CLIENTS"); }
+    @Test void detachmentRejectsLateScheduleResultEvenAfterRestoration() throws Exception { lateReadAfterDetachment("SCHEDULE"); }
+    @Test void detachmentRejectsLateAppointmentResultEvenAfterRestoration() throws Exception { lateReadAfterDetachment("APPOINTMENTS"); }
+    @Test void detachmentRejectsLateFinanceResultEvenAfterRestoration() throws Exception { lateReadAfterDetachment("FINANCE"); }
+    private void lateReadAfterDetachment(String dataset) throws Exception {
+        var connection=connection(); var project=bind(connection); awaitIdle(); var master=first(project.id());
+        UUID appointment=financeAppointment(project.id()); var oldAppointment=appointmentReader.appointment(appointment);
+        var entered=new CountDownLatch(1); var release=new CountDownLatch(1);
+        Runnable block=() -> { entered.countDown(); await(release); };
+        switch (dataset) {
+            case "CATALOG" -> provider.reader=access -> { block.run(); return FakeProvider.masters("late"); };
+            case "CLIENTS" -> provider.clientReader=cursor -> { block.run(); return clientPage(List.of(externalClient("99","Late")),null); };
+            case "SCHEDULE" -> provider.scheduleReader=query -> { block.run(); return new CrmScheduleSnapshot(List.of(shift("m1",0,12)),Instant.now(),CrmReadResult.Completeness.COMPLETE,"100",query); };
+            case "APPOINTMENTS" -> provider.appointmentsReader=request -> { block.run(); return new CrmAppointmentPage(List.of(appointment("late",0,12,"1")),null,Instant.now(),CrmReadResult.Completeness.COMPLETE,request.project(),request.query()); };
+            case "FINANCE" -> provider.financeReader=query -> { block.run(); return financeSnapshot(query); };
+        }
+        try (var executor=Executors.newSingleThreadExecutor()) {
+            Future<?> pending=null;
+            try {
+                switch (dataset) {
+                    case "CATALOG" -> sync.refresh(project.id());
+                    case "CLIENTS" -> clientSync.refresh(project.id());
+                    case "SCHEDULE" -> scheduleSync.refresh(project.id(),master.id(),SCHEDULE_DAY,SCHEDULE_DAY.plusDays(1));
+                    case "APPOINTMENTS" -> appointmentSync.refresh(project.id(),"APPOINTMENTS",null,SCHEDULE_DAY,SCHEDULE_DAY.plusDays(1));
+                    case "FINANCE" -> pending=executor.submit(() -> assertThrows(CrmException.class,() -> finance.refresh(appointment)));
+                }
+                await(entered);
+                var current=service.projects(workspace,null).getFirst(); var archive=service.detachProject(project.id(),current.version());
+                // Restore before the old read returns; context must still reject its result.
+                provider.reader=access -> FakeProvider.masters("initial");
+                service.bind(workspace,new BindCrmProjectRequest(connection.id(),"100",null,archive.version()));
+            } finally { release.countDown(); }
+            if (pending!=null) pending.get(10,TimeUnit.SECONDS);
+            awaitIdle(); awaitClients(); awaitSchedule(); awaitAppointments();
+        }
+        assertEquals("initial one",first(project.id()).displayName());
+        assertEquals(0,jdbc.queryForObject("select count(*) from crm.client where externalid='99'",Integer.class));
+        assertEquals(0,jdbc.queryForObject("select count(*) from crm.workinterval",Integer.class));
+        assertEquals(1,jdbc.queryForObject("select count(*) from crm.appointment",Integer.class));
+        assertEquals(oldAppointment.startAt(),appointmentReader.appointment(appointment).startAt());
+        assertTrue(finance.read(appointment).snapshot().isEmpty());
+    }
+    @Test void legacyActiveSlotIndexIsUpgradedWithoutLosingArchivesOrAllowingTwoActiveProjects() throws Exception {
+        var connection=connection(); var project=bind(connection); awaitIdle();
+        jdbc.execute("drop index crm.uqprojectdikidiworkspace");
+        jdbc.execute("create unique index uqprojectdikidiworkspace on crm.project(workspaceid) where provider='DIKIDI'");
+        storage.initialize();
+        service.detachProject(project.id(),project.version());
+        var other=service.bind(workspace,new BindCrmProjectRequest(connection.id(),"200",null)).project(); awaitIdle();
+        assertThrows(org.springframework.dao.DataIntegrityViolationException.class,() -> jdbc.update("update crm.project set archived=false,enabled=true where id=?",project.id()));
+        assertThrows(org.springframework.dao.DataIntegrityViolationException.class,() -> jdbc.update("update crm.project set enabled=true where id=?",project.id()));
+        storage.initialize(); assertEquals(2,service.projects(workspace,null).size()); assertFalse(other.archived());
+    }
     private CrmProjectDto bind(CrmConnectionDto connection) {
         return service.bind(workspace, new BindCrmProjectRequest(connection.id(), "100", null)).project();
+    }
+    @Test void projectOptionsExcludeBindingsAcrossAccountsAndPreserveOnlyThisWorkspacesArchive() throws Exception {
+        var firstConnection=connection(); var secondConnection=connection(); var archived=bind(firstConnection); awaitIdle();
+        service.detachProject(archived.id(),archived.version());
+        UUID secondWorkspace=tx.execute(status -> { var row=new WorkspaceEntity(em.find(OrganizationEntity.class,organization),"second"); em.persist(row); return row.getId(); });
+        var occupied=service.bind(secondWorkspace,new BindCrmProjectRequest(secondConnection.id(),"200",null)).project(); awaitIdle();
+        UUID thirdWorkspace=tx.execute(status -> { var row=new WorkspaceEntity(em.find(OrganizationEntity.class,organization),"third"); em.persist(row); return row.getId(); });
+        var otherArchive=service.bind(thirdWorkspace,new BindCrmProjectRequest(secondConnection.id(),"400",null)).project(); awaitIdle();
+        service.detachProject(otherArchive.id(),otherArchive.version());
+        provider.projectLister=() -> List.of(new CrmProjectInfo("100","Restore",null,null),new CrmProjectInfo("200","Taken",null,null),
+                new CrmProjectInfo("300","Available",null,null),new CrmProjectInfo("400","Other archive",null,null));
+        assertEquals(List.of("300","100"),service.availableProjects(secondConnection.id(),workspace).stream().map(CrmProjectCheckDto::externalId).toList());
+        service.updateProject(occupied.id(),new UpdateCrmProjectRequest(occupied.version(),false,null));
+        assertEquals(List.of("300","100"),service.availableProjects(firstConnection.id(),workspace).stream().map(CrmProjectCheckDto::externalId).toList());
+        assertTrue(service.availableProjects(secondConnection.id(),secondWorkspace).isEmpty());
+        assertEquals(3,service.organizationProjects().size());
+    }
+    @Test void projectOptionsCheckAccessBeforeIoAndRejectCredentialsChangedDuringTheRead() throws Exception {
+        var connection=connection(); var calls=new AtomicInteger();
+        provider.projectLister=() -> { calls.incrementAndGet(); return List.of(); };
+        actor.set(member); assertThrows(AccessDeniedException.class,() -> service.availableProjects(connection.id(),workspace));
+        actor.set(admin); assertThrows(AccessDeniedException.class,() -> service.availableProjects(connection.id(),otherWorkspace));
+        assertEquals(0,calls.get());
+        provider.projectLister=() -> { service.updateConnection(connection.id(),new UpdateCrmConnectionRequest(connection.version(),null,"changed-test-secret",null)); return List.of(); };
+        assertEquals("CRM_CONTEXT_CHANGED",assertThrows(CrmException.class,() -> service.availableProjects(connection.id(),workspace)).code());
+        assertTrue(service.projects(workspace,null).isEmpty());
+    }
+    @Test void projectOptionsRecheckBindingsAndAccessAfterRemoteRead() throws Exception {
+        var connection=connection();
+        provider.projectLister=() -> {
+            service.bind(workspace,new BindCrmProjectRequest(connection.id(),"100",null));
+            return List.of(new CrmProjectInfo("100","Now taken",null,null));
+        };
+        assertTrue(service.availableProjects(connection.id(),workspace).isEmpty()); awaitIdle();
+        provider.projectLister=() -> {
+            jdbc.update("update dbo.users set isenabled=false where userid=(select userid from dbo.employee where employeeid=?)",admin);
+            return List.of();
+        };
+        try { assertThrows(AccessDeniedException.class,() -> service.availableProjects(connection.id(),workspace)); }
+        finally { jdbc.update("update dbo.users set isenabled=true where userid=(select userid from dbo.employee where employeeid=?)",admin); }
     }
     private void awaitIdle() throws Exception {
         var executor = (ThreadPoolExecutor)ReflectionTestUtils.getField(sync, "executor");
@@ -583,6 +757,10 @@ class CrmFoundationIntegrationTest {
         assertEquals(0, jdbc.queryForObject("select count(*) from dbo.employee where employeeid=?", Integer.class, removed));
     }
     private static final class FakeProvider implements CrmProvider {
+        volatile java.util.function.Supplier<List<CrmProjectInfo>> projectLister=List::of;
+        public List<CrmProjectInfo> listProjects(CrmAccess access) {
+            assertFalse(TransactionSynchronizationManager.isActualTransactionActive()); return projectLister.get();
+        }
         volatile Function<CrmFinanceQuery,CrmFinanceSnapshot> financeReader=CrmFoundationIntegrationTest::financeSnapshot;
         public CrmFinanceSnapshot readFinance(CrmAccess access,String project,CrmFinanceQuery query) {
             assertFalse(TransactionSynchronizationManager.isActualTransactionActive());

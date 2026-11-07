@@ -19,7 +19,7 @@ public class CrmDeletionGuard {
         store.storage.requireReady();
         store.em.lock(workspace, LockModeType.PESSIMISTIC_WRITE);
         if (store.projects.existsByWorkspaceId(workspace.getId()))
-            throw new CrmException(409, "CRM_RESOURCE_IN_USE", "Workspace связан с CRM-проектом, включая отключённый.");
+            throw new CrmException(409, "CRM_RESOURCE_IN_USE", "Workspace связан с CRM-проектом, включая отключённый проект или архив.");
     }
     public void employee(EmployeeEntity employee) {
         store.storage.requireReady();

@@ -12,6 +12,7 @@ type Resource = {
     epoch: number
     failures: number; retryAt: number
     visible: () => boolean
+    reconcile: boolean
     cancelRun?: () => void; running?: Promise<void>; timer?: ReturnType<typeof setTimeout>
 }
 
@@ -30,10 +31,10 @@ export class InvalidationCoordinator {
     private health() { if (!this.closed) this.options.onHealth?.(![...this.resources].some(resource => resource.visible() && resource.failures > 0)) }
 
     subscribe(matches: Resource['matches'], refresh: Resource['refresh'], reset?: Resource['reset'], visible = () => true,
-        onInvalidated?: Resource['onInvalidated']): (() => void) & { invalidate: () => void } {
+        onInvalidated?: Resource['onInvalidated'], reconcile = true): (() => void) & { invalidate: () => void } {
         this.closed = false
         const resource: Resource = { matches, refresh, reset, visible, onInvalidated, epoch: 0, failures: 0, retryAt: 0,
-            revision: 0, completed: 0, closed: false, lastStart: 0, controller: new AbortController() }
+            revision: 0, completed: 0, closed: false, lastStart: 0, controller: new AbortController(), reconcile }
         this.resources.add(resource)
         return Object.assign(() => {
             resource.closed = true; resource.controller.abort(); clearTimeout(resource.timer)
@@ -44,7 +45,7 @@ export class InvalidationCoordinator {
         } })
     }
     invalidate(event?: UiEventEnvelope): void {
-        for (const resource of this.resources) if (!event || resource.matches(event)) {
+        for (const resource of this.resources) if (event ? resource.matches(event) : resource.reconcile) {
             resource.onInvalidated?.(event)
             resource.revision++; this.schedule(resource)
         }
@@ -65,6 +66,7 @@ export class InvalidationCoordinator {
     async reconcile(signal?: AbortSignal): Promise<void> {
         if (signal?.aborted) throw abortError()
         await Promise.all([...this.resources].map(async resource => {
+            if (!resource.reconcile) return
             const required = ++resource.revision
             if (!this.canRefresh() || !resource.visible()) return
             while (!resource.closed && resource.completed < required) {
@@ -80,6 +82,7 @@ export class InvalidationCoordinator {
     async reconcileAvailable(signal?: AbortSignal, respectBackoff = false): Promise<boolean> {
         if (signal?.aborted) throw abortError()
         const outcomes = await Promise.all([...this.resources].map(async resource => {
+            if (!resource.reconcile) return true
             const required = ++resource.revision
             if (!this.canRefresh() || !resource.visible()) return true
             try {

@@ -4,6 +4,8 @@ import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /** Runs after Hibernate DDL. CRM remains gated until the index and price storage are ready. */
 @Component
@@ -14,7 +16,24 @@ public class CrmStorage implements ApplicationRunner {
     @Override public void run(ApplicationArguments args) { initialize(); }
     public void initialize() {
         ready = false;
-        jdbc.execute("create unique index if not exists uqprojectdikidiworkspace on crm.project(workspaceid) where provider='DIKIDI'");
+        // Upgrade the legacy index atomically: no window in which two active bindings can be inserted.
+        new TransactionTemplate(new DataSourceTransactionManager(java.util.Objects.requireNonNull(jdbc.getDataSource())))
+                .executeWithoutResult(status -> {
+                    jdbc.execute("lock table crm.project in share row exclusive mode");
+                    jdbc.execute("create unique index if not exists uqprojectdikidiworkspace on crm.project(workspaceid) where provider='DIKIDI' and archived=false");
+                    if (validateIndex()) {
+                        jdbc.execute("drop index crm.uqprojectdikidiworkspace");
+                        jdbc.execute("create unique index uqprojectdikidiworkspace on crm.project(workspaceid) where provider='DIKIDI' and archived=false");
+                        validateIndex();
+                    }
+                    jdbc.execute("alter table crm.project drop constraint if exists projectarchiveck");
+                    jdbc.execute("alter table crm.project add constraint projectarchiveck check (not archived or not enabled)");
+                });
+        normalizePrices();
+        ready = true;
+    }
+    /** Returns true only for the exact legacy index, which may be upgraded. */
+    private boolean validateIndex() {
         var rows = jdbc.queryForList("""
                 select i.indisunique, i.indisvalid, i.indnatts, i.indnkeyatts,
                     tn.nspname as tableschema, t.relname as tablename,
@@ -31,10 +50,10 @@ public class CrmStorage implements ApplicationRunner {
         if (!Boolean.TRUE.equals(row.get("indisunique")) || !Boolean.TRUE.equals(row.get("indisvalid"))
                 || ((Number)row.get("indnatts")).intValue() != 1 || ((Number)row.get("indnkeyatts")).intValue() != 1
                 || !"crm".equals(row.get("tableschema")) || !"project".equals(row.get("tablename"))
-                || !"workspaceid".equals(row.get("keycolumn")) || !"provider='DIKIDI'".equals(predicate))
-            throw new IllegalStateException("CRM index does not match its contract");
-        normalizePrices();
-        ready = true;
+                || !"workspaceid".equals(row.get("keycolumn"))
+                || !("provider='DIKIDI'".equals(predicate) || "provider='DIKIDI'ANDarchived=false".equals(predicate)))
+            throw new IllegalStateException("CRM index does not match its contract: " + predicate);
+        return "provider='DIKIDI'".equals(predicate);
     }
     private void normalizePrices() {
         var column=jdbc.queryForMap("""

@@ -48,9 +48,12 @@ public class CrmStore {
         em.refresh(connection, LockModeType.PESSIMISTIC_WRITE);
         var row = em.find(CrmProjectEntity.class, context.projectId(), LockModeType.PESSIMISTIC_WRITE);
         if (row != null) em.refresh(row, LockModeType.PESSIMISTIC_WRITE);
-        if (row == null || !row.isEnabled() || row.getConnection().getStatus() == CrmConnectionStatus.DISABLED
+        if (row == null || row.isArchived() || !row.isEnabled() || row.getConnection().getStatus() == CrmConnectionStatus.DISABLED
                 || !context.equals(context(row))) throw CrmException.conflict("CRM_CONTEXT_CHANGED");
         return row;
+    }
+    static void requireMutable(CrmProjectEntity project) {
+        if (project.isArchived()) throw new CrmException(409, "CRM_PROJECT_ARCHIVED", "Проект CRM в архиве. Доступен только просмотр сохранённых данных.");
     }
     void lockMappingEmployees(UUID authorId, UUID targetId) {
         // Stable order prevents reciprocal links from deadlocking. NO KEY UPDATE protects
@@ -75,7 +78,8 @@ public class CrmStore {
         for (String code : List.of("LIST_PROJECTS", "READ_MASTERS", "READ_SERVICES", "READ_CLIENTS", "READ_APPOINTMENTS",
                 "READ_CLIENT_HISTORY", "READ_WORK_INTERVALS", "READ_AVAILABILITY", "READ_FINANCIAL_CONTEXT",
                 "CREATE_APPOINTMENT", "MOVE_APPOINTMENT", "CANCEL_APPOINTMENT")) {
-            boolean implemented = Set.of("READ_MASTERS","READ_SERVICES","READ_CLIENTS","READ_WORK_INTERVALS","READ_APPOINTMENTS","READ_CLIENT_HISTORY").contains(code);
+            boolean implemented = Set.of("READ_MASTERS","READ_SERVICES","READ_CLIENTS","READ_WORK_INTERVALS","READ_APPOINTMENTS","READ_CLIENT_HISTORY").contains(code)
+                    || code.equals("LIST_PROJECTS") && row.getProvider()==CrmType.DIKIDI;
             String state = !implemented ? "UNVERIFIED" : !row.isEnabled() || row.getConnection().getStatus() == CrmConnectionStatus.DISABLED
                     ? "CONFIGURATION_REQUIRED" : row.getConnection().getStatus() == CrmConnectionStatus.REAUTH_REQUIRED
                     ? "REAUTH_REQUIRED" : "AVAILABLE";
@@ -83,7 +87,7 @@ public class CrmStore {
         }
         return new CrmProjectDto(row.getId(), row.getConnection().getId(), row.getWorkspace().getId(), row.getProvider(),
                 row.getExternalId(), row.getDisplayName(), row.getCurrency(), row.getZoneId(), row.getZoneSource(),
-                row.getZoneRevision(), row.getContextVersion(), row.isEnabled(), row.getConnection().getStatus(), capabilities, row.getVersion());
+                row.getZoneRevision(), row.getContextVersion(), row.isEnabled(), row.getConnection().getStatus(), capabilities, row.getVersion(), row.isArchived());
     }
     static CrmMasterDto dto(CrmMasterEntity row) {
         return new CrmMasterDto(row.getId(), row.getProject().getId(), row.getExternalId(), row.getDisplayName(),

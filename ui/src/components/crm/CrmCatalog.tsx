@@ -7,11 +7,11 @@ import { useCrmPages } from './useCrmPages'
 import { CrmFreshness, OfferTerms } from './CrmShared'
 
 type ProjectProps = { project: api.CrmProject; refresh?: number }
-function PageStatus({ data, empty, moreLabel }: { data: ReturnType<typeof useCrmPages<any>>; empty: string; moreLabel: string }) {
+function PageStatus({ data, empty, moreLabel, archived = false }: { data: ReturnType<typeof useCrmPages<any>>; empty: string; moreLabel: string; archived?: boolean }) {
     return <>
         {data.error && <div role="alert" className="crm-error">{data.error} <button type="button" onClick={data.reload}>Повторить</button></div>}
         {data.loading && !data.page && <p role="status">Загрузка…</p>}
-        {!data.loading && !data.error && !data.page?.items.length && <p className="crm-empty">{data.page?.dataState.freshness === 'NEVER_LOADED' ? 'Данные ещё не загружены. Нажмите «Обновить».' : empty}</p>}
+        {!data.loading && !data.error && !data.page?.items.length && <p className="crm-empty">{data.page?.dataState.freshness === 'NEVER_LOADED' ? archived ? 'В архиве нет сохранённых данных.' : 'Данные ещё не загружены. Нажмите «Обновить».' : empty}</p>}
         {data.page?.hasMore && <button type="button" className="ui-button ui-button-secondary crm-more" disabled={data.more || data.loading}
             onClick={() => void data.loadMore()}>{data.more ? 'Загрузка…' : moreLabel}</button>}
     </>
@@ -41,7 +41,7 @@ function ServiceRows({ project, query, masterId, onMaster, refresh }: ProjectPro
         (signal, cursor) => api.getCrmServices(project.id, { q: query, masterId, cursor }, signal))
     useEffect(() => { if (refresh) data.reload() }, [refresh])
     return <>
-        <CrmFreshness state={data.page?.dataState} />
+        <CrmFreshness state={data.page?.dataState} archived={project.archived} />
         <ul className="crm-service-list">{data.page?.items.map(service => <li className="crm-service" key={service.id}>
             <div className="crm-service-name"><strong>{service.displayName}</strong>{service.category && <small>{service.category}</small>}</div>
             <ul>{service.offers.map(offer => <li key={offer.id} className="crm-offer">
@@ -51,7 +51,7 @@ function ServiceRows({ project, query, masterId, onMaster, refresh }: ProjectPro
             </li>)}</ul>
             {!service.offers.length && <p>Предложения мастеров пока не получены.</p>}
         </li>)}</ul>
-        <PageStatus data={data} empty={query || masterId ? 'Услуги по этим условиям не найдены.' : 'В каталоге пока нет услуг.'} moreLabel="Показать ещё услуги" />
+        <PageStatus data={data} archived={project.archived} empty={query || masterId ? 'Услуги по этим условиям не найдены.' : 'В каталоге пока нет услуг.'} moreLabel="Показать ещё услуги" />
     </>
 }
 export function CrmServices({ project, onMaster, refresh }: ProjectProps & { onMaster: (id: string) => void }) {
@@ -92,7 +92,7 @@ function MasterRows({ project, query, mapping, unlinked, onMaster, refresh }: Pr
         }
     }, [saving])
     async function save(master: api.CrmMaster, employeeId: string | null, reverting = false) {
-        if (mutation.current) return
+        if (project.archived || mutation.current) return
         const controller = new AbortController(), current = data.capture(), candidateCurrent = candidateResource.capture()
         mutation.current = controller; setSaving(master.id); setSaveError(null); setMessage('')
         try {
@@ -113,7 +113,7 @@ function MasterRows({ project, query, mapping, unlinked, onMaster, refresh }: Pr
     }
     const visibleCandidates = candidates.filter(row => (row.displayName + ' ' + row.username).toLocaleLowerCase().includes(candidateQuery.toLocaleLowerCase()))
     return <>
-        <CrmFreshness state={data.page?.dataState} />
+        <CrmFreshness state={data.page?.dataState} archived={project.archived} />
         {mapping && <details className="crm-candidate-search"><summary>Найти сотрудника по имени или логину</summary><label>Поиск сотрудника в списках<input type="search" value={candidateQuery} maxLength={160} onChange={event => setCandidateQuery(event.target.value)} placeholder="Имя или логин" /></label></details>}
         {mapping && candidateError && <p role="alert" className="crm-error">{candidateError} <button type="button" onClick={candidateResource.reload}>Повторить загрузку сотрудников</button></p>}
         {saveError && <p role="alert" className="crm-error">{saveError}</p>}
@@ -124,7 +124,7 @@ function MasterRows({ project, query, mapping, unlinked, onMaster, refresh }: Pr
                 <small>ID {master.externalId}</small>
                 {master.observationState === 'NOT_OBSERVED' && <small>Отсутствует в последнем полном каталоге</small>}</div>
             {mapping && <label>Сотрудник ClientBus<select id={'crm-link-' + master.id} aria-label={'Сотрудник: ' + master.displayName} value={master.employeeId ?? ''}
-                aria-disabled={!!saving} disabled={(candidateLoading && !candidates.length) || !!candidateError} onChange={event => void save(master, event.target.value || null)}>
+                aria-disabled={project.archived || !!saving} disabled={project.archived || (candidateLoading && !candidates.length) || !!candidateError} onChange={event => void save(master, event.target.value || null)}>
                 <option value="">Без связи с сотрудником</option>
                 {master.employeeId && !visibleCandidates.some(row => row.id === master.employeeId) && <option value={master.employeeId}>
                     {candidates.find(row => row.id === master.employeeId)?.displayName ?? 'Связанный сотрудник'}
@@ -133,7 +133,7 @@ function MasterRows({ project, query, mapping, unlinked, onMaster, refresh }: Pr
             </select>{saving === master.id && <small role="status">Сохраняем…</small>}</label>}
             {!mapping && <span className="crm-row-hint">Услуги и условия →</span>}
         </li>)}</ul>
-        <PageStatus data={data} empty={unlinked ? 'Мастеров без связи по этим условиям нет.' : query ? 'Мастера не найдены.' : 'В каталоге пока нет мастеров.'} moreLabel="Показать ещё мастеров" />
+        <PageStatus data={data} archived={project.archived} empty={unlinked ? 'Мастеров без связи по этим условиям нет.' : query ? 'Мастера не найдены.' : 'В каталоге пока нет мастеров.'} moreLabel="Показать ещё мастеров" />
     </>
 }
 export function CrmMasters({ project, mapping, onMaster, refresh }: ProjectProps & { mapping: boolean; onMaster: (id: string) => void }) {

@@ -6,12 +6,14 @@ import { abortError, withCancellation } from './requestScope'
 import { useUiScope } from './uiScope'
 import { bindRequestBudget } from './requestBudget'
 
-/** Shares initial/manual/SSE reads and owns cancellation for one mounted query. */
+/** Shares initial/manual/SSE reads. Explicit discovery may opt out of blanket recovery reads, retaining targeted events and revoke. */
 export function useUiResource<T>(key: string, enabled: boolean, matches: (event: UiEventEnvelope) => boolean,
     read: (signal: AbortSignal) => Promise<T>, apply: (value: T) => void,
-    fail: (error: unknown) => void, reset: () => void, pending?: (value: boolean) => void, visible = true,
+    fail: (error: unknown) => void, reset: () => void, pending?: (value: boolean) => void,
+    visibility: boolean | { visible?: boolean; reconcile?: boolean } = true,
     onInvalidated?: (event?: UiEventEnvelope) => void) {
     const scope = useUiScope()
+    const { visible = true, reconcile = true } = typeof visibility === 'boolean' ? { visible: visibility } : visibility
     const owner = useMemo(() => ({ active: true, epoch: 0, denied: false,
         controller: undefined as AbortController | undefined, running: undefined as Promise<void> | undefined }), [scope, key, enabled])
     const handlers = useRef({ read, apply, fail, reset, pending }); handlers.current = { read, apply, fail, reset, pending }
@@ -59,7 +61,7 @@ export function useUiResource<T>(key: string, enabled: boolean, matches: (event:
             owner.running = undefined; owner.controller = undefined
         }
     }, [owner, refresh])
-    useUiInvalidation(key, enabled, matches, signal => refresh(signal), revoke, visible, onInvalidated)
+    useUiInvalidation(key, enabled, matches, signal => refresh(signal), revoke, visible, onInvalidated, reconcile)
     return { reload: useCallback(() => { owner.denied = false; void refresh().catch(() => {}) }, [owner, refresh]),
         capture: () => {
             const epoch = owner.epoch

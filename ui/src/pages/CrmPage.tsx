@@ -51,7 +51,8 @@ function CrmProjectCatalog({ project, canManage, rememberedTab, remember }: {
             <div><strong>{project.provider}</strong> · {project.displayName} <span className="crm-state">{api.crmConnectionLabel(project.connectionState)}</span></div>
             <button type="button" className="ui-button ui-button-secondary" disabled={busy || needsRecovery} onClick={() => void update()}>{busy ? 'Запрашиваем…' : 'Обновить'}</button>
         </div>
-        {needsRecovery && <div className="crm-notice">
+        {project.archived && <div className="crm-notice">Проект в архиве. Доступен просмотр сохранённых данных и сопоставлений; обновления остановлены.</div>}
+        {needsRecovery && !project.archived && <div className="crm-notice">
             {!project.enabled ? 'Обновление проекта выключено.' : project.connectionState === 'DISABLED' ? 'Аккаунт CRM выключен.' : 'Для обновления каталога требуется вход в CRM.'}
             {' '}Сохранённые данные доступны.{' '}
             {isSuperAdmin ? <Link to={!project.enabled
@@ -90,7 +91,7 @@ function WorkspaceCatalog({ workspaceId }: { workspaceId: string }) {
         event => affectsWorkspace(event, workspaceId) && (isAccessEvent(event) || event.type === 'crm.invalidated'),
         signal => api.getCrmProjects(workspaceId, signal), value => { setProjects(value); setError(null) },
         error => setError(api.crmError(error)), () => setProjects([]), setLoading)
-    const project = projects.find(row => row.id === params.get('project')) ?? projects[0]
+    const project = projects.find(row => row.id === params.get('project')) ?? projects.find(row => !row.archived) ?? projects[0]
     function remember(value: string) {
         setTab(value)
         try { sessionStorage.setItem(memoryKey, value) } catch { /* Private storage may be disabled. */ }
@@ -105,8 +106,8 @@ function WorkspaceCatalog({ workspaceId }: { workspaceId: string }) {
             {isSuperAdmin ? <Link className="ui-button ui-button-primary" to={`/workspaces/${encodeURIComponent(workspaceId)}?returnWorkspace=${encodeURIComponent(workspaceId)}#crm`}>Подключить проект</Link>
                 : <p>Проект подключает администратор организации.</p>}</div>}
         {projects.length > 1 && <label className="crm-project-select">Проект<select value={project?.id ?? ''} onChange={event => setParams({ workspace: workspaceId, project: event.target.value, tab })}>
-            {projects.map(row => <option key={row.id} value={row.id}>{row.provider} · {row.displayName}</option>)}</select></label>}
-        {project && <CrmProjectCatalog key={project.id + ':' + canManage} project={project} canManage={canManage} rememberedTab={tab} remember={remember} />}
+            {projects.map(row => <option key={row.id} value={row.id}>{row.provider} · {row.displayName}{row.archived ? ' · архив' : ''}</option>)}</select></label>}
+        {project && <CrmProjectCatalog key={project.id + ':' + canManage + ':' + project.archived} project={project} canManage={canManage} rememberedTab={tab} remember={remember} />}
     </section>
 }
 export default function CrmPage() {
