@@ -57,6 +57,7 @@ class CrmFoundationIntegrationTest {
     private CrmScheduleReader scheduleReader;
     private CrmAppointmentSync appointmentSync;
     private CrmAppointmentReader appointmentReader;
+    private CrmFinanceService finance;
     private CrmAppointmentTimes appointmentTimes;
     private CrmStore store;
     private UiDomainEvents events;
@@ -161,6 +162,7 @@ class CrmFoundationIntegrationTest {
         scheduleSync=new CrmScheduleSync(store,jdbc,manager,registry,cipher,events,new CrmScheduleWriter(store));
         scheduleReader=new CrmScheduleReader(store,scheduleSync,manager);
         appointmentSync=new CrmAppointmentSync(store,jdbc,manager,registry,cipher,events,new CrmAppointmentWriter(store),appointmentNanoTime::get);
+        finance=new CrmFinanceService(store,registry,cipher,events,manager,jdbc);
         appointmentReader=new CrmAppointmentReader(store,appointmentSync,jdbc,manager);
         appointmentTimes=new CrmAppointmentTimes(store,jdbc,manager,events);
         service = new CrmService(store, registry, cipher, sync, manager, events);
@@ -581,6 +583,11 @@ class CrmFoundationIntegrationTest {
         assertEquals(0, jdbc.queryForObject("select count(*) from dbo.employee where employeeid=?", Integer.class, removed));
     }
     private static final class FakeProvider implements CrmProvider {
+        volatile Function<CrmFinanceQuery,CrmFinanceSnapshot> financeReader=CrmFoundationIntegrationTest::financeSnapshot;
+        public CrmFinanceSnapshot readFinance(CrmAccess access,String project,CrmFinanceQuery query) {
+            assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
+            return financeReader.apply(query);
+        }
         final Set<UUID> invalidations=ConcurrentHashMap.newKeySet();
         record AppointmentRequest(String project,CrmAppointmentQuery query,String cursor,boolean history) {}
         final AtomicInteger appointmentReads=new AtomicInteger();
@@ -1960,6 +1967,160 @@ class CrmFoundationIntegrationTest {
         }
         loadSchedule(project.id(),master,SCHEDULE_DAY.plusDays(1),SCHEDULE_DAY.plusDays(1),CrmReadResult.Completeness.UNKNOWN,List.of());
         assertEquals("CRM_CONTEXT_CHANGED",assertThrows(CrmException.class,() -> scheduleReader.intervals(project.id(),master,SCHEDULE_DAY,SCHEDULE_DAY,page.nextCursor())).code());
+    }
+    private static CrmFinanceSnapshot financeSnapshot(CrmFinanceQuery query) {
+        return new CrmFinanceSnapshot("100",query,"40","RUB",new BigDecimal("3500"),new BigDecimal("1500"),
+                new BigDecimal("2000"),BigDecimal.ZERO,BigDecimal.ZERO,
+                List.of(new CrmFinanceSnapshot.Line("50","10","60",new BigDecimal("5000"),new BigDecimal("30"),new BigDecimal("1500"),new BigDecimal("3500"))),
+                List.of(new CrmFinanceSnapshot.Payment("70","27.10.2026",List.of(new CrmFinanceSnapshot.Component("cash","80",new BigDecimal("1500"))))),
+                Instant.now(),CrmReadResult.Completeness.UNKNOWN);
+    }
+    private UUID financeAppointment(UUID project) throws Exception {
+        loadAppointments(project,CrmReadResult.Completeness.COMPLETE,List.of(appointment("a1",0,10,"1")));
+        return appointments(project).items().getFirst().id();
+    }
+    @Test void financeRefreshHasIndependentWriterAndDoesNotChangeCalendarFields() throws Exception {
+        var project=bind(connection()); awaitIdle(); UUID id=financeAppointment(project.id()); actor.set(member);
+        assertEquals("NEVER_LOADED",finance.read(id).sync().freshness());
+        var before=appointmentReader.appointment(id); var result=finance.refresh(id);
+        assertEquals("PARTIAL",result.sync().status()); assertEquals("UNKNOWN",result.completeness());
+        assertEquals("CURRENT",result.sync().freshness()); assertEquals("3500",((Map<?,?>)result.snapshot().get("totals")).get("cost").toString());
+        var after=appointmentReader.appointment(id);
+        assertEquals("PARTIALLY_PAID",after.paymentState()); assertEquals(before.comment(),after.comment());
+        assertEquals(before.localStart(),after.localStart()); assertEquals(before.services(),after.services());
+        assertEquals(before.lastObservedAt(),after.lastObservedAt());
+        actor.set(admin); loadAppointments(project.id(),CrmReadResult.Completeness.UNKNOWN,List.of(appointment("a1",0,11,"1")));
+        assertEquals(result.snapshot(),finance.read(id).snapshot());
+        assertEquals("PARTIALLY_PAID",appointmentReader.appointment(id).paymentState());
+    }
+    @Test void financeFailurePreservesLastSuccessfulSnapshotAndFreshness() throws Exception {
+        var project=bind(connection()); awaitIdle(); UUID id=financeAppointment(project.id()); var first=finance.refresh(id);
+        provider.financeReader=query -> { throw new CrmFailure(CrmFailure.Code.RATE_LIMITED); };
+        assertEquals("CRM_RATE_LIMITED",assertThrows(CrmException.class,() -> finance.refresh(id)).code());
+        var after=finance.read(id); assertEquals(first.snapshot(),after.snapshot()); assertEquals(first.observedAt(),after.observedAt());
+        assertEquals("FAILED",after.sync().status()); assertEquals("STALE",after.sync().freshness());
+    }
+    @Test void financeDecimalsSurviveJsonbReloadAndLaterCalendarUpdates() throws Exception {
+        var project=bind(connection()); awaitIdle(); UUID id=financeAppointment(project.id());
+        var exact=new BigDecimal("123456789012345.1234");
+        provider.financeReader=query -> new CrmFinanceSnapshot("100",query,"40","RUB",exact,exact,BigDecimal.ZERO,
+                new BigDecimal("30.125"),new BigDecimal("0.0001"),
+                List.of(new CrmFinanceSnapshot.Line("50","10","60",exact,new BigDecimal("30.125"),new BigDecimal("1500.0001"),exact)),
+                List.of(new CrmFinanceSnapshot.Payment("70","27.10.2026",List.of(new CrmFinanceSnapshot.Component("cash","80",exact)))),
+                Instant.now(),CrmReadResult.Completeness.UNKNOWN);
+        finance.refresh(id);
+        assertEquals("object",jdbc.queryForObject("select jsonb_typeof(financialsnapshot) from crm.appointment where id=?",String.class,id));
+        assertEquals(exact,jdbc.queryForObject("select (financialsnapshot->'totals'->>'cost')::numeric from crm.appointment where id=?",BigDecimal.class,id));
+        for (int iteration=0;iteration<2;iteration++) {
+            var snapshot=finance.read(id).snapshot();
+            var totals=(Map<?,?>)snapshot.get("totals");
+            assertEquals(exact,assertInstanceOf(BigDecimal.class,totals.get("cost")));
+            assertEquals(new BigDecimal("0.0001"),assertInstanceOf(BigDecimal.class,totals.get("headBonus")));
+            var line=(Map<?,?>)((List<?>)snapshot.get("lines")).getFirst();
+            assertEquals(exact,assertInstanceOf(BigDecimal.class,line.get("price")));
+            assertEquals(new BigDecimal("1500.0001"),assertInstanceOf(BigDecimal.class,line.get("discountAmount")));
+            var payment=(Map<?,?>)((List<?>)snapshot.get("payments")).getFirst();
+            var component=(Map<?,?>)((List<?>)payment.get("components")).getFirst();
+            assertEquals(exact,assertInstanceOf(BigDecimal.class,component.get("amount")));
+            loadAppointments(project.id(),CrmReadResult.Completeness.UNKNOWN,List.of(appointment("a1",0,11+iteration,"1")));
+        }
+        assertEquals(exact,jdbc.queryForObject("select (financialsnapshot->'totals'->>'cost')::numeric from crm.appointment where id=?",BigDecimal.class,id));
+    }
+    @Test void existingFinanceJsonIsReadableWithoutRewritingItsSchemaOrNumbers() throws Exception {
+        var project=bind(connection()); awaitIdle(); UUID id=financeAppointment(project.id());
+        jdbc.update("update crm.appointment set financialsnapshot=cast(? as jsonb) where id=?",
+                "{\"paid\":\"100\",\"totals\":{\"cost\":123456789012345.1234},\"optional\":null}",id);
+        var snapshot=finance.read(id).snapshot();
+        assertEquals("100",snapshot.get("paid")); assertTrue(snapshot.containsKey("optional")); assertNull(snapshot.get("optional"));
+        assertEquals(new BigDecimal("123456789012345.1234"),assertInstanceOf(BigDecimal.class,((Map<?,?>)snapshot.get("totals")).get("cost")));
+        loadAppointments(project.id(),CrmReadResult.Completeness.UNKNOWN,List.of(appointment("a1",0,12,"1")));
+        assertEquals(snapshot,finance.read(id).snapshot());
+    }
+    @Test void unavailableFinancePaymentsDoNotClearPreviousPaymentsOrObservation() throws Exception {
+        var project=bind(connection()); awaitIdle(); UUID id=financeAppointment(project.id()); var first=finance.refresh(id);
+        Long generation=jdbc.queryForObject("select financialgeneration from crm.appointment where id=?",Long.class,id);
+        provider.financeReader=query -> { throw new CrmFailure(CrmFailure.Code.CAPABILITY_UNVERIFIED); };
+        assertEquals("CRM_CAPABILITY_UNVERIFIED",assertThrows(CrmException.class,() -> finance.refresh(id)).code());
+        var after=finance.read(id); assertEquals(first.snapshot(),after.snapshot()); assertEquals(first.observedAt(),after.observedAt());
+        assertEquals("FAILED",after.sync().status()); assertEquals("STALE",after.sync().freshness());
+        assertEquals(generation,jdbc.queryForObject("select financialgeneration from crm.appointment where id=?",Long.class,id));
+        assertFalse(((List<?>)after.snapshot().get("payments")).isEmpty());
+    }
+    @Test void financeRejectsWrongProviderScope() throws Exception {
+        var project=bind(connection()); awaitIdle(); UUID id=financeAppointment(project.id());
+        provider.financeReader=query -> financeSnapshot(new CrmFinanceQuery("another",query.date(),query.client()));
+        assertEquals("CRM_CONTEXT_MISMATCH",assertThrows(CrmException.class,() -> finance.refresh(id)).code());
+        assertTrue(finance.read(id).snapshot().isEmpty());
+    }
+    @Test void financeCannotPublishAfterWorkspaceAccessIsRevokedDuringRead() throws Exception {
+        var project=bind(connection()); awaitIdle(); UUID id=financeAppointment(project.id()); actor.set(member);
+        provider.financeReader=query -> {
+            jdbc.update("delete from dbo.employeeworkspace where employeeid=? and workspaceid=?",member,workspace);
+            return financeSnapshot(query);
+        };
+        assertThrows(org.springframework.security.access.AccessDeniedException.class,() -> finance.refresh(id));
+        assertThrows(org.springframework.security.access.AccessDeniedException.class,() -> finance.read(id));
+        actor.set(admin); assertTrue(finance.read(id).snapshot().isEmpty());
+    }
+    @Test void financeDiscardsLateResponseAfterProjectContextChanges() throws Exception {
+        var project=bind(connection()); awaitIdle(); UUID id=financeAppointment(project.id());
+        provider.financeReader=query -> {
+            jdbc.update("update crm.project set contextversion=contextversion+1 where id=?",project.id());
+            return financeSnapshot(query);
+        };
+        assertEquals("CRM_CONTEXT_CHANGED",assertThrows(CrmException.class,() -> finance.refresh(id)).code());
+        assertTrue(finance.read(id).snapshot().isEmpty());
+    }
+    @Test void financeCoalescesByAppointmentAndRejectsOverlappingRefresh() throws Exception {
+        var project=bind(connection()); awaitIdle(); UUID id=financeAppointment(project.id());
+        provider.financeReader=query -> {
+            assertEquals("CRM_CONNECTION_BUSY",assertThrows(CrmException.class,() -> finance.refresh(id)).code());
+            return financeSnapshot(query);
+        };
+        assertEquals("PARTIAL",finance.refresh(id).sync().status());
+    }
+    @Test void expiredFinanceLeaseCannotPublishAndNextRequestCanRecover() throws Exception {
+        var project=bind(connection()); awaitIdle(); UUID id=financeAppointment(project.id());
+        provider.financeReader=query -> {
+            jdbc.update("update crm.syncstate set claimuntil=clock_timestamp()-interval '1 second' where projectid=? and dataset in ('FINANCE','WRITER:FINANCE')",project.id());
+            return financeSnapshot(query);
+        };
+        assertEquals("CRM_CONTEXT_CHANGED",assertThrows(CrmException.class,() -> finance.refresh(id)).code());
+        assertTrue(finance.read(id).snapshot().isEmpty()); assertEquals("CRM_REFRESH_EXPIRED",finance.read(id).sync().errorCode());
+        provider.financeReader=CrmFoundationIntegrationTest::financeSnapshot;
+        assertEquals("PARTIAL",finance.refresh(id).sync().status());
+    }
+    @Test void financeWriterIsSharedByDifferentAppointmentsOfTheSameProject() throws Exception {
+        var project=bind(connection()); awaitIdle();
+        loadAppointments(project.id(),CrmReadResult.Completeness.COMPLETE,List.of(appointment("a1",0,10,"1"),appointment("a2",0,12,"1")));
+        var ids=appointments(project.id()).items().stream().map(CrmAppointmentDto::id).toList();
+        provider.financeReader=query -> {
+            assertEquals("CRM_CONNECTION_BUSY",assertThrows(CrmException.class,() -> finance.refresh(ids.getLast())).code());
+            return financeSnapshot(query);
+        };
+        finance.refresh(ids.getFirst());
+        assertTrue(finance.read(ids.getLast()).snapshot().isEmpty());
+        assertEquals(1,jdbc.queryForObject("select count(*) from crm.syncstate where projectid=? and dataset='WRITER:FINANCE'",Integer.class,project.id()));
+    }
+    @Test void financeSnapshotBecomesStaleAfterAppointmentClientOrDayChanges() throws Exception {
+        var project=bind(connection()); awaitIdle(); UUID id=financeAppointment(project.id()); var first=finance.refresh(id);
+        loadAppointments(project.id(),CrmReadResult.Completeness.UNKNOWN,List.of(appointment("a1",1,10,"2")));
+        assertEquals(first.snapshot(),finance.read(id).snapshot()); assertEquals("STALE",finance.read(id).sync().freshness());
+    }
+    @Test void unexpectedFinanceErrorsAreSanitizedAndDoNotEraseData() throws Exception {
+        var project=bind(connection()); awaitIdle(); UUID id=financeAppointment(project.id()); var first=finance.refresh(id);
+        provider.financeReader=query -> { throw new IllegalStateException("private-provider-body"); };
+        var error=assertThrows(CrmException.class,() -> finance.refresh(id));
+        assertEquals("CRM_TEMPORARILY_UNAVAILABLE",error.code()); assertNull(error.getCause());
+        assertFalse(error.toString().contains("private-provider-body")); assertEquals(first.snapshot(),finance.read(id).snapshot());
+    }
+    @Test void financeChangesInvalidateAppointmentPagination() throws Exception {
+        var project=bind(connection()); awaitIdle(); var visits=new ArrayList<CrmAppointment>();
+        for (int index=0;index<101;index++) visits.add(appointment("finance-"+index,0,10,"1"));
+        loadAppointments(project.id(),CrmReadResult.Completeness.COMPLETE,visits);
+        var page=appointments(project.id()); assertNotNull(page.nextCursor());
+        finance.refresh(page.items().getFirst().id());
+        assertEquals("CRM_CONTEXT_CHANGED",assertThrows(CrmException.class,() -> appointmentReader.appointments(project.id(),appointmentFilter(),page.nextCursor())).code());
     }
     private static CrmAppointment appointment(String id,int day,int hour,String client) {
         var start=SCHEDULE_DAY.plusDays(day).atTime(hour,0);

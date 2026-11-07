@@ -99,4 +99,14 @@ class DikidiClientContractTest {
                 "<tr><td class='red text-center' colspan='10'>Ничего не найдено</td></tr><div>Unexpected content</div>"))
             assertEquals(CrmFailure.Code.INVALID_RESPONSE,assertThrows(CrmFailure.class,()->read("{\"html\":\""+html+"\"}","1")).code());
     }
+    @Test void emptyMarkerRequiresRealClassAndColspanAttributes() {
+        for (String attributes:List.of("data-class='red text-center' data-colspan='10'",
+                "class='red text-center' data-colspan='10'","data-class='red text-center' colspan='10'",
+                "title=\"class='red text-center' colspan='10'\"","class='red text-center' colspan='0'"))
+            assertFalse(DikidiClientsHtml.emptyPage("<tr><td "+attributes+">Ничего не найдено</td></tr>"));
+        for (String html:List.of("<tr><td class='red text-center' colspan='10'>Ничего не найдено",
+                "<tr><td class='red text-center' colspan='10'>Ничего не найдено</td></tr><!-- extra -->",
+                "<tr><td class='red text-center' colspan='10'><script>ignored()</script>Ничего не найдено</td></tr>"))
+            assertFalse(DikidiClientsHtml.emptyPage(html));
+    }
 }

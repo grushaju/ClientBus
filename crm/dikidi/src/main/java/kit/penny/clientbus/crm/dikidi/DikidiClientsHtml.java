@@ -9,11 +9,48 @@ import java.util.*;
 
 /** R08 HTML is data only; script content, links and image URLs are never executed. */
 final class DikidiClientsHtml extends HTMLEditorKit.ParserCallback {
-    // Observed R08 terminal row. An arbitrary empty/error table is not an end-of-list marker.
-    private static final java.util.regex.Pattern EMPTY_PAGE=java.util.regex.Pattern.compile(
-            "\\s*<tr\\s*>\\s*<td(?=[^>]*\\bclass=(['\"])red text-center\\1)(?=[^>]*\\bcolspan=(['\"])[0-9]{1,3}\\2)[^>]*>"
-                    +"\\s*Ничего не найдено\\s*</td>\\s*</tr>\\s*",java.util.regex.Pattern.CASE_INSENSITIVE);
-    static boolean emptyPage(String html) { return html.isBlank() || EMPTY_PAGE.matcher(html).matches(); }
+    // Match actual attributes of one terminal row, never attribute-like text or data-* names.
+    static boolean emptyPage(String html) {
+        if (html.isBlank()) return true;
+        // Do not let the parser's implied closing tags turn a truncated response into EOF.
+        if (!html.strip().toLowerCase(Locale.ROOT).endsWith("</tr>")) return false;
+        var marker=new EmptyPage();
+        try { new ParserDelegator().parse(new StringReader("<html><head></head><body><table>"+html+"</table></body></html>"),marker,true); }
+        catch (IOException error) { return false; }
+        return !marker.invalid && marker.tables==1 && marker.rows==1 && marker.cells==1
+                && !marker.rowOpen && !marker.cellOpen && "Ничего не найдено".equals(marker.text.toString().strip());
+    }
+    private static final class EmptyPage extends HTMLEditorKit.ParserCallback {
+        private boolean invalid,rowOpen,cellOpen;
+        private int tables,rows,cells;
+        private final StringBuilder text=new StringBuilder();
+        @Override public void handleStartTag(HTML.Tag tag,MutableAttributeSet attrs,int pos) {
+            if (tag==HTML.Tag.TABLE) { if (++tables>1) invalid=true; }
+            else if (tag==HTML.Tag.TR) {
+                if (rowOpen || attrs.getAttribute(HTML.Attribute.ID)!=null) invalid=true;
+                rowOpen=true; rows++;
+            } else if (tag==HTML.Tag.TD) {
+                String span=String.valueOf(attrs.getAttribute(HTML.Attribute.COLSPAN));
+                if (!rowOpen || cellOpen || !"red text-center".equals(attrs.getAttribute(HTML.Attribute.CLASS))
+                        || !span.matches("[0-9]{1,3}") || Integer.parseInt(span)==0) invalid=true;
+                cellOpen=true; cells++;
+            } else if (tag!=HTML.Tag.HTML && tag!=HTML.Tag.HEAD && tag!=HTML.Tag.BODY) invalid=true;
+        }
+        @Override public void handleEndTag(HTML.Tag tag,int pos) {
+            if (tag==HTML.Tag.TD) { if (!cellOpen) invalid=true; cellOpen=false; }
+            if (tag==HTML.Tag.TR) { if (!rowOpen || cellOpen) invalid=true; rowOpen=false; }
+        }
+        @Override public void handleText(char[] value,int pos) {
+            if (cellOpen) { text.append(value); if (text.length()>200) invalid=true; }
+            else if (!new String(value).isBlank()) invalid=true;
+        }
+        @Override public void handleSimpleTag(HTML.Tag tag,MutableAttributeSet attrs,int pos) { invalid=true; }
+        @Override public void handleComment(char[] value,int pos) { invalid=true; }
+        @Override public void handleError(String error,int pos) {
+            // Swing's HTML 3.2 DTD warns even about class on td; validate attributes above.
+            if (!error.startsWith("invalid.tagatt ")) invalid=true;
+        }
+    }
     final List<CrmClient> clients = new ArrayList<>();
     final Set<String> ids = new HashSet<>();
     private String id;

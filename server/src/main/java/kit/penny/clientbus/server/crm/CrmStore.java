@@ -106,7 +106,7 @@ public class CrmStore {
             default -> 409;
         };
         return new CrmException(status, code, switch (error.code()) {
-            case AUTH_REQUIRED -> "DIKIDI требует повторной авторизации. Проверьте данные подключения.";
+            case AUTH_REQUIRED -> "Не удалось авторизоваться в DIKIDI. Проверьте вход с номером и паролем, указанными в подключении.";
             case ACCESS_DENIED -> "У подключения нет доступа к выбранным данным DIKIDI.";
             case RATE_LIMITED -> "Лимит обращений к CRM. Повторите позже.";
             case CONNECTION_BUSY -> "Подключение CRM занято другим запросом. Повторите позже.";

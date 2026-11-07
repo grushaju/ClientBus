@@ -34,7 +34,8 @@ public class CrmAppointmentEntity extends CrmRecord {
     @Column(name="lastobservedgeneration",nullable=false) private long lastObservedGeneration;
     @Column(name="observationcheckedat") private Instant observationCheckedAt;
     @Column(name="missinggeneration") private Long missingGeneration;
-    @JdbcTypeCode(SqlTypes.JSON) @Column(name="financialsnapshot",nullable=false,columnDefinition="jsonb") private Map<String,Object> financialSnapshot = Map.of();
+    // A raw JSON string prevents Hibernate's untyped Map deserializer from using Double.
+    @JdbcTypeCode(SqlTypes.JSON) @Column(name="financialsnapshot",nullable=false,columnDefinition="jsonb") private String financialSnapshot = "{}";
     @Column(name="financialobservedat") private Instant financialObservedAt;
     @Column(name="financialgeneration",nullable=false) private long financialGeneration;
     @Column(name="financialcompleteness",nullable=false,length=24) private String financialCompleteness = "UNKNOWN";
@@ -88,8 +89,8 @@ public class CrmAppointmentEntity extends CrmRecord {
     public void setObservationCheckedAt(Instant value) { observationCheckedAt=value; }
     public Long getMissingGeneration() { return missingGeneration; }
     public void setMissingGeneration(Long value) { missingGeneration=value; }
-    public Map<String,Object> getFinancialSnapshot() { return financialSnapshot; }
-    public void setFinancialSnapshot(Map<String,Object> value) { financialSnapshot=value; }
+    public Map<String,Object> getFinancialSnapshot() { return CrmFinancialJson.read(financialSnapshot); }
+    public void setFinancialSnapshot(Map<String,Object> value) { financialSnapshot=CrmFinancialJson.write(value); }
     public Instant getFinancialObservedAt() { return financialObservedAt; }
     public void setFinancialObservedAt(Instant value) { financialObservedAt=value; }
     public long getFinancialGeneration() { return financialGeneration; }

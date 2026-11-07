@@ -84,7 +84,7 @@ public class CrmAppointmentReader {
         for (var project : projects) {
             vector.append('/').append(store.context(project)).append('/').append(project.getVersion())
                     .append('/').append(project.getConnection().getStatus()).append('/').append(project.isEnabled());
-            var revisions=jdbc.queryForList("select dataset,scopekey,version from crm.syncstate where projectid=? and (dataset='WRITER:APPOINTMENTS' or dataset='CLIENTS' or dataset='WRITER:CATALOG') order by dataset,scopekey",project.getId());
+            var revisions=jdbc.queryForList("select dataset,scopekey,version from crm.syncstate where projectid=? and (dataset='WRITER:APPOINTMENTS' or dataset='WRITER:FINANCE' or dataset='CLIENTS' or dataset='WRITER:CATALOG') order by dataset,scopekey",project.getId());
             vector.append('/').append(revisions);
         }
         String revision=CrmSearch.scope(vector.toString());

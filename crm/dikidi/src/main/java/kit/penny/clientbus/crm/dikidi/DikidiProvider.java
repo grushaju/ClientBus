@@ -27,7 +27,6 @@ public final class DikidiProvider implements CrmProvider, AutoCloseable {
         final DikidiTransport transport;
         volatile long lastUsed = System.nanoTime();
         boolean authenticated;
-        long authenticatedAt;
         Session(DikidiTransport transport) { this.transport = transport; }
     }
     private final Settings settings;
@@ -40,6 +39,79 @@ public final class DikidiProvider implements CrmProvider, AutoCloseable {
     }
     public DikidiProvider(Settings settings, Supplier<DikidiTransport> factory) { this.settings = settings; this.factory = factory; }
     @Override public String code() { return "DIKIDI"; }
+
+    @Override public CrmFinanceSnapshot readFinance(CrmAccess access,String project,CrmFinanceQuery query) {
+        projectId(project);
+        if (query==null) throw new CrmFailure(INVALID_RESPONSE);
+        return execute(access,project,(session,deadline) -> {
+            call(session,"GET","https://dikidi.ru/ru/owner/journal/?company="+project,null,false,project,deadline);
+            var response=tree(call(session,"POST","https://dikidi.ru/ru/owner/ajax/journal/api/?company="+project,
+                    List.of(Map.entry("request[get][]","company.accesses"),Map.entry("request[get][]","masters.info"),
+                            Map.entry("request[get][]","masters.records"),Map.entry("request[options][company][accesses][]",project),
+                            Map.entry("request[options][masters][records][0][date_from]",query.date().toString()),
+                            Map.entry("request[options][masters][records][0][date_to]",query.date().toString())),true,project,deadline));
+            if (!response.path("company").path("accesses").path(project).isContainer()
+                    || response.path("company").path("accesses").path(project).isEmpty()) throw new CrmFailure(CONTEXT_MISMATCH);
+            parseMasters(response);
+            var visit=DikidiAppointments.parse(response,project,query.date()).stream()
+                    .filter(item -> query.externalAppointmentId().equals(item.externalId())).findFirst().orElseThrow(() -> new CrmFailure(CONTEXT_MISMATCH));
+            if (!"APPOINTMENT".equals(visit.kind()) || visit.client()==null || !"PROJECT".equals(visit.client().identityKind()))
+                throw new CrmFailure(CAPABILITY_UNVERIFIED);
+            if (!Objects.equals(query.client(),visit.client())) throw new CrmFailure(CONTEXT_MISMATCH);
+            JsonNode payment=null;
+            for (var master:response.path("masters").path("records").path("data").properties()) {
+                var row=master.getValue().path(query.date().toString()).path(query.externalAppointmentId());
+                if (row.isMissingNode()) continue;
+                var evidence=row.path("info").path("payment");
+                if (!evidence.isObject()) throw new CrmFailure(CAPABILITY_UNVERIFIED);
+                if (payment!=null && !payment.equals(evidence)) throw new CrmFailure(CONTEXT_MISMATCH);
+                payment=evidence;
+            }
+            if (payment==null) throw new CrmFailure(CONTEXT_MISMATCH);
+            String document=payment.path("document_id").asString("");
+            if (document.isBlank() || document.equals("0")) throw new CrmFailure(CAPABILITY_UNVERIFIED);
+            String sale=DikidiFinanceHtml.id(document);
+            var lines=List.<CrmFinanceSnapshot.Line>of(); var payments=new ArrayList<CrmFinanceSnapshot.Payment>();
+            BigDecimal discount=null,bonus=null;
+            if (sale!=null) {
+                var form=DikidiFinanceHtml.parse(financeHtml(tree(call(session,"GET",
+                        "https://dikidi.ru/ru/owner/ajax/sales/form/"+sale+"/?company="+project,null,true,project,deadline))));
+                form.requireIdentity("sale_id",sale);
+                form.requireIdentity("table","clients"); form.requireIdentity("table_id",visit.client().externalId());
+                lines=form.lines(); discount=form.optionalAmount("head_discount"); bonus=form.optionalAmount("head_bonus");
+                var list=DikidiFinanceHtml.parse(financeHtml(tree(call(session,"POST","https://dikidi.ru/owner/ajax/sales_payments/get_list/",
+                        List.of(Map.entry("company",project),Map.entry("sale_id",sale),Map.entry("isEdit","false")),true,project,deadline))));
+                var paymentIds=list.paymentIds(project,sale);
+                // No confirmed empty F02 shape is available yet. Missing links can also
+                // mean an unavailable/error dialog, independently of paid or debt totals.
+                if (paymentIds.isEmpty()) throw new CrmFailure(CAPABILITY_UNVERIFIED);
+                for (String paymentId:paymentIds) {
+                    var detail=tree(call(session,"GET","https://dikidi.ru/ru/owner/ajax/sales_payments/form/?company="+project+"&sale="+sale+"&id="+paymentId,
+                            null,true,project,deadline));
+                    var fields=DikidiFinanceHtml.parse(financeHtml(detail));
+                    fields.requireIdentity("sale_id",sale); fields.requireIdentity("payment_id",paymentId);
+                    // The response-level id identifies the UI dialog, not the payment.
+                    // Only the form's explicit sale_id/payment_id establish financial identity.
+                    payments.add(new CrmFinanceSnapshot.Payment(paymentId,fields.one("date"),fields.components()));
+                }
+            }
+            var company=tree(call(session,"GET","https://dikidi.ru/mobile/ajax/newrecord/company_services?company="+project+"&array=1&lang=ru",null,true,project,deadline));
+            String currency=company.path("data").path("currency").path("iso").asString("");
+            return new CrmFinanceSnapshot(project,query,sale,currency.matches("[A-Z]{3}") ? currency : null,
+                    DikidiFinanceHtml.amount(payment.path("cost").asString("")),DikidiFinanceHtml.amount(payment.path("paid").asString("")),
+                    DikidiFinanceHtml.amount(payment.path("debt").asString("")),discount,bonus,lines,payments,Instant.now(),CrmReadResult.Completeness.UNKNOWN);
+        });
+    }
+    private static String financeHtml(JsonNode result) {
+        if (result.path("html").isString()) return result.path("html").asString();
+        String found=null;
+        if (result.path("script").isArray()) for (var script:result.path("script")) if (script.path("html").isString()) {
+            if (found!=null) throw new CrmFailure(INVALID_RESPONSE);
+            found=script.path("html").asString();
+        }
+        if (found==null) throw new CrmFailure(CAPABILITY_UNVERIFIED);
+        return found;
+    }
 
     @Override public CrmAppointmentPage readAppointments(CrmAccess access,String project,CrmAppointmentQuery query,String cursor) {
         if (query==null || query.client()!=null) throw new CrmFailure(INVALID_RESPONSE);
@@ -55,7 +127,7 @@ public final class DikidiProvider implements CrmProvider, AutoCloseable {
         try { day=cursor==null ? query.dateFrom() : LocalDate.parse(cursor); }
         catch (DateTimeException error) { throw new CrmFailure(INVALID_RESPONSE); }
         if (day.isBefore(query.dateFrom()) || day.isAfter(query.dateTo())) throw new CrmFailure(INVALID_RESPONSE);
-        return execute(access,project,false,(session,deadline) -> {
+        return execute(access,project,(session,deadline) -> {
             call(session,"GET","https://dikidi.ru/ru/owner/journal/?company="+project,null,false,project,deadline);
             var form=new ArrayList<>(List.of(Map.entry("request[get][]","company.accesses"),Map.entry("request[get][]","masters.info"),
                     Map.entry("request[get][]","masters.records"),Map.entry("request[options][company][accesses][]",project),
@@ -75,7 +147,7 @@ public final class DikidiProvider implements CrmProvider, AutoCloseable {
     @Override public CrmScheduleSnapshot readWorkIntervals(CrmAccess access, String externalProjectId, CrmWorkIntervalQuery query) {
         projectId(externalProjectId);
         if (query == null) throw new CrmFailure(INVALID_RESPONSE);
-        return execute(access, externalProjectId, false, (session, deadline) -> {
+        return execute(access, externalProjectId, (session, deadline) -> {
             JsonNode result = catalog(session, externalProjectId, deadline, false, query);
             if (parseMasters(result).stream().noneMatch(master -> master.externalId().equals(query.externalMasterId())))
                 throw new CrmFailure(CONTEXT_MISMATCH);
@@ -98,32 +170,42 @@ public final class DikidiProvider implements CrmProvider, AutoCloseable {
         }
     }
     @FunctionalInterface private interface Read<T> { T apply(Session session, long deadline); }
-    private <T> T execute(CrmAccess access, String project, boolean verify, Read<T> read) {
+    private <T> T execute(CrmAccess access, String project, Read<T> read) {
         long started = System.nanoTime(), deadline = started + Duration.ofSeconds(75).toNanos();
         var session = session(access);
         try {
             if (!session.lock.tryLock(2, TimeUnit.SECONDS)) throw new CrmFailure(CONNECTION_BUSY);
         } catch (InterruptedException error) { Thread.currentThread().interrupt(); throw new CrmFailure(TEMPORARY_FAILURE); }
         try {
+            // An initial login failure is not an expired-session read.
+            if (!session.authenticated) login(session, access, deadline);
             for (int attempt = 0; attempt < 2; attempt++) {
                 try {
-                    if (!session.authenticated || (verify && session.authenticatedAt < started))
-                        login(session, access, deadline);
-                    return read.apply(session, deadline);
+                    if (!session.authenticated) login(session, access, deadline);
+                    T result = read.apply(session, deadline);
+                    return result;
                 } catch (CrmFailure error) {
-                    if (error.code() != AUTH_REQUIRED || attempt != 0 || verify) throw error;
+                    if (error.code() != AUTH_REQUIRED) throw error;
                     session.authenticated = false;
+                    if (attempt != 0) throw error;
                 }
             }
             throw new CrmFailure(AUTH_REQUIRED);
         } finally { session.lastUsed = System.nanoTime(); session.lock.unlock(); }
     }
     @Override public void verifyConnection(CrmAccess access) {
-        execute(access, null, true, (session, deadline) -> null);
+        execute(access, null, (session, deadline) -> {
+            // Read account navigation with existing cookies; never follow the logout link.
+            // Login forms can also occur on authenticated pages, so positive evidence wins.
+            var page = DikidiHtml.parse(call(session, "GET", "https://dikidi.ru/ru/", null, false, null, deadline));
+            if (!page.authenticatedAccount())
+                throw new CrmFailure(page.hidden.containsKey("telegram_csrf") ? AUTH_REQUIRED : INVALID_RESPONSE);
+            return null;
+        });
     }
     @Override public CrmProjectInfo inspectProject(CrmAccess access, String externalProjectId) {
         projectId(externalProjectId);
-        return execute(access, externalProjectId, false, (session, deadline) -> {
+        return execute(access, externalProjectId, (session, deadline) -> {
             catalog(session, externalProjectId, deadline);
             String name = projectName(session, externalProjectId, deadline);
             var online = tree(call(session, "GET", "https://dikidi.ru/mobile/ajax/newrecord/company_services?company="
@@ -135,7 +217,7 @@ public final class DikidiProvider implements CrmProvider, AutoCloseable {
     }
     @Override public CrmReadResult<CrmMaster> readMasters(CrmAccess access, String externalProjectId) {
         projectId(externalProjectId);
-        return execute(access, externalProjectId, false, (session, deadline) -> {
+        return execute(access, externalProjectId, (session, deadline) -> {
             JsonNode result = catalog(session, externalProjectId, deadline);
             return new CrmReadResult<>(parseMasters(result), Instant.now(), CrmReadResult.Completeness.COMPLETE, externalProjectId + ":MASTERS");
         });
@@ -147,7 +229,7 @@ public final class DikidiProvider implements CrmProvider, AutoCloseable {
             offset = cursor == null ? 0 : Integer.parseInt(cursor);
             if (offset < 0 || offset > 1000000) throw new NumberFormatException();
         } catch (NumberFormatException error) { throw new CrmFailure(INVALID_RESPONSE); }
-        return execute(access, externalProjectId, false, (session, deadline) -> {
+        return execute(access, externalProjectId, (session, deadline) -> {
             // Establish and verify the selected owner project on every portion.
             catalog(session, externalProjectId, deadline);
             var result = tree(call(session, "POST", "https://dikidi.ru/ru/owner/ajax/clients/filter/?company="+externalProjectId,
@@ -180,7 +262,7 @@ public final class DikidiProvider implements CrmProvider, AutoCloseable {
     }
     @Override public CrmCatalogSnapshot readCatalog(CrmAccess access, String externalProjectId) {
         projectId(externalProjectId);
-        return execute(access, externalProjectId, false, (session, deadline) -> {
+        return execute(access, externalProjectId, (session, deadline) -> {
             JsonNode result = catalog(session, externalProjectId, deadline, true);
             List<CrmMaster> masters = parseMasters(result);
             Set<String> masterIds = new HashSet<>(); masters.forEach(master -> masterIds.add(master.externalId()));
@@ -352,7 +434,7 @@ public final class DikidiProvider implements CrmProvider, AutoCloseable {
             JsonNode authenticated = tree(call(session, "POST", "https://auth.dikidi.ru/ajax/user/auth/",
                     new ArrayList<>(fields.entrySet()), true, null, deadline));
             if (!authenticated.path("callback").toString().contains("sw.auth.complete")) throw new CrmFailure(AUTH_REQUIRED);
-            session.authenticated = true; session.authenticatedAt = System.nanoTime();
+            session.authenticated = true;
         } finally { Arrays.fill(secret, '\0'); fields.clear(); }
     }
     private String call(Session session, String method, String address, List<Map.Entry<String, String>> form,

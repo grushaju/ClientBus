@@ -1,6 +1,9 @@
 package kit.penny.clientbus.crm.api;
 
 public interface CrmReadPort {
+    default CrmFinanceSnapshot readFinance(CrmAccess access, String externalProjectId, CrmFinanceQuery query) {
+        throw new CrmFailure(CrmFailure.Code.CAPABILITY_UNVERIFIED);
+    }
     default CrmAppointmentPage readAppointments(CrmAccess access,String externalProjectId,CrmAppointmentQuery query,String cursor) {
         throw new CrmFailure(CrmFailure.Code.CAPABILITY_UNVERIFIED);
     }

@@ -13,6 +13,7 @@ import static kit.penny.clientbus.crm.api.CrmFailure.Code.*;
 class DikidiProviderContractTest {
     private static final String PROJECT = "100";
     private static final String PUBLIC = "<html><input value='first&amp;csrf' name='telegram_csrf' type='hidden'></html>";
+    private static final String ACCOUNT = PUBLIC + "<a href='https://auth.dikidi.ru/user/logout/?csrf=test-only'>Exit</a>";
     private static final String CHECK = "{\"html\":\"<input name='csrf' type='hidden' value='second-csrf'>\"}";
     private static final String AUTH = "{\"callback\":[\"sw.auth.complete();\"]}";
     private static final String CATALOG = """
@@ -46,6 +47,143 @@ class DikidiProviderContractTest {
         return request.form().stream().filter(e -> e.getKey().equals(key)).map(Map.Entry::getValue).findFirst().orElse(null);
     }
     private void loginThen(String... bodies) { fake.add(PUBLIC, CHECK, AUTH); fake.add(bodies); }
+
+    @Test void verificationReadsCurrentSessionWithoutAnotherPasswordLogin() {
+        loginThen("journal", CATALOG, ACCOUNT, ACCOUNT);
+        try (var access = access(UUID.randomUUID(), 1)) {
+            provider.readMasters(access, PROJECT);
+            provider.verifyConnection(access);
+            provider.verifyConnection(access);
+        }
+        assertEquals(1, passwordLogins());
+        assertEquals(7, fake.calls.size());
+    }
+    @Test void verificationRecoversExpiredSessionOnce() {
+        loginThen("journal", CATALOG);
+        fake.responses.add(new DikidiTransport.Response(401, "expired"));
+        fake.add(PUBLIC, CHECK, AUTH, ACCOUNT);
+        try (var access = access(UUID.randomUUID(), 1)) {
+            provider.readMasters(access, PROJECT);
+            provider.verifyConnection(access);
+        }
+        assertEquals(2, passwordLogins());
+        assertTrue(fake.responses.isEmpty());
+    }
+    @Test void verificationStopsAfterRejectedRecoveryLogin() {
+        loginThen("journal", CATALOG);
+        fake.responses.add(new DikidiTransport.Response(401, "expired"));
+        fake.add(PUBLIC, CHECK, "{}");
+        try (var access = access(UUID.randomUUID(), 1)) {
+            provider.readMasters(access, PROJECT);
+            assertEquals(AUTH_REQUIRED, assertThrows(CrmFailure.class, () -> provider.verifyConnection(access)).code());
+        }
+        assertEquals(2, passwordLogins());
+        assertTrue(fake.responses.isEmpty());
+    }
+    @Test void repeatedExpiryInvalidatesCachedAuthenticationAndStopsRecovery() {
+        loginThen("journal", CATALOG);
+        fake.responses.add(new DikidiTransport.Response(401, "expired"));
+        fake.add(PUBLIC, CHECK, AUTH);
+        fake.responses.add(new DikidiTransport.Response(401, "expired again"));
+        fake.add(PUBLIC, CHECK, AUTH, ACCOUNT);
+        try (var access = access(UUID.randomUUID(), 1)) {
+            provider.readMasters(access, PROJECT);
+            assertEquals(AUTH_REQUIRED, assertThrows(CrmFailure.class, () -> provider.verifyConnection(access)).code());
+            assertEquals(2, passwordLogins());
+            provider.verifyConnection(access);
+        }
+        assertEquals(3, passwordLogins());
+        assertTrue(fake.responses.isEmpty());
+    }
+    @Test void verificationPreservesSessionOnNonAuthenticationFailures() {
+        for (int status : List.of(403, 429, 503)) {
+            fake.calls.clear(); fake.responses.clear();
+            loginThen("journal", CATALOG);
+            fake.responses.add(new DikidiTransport.Response(status, "unavailable"));
+            fake.add(ACCOUNT);
+            try (var access = access(UUID.randomUUID(), 1)) {
+                provider.readMasters(access, PROJECT);
+                assertEquals(status == 403 ? ACCESS_DENIED : status == 429 ? RATE_LIMITED : TEMPORARY_FAILURE,
+                        assertThrows(CrmFailure.class, () -> provider.verifyConnection(access)).code());
+                provider.verifyConnection(access);
+                assertEquals(1, passwordLogins());
+            }
+        }
+    }
+    @Test void initialVerificationDoesNotRetryRejectedCredentials() {
+        fake.add(PUBLIC, CHECK, "{}");
+        try (var access = access(UUID.randomUUID(), 1)) {
+            assertEquals(AUTH_REQUIRED, assertThrows(CrmFailure.class, () -> provider.verifyConnection(access)).code());
+        }
+        assertEquals(1, passwordLogins());
+    }
+    @Test void passwordEndpointHttp400StopsBeforeSessionProbeAndDoesNotRetryLogin() {
+        fake.add(PUBLIC,CHECK);
+        fake.responses.add(new DikidiTransport.Response(400,"{\"error\":{\"code\":\"INVALID_PASSWORD\",\"message\":\"Invalid password test-only-secret\"}}"));
+        try (var access=access(UUID.randomUUID(),1)) {
+            var error=assertThrows(CrmFailure.class,() -> provider.verifyConnection(access));
+            assertEquals(AUTH_REQUIRED,error.code()); assertNull(error.getCause());
+            assertFalse(error.toString().contains("test-only-secret"));
+        }
+        assertEquals(1,passwordLogins()); assertEquals(3,fake.calls.size()); assertTrue(fake.responses.isEmpty());
+    }
+    @Test void unboundAccountVerificationReusesCurrentSession() {
+        loginThen(ACCOUNT, ACCOUNT, ACCOUNT);
+        try (var access = access(UUID.randomUUID(), 1)) {
+            provider.verifyConnection(access);
+            provider.verifyConnection(access);
+            provider.verifyConnection(access);
+        }
+        assertEquals(1, passwordLogins());
+        assertTrue(fake.responses.isEmpty());
+    }
+    @Test void verificationDoesNotDependOnLastProjectOrUseItsAccess() {
+        loginThen("journal", CATALOG, "other journal", CATALOG.replace("\"100\"", "\"200\""), ACCOUNT);
+        try (var access = access(UUID.randomUUID(), 1)) {
+            provider.readMasters(access, PROJECT);
+            provider.readMasters(access, "200");
+            provider.verifyConnection(access);
+        }
+        Request check = fake.calls.getLast();
+        assertEquals("/ru/", check.uri().getPath());
+        assertNull(check.uri().getQuery());
+        assertNull(check.project());
+        assertEquals(1, passwordLogins());
+    }
+    @Test void publicHttp200DoesNotProveAuthenticationAndTriggersOneRecovery() {
+        loginThen(ACCOUNT, PUBLIC, PUBLIC, CHECK, AUTH, ACCOUNT);
+        try (var access = access(UUID.randomUUID(), 1)) {
+            provider.verifyConnection(access);
+            provider.verifyConnection(access);
+        }
+        assertEquals(2, passwordLogins());
+        assertTrue(fake.responses.isEmpty());
+    }
+    @Test void malformedPageIsInvalidResponseAndPreservesSession() {
+        loginThen(ACCOUNT, "<html>upstream error</html>", ACCOUNT);
+        try (var access = access(UUID.randomUUID(), 1)) {
+            provider.verifyConnection(access);
+            assertEquals(INVALID_RESPONSE, assertThrows(CrmFailure.class, () -> provider.verifyConnection(access)).code());
+            provider.verifyConnection(access);
+        }
+        assertEquals(1, passwordLogins());
+    }
+    @Test void authenticationEvidenceMustBeAnExactLogoutAnchor() {
+        assertTrue(DikidiHtml.parse(ACCOUNT).authenticatedAccount());
+        for (String html : List.of(PUBLIC,
+                "<!-- <a href='https://auth.dikidi.ru/user/logout/'> -->",
+                "<script>const x=\"<a href='https://auth.dikidi.ru/user/logout/'>\";</script>",
+                "<a data-href='https://auth.dikidi.ru/user/logout/'>Exit</a>",
+                "<a href='https://evil.example/user/logout/'>Exit</a>",
+                "<a href='https://auth.dikidi.ru.evil.example/user/logout/'>Exit</a>",
+                "<a href='https://evil@auth.dikidi.ru/user/logout/'>Exit</a>",
+                "<a href='http://auth.dikidi.ru/user/logout/'>Exit</a>",
+                "<a href='https://auth.dikidi.ru/user/logout/fake'>Exit</a>"))
+            assertFalse(DikidiHtml.parse(html).authenticatedAccount());
+    }
+    private long passwordLogins() {
+        return fake.calls.stream().filter(call -> call.uri().getPath().equals("/ajax/user/auth/")).count();
+    }
 
     @Test void csrfStepsBootstrapAndAllMasterRowsArePreserved() {
         loginThen("journal", CATALOG);
@@ -170,7 +308,7 @@ class DikidiProviderContractTest {
                 entered.countDown();
                 try { assertTrue(release.await(5,TimeUnit.SECONDS)); }
                 catch (InterruptedException error) { Thread.currentThread().interrupt(); throw new AssertionError(error); }
-                body=PUBLIC;
+                body=ACCOUNT;
             } else if (uri.getPath().equals("/ajax/check/auth/")) body=CHECK;
             else body=AUTH;
             return new DikidiTransport.Response(200,body);
@@ -199,7 +337,7 @@ class DikidiProviderContractTest {
                 if (uri.getPath().equals("/ru/")) {
                     publicEntered.countDown();
                     try { assertTrue(release.await(2, TimeUnit.SECONDS)); } catch (InterruptedException e) { throw new AssertionError(e); }
-                    return new Response(200, PUBLIC);
+                    return new Response(200, ACCOUNT);
                 }
                 if (uri.getPath().equals("/ajax/check/auth/")) return new Response(200, CHECK);
                 count.incrementAndGet(); return new Response(200, AUTH);

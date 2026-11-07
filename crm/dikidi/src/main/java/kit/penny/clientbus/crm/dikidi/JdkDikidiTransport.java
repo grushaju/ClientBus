@@ -16,12 +16,22 @@ final class JdkDikidiTransport implements DikidiTransport {
     private final CookieManager cookies = new CookieManager(null, CookiePolicy.ACCEPT_ORIGINAL_SERVER);
     private final HttpClient client;
     private final int maxBytes;
+    @FunctionalInterface interface RequestPolicy {
+        void beforeRequest(String method, URI uri, List<Map.Entry<String,String>> form);
+    }
+    private final RequestPolicy policy;
     JdkDikidiTransport(Duration connectTimeout, int maxBytes) {
-        this.maxBytes = maxBytes;
+        this(connectTimeout,maxBytes,(method,uri,form) -> {});
+    }
+    JdkDikidiTransport(Duration connectTimeout, int maxBytes, RequestPolicy policy) {
+        this.maxBytes = maxBytes; this.policy=Objects.requireNonNull(policy);
         client = HttpClient.newBuilder().connectTimeout(connectTimeout).cookieHandler(cookies)
                 .followRedirects(HttpClient.Redirect.NEVER).build();
     }
-    JdkDikidiTransport(HttpClient client, int maxBytes) { this.client = client; this.maxBytes = maxBytes; }
+    JdkDikidiTransport(HttpClient client, int maxBytes) { this(client,maxBytes,(method,uri,form) -> {}); }
+    JdkDikidiTransport(HttpClient client, int maxBytes, RequestPolicy policy) {
+        this.client=client; this.maxBytes=maxBytes; this.policy=Objects.requireNonNull(policy);
+    }
     static void destination(URI uri) {
         if (!"https".equals(uri.getScheme()) || uri.getUserInfo() != null || uri.getPort() != -1
                 || !Set.of("dikidi.ru", "auth.dikidi.ru").contains(uri.getHost()))
@@ -50,7 +60,10 @@ final class JdkDikidiTransport implements DikidiTransport {
                     .method(method, HttpRequest.BodyPublishers.ofString(form.stream()
                             .map(e -> encode(e.getKey()) + "=" + encode(e.getValue()))
                             .collect(java.util.stream.Collectors.joining("&"))));
-            CompletableFuture<HttpResponse<byte[]>> exchange = client.sendAsync(builder.build(), info -> new LimitedBody(maxBytes));
+            var request=builder.build();
+            // Apply to every real send, including redirects after method/body conversion.
+            policy.beforeRequest(method,uri,form);
+            CompletableFuture<HttpResponse<byte[]>> exchange = client.sendAsync(request, info -> new LimitedBody(maxBytes));
             try {
                 HttpResponse<byte[]> result = exchange.get(Math.max(1, TimeUnit.NANOSECONDS.toMillis(remaining)), TimeUnit.MILLISECONDS);
                 if (Set.of(301,302,303,307,308).contains(result.statusCode())) {

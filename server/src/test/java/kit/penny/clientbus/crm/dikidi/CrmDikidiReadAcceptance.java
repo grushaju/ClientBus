@@ -11,7 +11,6 @@ import java.net.URI;
 import java.sql.*;
 import java.time.*;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -21,16 +20,6 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 @EnabledIfSystemProperty(named="clientbus.crm.acceptance.live",matches="true")
 class CrmDikidiReadAcceptance {
-    private static final Map<String,Set<String>> READS=Map.of(
-            "dikidi.ru",Set.of("GET /ru/","GET /ru/owner/journal/","POST /ru/owner/ajax/journal/api/",
-                    "GET /ru/owner/ajax/profile/index/","POST /ru/owner/ajax/clients/filter/",
-                    "GET /mobile/ajax/newrecord/company_services"),
-            "auth.dikidi.ru",Set.of("POST /ajax/check/auth/","POST /ajax/user/auth/"));
-    private static final Set<String> SECTIONS=Set.of("company.accesses","masters.info","masters.services","masters.schedules","masters.records");
-    private static final Set<String> OPTIONS=Set.of("request[options][company][accesses][]",
-            "request[options][masters][records][0][date_from]","request[options][masters][records][0][date_to]",
-            "request[options][masters][schedules][0][date_from]","request[options][masters][schedules][0][date_to]");
-
     @Test void readImplementedDatasetsFromAnExistingConnection() {
         String from=System.getProperty("clientbus.crm.acceptance.dateFrom");
         String to=System.getProperty("clientbus.crm.acceptance.dateTo");
@@ -50,7 +39,7 @@ class CrmDikidiReadAcceptance {
                 try (var statement=db.prepareStatement("""
                         select c.id,c.organizationid,c.credentialversion,c.login,c.secretkeyid,c.secretciphertext,p.id,p.externalid
                         from crm.connection c join crm.project p on p.connectionid=c.id
-                        where p.enabled and c.provider='DIKIDI' and c.status='CONNECTED'
+                        where p.enabled and c.provider='DIKIDI' and c.status<>'DISABLED'
                             and (?::uuid is null or p.id=?::uuid)
                             and (?::uuid is null or p.workspaceid=?::uuid) order by p.id limit 2
                         """)) {
@@ -61,7 +50,7 @@ class CrmDikidiReadAcceptance {
                     statement.setString(1,project); statement.setString(2,project); statement.setQueryTimeout(5);
                     statement.setString(3,workspace); statement.setString(4,workspace);
                     try (var rows=statement.executeQuery()) {
-                        assertTrue(rows.next(),"No enabled, connected DIKIDI project in the configured database.");
+                        assertTrue(rows.next(),"No enabled DIKIDI project in the configured database.");
                         UUID connection=rows.getObject(1,UUID.class),organization=rows.getObject(2,UUID.class);
                         long version=rows.getLong(3); String login=rows.getString(4),key=rows.getString(5);
                         byte[] encrypted=rows.getBytes(6); String externalProject=rows.getString(8);
@@ -86,20 +75,14 @@ class CrmDikidiReadAcceptance {
         }
     }
     private static void inspect(CrmAccess access,String project,CrmAppointmentQuery query) {
-        var calls=new AtomicInteger();
+        var policy=new DikidiAcceptancePolicy();
+        var passwordLogins=new java.util.concurrent.atomic.AtomicInteger();
         var settings=new DikidiProvider.Settings(Duration.ofSeconds(5),Duration.ofSeconds(15),4194304);
         try (var provider=new DikidiProvider(settings,() -> new DikidiTransport() {
-            private final JdkDikidiTransport delegate=new JdkDikidiTransport(settings.connectTimeout(),settings.maxResponseBytes());
+            private final JdkDikidiTransport delegate=new JdkDikidiTransport(settings.connectTimeout(),settings.maxResponseBytes(),policy);
             @Override public Response exchange(String method,URI uri,List<Map.Entry<String,String>> form,
                     boolean ajax,String projectId,Duration timeout) {
-                assertTrue("https".equals(uri.getScheme()) && uri.getUserInfo()==null && uri.getPort()==-1
-                        && READS.getOrDefault(uri.getHost(),Set.of()).contains(method+" "+uri.getPath()),"Only allowlisted authentication and reads may run.");
-                if (uri.getPath().equals("/ru/owner/ajax/journal/api/"))
-                    assertTrue(form!=null && form.stream().allMatch(field ->
-                            field.getKey().equals("request[get][]") && SECTIONS.contains(field.getValue())
-                            || OPTIONS.contains(field.getKey())),
-                            "Journal payload must contain read sections and scope options only.");
-                assertTrue(calls.incrementAndGet()<=160,"Live HTTP read budget exceeded.");
+                if (uri.getPath().equals("/ajax/user/auth/")) passwordLogins.incrementAndGet();
                 var response=delegate.exchange(method,uri,form,ajax,projectId,timeout);
                 if (Boolean.getBoolean("clientbus.crm.acceptance.diagnostics") && uri.getPath().endsWith("/clients/filter/"))
                     clientResponseShape(response);
@@ -107,10 +90,19 @@ class CrmDikidiReadAcceptance {
             }
             @Override public void close() { delegate.close(); }
         })) {
+            // Exercise verification before any project has been read or cached.
+            provider.verifyConnection(access);
+            provider.verifyConnection(access);
+            assertEquals(1,passwordLogins.get(),"Repeated account verification must not log in again.");
             var info=provider.inspectProject(access,project);
             assertTrue(project.equals(info.externalId()),"Project identity mismatch.");
             var catalog=provider.readCatalog(access,project);
             validateCatalog(catalog,project);
+            int initialLogins=passwordLogins.get();
+            provider.verifyConnection(access);
+            provider.verifyConnection(access);
+            assertEquals(initialLogins,passwordLogins.get(),"Verification must reuse the authenticated session.");
+            System.out.println("LIVE currentSessionVerification=PASSED repeatedPasswordLogins=0");
             System.out.printf("LIVE catalog masters=%d services=%d offers=%d namePresent=%s zoneKnown=%s%n",
                     catalog.masters().size(),catalog.services().size(),catalog.offers().size(),catalog.projectDisplayName()!=null,info.zoneId()!=null);
 
@@ -148,15 +140,41 @@ class CrmDikidiReadAcceptance {
             if (identity!=null) {
                 var historyQuery=new CrmAppointmentQuery(query.dateFrom(),query.dateTo(),identity);
                 var history=readAppointments(provider,access,project,historyQuery,true);
-                assertTrue(history.values().stream().allMatch(row -> identity.equals(row.client()) && "APPOINTMENT".equals(row.kind())),"History leaked another client or record kind.");
-                // Concurrent external edits may change the set between requests; report agreement without claiming a snapshot.
-                var journalIds=new HashSet<String>(); appointments.forEach((id,row) -> { if (identity.equals(row.client()) && "APPOINTMENT".equals(row.kind())) journalIds.add(id); });
-                System.out.printf("LIVE clientHistory=%d journalIdsMatch=%s completeness=UNKNOWN%n",history.size(),journalIds.equals(history.keySet()));
+                verifyClientHistory(appointments,history,identity);
+                System.out.printf("LIVE clientHistory=%d journalIdsMatch=true completeness=UNKNOWN%n",history.size());
             } else System.out.println("LIVE clientHistory=UNOBSERVED_NO_PROJECT_CLIENT");
+            if (Boolean.getBoolean("clientbus.crm.acceptance.finance")) {
+                boolean observed=false;
+                for (var visit:appointments.values()) {
+                    if (visit.client()==null || !"APPOINTMENT".equals(visit.kind())) continue;
+                    try {
+                        var finance=provider.readFinance(access,project,new CrmFinanceQuery(visit.externalId(),visit.localStart().toLocalDate(),visit.client()));
+                        assertFalse(finance.lines().isEmpty()); assertFalse(finance.payments().isEmpty());
+                        System.out.printf("LIVE finance lines=%d payments=%d currencyKnown=%s completeness=%s%n",
+                                finance.lines().size(),finance.payments().size(),finance.currency()!=null,finance.completeness());
+                        observed=true; break;
+                    } catch (CrmFailure failure) {
+                        if (failure.code()==CrmFailure.Code.CAPABILITY_UNVERIFIED) continue;
+                        if (Boolean.getBoolean("clientbus.crm.acceptance.diagnostics"))
+                            for (var frame:failure.getStackTrace()) if (frame.getClassName().startsWith("kit.penny.clientbus.crm.dikidi."))
+                                System.out.println("FINANCE_FAILURE_LOCATION "+frame.getClassName()+":"+frame.getLineNumber());
+                        throw failure;
+                    }
+                }
+                assertTrue(observed,"No supported visit finance observed; finance acceptance is not complete.");
+            }
             provider.invalidate(access.connectionId());
             validateCatalog(provider.readCatalog(access,project),project);
-            System.out.printf("LIVE freshSession=PASSED httpCalls=%d providerWrites=0 localWrites=0%n",calls.get());
+            System.out.printf("LIVE freshSession=PASSED httpCalls=%d providerWrites=0 localWrites=0%n",policy.calls());
         }
+    }
+    static void verifyClientHistory(Map<String,CrmAppointment> journal,Map<String,CrmAppointment> history,CrmClientReference identity) {
+        assertTrue(history.values().stream().allMatch(row -> identity.equals(row.client()) && "APPOINTMENT".equals(row.kind())),
+                "History leaked another client or record kind.");
+        var journalIds=new HashSet<String>();
+        journal.forEach((id,row) -> { if (identity.equals(row.client()) && "APPOINTMENT".equals(row.kind())) journalIds.add(id); });
+        assertTrue(journalIds.equals(history.keySet()),
+                "Client history differs from journal. Repeat the read if provider data changed concurrently; this run is not accepted.");
     }
     private static void validateCatalog(CrmCatalogSnapshot catalog,String project) {
         assertTrue((project+":CATALOG").equals(catalog.scope()),"Catalog project mismatch.");
