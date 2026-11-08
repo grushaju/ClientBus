@@ -36,6 +36,7 @@ async function fixture(t, page, api = {}, route = '/page') {
         '../components/clients/ClientCreateForm': { default: empty },
         '../components/clients/ClientList': { default: ({ clients }) => React.createElement('div', { id: 'directory-data' }, JSON.stringify(clients)) },
         '../components/clients/ClientAccountsSection': { default: empty },
+        '../components/crm/ClientCrmPanel': { default: empty },
         '../components/clients/ClientAvatar': { default: empty },
         '../components/clients/ClientAccountAvatar': { default: empty },
         '../components/employees/EmployeeAvatar': { default: empty },

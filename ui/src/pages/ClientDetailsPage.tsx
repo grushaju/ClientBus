@@ -27,6 +27,7 @@ import {
 } from '../api/clientApi'
 
 import ClientAccountsSection from '../components/clients/ClientAccountsSection'
+import ClientCrmPanel from '../components/crm/ClientCrmPanel'
 import ClientAvatar from '../components/clients/ClientAvatar'
 import ClientAccountAvatar from '../components/clients/ClientAccountAvatar'
 
@@ -787,6 +788,7 @@ function ClientDetailsPageContent() {
                     )}
                 </section>
 
+                <ClientCrmPanel key={client.id} clientId={client.id} />
                 <ClientAccountsSection
                     clientId={client.id}
                     accounts={accounts}

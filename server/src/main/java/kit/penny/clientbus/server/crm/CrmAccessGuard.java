@@ -39,4 +39,7 @@ public class CrmAccessGuard {
     public boolean canReadEmployee(UUID employeeId) {
         return access.allows(AccessSubject.recipient(actor()), AccessPolicy.Resource.EMPLOYEE, employeeId);
     }
+    public boolean canReadWorkspace(UUID workspaceId) {
+        return access.allows(AccessSubject.recipient(actor()), AccessPolicy.Resource.WORKSPACE, workspaceId);
+    }
 }

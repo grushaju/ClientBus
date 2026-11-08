@@ -20,8 +20,19 @@ public class CrmAppointmentController {
             @RequestParam(required=false) UUID crmClientId,@RequestParam(required=false) UUID masterId,
             @RequestParam(required=false) String kind,@RequestParam(required=false) String appointmentState,
             @RequestParam(required=false) String confirmationState,@RequestParam(required=false) String attendanceState,
-            @RequestParam(required=false) String paymentState,@RequestParam(required=false) String cursor) {
-        return reader.appointments(projectId,new CrmAppointmentFilter(dateFrom,dateTo,crmClientId,masterId,kind,appointmentState,confirmationState,attendanceState,paymentState),cursor);
+            @RequestParam(required=false) String paymentState,@RequestParam(required=false) String cursor,
+            @RequestParam(required=false) String externalClientId) {
+        return reader.appointments(projectId,new CrmAppointmentFilter(dateFrom,dateTo,crmClientId,masterId,kind,appointmentState,confirmationState,attendanceState,paymentState,externalClientId),cursor);
+    }
+    @GetMapping("/crm/projects/{projectId}/appointment-clients")
+    public CrmAppointmentClientPageDto clients(@PathVariable UUID projectId,
+            @RequestParam @DateTimeFormat(iso=DateTimeFormat.ISO.DATE) LocalDate dateFrom,
+            @RequestParam @DateTimeFormat(iso=DateTimeFormat.ISO.DATE) LocalDate dateTo,
+            @RequestParam(required=false) String q,@RequestParam(required=false) String externalClientId,
+            @RequestParam(required=false) String cursor) {
+        new CrmAppointmentFilter(dateFrom,dateTo,null,null,null,null,null,null,null,externalClientId);
+        CrmSearch.normalize(q);
+        return reader.clients(projectId,dateFrom,dateTo,q,externalClientId,cursor);
     }
     @GetMapping("/crm/appointments/{id}")
     public CrmAppointmentDto appointment(@PathVariable UUID id) { return reader.appointment(id); }

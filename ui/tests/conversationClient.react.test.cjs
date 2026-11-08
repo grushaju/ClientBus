@@ -40,6 +40,7 @@ const field = (renderer, name) => renderer.root.findAllByType('label').find(node
 const type = (renderer, name, value) => act(async () => field(renderer, name).props.onChange({ target: { value } }))
 const submit = renderer => act(async () => renderer.root.findByProps({ className: 'conversation-client-form' }).props.onSubmit({ preventDefault() {} }))
 const visualMocks = {
+    '../crm/ClientCrmPanel': { default: () => null },
     '../common/platform/PlatformIcon': { default: () => null },
     '../common/platform/PlatformName': { default: () => 'Telegram' },
     '../channels/ChannelAccountAvatar': { ChannelAccountAvatar: () => null },

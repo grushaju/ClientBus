@@ -134,6 +134,13 @@ function AppLayout({
                                                 if (workspace.id !== currentWorkspace?.id && location.pathname.startsWith('/inbox/')) {
                                                     navigate('/inbox?tab=mine', { replace: true })
                                                 }
+                                                if (workspace.id !== currentWorkspace?.id && location.pathname === '/crm') {
+                                                    const query = new URLSearchParams(location.search)
+                                                    query.set('workspace', workspace.id)
+                                                    // These identities belong to the previous project's workspace.
+                                                    for (const key of ['project', 'master', 'masterId', 'crmClientId', 'externalClientId']) query.delete(key)
+                                                    navigate({ pathname: '/crm', search: '?' + query.toString() })
+                                                }
                                                 setCurrentWorkspaceId(workspace.id)
                                                 setWorkspaceMenuOpen(false)
                                             }}
@@ -181,7 +188,7 @@ function AppLayout({
                     </div>
                 </header>
 
-                <main ref={main} className="app-main" tabIndex={-1}>
+                <main ref={main} className={'app-main' + (location.pathname === '/crm' ? ' app-main-crm' : '')} tabIndex={-1}>
                     {children}
                 </main>
             </div>

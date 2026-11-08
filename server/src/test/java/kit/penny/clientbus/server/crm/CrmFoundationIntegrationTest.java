@@ -1687,6 +1687,31 @@ class CrmFoundationIntegrationTest {
             row.setPhoneList(new ArrayList<>(List.of(phone))); em.persist(row); return row.getId();
         });
     }
+    @Test void clientLinksOnlyIncludeProjectsInCurrentlyAccessibleWorkspacesAndKeepArchiveReadAccess() throws Exception {
+        var row=importClient(); UUID client=coreClient("Confirmed","79991234567");
+        clients.link(row.id(),client,row.version());
+        UUID hiddenWorkspace=tx.execute(status -> {
+            var ws=new WorkspaceEntity(em.getReference(OrganizationEntity.class,organization),"Hidden"); em.persist(ws); return ws.getId();
+        });
+        tx.executeWithoutResult(status -> {
+            var original=em.find(CrmClientEntity.class,row.id());
+            var project=new CrmProjectEntity(); project.setOrganization(em.getReference(OrganizationEntity.class,organization));
+            project.setWorkspace(em.getReference(WorkspaceEntity.class,hiddenWorkspace)); project.setConnection(original.getProject().getConnection());
+            project.setProvider(CrmType.DIKIDI); project.setExternalId("hidden-project"); project.setDisplayName("Hidden project"); em.persist(project);
+            var copy=new CrmClientEntity(); copy.setProject(project); copy.setExternalId("hidden-client"); copy.setIdentityKind("PROJECT"); copy.setDisplayName("Hidden CRM client");
+            copy.setClient(em.getReference(ClientEntity.class,client)); copy.setLastObservedAt(Instant.now()); em.persist(copy);
+        });
+        assertEquals(2,clients.links(client,null).size());
+        assertEquals(1,clients.links(client,workspace).size());
+        var project=service.projects(workspace,null).getFirst(); service.detachProject(project.id(),project.version());
+        actor.set(member);
+        var links=clients.links(client,null); assertEquals(1,links.size()); assertEquals(row.id(),links.getFirst().client().id()); assertTrue(links.getFirst().project().archived());
+        assertThrows(AccessDeniedException.class,() -> clients.links(client,hiddenWorkspace));
+        actor.set(target); assertTrue(clients.links(client,null).isEmpty());
+        assertEquals(404,assertThrows(CrmException.class,() -> clients.links(UUID.randomUUID(),null)).status());
+        UUID foreign=tx.execute(status -> { var c=new ClientEntity("Other","Org",em.find(WorkspaceEntity.class,otherWorkspace).getOrganization()); em.persist(c); return c.getId(); });
+        assertEquals(404,assertThrows(CrmException.class,() -> clients.links(foreign,null)).status());
+    }
     @Test void clientsImportPagesAndFailurePreservesEarlierRowsWithoutClaimingCompleteness() throws Exception {
         var project=bind(connection()); awaitIdle();
         provider.clientReader=cursor -> {
@@ -2331,6 +2356,96 @@ class CrmFoundationIntegrationTest {
         assertNull(state.errorCode(),state.toString());
     }
     private CrmAppointmentPageDto appointments(UUID project) { return appointmentReader.appointments(project,appointmentFilter(),null); }
+    @Test void appointmentClientsComeFromTheWholePeriodWithoutAnImportedClientDirectory() throws Exception {
+        var project=bind(connection()); awaitIdle();
+        loadAppointments(project.id(),CrmReadResult.Completeness.COMPLETE,List.of(appointment("a1",0,10,"1"),appointment("a2",0,11,"1"),
+                appointment("b",1,12,"2"),appointment("anonymous",0,12,null)));
+        jdbc.update("update crm.appointment set clientsnapshot='{" + "\"name\":\"Старое имя\"}'::jsonb where externalid='a1'");
+        jdbc.update("update crm.appointment set clientsnapshot='{" + "\"name\":\"Иван_100%\",\"phone\":\"+7 (999) 123-45-67\"}'::jsonb where externalid='a2'");
+        jdbc.update("update crm.appointment set clientsnapshot='{" + "\"name\":\"ИванX100X\"}'::jsonb where externalid='b'");
+        assertEquals(0,jdbc.queryForObject("select count(*) from crm.client",Integer.class));
+        var day=appointmentReader.clients(project.id(),SCHEDULE_DAY,SCHEDULE_DAY,null,null,null);
+        assertEquals(1,day.items().size()); assertEquals("1",day.items().getFirst().id());
+        assertEquals("Иван_100%",day.items().getFirst().displayName()); assertEquals("+7 (999) 123-45-67",day.items().getFirst().phone());
+        var period=appointmentReader.clients(project.id(),SCHEDULE_DAY,SCHEDULE_DAY.plusDays(1),null,null,null);
+        assertEquals(2,period.items().size());
+        assertEquals(1,appointmentReader.clients(project.id(),SCHEDULE_DAY,SCHEDULE_DAY.plusDays(1),"Иван_100%",null,null).items().size());
+        assertEquals(1,appointmentReader.clients(project.id(),SCHEDULE_DAY,SCHEDULE_DAY.plusDays(1),"7999123",null,null).items().size());
+        assertEquals("2",appointmentReader.clients(project.id(),SCHEDULE_DAY,SCHEDULE_DAY.plusDays(1),null,"2",null).items().getFirst().id());
+        var filter=new CrmAppointmentFilter(SCHEDULE_DAY,SCHEDULE_DAY.plusDays(1),null,null,null,null,null,null,null,"1");
+        assertEquals(2,appointmentReader.appointments(project.id(),filter,null).items().size());
+        assertEquals(0,jdbc.queryForObject("select count(*) from crm.client",Integer.class));
+        assertThrows(CrmException.class,() -> new CrmAppointmentFilter(SCHEDULE_DAY,SCHEDULE_DAY,null,null,null,null,null,null,null," "));
+        assertThrows(CrmException.class,() -> new CrmAppointmentFilter(SCHEDULE_DAY,SCHEDULE_DAY,UUID.randomUUID(),null,null,null,null,null,null,"1"));
+    }
+    @Test void externalClientFilterIncludesOnlyItsOwnSuccessfulHistoryCoverage() throws Exception {
+        var client=importClient();
+        var project=service.projects(workspace,null).getFirst();
+        provider.appointmentsReader=request -> new CrmAppointmentPage(List.of(),null,Instant.now(),
+                CrmReadResult.Completeness.COMPLETE,request.project(),request.query());
+        appointmentSync.refresh(project.id(),"CLIENT_HISTORY",client.id(),SCHEDULE_DAY,SCHEDULE_DAY.plusDays(1));
+        awaitAppointments();
+        var legacy=new CrmAppointmentFilter(SCHEDULE_DAY,SCHEDULE_DAY.plusDays(1),client.id(),null,null,null,null,null,null);
+        var expected=appointmentReader.appointments(project.id(),legacy,null).coverage();
+        assertEquals(2,expected.getFirst().scopes().size());
+        var history=expected.getFirst().scopes().getLast();
+        assertEquals("CLIENT_HISTORY",history.dataset()); assertEquals("COMPLETE",history.completeness());
+        assertFalse(history.successfulCoverage().isEmpty());
+        var external=new CrmAppointmentFilter(SCHEDULE_DAY,SCHEDULE_DAY.plusDays(1),null,null,null,null,null,null,null,"1");
+        assertEquals(expected,appointmentReader.appointments(project.id(),external,null).coverage());
+        var other=new CrmAppointmentFilter(SCHEDULE_DAY,SCHEDULE_DAY.plusDays(1),null,null,null,null,null,null,null,"2");
+        var scopes=appointmentReader.appointments(project.id(),other,null).coverage().getFirst().scopes();
+        assertEquals(1,scopes.size()); assertEquals("APPOINTMENTS",scopes.getFirst().dataset());
+    }
+    @Test void appointmentClientOptionsArePagedAndRejectChangedPeriodSearchOrSource() throws Exception {
+        var project=bind(connection()); awaitIdle();
+        var rows=new ArrayList<CrmAppointment>();
+        for (int i=0;i<102;i++) rows.add(appointment("a"+i,0,10,String.format("%03d",i)));
+        loadAppointments(project.id(),CrmReadResult.Completeness.COMPLETE,rows);
+        var first=appointmentReader.clients(project.id(),SCHEDULE_DAY,SCHEDULE_DAY,null,null,null);
+        assertEquals(100,first.items().size()); assertTrue(first.hasMore());
+        var second=appointmentReader.clients(project.id(),SCHEDULE_DAY,SCHEDULE_DAY,null,null,first.nextCursor());
+        assertEquals(2,second.items().size()); assertFalse(second.hasMore());
+        assertEquals("100",second.items().getFirst().id());
+        assertEquals("CRM_CONTEXT_CHANGED",assertThrows(CrmException.class,() -> appointmentReader.clients(project.id(),SCHEDULE_DAY,SCHEDULE_DAY,"client",null,first.nextCursor())).code());
+        assertEquals("CRM_CONTEXT_CHANGED",assertThrows(CrmException.class,() -> appointmentReader.clients(project.id(),SCHEDULE_DAY,SCHEDULE_DAY.plusDays(1),null,null,first.nextCursor())).code());
+        loadAppointments(project.id(),CrmReadResult.Completeness.COMPLETE,rows);
+        assertEquals("CRM_CONTEXT_CHANGED",assertThrows(CrmException.class,() -> appointmentReader.clients(project.id(),SCHEDULE_DAY,SCHEDULE_DAY,null,null,first.nextCursor())).code());
+    }
+    @Test void appointmentClientOptionsRespectWorkspaceAccessAndRemainReadableInArchive() throws Exception {
+        var project=bind(connection()); awaitIdle();
+        loadAppointments(project.id(),CrmReadResult.Completeness.COMPLETE,List.of(appointment("a1",0,10,"1")));
+        actor.set(target);
+        assertThrows(AccessDeniedException.class,() -> appointmentReader.clients(project.id(),SCHEDULE_DAY,SCHEDULE_DAY,null,null,null));
+        actor.set(member);
+        assertEquals(1,appointmentReader.clients(project.id(),SCHEDULE_DAY,SCHEDULE_DAY,null,null,null).items().size());
+        afterJpaCall=(method,args) -> { if (method.getName().equals("refresh") && args[0] instanceof CrmProjectEntity)
+            jdbc.update("delete from dbo.employeeworkspace where employeeid=? and workspaceid=?",member,workspace); };
+        try { assertThrows(AccessDeniedException.class,() -> appointmentReader.clients(project.id(),SCHEDULE_DAY,SCHEDULE_DAY,null,null,null)); }
+        finally { afterJpaCall=(method,args) -> {}; }
+        assertThrows(CrmException.class,() -> appointmentReader.clients(UUID.randomUUID(),SCHEDULE_DAY,SCHEDULE_DAY,null,null,null));
+        jdbc.update("update crm.project set archived=true,enabled=false where id=?",project.id());
+        assertEquals(1,appointmentReader.clients(project.id(),SCHEDULE_DAY,SCHEDULE_DAY,null,null,null).items().size());
+    }
+    @Test void appointmentRefreshPublishesOneFinalInvalidationForSeveralCommittedPages() throws Exception {
+        var project=bind(connection()); awaitIdle(); clearInvocations(events);
+        var entered=new CountDownLatch(1); var release=new CountDownLatch(1);
+        provider.appointmentsReader=request -> {
+            if ("next".equals(request.cursor())) { entered.countDown(); await(release); }
+            int index=request.cursor()==null ? 1 : "next".equals(request.cursor()) ? 2 : 3;
+            return new CrmAppointmentPage(List.of(appointment("a"+index,0,9+index,"1")),index==1 ? "next" : index==2 ? "last" : null,
+                    Instant.now(),CrmReadResult.Completeness.COMPLETE,request.project(),request.query());
+        };
+        appointmentSync.refresh(project.id(),"APPOINTMENTS",null,SCHEDULE_DAY,SCHEDULE_DAY.plusDays(1));
+        try {
+            assertTrue(entered.await(5,TimeUnit.SECONDS));
+            assertEquals(1,appointments(project.id()).items().size());
+            verify(events,never()).workspace(any(),eq("crm.invalidated"));
+        } finally { release.countDown(); }
+        awaitAppointments();
+        assertEquals(3,appointments(project.id()).items().size());
+        verify(events,times(1)).workspace(any(),eq("crm.invalidated"));
+    }
     @Test void appointmentsKeepHistoricalTermsIndependentStatesStableIdsAndFinancialOwnership() throws Exception {
         var project=bind(connection()); awaitIdle();
         var source=appointment("a1",0,10,"1");
@@ -2371,6 +2486,7 @@ class CrmFoundationIntegrationTest {
         var project=bind(connection()); awaitIdle();
         loadAppointments(project.id(),CrmReadResult.Completeness.COMPLETE,List.of(appointment("old",0,9,"1")));
         var coverage=appointments(project.id()).coverage().getFirst().scopes().getFirst().successfulCoverage();
+        clearInvocations(events);
         provider.appointmentsReader=request -> {
             if (request.cursor()!=null) throw new CrmFailure(CrmFailure.Code.TEMPORARY_FAILURE);
             return new CrmAppointmentPage(List.of(appointment("new",0,10,"1")),"next",Instant.now(),CrmReadResult.Completeness.COMPLETE,request.project(),request.query());
@@ -2381,6 +2497,7 @@ class CrmFoundationIntegrationTest {
         assertEquals("FAILED",page.coverage().getFirst().scopes().getFirst().status());
         assertEquals(coverage,page.coverage().getFirst().scopes().getFirst().successfulCoverage());
         assertEquals(1,page.coverage().getFirst().scopes().getFirst().attemptCoverage().get("pages"));
+        verify(events,times(1)).workspace(any(),eq("crm.invalidated"));
     }
     @Test void appointmentAllPagesMustBeCompleteBeforeAnyNegativeObservation() throws Exception {
         var project=bind(connection()); awaitIdle();

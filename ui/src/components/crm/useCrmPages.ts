@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { useUiResource } from '../../api/events/useUiResource'
 import { affectsWorkspace, isAccessEvent, useUiScope } from '../../api/events/uiScope'
 import { getApiErrorCode, getApiErrorStatus } from '../../api/apiClient'
-import { crmError, type CrmSyncState } from '../../api/crmApi'
+import { crmError, type CrmReadPage } from '../../api/crmApi'
 
-interface Page<T> { items: T[]; nextCursor: string | null; hasMore: boolean; revision: number; dataState: CrmSyncState }
+type Page<T> = CrmReadPage<T>
 /** Each query owns its pages. A local invalidation rereads the loaded window of the same revision. */
 export function useCrmPages<T extends { id: string }>(key: string, workspaceId: string,
     read: (signal: AbortSignal, cursor?: string) => Promise<Page<T>>) {
@@ -12,7 +12,7 @@ export function useCrmPages<T extends { id: string }>(key: string, workspaceId: 
     const [page, setPage] = useState<Page<T> | null>(null)
     const [loading, setLoading] = useState(true), [more, setMore] = useState(false)
     const [error, setError] = useState<string | null>(null)
-    const window = useRef({ count: 1, revision: -1, epoch: 0 })
+    const window = useRef<{ count: number; revision: number | string; epoch: number }>({ count: 1, revision: -1, epoch: 0 })
     const extra = useRef<AbortController>()
     function reset() {
         window.current = { count: 1, revision: -1, epoch: window.current.epoch + 1 }

@@ -23,7 +23,33 @@ export interface CrmSyncState {
     dataset: string; status: string; lastAttemptAt: string | null; lastSuccessAt: string | null
     freshness: 'NEVER_LOADED' | 'CURRENT' | 'STALE'; completeness: string; errorCode: string | null; generation: number
     attemptCoverage?: { projectErrorCode?: string }
+    scope?: Record<string, unknown>; successfulCoverage?: Record<string, unknown>
 }
+export interface CrmClient {
+    id: string; projectId: string; externalId: string; identityKind: string; displayName: string
+    contacts: Record<string, string>; normalizedPhone: string | null; clientId: string | null
+    mappingUpdatedAt: string | null; mappingUpdatedBy: string | null; mappingPreviousId: string | null
+    mappingReason: string | null; lastObservedAt: string | null; version: number
+}
+export interface CrmClientCandidate { id: string; firstName: string; lastName: string; phoneList: string[]; phoneMatch: boolean }
+export interface CrmClientLink { client: CrmClient; project: CrmProject }
+export interface CrmAppointmentClient { id: string; displayName: string; phone: string | null }
+export interface CrmWorkInterval { id: string; projectId: string; masterId: string; localStart: string; localEnd: string; kind: string; externalRef: string | null; lastObservedAt: string | null; version: number }
+export interface CrmAppointment {
+    id: string; projectId: string; workspaceId: string; externalId: string; kind: string; crmClientId: string | null; clientId: string | null
+    clientIdentityKind: string | null; externalClientId: string | null
+    clientSnapshot: Record<string, unknown>; localStart: string; localEnd: string | null; zoneId: string | null
+    startAt: string | null; endAt: string | null; appointmentState: string; confirmationState: string; attendanceState: string; paymentState: string
+    comment: string | null; services: { id: string; displayName: string; price: string | null; currency: string | null; durationSeconds: number | null }[]
+    masters: { id: string; masterId: string | null; displayName: string; localStart: string | null; localEnd: string | null }[]
+    servicesComplete: boolean; mastersComplete: boolean; observationState: string; lastObservedAt: string | null
+    requiresVerification: boolean; warnings: string[]; version: number
+}
+export interface CrmCoverage { projectId: string; workspaceId: string; scopes: CrmSyncState[] }
+export interface CrmReadPage<T> { items: T[]; nextCursor: string | null; hasMore: boolean; revision: number | string; dataState: CrmSyncState; coverage?: CrmCoverage[] }
+export interface CrmPeriod { dateFrom: string; dateTo: string }
+export interface CrmAppointmentQuery extends CrmPeriod { masterId?: string; crmClientId?: string; externalClientId?: string; workspaceId?: string; kind?: string; appointmentState?: string; confirmationState?: string; attendanceState?: string; paymentState?: string; cursor?: string }
+export interface CrmFinance { appointmentId: string; snapshot: Record<string, unknown> | null; observedAt: string | null; completeness: string; sync: CrmSyncState }
 export interface CrmMasterPage { items: CrmMaster[]; nextCursor: string | null; hasMore: boolean; dataState: CrmSyncState; revision: number }
 export interface CrmServiceOffer {
     masterDisplayName: string
@@ -41,6 +67,36 @@ export interface CrmEmployeeCandidate { id: string; displayName: string; usernam
 const json = async <T>(url: string, init?: RequestInit): Promise<T> => (await apiFetch(url, init)).json()
 const body = (method: string, value: unknown, signal?: AbortSignal): RequestInit => ({ method, body: JSON.stringify(value), signal })
 const path = (id: string) => encodeURIComponent(id)
+const queryString = (value: object) => new URLSearchParams(Object.entries(value).filter(([, item]) => item !== undefined && item !== null && item !== '').map(([key, item]) => [key, String(item)]))
+export const getCrmClients = async (id: string, query: { q?: string; unlinked?: boolean; cursor?: string }, signal?: AbortSignal): Promise<CrmReadPage<CrmClient>> => {
+    const result = await json<Omit<CrmReadPage<CrmClient>, 'dataState'> & { syncState: CrmSyncState }>(`/api/crm/projects/${path(id)}/clients?${queryString(query)}`, { signal })
+    return { ...result, dataState: result.syncState }
+}
+export const getCrmClient = (id: string, signal?: AbortSignal) => json<CrmClient>(`/api/crm/clients/${path(id)}`, { signal })
+export const getCrmClientCandidates = (id: string, q: string, signal?: AbortSignal) => json<CrmClientCandidate[]>(`/api/crm/clients/${path(id)}/client-candidates?${queryString({ q })}`, { signal })
+export const linkCrmClient = (row: CrmClient, clientId: string | null, signal?: AbortSignal) => clientId
+    ? json<CrmClient>(`/api/crm/clients/${path(row.id)}/client-link`, body('PUT', { clientId, expectedVersion: row.version }, signal))
+    : json<CrmClient>(`/api/crm/clients/${path(row.id)}/client-link?expectedVersion=${row.version}`, { method: 'DELETE', signal })
+export const createLinkedCrmClient = (row: CrmClient, value: { firstName: string; lastName: string; phoneList: string[] }, signal?: AbortSignal) =>
+    json<CrmClient>(`/api/crm/clients/${path(row.id)}/client`, body('POST', { ...value, expectedVersion: row.version }, signal))
+export const getClientCrmLinks = (id: string, workspaceId?: string, signal?: AbortSignal) => json<CrmClientLink[]>(`/api/crm/clientbus-clients/${path(id)}/links?${queryString({ workspaceId })}`, { signal })
+export const refreshCrmData = (id: string, value: { dataset: string; masterId?: string; crmClientId?: string } & Partial<CrmPeriod>, signal?: AbortSignal) =>
+    json<CrmSyncState>(`/api/crm/projects/${path(id)}/refresh`, body('POST', value, signal))
+export const getCrmWorkIntervals = (id: string, query: CrmPeriod & { masterId: string; cursor?: string }, signal?: AbortSignal) =>
+    json<CrmReadPage<CrmWorkInterval>>(`/api/crm/projects/${path(id)}/work-intervals?${queryString(query)}`, { signal })
+const unknownState: CrmSyncState = { dataset: 'APPOINTMENTS', status: 'IDLE', lastAttemptAt: null, lastSuccessAt: null, freshness: 'NEVER_LOADED', completeness: 'UNKNOWN', errorCode: null, generation: 0 }
+async function appointments(url: string, query: CrmAppointmentQuery, signal?: AbortSignal): Promise<CrmReadPage<CrmAppointment>> {
+    const result = await json<Omit<CrmReadPage<CrmAppointment>, 'dataState'>>(url + '?' + queryString(query), { signal })
+    // Coverage is displayed per scope. A populated list alone never proves completeness.
+    return { ...result, dataState: unknownState }
+}
+export const getCrmAppointments = (id: string, query: CrmAppointmentQuery, signal?: AbortSignal) => appointments(`/api/crm/projects/${path(id)}/appointments`, query, signal)
+export const getClientCrmAppointments = (id: string, query: CrmAppointmentQuery, signal?: AbortSignal) => appointments(`/api/clients/${path(id)}/crm/appointments`, query, signal)
+export const getCrmAppointment = (id: string, signal?: AbortSignal) => json<CrmAppointment>(`/api/crm/appointments/${path(id)}`, { signal })
+export const getCrmAppointmentClients = (id: string, query: CrmPeriod & { q?: string; externalClientId?: string; cursor?: string }, signal?: AbortSignal) =>
+    json<CrmReadPage<CrmAppointmentClient>>(`/api/crm/projects/${path(id)}/appointment-clients?${queryString(query)}`, { signal })
+export const getCrmFinance = (id: string, signal?: AbortSignal) => json<CrmFinance>(`/api/crm/appointments/${path(id)}/finance`, { signal })
+export const refreshCrmFinance = (id: string, signal?: AbortSignal) => json<CrmFinance>(`/api/crm/appointments/${path(id)}/finance/refresh`, { method: 'POST', signal })
 export const getCrmTypes = (signal?: AbortSignal) => json<CrmType[]>('/api/crm/types', { signal })
 export const getCrmConnections = (signal?: AbortSignal) => json<CrmConnection[]>('/api/crm/connections', { signal })
 export const createCrmConnection = (value: { provider: CrmType; login: string; secret: string; displayName?: string }, signal?: AbortSignal) =>

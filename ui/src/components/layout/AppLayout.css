@@ -148,6 +148,10 @@
     background: var(--ui-color-background-muted);
 }
 
+.app-main-crm {
+    scrollbar-gutter: stable;
+}
+
 .workspace-switcher {
     position: relative;
     min-width: 0;

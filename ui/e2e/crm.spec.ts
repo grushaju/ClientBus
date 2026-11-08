@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures/inbox'
 import type { Page } from '@playwright/test'
-import type { CrmConnection, CrmProject, CrmMaster, CrmSyncState } from '../src/api/crmApi'
+import type { CrmConnection, CrmProject, CrmMaster, CrmSyncState, CrmClient, CrmAppointment } from '../src/api/crmApi'
 import type {} from '../src/api/events/uiDiagnostics'
 
 test('Настройки: профиль и длинный список CRM прокручиваются до нижних действий', async ({ page, api }) => {
@@ -35,12 +35,25 @@ async function installCrm(page: Page, existing = true) {
         projectId: 'crm-project', externalId: 'master-' + index, displayName: 'Мастер ' + name, employeeId: null,
         mappingUpdatedAt: null, mappingUpdatedBy: null, mappingPreviousId: null, mappingReason: null,
         lastObservedAt: '2026-10-28T10:00:00Z', version: 0 }))
-    const counters = { creates: 0, checks: 0, bindings: 0, links: 0, credentialReads: 0, refreshes: 0, candidates: 0, deletions: 0, detachments: 0, projectLists: 0, projectReads: 0, unknown: [] as string[] }
+    const counters = { creates: 0, checks: 0, bindings: 0, links: 0, credentialReads: 0, refreshes: 0, candidates: 0, deletions: 0, detachments: 0, projectLists: 0, projectReads: 0,
+        clientLinks: 0, coreCreates: 0, appointmentReads: 0, intervalReads: 0, financeReads: 0, historyReads: 0, unknown: [] as string[] }
+    const crmClients: CrmClient[] = [0,1].map(i => ({ id: 'crm-client-' + i, projectId: 'crm-project', externalId: 'client-' + i, identityKind: 'PROJECT', displayName: i ? 'Другой клиент CRM' : 'Иван CRM',
+        contacts: { phone: '70000000001' }, normalizedPhone: '70000000001', clientId: i ? 'client-1' : null,
+        mappingUpdatedAt: null, mappingUpdatedBy: null, mappingPreviousId: null, mappingReason: null, lastObservedAt: '2026-11-08T09:00:00Z', version: 0 }))
+    const visits: CrmAppointment[] = [{ id: 'visit-1', projectId: 'crm-project', workspaceId: 'workspace-1', externalId: 'visit-external', kind: 'APPOINTMENT', crmClientId: 'crm-client-1', clientId: 'client-1',
+        clientIdentityKind: 'PROJECT', externalClientId: 'client-1',
+        clientSnapshot: { displayName: 'Иван CRM' }, localStart: '2026-11-08T12:00:00', localEnd: '2026-11-08T13:00:00', zoneId: 'Europe/Moscow', startAt: '2026-11-08T09:00:00Z', endAt: '2026-11-08T10:00:00Z',
+        appointmentState: 'SCHEDULED', confirmationState: 'CONFIRMED', attendanceState: 'NOT_RECORDED', paymentState: 'UNKNOWN', comment: 'Комментарий визита',
+        services: [{ id: 'visit-service-1', displayName: 'Стрижка', price: '1200.0000', currency: 'RUB', durationSeconds: 1800 }, { id: 'visit-service-2', displayName: 'Укладка', price: null, currency: null, durationSeconds: null }],
+        masters: [{ id: 'visit-master-1', masterId: 'crm-master-0', displayName: 'Мастер Один', localStart: null, localEnd: null }], servicesComplete: false, mastersComplete: true,
+        observationState: 'OBSERVED', lastObservedAt: '2026-11-08T09:00:00Z', requiresVerification: true, warnings: ['SERVICES_PARTIAL'], version: 0 }]
+    const appointmentPage = (items: CrmAppointment[], query: URLSearchParams) => ({ items, nextCursor: null, hasMore: false, revision: 'appointments-1',
+        coverage: [{ projectId: 'crm-project', workspaceId: 'workspace-1', scopes: [{ ...state, dataset: 'APPOINTMENTS', completeness: 'UNKNOWN', scope: { dateFrom: query.get('dateFrom'), dateTo: query.get('dateTo') } }] }] })
     const employee = { id: 'employee-2', organizationId: 'organization-1', username: 'crm-employee', firstName: 'Анна', lastName: 'Иванова', email: 'other@example.test', enabled: true, role: 'EMPLOYEE' }
     function makeProject(): CrmProject {
         return { id: 'crm-project', workspaceId: 'workspace-1', connectionId: 'crm-connection', provider: 'DIKIDI', externalId: '100', displayName: 'Салон №17',
             currency: 'RUB', zoneId: 'Europe/Moscow', zoneSource: 'MANUAL', zoneRevision: 1, contextVersion: 1, enabled: true, archived: false, connectionState: 'CONNECTED', version: 0,
-            capabilities: [{ code: 'READ_SERVICES', availability: 'AVAILABLE', reasonCode: null }] }
+            capabilities: ['READ_SERVICES', 'READ_CLIENTS', 'READ_WORK_INTERVALS'].map(code => ({ code, availability: 'AVAILABLE', reasonCode: null })) }
     }
     const services = ['Стрижка', 'Окрашивание', 'Укладка'].map((name, i) => ({ id: 's' + i, projectId: 'crm-project', externalId: String(i), displayName: name, category: 'Волосы',
         offers: [{ id: 'o' + i, serviceId: 's' + i, masterId: masters[i].id, masterDisplayName: masters[i].displayName, externalMasterId: masters[i].externalId,
@@ -52,7 +65,49 @@ async function installCrm(page: Page, existing = true) {
         if (path === '/api/workspaces/workspace-1') return reply({ id: 'workspace-1', organizationId: 'organization-1', name: 'Тестовый Workspace', avatarUrl: null, createdAt: '2026-10-28T10:00:00Z', updatedAt: '2026-10-28T10:00:00Z' })
         if (path === '/api/workspaces/workspace-1/memberships' || path === '/api/conversations/workspace/workspace-1') return reply([])
         if (path === '/api/employees/organization/organization-1') return reply([employee])
+        if (path === '/api/clients/client-1/conversations') return reply([])
+        if (path === '/api/clients/client-1/crm/appointments') { counters.historyReads++; return reply(appointmentPage(visits, url.searchParams)) }
         if (!path.startsWith('/api/crm/')) return route.fallback()
+        if (path === '/api/crm/clientbus-clients/client-1/links') return reply(crmClients.filter(row => row.clientId === 'client-1').map(client => ({ client, project: projects().find(row => row.id === client.projectId) })))
+        if (path === '/api/crm/projects/crm-project/appointment-clients') {
+            const q = url.searchParams.get('q')?.toLocaleLowerCase() ?? '', exact = url.searchParams.get('externalClientId')
+            const clients = new Map<string, { id: string; displayName: string; phone: string | null }>()
+            visits.filter(row => row.kind === 'APPOINTMENT' && row.clientIdentityKind === 'PROJECT' && row.externalClientId
+                && row.localStart.slice(0, 10) >= url.searchParams.get('dateFrom')! && row.localStart.slice(0, 10) <= url.searchParams.get('dateTo')!)
+                .forEach(row => clients.set(row.externalClientId!, { id: row.externalClientId!, displayName: String(row.clientSnapshot.displayName ?? row.clientSnapshot.name ?? 'Клиент #' + row.externalClientId), phone: null }))
+            const filtered = [...clients.values()].filter(row => (!exact || row.id === exact) && row.displayName.toLocaleLowerCase().includes(q)).sort((a, b) => a.id.localeCompare(b.id))
+            const after = url.searchParams.get('cursor') ? 1 : 0
+            return reply({ items: filtered.slice(after, after + 1), nextCursor: filtered.length > after + 1 ? 'next-client' : null, hasMore: filtered.length > after + 1,
+                dataState: { ...state, dataset: 'APPOINTMENTS' }, revision: 'period-clients-1' })
+        }
+        if (path === '/api/crm/projects/crm-project/clients') {
+            const q = url.searchParams.get('q')?.toLocaleLowerCase()
+            const filtered = crmClients.filter(row => (!q || (row.displayName + ' ' + row.normalizedPhone).toLocaleLowerCase().includes(q)) && (url.searchParams.get('unlinked') !== 'true' || !row.clientId))
+            const after = url.searchParams.get('cursor') ? 1 : 0
+            return reply({ items: filtered.slice(after, after + 1), nextCursor: filtered.length > after + 1 ? 'next-client' : null, hasMore: filtered.length > after + 1, syncState: { ...state, dataset: 'CLIENTS', completeness: 'UNKNOWN' }, revision: 1 })
+        }
+        const crmClient = crmClients.find(row => path === '/api/crm/clients/' + row.id || path.startsWith('/api/crm/clients/' + row.id + '/'))
+        if (crmClient) {
+            if (path.endsWith('/client-candidates')) return reply([{ id: 'client-1', firstName: 'Иван', lastName: 'Клиент', phoneList: ['70000000001'], phoneMatch: true }])
+            if (method === 'GET') return reply(crmClient)
+            expect(method === 'DELETE' ? Number(url.searchParams.get('expectedVersion')) : body.expectedVersion).toBe(crmClient.version)
+            if (path.endsWith('/client')) { counters.coreCreates++; expect(body.firstName).toBeTruthy(); crmClient.clientId = 'client-1' }
+            else { counters.clientLinks++; crmClient.clientId = method === 'DELETE' ? null : body.clientId }
+            crmClient.version++; return reply(crmClient)
+        }
+        if (path === '/api/crm/projects/crm-project/appointments') { counters.appointmentReads++; return reply(appointmentPage(visits.filter(row =>
+            row.localStart.slice(0, 10) >= url.searchParams.get('dateFrom')! && row.localStart.slice(0, 10) <= url.searchParams.get('dateTo')! &&
+            (!url.searchParams.get('externalClientId') || row.externalClientId === url.searchParams.get('externalClientId')) &&
+            (!url.searchParams.get('crmClientId') || row.crmClientId === url.searchParams.get('crmClientId')) &&
+            (!url.searchParams.get('masterId') || row.masters.some(master => master.masterId === url.searchParams.get('masterId'))) &&
+            ['kind', 'appointmentState', 'confirmationState', 'attendanceState', 'paymentState'].every(key => !url.searchParams.get(key) || row[key as keyof CrmAppointment] === url.searchParams.get(key))), url.searchParams)) }
+        if (path === '/api/crm/appointments/visit-1') return reply(visits[0])
+        if (path === '/api/crm/appointments/visit-1/finance' || path === '/api/crm/appointments/visit-1/finance/refresh') {
+            counters.financeReads++; return reply({ appointmentId: 'visit-1', observedAt: '2026-11-08T09:00:00Z', completeness: 'UNKNOWN', sync: { ...state, dataset: 'FINANCE' },
+                snapshot: { totals: { cost: '1200.0000', paid: null, debt: null, currency: 'RUB' }, lines: [{ price: '1200', discountPercent: 10, discountAmount: '120', total: '1080' }], payments: [] } })
+        }
+        if (path === '/api/crm/projects/crm-project/work-intervals') { counters.intervalReads++; return reply({ items: [{ id: 'shift-1', projectId: 'crm-project', masterId: url.searchParams.get('masterId'),
+            localStart: url.searchParams.get('dateFrom') + 'T09:00:00', localEnd: url.searchParams.get('dateFrom') + 'T18:00:00', kind: 'WORK', version: 0 }], nextCursor: null, hasMore: false, dataState: { ...state, dataset: 'WORK_INTERVALS', completeness: 'UNKNOWN' }, revision: 1 }) }
         if (path === '/api/crm/types') return reply(['DIKIDI'])
         if (path === '/api/crm/connections') {
             if (method === 'GET') { counters.credentialReads++; return reply(connections) }
@@ -116,12 +171,366 @@ async function installCrm(page: Page, existing = true) {
             expect(method === 'DELETE' ? Number(url.searchParams.get('expectedVersion')) : body.expectedVersion).toBe(master.version)
             counters.links++; master.employeeId = method === 'DELETE' ? null : body.employeeId; master.version++; return reply(master)
         }
-        if (path === '/api/crm/projects/crm-project/refresh') { expect(body.dataset).toBe('CATALOG'); counters.refreshes++;
+        if (path === '/api/crm/projects/crm-project/refresh') { expect(['CATALOG', 'CLIENTS', 'WORK_INTERVALS', 'APPOINTMENTS', 'CLIENT_HISTORY']).toContain(body.dataset); counters.refreshes++;
+            if (body.dataset !== 'CATALOG') return reply({ ...state, dataset: body.dataset, status: 'QUEUED' }, 202)
             state = { ...state, status: 'FAILED', freshness: 'STALE', errorCode: 'CRM_TEMPORARILY_UNAVAILABLE' }; return reply(state, 202) }
         counters.unknown.push(method + ' ' + path); return reply({ code: 'TEST_ERROR', message: 'Unexpected CRM request' }, 501)
     })
-    return { counters, connections, masters, services, get project() { return project } }
+    return { counters, connections, masters, services, crmClients, visits, get project() { return project } }
 }
+
+test('CRM 12.5: сотрудник ищет клиентов, подтверждает первую связь и не заменяет существующую', async ({ page, api }) => {
+    api.role = 'employee'; const fixture = await installCrm(page)
+    await page.goto('/crm?tab=clients')
+    await page.getByRole('button', { name: 'Иван CRM', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Клиент CRM', exact: true })
+    await dialog.getByRole('button', { name: 'Выбрать клиента ClientBus' }).click()
+    await dialog.getByRole('button', { name: /Иван Клиент.*телефон совпадает/ }).click()
+    expect(fixture.counters.clientLinks).toBe(0)
+    await expect(dialog.getByText(/Связать с Иван Клиент/)).toBeVisible()
+    await page.screenshot({ path: test.info().outputPath('crm-125-client-link.png') })
+    await dialog.getByRole('button', { name: 'Подтвердить связь', exact: true }).click()
+    await expect(dialog.getByRole('link', { name: 'клиентом ClientBus' })).toBeVisible()
+    await expect(dialog.getByRole('button', { name: 'Изменить связь' })).toHaveCount(0)
+    expect(fixture.counters.clientLinks).toBe(1)
+    await dialog.getByRole('button', { name: 'Закрыть', exact: true }).click()
+    await page.getByRole('button', { name: 'Показать ещё', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Другой клиент CRM', exact: true })).toBeVisible()
+    await page.getByLabel('Найти клиента CRM', { exact: true }).fill('Другой')
+    await expect(page.locator('.crm-master')).toHaveCount(1)
+    await expect(page.getByRole('button', { name: 'Другой клиент CRM', exact: true })).toBeVisible()
+    expect(fixture.counters.unknown).toEqual([])
+})
+
+test('CRM 12.5: супервизор снимает связь только после подтверждения', async ({ page, api }) => {
+    api.role = 'supervisor'; const fixture = await installCrm(page)
+    await page.goto('/crm?tab=clients')
+    await page.getByRole('button', { name: 'Показать ещё', exact: true }).click()
+    await page.getByRole('button', { name: 'Другой клиент CRM', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Клиент CRM', exact: true })
+    await dialog.getByRole('button', { name: 'Снять связь', exact: true }).click()
+    expect(fixture.counters.clientLinks).toBe(0)
+    await dialog.getByRole('button', { name: 'Подтвердить снятие', exact: true }).click()
+    await expect(dialog.getByText('Без связи с ClientBus', { exact: true })).toBeVisible()
+    expect(fixture.counters.clientLinks).toBe(1); expect(fixture.counters.unknown).toEqual([])
+})
+
+test('CRM 12.5: создание ClientBus со связью требует ввода данных', async ({ page, api }) => {
+    api.role = 'employee'; const fixture = await installCrm(page)
+    await page.goto('/crm?tab=clients')
+    await page.getByRole('button', { name: 'Иван CRM', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Клиент CRM', exact: true })
+    await dialog.getByRole('button', { name: 'Создать клиента ClientBus', exact: true }).click()
+    await expect(dialog.getByRole('button', { name: 'Создать и связать', exact: true })).toBeDisabled()
+    await dialog.getByLabel('Имя', { exact: true }).fill('Подтверждённый')
+    await dialog.getByLabel('Фамилия', { exact: true }).fill('Клиент')
+    await dialog.getByLabel('Телефоны через запятую').fill('70000000001')
+    await dialog.getByRole('button', { name: 'Создать и связать', exact: true }).click()
+    await expect(dialog.getByRole('link', { name: 'клиентом ClientBus' })).toBeVisible()
+    expect(fixture.counters.coreCreates).toBe(1); expect(fixture.counters.unknown).toEqual([])
+})
+
+test('CRM: смена Workspace обновляет URL и не возвращает прежний Workspace при выборе вкладки', async ({ page, api }) => {
+    api.role = 'admin'
+    const fixture = await installCrm(page)
+    const workspaces = [1, 2].map(index => ({ id: 'workspace-' + index, organizationId: 'organization-1', name: 'Workspace ' + index,
+        avatarUrl: null, createdAt: '2026-11-08T09:00:00Z', updatedAt: '2026-11-08T09:00:00Z' }))
+    const second = { ...fixture.project!, id: 'second-project', workspaceId: 'workspace-2', displayName: 'Другой салон' }
+    await page.route('**/api/workspaces/my', route => route.fulfill({ json: workspaces }))
+    await page.route('**/api/crm/workspaces/workspace-2/projects', route => route.fulfill({ json: [second] }))
+    await page.route('**/api/crm/projects/second-project/**', route => route.fulfill({ json: { items: [], hasMore: false, nextCursor: null,
+        revision: 'second-revision', coverage: [], dataState: { dataset: 'CATALOG', status: 'IDLE', freshness: 'NEVER_LOADED', completeness: 'UNKNOWN' } } }))
+    const path = '/crm?workspace=workspace-1&project=crm-project&tab=appointments&dateFrom=2026-11-08&dateTo=2026-11-09&masterId=crm-master-0&externalClientId=client-0'
+    await page.goto(path)
+    await expect(page.getByRole('tab', { name: 'Записи', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await page.locator('.workspace-switcher-trigger').click()
+    await page.locator('.workspace-switcher-menu').getByRole('button', { name: 'Workspace 2', exact: false }).click()
+    await expect(page).toHaveURL(/workspace=workspace-2/)
+    const query = new URL(page.url()).searchParams
+    expect(query.get('dateFrom')).toBe('2026-11-08'); expect(query.get('dateTo')).toBe('2026-11-09')
+    for (const key of ['project', 'master', 'masterId', 'crmClientId', 'externalClientId']) expect(query.has(key)).toBe(false)
+    await expect(page.locator('.crm-catalog-heading')).toContainText('Другой салон')
+    await page.getByRole('tab', { name: 'Мастера', exact: true }).click()
+    await expect(page.locator('.workspace-switcher-trigger')).toContainText('Workspace 2')
+    await expect(page.locator('.crm-catalog-heading')).toContainText('Другой салон')
+    await page.goBack()
+    await expect(page.getByRole('tab', { name: 'Записи', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await page.goBack()
+    expect(new URL(page.url()).searchParams.get('externalClientId')).toBe('client-0')
+    await expect(page.locator('.workspace-switcher-trigger')).toContainText('Workspace 1')
+    await expect(page.locator('.crm-catalog-heading')).toContainText('Салон №17')
+    expect(fixture.counters.unknown).toEqual([])
+})
+
+test('CRM: порядок вкладок и сохранение фильтров записей между вкладками', async ({ page, api }) => {
+    api.role = 'employee'; const fixture = await installCrm(page)
+    await page.goto('/crm?tab=appointments&workspace=workspace-1&project=crm-project&dateFrom=2026-11-08&dateTo=2026-11-08&appointmentState=SCHEDULED')
+    const tabs = page.getByRole('tablist', { name: 'Каталог CRM' })
+    await expect(tabs.getByRole('tab')).toHaveText(['Записи', 'Мастера', 'Услуги', 'Клиенты', 'График'])
+    await expect(tabs.getByRole('tab', { name: 'Записи', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.locator('.sidebar-nav a[href="/appointments"]')).toHaveCount(0)
+    await expect(page.locator('.crm-appointment-row')).toHaveCount(1)
+    await tabs.getByRole('tab', { name: 'Мастера', exact: true }).click()
+    await expect(page.locator('.crm-appointment-row')).toHaveCount(0)
+    await tabs.getByRole('tab', { name: 'Записи', exact: true }).click()
+    await expect(page.getByLabel('С даты', { exact: true })).toHaveValue('2026-11-08')
+    await expect(page.getByRole('combobox', { name: 'Состояние визита', exact: true })).toHaveValue('SCHEDULED')
+    await expect(page.locator('.crm-appointment-row')).toHaveCount(1)
+    await page.reload()
+    await expect(tabs.getByRole('tab', { name: 'Записи', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.locator('.crm-appointment-row')).toHaveCount(1)
+    await page.screenshot({ path: test.info().outputPath('crm-appointments-tab.png') })
+    expect(fixture.counters.unknown).toEqual([])
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+})
+
+test('CRM: шапка и ширина содержимого не сдвигаются между короткими и длинными вкладками', async ({ page, api }) => {
+    api.role = 'supervisor'; const fixture = await installCrm(page)
+    const visit = fixture.visits[0]
+    for (let i = 1; i <= 12; i++) fixture.visits.push({ ...visit, id: 'layout-visit-' + i })
+    await page.goto('/crm?tab=masters&dateFrom=2026-11-08&dateTo=2026-11-08')
+    await expect(page.locator('.crm-master')).toHaveCount(3)
+    const geometry = () => page.evaluate(() => {
+        const main = document.querySelector('.app-main')!
+        main.scrollTop = 0
+        return ['.crm-page', '.crm-page h1', '.crm-catalog-heading', '.crm-tab-heading', '#crm-tabpanel'].map(selector => {
+            const rect = document.querySelector(selector)!.getBoundingClientRect()
+            return { x: rect.x, y: rect.y, width: rect.width }
+        })
+    })
+    const baseline = await geometry()
+    for (const [name, ready] of [['Услуги', '.crm-service'], ['Клиенты', '.crm-master'], ['Записи', '.crm-appointment-row'], ['График', '.crm-directory-trigger'], ['Мастера', '.crm-master']]) {
+        await page.getByRole('tab', { name, exact: true }).click()
+        await expect(page.locator(ready).first()).toBeVisible()
+        await expect.poll(geometry).toEqual(baseline)
+        const size = await page.locator('.crm-page').evaluate(element => ({ height: element.getBoundingClientRect().height, available: element.parentElement!.clientHeight }))
+        expect(size.height).toBeGreaterThanOrEqual(size.available - 1)
+        if (['Записи', 'График'].includes(name)) await page.screenshot({ path: test.info().outputPath('crm-layout-' + (name === 'Записи' ? 'appointments' : 'schedule') + '.png') })
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+    expect(fixture.counters.unknown).toEqual([])
+})
+
+test('CRM 12.5: записи показывают исторические услуги, неизвестную оплату и границы периода', async ({ page, api }) => {
+    api.role = 'employee'; const fixture = await installCrm(page)
+    await page.goto('/crm?tab=appointments&dateFrom=2026-11-08&dateTo=2026-11-08')
+    await page.locator('.crm-appointment-row').click()
+    const dialog = page.getByRole('dialog', { name: 'Запись CRM', exact: true })
+    await expect(dialog.getByText(/Стрижка.*1200 RUB/)).toBeVisible()
+    await expect(dialog.getByText(/Укладка.*Неизвестно/)).toBeVisible()
+    expect(fixture.counters.financeReads).toBe(0)
+    await dialog.getByRole('button', { name: 'Финансы визита' }).click()
+    await expect(dialog.locator('dd').nth(0)).toHaveText('1200 RUB')
+    await expect(dialog.locator('dd').nth(1)).toHaveText('Неизвестно')
+    await expect(dialog.getByText('Полнота: не подтверждена полностью', { exact: true })).toBeVisible()
+    await page.screenshot({ path: test.info().outputPath('crm-125-appointment.png') })
+    await dialog.getByRole('button', { name: 'Закрыть', exact: true }).click()
+    const reads = fixture.counters.appointmentReads
+    await page.getByLabel('По дату', { exact: true }).fill('2026-12-20')
+    await expect(page.getByRole('alert')).toContainText('от 1 до 31 дня')
+    await expect(page.getByRole('button', { name: 'Обновить записи периода' })).toBeDisabled()
+    expect(fixture.counters.appointmentReads).toBe(reads)
+    expect(fixture.counters.unknown).toEqual([])
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+})
+
+test('CRM 12.5: клиенты периода доступны из визитов при пустом справочнике CRM', async ({ page, api }) => {
+    api.role = 'employee'; const fixture = await installCrm(page)
+    fixture.crmClients.splice(0)
+    fixture.visits.push({ ...fixture.visits[0], id: 'anonymous', externalClientId: null, clientIdentityKind: null, clientSnapshot: { name: 'Без идентификатора' } },
+        { ...fixture.visits[0], id: 'tomorrow', localStart: '2026-11-09T12:00:00', externalClientId: 'client-2', clientSnapshot: { name: 'Завтрашний клиент' } })
+    const directories: string[] = []
+    page.on('request', request => { if (new URL(request.url()).pathname === '/api/crm/projects/crm-project/clients') directories.push(request.url()) })
+    await page.goto('/crm?tab=appointments&dateFrom=2026-11-08&dateTo=2026-11-08')
+    const trigger = page.getByRole('button', { name: 'Клиент CRM Все клиенты', exact: true })
+    await trigger.click()
+    const popup = page.getByRole('dialog', { name: 'Выбор клиента CRM' })
+    await expect(popup.getByRole('option', { name: 'Иван CRM', exact: true })).toBeVisible()
+    await expect(popup.getByRole('option', { name: 'Без идентификатора', exact: true })).toHaveCount(0)
+    await expect(popup.getByRole('option', { name: 'Завтрашний клиент', exact: true })).toHaveCount(0)
+    await popup.getByRole('option', { name: 'Иван CRM', exact: true }).click()
+    await expect(page).toHaveURL(/externalClientId=client-1/)
+    await expect(page.locator('.crm-appointment-row')).toHaveCount(1)
+    await page.getByLabel('С даты', { exact: true }).fill('2026-11-09')
+    await page.getByLabel('По дату', { exact: true }).fill('2026-11-09')
+    await page.getByRole('button', { name: 'Клиент CRM Иван CRM', exact: true }).click()
+    await expect(popup.getByRole('option', { name: 'Завтрашний клиент', exact: true })).toBeVisible()
+    await expect(popup.getByRole('option', { name: 'Иван CRM', exact: true })).toHaveCount(0)
+    await popup.getByRole('option', { name: 'Завтрашний клиент', exact: true }).click()
+    await expect(page).toHaveURL(/externalClientId=client-2/)
+    await expect(page.locator('.crm-appointment-row')).toHaveCount(1)
+    expect(directories).toEqual([]); expect(fixture.counters.unknown).toEqual([])
+})
+
+async function enableCrmPickerEvents(page: Page) {
+    await page.addInitScript(() => {
+        const original = window.fetch.bind(window)
+        window.fetch = async (...args) => {
+            if (new URL(String(args[0]), location.href).pathname !== '/api/events') return original(...args)
+            const body = new ReadableStream<Uint8Array>({ start(controller) {
+                const emit = (type: string) => controller.enqueue(new TextEncoder().encode(`event: ${type}\ndata: ${JSON.stringify({
+                    eventId: crypto.randomUUID(), schemaVersion: 1, type, occurredAt: new Date().toISOString(), workspaceId: null, resource: null, correlationId: null,
+                    stream: type === 'stream.ready' ? { streamId: crypto.randomUUID(), alertsAfter: new Date().toISOString(), heartbeatSeconds: 60 } : null,
+                })}\n\n`))
+                const invalidate = () => emit('crm.invalidated')
+                window.addEventListener('test:crm-picker-update', invalidate)
+                args[1]?.signal?.addEventListener('abort', () => { window.removeEventListener('test:crm-picker-update', invalidate); controller.close() }, { once: true })
+                emit('stream.ready')
+            } })
+            return new Response(body, { headers: { 'Content-Type': 'text/event-stream' } })
+        }
+    })
+}
+
+test('CRM 12.5: обновление периода и нотификации не сдвигают фильтры и не закрывают поиск клиента', async ({ page, api }) => {
+    api.role = 'employee'; const fixture = await installCrm(page)
+    let empty = false, reads = 0
+    await page.route('**/api/crm/projects/crm-project/appointment-clients?*', route => {
+        reads++
+        const query = new URL(route.request().url()).searchParams.get('q')?.toLocaleLowerCase() ?? ''
+        const exact = new URL(route.request().url()).searchParams.get('externalClientId')
+        return route.fulfill({ json: { items: empty ? [] : fixture.crmClients.filter(row => (!exact || row.externalId === exact) && row.displayName.toLocaleLowerCase().includes(query)).map(row => ({ id: row.externalId, displayName: row.displayName, phone: null })),
+            nextCursor: null, hasMore: false, revision: 1, dataState: { dataset: 'APPOINTMENTS', freshness: 'CURRENT' } } })
+    })
+    await enableCrmPickerEvents(page)
+    await page.goto('/crm?tab=appointments&dateFrom=2026-11-08&dateTo=2026-11-08')
+    await expect(page.locator('.crm-appointment-row')).toHaveCount(1)
+    await expect.poll(() => page.evaluate(() => window.clientbusNotificationDiagnostics?.()?.transport.state)).toMatch(/^(open|degraded)$/)
+    const trigger = page.getByRole('button', { name: 'Клиент CRM Все клиенты', exact: true })
+    const refresh = page.getByRole('button', { name: 'Обновить записи периода' })
+    const fields = page.locator('.crm-appointment-filters')
+    // Layout offsets exclude the browser's normal scrolling when a mobile field gains focus.
+    const layout = () => fields.evaluate(node => [node, ...node.children].map(element => {
+        const field = element as HTMLElement
+        return { top: field.offsetTop, left: field.offsetLeft, width: field.offsetWidth, height: field.offsetHeight }
+    }))
+    const before = await layout()
+    expect(reads).toBe(0)
+    await refresh.click(); await trigger.click()
+    const popup = page.getByRole('dialog', { name: 'Выбор клиента CRM' }), search = popup.getByLabel('Поиск клиента CRM')
+    await expect(search).toBeFocused(); await search.fill('Иван')
+    await expect(popup.getByRole('option', { name: 'Иван CRM', exact: true })).toBeVisible()
+    empty = true
+    const previous = reads
+    await page.evaluate(() => window.dispatchEvent(new Event('test:crm-picker-update')))
+    await expect.poll(() => reads).toBeGreaterThan(previous)
+    await expect(popup.getByText('По запросу ничего не найдено.', { exact: true })).toBeVisible()
+    await expect(search).toBeFocused(); await expect(search).toHaveValue('Иван')
+    expect(await layout()).toEqual(before)
+    empty = false
+    await page.evaluate(() => window.dispatchEvent(new Event('test:crm-picker-update')))
+    await popup.getByRole('option', { name: 'Иван CRM', exact: true }).click()
+    await expect(page).toHaveURL(/externalClientId=client-0/)
+    await expect(popup).toHaveCount(0)
+    const selected = page.getByRole('button', { name: 'Клиент CRM Иван CRM', exact: true })
+    await expect(selected).toBeFocused()
+    await selected.press('ArrowDown'); await expect(search).toBeFocused()
+    await search.press('ArrowDown'); await page.keyboard.press('Enter')
+    await expect(page).not.toHaveURL(/externalClientId=/)
+    await trigger.press('ArrowDown'); await search.press('Escape')
+    await expect(trigger).toBeFocused(); await expect(popup).toHaveCount(0)
+    expect(await layout()).toEqual(before)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+    expect(fixture.counters.unknown).toEqual([])
+    await page.screenshot({ path: test.info().outputPath('crm-directory-stable.png') })
+})
+
+test('CRM 12.5: удаление активного варианта возвращает фокус в поиск, Tab выходит из списка', async ({ page, api }) => {
+    api.role = 'employee'; const fixture = await installCrm(page)
+    fixture.visits.push({ ...fixture.visits[0], id: 'visit-other', externalClientId: 'client-2', clientSnapshot: { name: 'Другой клиент CRM' } })
+    await enableCrmPickerEvents(page)
+    await page.goto('/crm?tab=appointments&dateFrom=2026-11-08&dateTo=2026-11-08')
+    const trigger = page.getByRole('button', { name: 'Клиент CRM Все клиенты', exact: true })
+    const nextFilter = page.getByRole('combobox', { name: 'Вид записи', exact: true })
+    await trigger.click()
+    const popup = page.getByRole('dialog', { name: 'Выбор клиента CRM' }), search = popup.getByLabel('Поиск клиента CRM')
+    await popup.getByRole('button', { name: 'Показать ещё' }).click()
+    await expect(popup.getByRole('option', { name: 'Другой клиент CRM', exact: true })).toBeVisible()
+    await expect(search).toBeFocused()
+    await search.press('ArrowDown'); await page.keyboard.press('ArrowDown')
+    await expect(popup.getByRole('option', { name: 'Иван CRM', exact: true })).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(popup).toHaveCount(0); await expect(nextFilter).toBeFocused()
+
+    await trigger.click()
+    await expect(popup.getByRole('option', { name: 'Иван CRM', exact: true })).toBeVisible()
+    await search.press('ArrowDown'); await page.keyboard.press('ArrowDown')
+    await expect(popup.getByRole('option', { name: 'Иван CRM', exact: true })).toBeFocused()
+    fixture.visits.splice(0, 1)
+    await page.evaluate(() => window.dispatchEvent(new Event('test:crm-picker-update')))
+    await expect(popup.getByRole('option', { name: 'Иван CRM', exact: true })).toHaveCount(0)
+    await expect(search).toBeFocused(); await expect(popup).toBeVisible()
+    await search.press('ArrowDown'); await page.keyboard.press('ArrowDown')
+    const remaining = popup.getByRole('option', { name: 'Другой клиент CRM', exact: true })
+    await expect(remaining).toBeFocused()
+    const updated = page.waitForResponse(response => new URL(response.url()).pathname === '/api/crm/projects/crm-project/appointment-clients')
+    await page.evaluate(() => window.dispatchEvent(new Event('test:crm-picker-update')))
+    await updated; await expect(remaining).toBeFocused()
+
+    let release!: () => void, started = false
+    const gate = new Promise<void>(resolve => { release = resolve })
+    await page.route('**/api/crm/projects/crm-project/appointment-clients?*', async route => { started = true; await gate; await route.fallback() })
+    await page.evaluate(() => window.dispatchEvent(new Event('test:crm-picker-update')))
+    await expect.poll(() => started).toBe(true)
+    try { await remaining.press('Tab'); await expect(popup).toHaveCount(0) } finally { release() }
+    await expect(nextFilter).toBeFocused()
+    expect(fixture.counters.unknown).toEqual([])
+})
+
+test('CRM 12.5: график показывает интервалы и обновляет только выбранного мастера', async ({ page, api }) => {
+    api.role = 'employee'; const fixture = await installCrm(page)
+    await page.goto('/crm?tab=schedule&master=crm-master-0')
+    await expect(page.getByText('Рабочий интервал', { exact: true })).toBeVisible()
+    await expect(page.getByText(/не подтверждают свободное время/)).toBeVisible()
+    await page.screenshot({ path: test.info().outputPath('crm-125-schedule.png') })
+    expect(fixture.counters.refreshes).toBe(0)
+    const sent = page.waitForRequest(request => request.url().endsWith('/crm-project/refresh') && request.method() === 'POST')
+    await page.getByRole('button', { name: 'Обновить график', exact: true }).click()
+    const payload = (await sent).postDataJSON()
+    expect(payload.dataset).toBe('WORK_INTERVALS'); expect(payload.masterId).toBe('crm-master-0')
+    expect(payload.dateFrom).toMatch(/^\d{4}-\d{2}-\d{2}$/); expect(payload.dateTo).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(fixture.counters.refreshes).toBe(1); expect(fixture.counters.unknown).toEqual([])
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+})
+
+test('CRM 12.5: история клиента загружается при раскрытии и учитывает выбранный Workspace', async ({ page, api }) => {
+    api.role = 'employee'; const fixture = await installCrm(page)
+    const upcoming = new Date(Date.now() + 3600000)
+    fixture.visits[0].startAt = upcoming.toISOString()
+    fixture.visits[0].localStart = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Moscow', dateStyle: 'short', timeStyle: 'medium' }).format(upcoming).replace(' ', 'T')
+    await page.goto('/clients/client-1')
+    expect(fixture.counters.historyReads).toBe(0)
+    await page.getByText('CRM и визиты', { exact: true }).click()
+    await expect(page.locator('.crm-appointment-row')).toHaveCount(1)
+    expect(fixture.counters.historyReads).toBeGreaterThan(0)
+    await expect(page.getByLabel('Рабочее пространство истории')).toHaveValue('workspace-1')
+    await page.getByRole('button', { name: 'Прошлые визиты', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Прошлые визиты', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.locator('.crm-appointment-row')).toHaveCount(0)
+    await expect(page.getByText(/В загруженных данных подходящие записи не найдены/)).toBeVisible()
+    expect(fixture.counters.unknown).toEqual([])
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+})
+
+test('CRM 12.5: панель диалога показывает ближайшие визиты только своего Workspace', async ({ page, api }) => {
+    api.role = 'employee'; api.account.clientId = 'client-1'
+    const fixture = await installCrm(page)
+    const upcoming = new Date(Date.now() + 3600000)
+    fixture.visits[0].startAt = upcoming.toISOString()
+    fixture.visits[0].localStart = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Moscow', dateStyle: 'short', timeStyle: 'medium' }).format(upcoming).replace(' ', 'T')
+    await page.goto('/inbox/conversation-1')
+    const panel = page.locator('.conversation-client-panel')
+    await expect(panel.getByText('CRM и визиты', { exact: true })).toBeVisible()
+    expect(fixture.counters.historyReads).toBe(0)
+    const request = page.waitForRequest(request => request.url().includes('/clients/client-1/crm/appointments'))
+    await panel.getByText('CRM и визиты', { exact: true }).click()
+    expect(new URL((await request).url()).searchParams.get('workspaceId')).toBe('workspace-1')
+    await expect(panel.locator('.crm-appointment-row')).toHaveCount(1)
+    await panel.getByRole('link', { name: 'Все визиты во вкладке «Записи»' }).click()
+    await expect(page).toHaveURL(/\/crm\?tab=appointments&.*clientId=client-1/)
+    await expect(page.locator('.crm-appointment-row')).toHaveCount(1)
+    expect(fixture.counters.unknown).toEqual([])
+})
 
 test('CRM: health и нотификации сохраняют доступность списка проектов и не повторяют чтение DIKIDI', async ({ page, api }) => {
     api.role = 'admin'; const fixture = await installCrm(page, false)
@@ -331,7 +740,7 @@ test('CRM: сотрудник работает с услугами и карто
     await page.getByLabel('Найти услугу').fill(''); await page.getByRole('button', { name: 'Мастер: все' }).click()
     await page.getByLabel('Найти мастера', { exact: true }).fill('Два'); await page.locator('.crm-picker').getByRole('button', { name: /Мастер Два/ }).click()
     await expect(page.locator('.crm-service')).toHaveCount(1); await expect(page.getByText('Окрашивание', { exact: true })).toBeVisible()
-    await page.getByRole('tab', { name: 'Услуги', exact: true }).focus(); await page.keyboard.press('ArrowRight')
+    await page.getByRole('tab', { name: 'Услуги', exact: true }).focus(); await page.keyboard.press('ArrowLeft')
     await expect(page.getByRole('tab', { name: 'Мастера', exact: true })).toBeFocused()
     await expect(page.getByRole('button', { name: 'Связи с сотрудниками' })).toHaveCount(0)
     await expect(page.getByText('Без связи с сотрудником', { exact: true })).toHaveCount(0)

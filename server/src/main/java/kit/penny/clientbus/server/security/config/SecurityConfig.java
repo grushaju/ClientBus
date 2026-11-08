@@ -68,6 +68,7 @@ public class SecurityConfig {
                                 "/inbox/**",
                                 "/clients/**",
                                 "/channels/**",
+                                "/crm",
                                 "/employees/**",
                                 "/workspaces/**",
                                 "/settings/**"

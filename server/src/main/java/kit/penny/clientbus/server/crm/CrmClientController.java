@@ -17,6 +17,10 @@ public class CrmClientController {
         return service.clients(id,q,unlinked,cursor);
     }
     @GetMapping("/clients/{id}") public CrmClientDto client(@PathVariable UUID id) { return service.client(id); }
+    @GetMapping("/clientbus-clients/{id}/links")
+    public List<CrmClientLinkDto> links(@PathVariable UUID id,@RequestParam(required=false) UUID workspaceId) {
+        return service.links(id,workspaceId);
+    }
     @GetMapping("/clients/{id}/client-candidates")
     public List<CrmClientCandidateDto> candidates(@PathVariable UUID id,@RequestParam(required=false) String q) { return service.candidates(id,q); }
     @PutMapping("/clients/{id}/client-link")

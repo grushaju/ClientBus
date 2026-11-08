@@ -6,6 +6,9 @@ import { useUiResource } from '../api/events/useUiResource'
 import { affectsWorkspace, isAccessEvent, useUiScope } from '../api/events/uiScope'
 import * as api from '../api/crmApi'
 import { CrmServices, CrmMasters, CrmMasterDrawer } from '../components/crm/CrmCatalog'
+import { CrmClients } from '../components/crm/CrmClients'
+import { CrmSchedule } from '../components/crm/CrmSchedule'
+import { CrmProjectAppointments } from '../components/crm/CrmProjectAppointments'
 import { recoveryQuery } from '../components/crm/CrmShared'
 import '../components/crm/crm.css'
 
@@ -13,14 +16,17 @@ function CrmProjectCatalog({ project, canManage, rememberedTab, remember }: {
     project: api.CrmProject; canManage: boolean; rememberedTab: string; remember: (tab: string) => void
 }) {
     const { isSuperAdmin } = useAuth()
+    const [params] = useSearchParams()
     const scope = useUiScope()
     const [mapping, setMapping] = useState(false), [drawer, setDrawer] = useState<string | null>(null)
     const [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null), [notice, setNotice] = useState('')
     const [refresh, setRefresh] = useState(0)
     const mutation = useRef<AbortController>()
     const servicesSupported = project.capabilities.some(value => value.code === 'READ_SERVICES' && ['AVAILABLE', 'CONFIGURATION_REQUIRED', 'REAUTH_REQUIRED'].includes(value.availability))
-    const tab = servicesSupported && rememberedTab !== 'masters' ? 'services' : 'masters'
-    const tabs = servicesSupported ? ['services', 'masters'] : ['masters']
+    const supported = (code: string) => project.capabilities.some(value => value.code === code && ['AVAILABLE', 'CONFIGURATION_REQUIRED', 'REAUTH_REQUIRED'].includes(value.availability))
+    const tabs = ['appointments', 'masters', ...(servicesSupported ? ['services'] : []), ...(supported('READ_CLIENTS') ? ['clients'] : []), ...(supported('READ_WORK_INTERVALS') ? ['schedule'] : [])]
+    const tab = tabs.includes(rememberedTab) ? rememberedTab : tabs[0]
+    const catalogTab = ['services', 'masters'].includes(tab)
     useEffect(() => {
         setBusy(false); setError(null); setNotice('')
         return () => { mutation.current?.abort(); mutation.current = undefined }
@@ -49,7 +55,8 @@ function CrmProjectCatalog({ project, canManage, rememberedTab, remember }: {
     return <>
         <div className="crm-heading crm-catalog-heading">
             <div><strong>{project.provider}</strong> · {project.displayName} <span className="crm-state">{api.crmConnectionLabel(project.connectionState)}</span></div>
-            <button type="button" className="ui-button ui-button-secondary" disabled={busy || needsRecovery} onClick={() => void update()}>{busy ? 'Запрашиваем…' : 'Обновить'}</button>
+            <button type="button" className={'ui-button ui-button-secondary crm-catalog-refresh' + (catalogTab ? '' : ' crm-action-placeholder')}
+                aria-hidden={!catalogTab} disabled={!catalogTab || busy || needsRecovery} onClick={() => void update()}>{busy ? 'Запрашиваем…' : 'Обновить'}</button>
         </div>
         {project.archived && <div className="crm-notice">Проект в архиве. Доступен просмотр сохранённых данных и сопоставлений; обновления остановлены.</div>}
         {needsRecovery && !project.archived && <div className="crm-notice">
@@ -66,13 +73,17 @@ function CrmProjectCatalog({ project, canManage, rememberedTab, remember }: {
         <div className="crm-tab-heading">
             <div className="crm-tabs" role="tablist" aria-label="Каталог CRM">{tabs.map(value => <button type="button" key={value} role="tab" id={'crm-tab-' + value}
                 aria-selected={tab === value} aria-controls="crm-tabpanel" tabIndex={tab === value ? 0 : -1}
-                onKeyDown={tabKeys} onClick={() => changeTab(value)}>{value === 'services' ? 'Услуги' : 'Мастера'}</button>)}</div>
-            {canManage && tab === 'masters' && <button type="button" className="ui-button ui-button-secondary" aria-pressed={mapping}
-                onClick={() => setMapping(!mapping)}>{mapping ? 'Вернуться к мастерам' : 'Связи с сотрудниками'}</button>}
+                onKeyDown={tabKeys} onClick={() => changeTab(value)}>{{ appointments: 'Записи', masters: 'Мастера', services: 'Услуги', clients: 'Клиенты', schedule: 'График' }[value]}</button>)}</div>
+            {canManage && <button type="button" className={'ui-button ui-button-secondary' + (tab === 'masters' ? '' : ' crm-action-placeholder')}
+                aria-hidden={tab !== 'masters'} disabled={tab !== 'masters'} aria-pressed={mapping} aria-label={mapping ? 'Вернуться к мастерам' : 'Связи с сотрудниками'}
+                onClick={() => setMapping(!mapping)}><span className="crm-label-desktop">{mapping ? 'Вернуться к мастерам' : 'Связи с сотрудниками'}</span><span className="crm-label-mobile" aria-hidden="true">{mapping ? 'Мастера' : 'Связи'}</span></button>}
         </div>
-        <div role="tabpanel" id="crm-tabpanel" aria-labelledby={'crm-tab-' + tab}>
-            {tab === 'services' ? <CrmServices project={project} onMaster={setDrawer} refresh={refresh} />
-                : <CrmMasters key={String(mapping)} project={project} mapping={canManage && mapping} onMaster={setDrawer} refresh={refresh} />}
+        <div role="tabpanel" className="crm-tabpanel" id="crm-tabpanel" aria-labelledby={'crm-tab-' + tab}>
+            {tab === 'appointments' && <CrmProjectAppointments project={project} />}
+            {tab === 'masters' && <CrmMasters key={String(mapping)} project={project} mapping={canManage && mapping} onMaster={setDrawer} refresh={refresh} />}
+            {tab === 'services' && <CrmServices project={project} onMaster={setDrawer} refresh={refresh} />}
+            {tab === 'clients' && <CrmClients project={project} canManage={canManage} />}
+            {tab === 'schedule' && <CrmSchedule key={params.get('master') ?? ''} project={project} initialMaster={params.get('master') ?? ''} />}
         </div>
         {drawer && <CrmMasterDrawer key={drawer} project={project} id={drawer} close={() => setDrawer(null)} />}
     </>
@@ -84,16 +95,24 @@ function WorkspaceCatalog({ workspaceId }: { workspaceId: string }) {
     const canManage = isSuperAdmin || employeeWorkspaces.some(row => row.workspaceId === workspaceId && row.isSupervisor)
     const memoryKey = 'crm-tab:' + currentEmployee?.id
     const [tab, setTab] = useState(() => {
-        if (['masters', 'services'].includes(params.get('tab') ?? '')) return params.get('tab')!
+        if (['masters', 'services', 'clients', 'schedule', 'appointments'].includes(params.get('tab') ?? '')) return params.get('tab')!
         try { return sessionStorage.getItem(memoryKey) ?? 'services' } catch { return 'services' }
     })
+    useEffect(() => { const requested = params.get('tab'); if (requested && ['masters', 'services', 'clients', 'schedule', 'appointments'].includes(requested)) setTab(requested) }, [params.get('tab')])
     const resource = useUiResource('crm-projects:' + workspaceId, true,
         event => affectsWorkspace(event, workspaceId) && (isAccessEvent(event) || event.type === 'crm.invalidated'),
         signal => api.getCrmProjects(workspaceId, signal), value => { setProjects(value); setError(null) },
         error => setError(api.crmError(error)), () => setProjects([]), setLoading)
     const project = projects.find(row => row.id === params.get('project')) ?? projects.find(row => !row.archived) ?? projects[0]
+    function changeProject(id: string) {
+        const next = new URLSearchParams(params)
+        next.set('workspace', workspaceId); next.set('project', id); next.set('tab', tab)
+        for (const key of ['master', 'masterId', 'crmClientId', 'externalClientId']) next.delete(key)
+        setParams(next)
+    }
     function remember(value: string) {
         setTab(value)
+        const next = new URLSearchParams(params); next.set('tab', value); setParams(next)
         try { sessionStorage.setItem(memoryKey, value) } catch { /* Private storage may be disabled. */ }
     }
     return <section className="crm-page" aria-label="CRM рабочего пространства">
@@ -105,7 +124,7 @@ function WorkspaceCatalog({ workspaceId }: { workspaceId: string }) {
         {!project && !loading && !error && <div className="crm-empty"><h2>Подключите проект CRM</h2><p>Здесь появятся услуги и мастера этого рабочего пространства.</p>
             {isSuperAdmin ? <Link className="ui-button ui-button-primary" to={`/workspaces/${encodeURIComponent(workspaceId)}?returnWorkspace=${encodeURIComponent(workspaceId)}#crm`}>Подключить проект</Link>
                 : <p>Проект подключает администратор организации.</p>}</div>}
-        {projects.length > 1 && <label className="crm-project-select">Проект<select value={project?.id ?? ''} onChange={event => setParams({ workspace: workspaceId, project: event.target.value, tab })}>
+        {projects.length > 1 && <label className="crm-project-select">Проект<select value={project?.id ?? ''} onChange={event => changeProject(event.target.value)}>
             {projects.map(row => <option key={row.id} value={row.id}>{row.provider} · {row.displayName}{row.archived ? ' · архив' : ''}</option>)}</select></label>}
         {project && <CrmProjectCatalog key={project.id + ':' + canManage + ':' + project.archived} project={project} canManage={canManage} rememberedTab={tab} remember={remember} />}
     </section>

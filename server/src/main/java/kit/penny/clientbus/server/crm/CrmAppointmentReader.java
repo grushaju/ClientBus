@@ -53,8 +53,55 @@ public class CrmAppointmentReader {
             return dto(row);
         });
     }
+    public CrmAppointmentClientPageDto clients(UUID projectId,LocalDate from,LocalDate to,String query,String externalClientId,String cursor) {
+        var filter=new CrmAppointmentFilter(from,to,null,null,null,null,null,null,null,externalClientId);
+        String search=CrmSearch.normalize(query);
+        store.storage.requireReady();
+        return tx.execute(status -> {
+            var project=store.project(projectId,store.guard.organization());
+            store.em.refresh(project,LockModeType.PESSIMISTIC_READ);
+            store.guard.workspace(project.getWorkspace().getId(),false);
+            String revision=CrmSearch.scope(projectId+"/"+store.guard.actor()+"/"+store.context(project)+"/"+filter+"/"+search+"/"+sync.revision(projectId));
+            String after=null;
+            if (cursor!=null) {
+                try {
+                    if (cursor.length()>1024) throw CrmException.invalid();
+                    String[] fields=new String(Base64.getUrlDecoder().decode(cursor),StandardCharsets.UTF_8).split("\n",2);
+                    if (fields.length!=2 || fields[1].isBlank() || fields[1].length()>128) throw CrmException.invalid();
+                    if (!revision.equals(fields[0])) throw CrmException.conflict("CRM_CONTEXT_CHANGED");
+                    after=fields[1];
+                } catch (IllegalArgumentException error) { throw CrmException.invalid(); }
+            }
+            var parameters=new ArrayList<Object>();
+            parameters.add(projectId); parameters.add(from.atStartOfDay()); parameters.add(to.plusDays(1).atStartOfDay());
+            String sql="""
+                    select c.externalclientid,c.displayname,c.phone from (
+                        select distinct on (a.externalclientid) a.externalclientid,
+                            coalesce(nullif(a.clientsnapshot->>'name',''),'Клиент #'||a.externalclientid) as displayname,
+                            nullif(a.clientsnapshot->>'phone','') as phone
+                        from crm.appointment a where a.projectid=? and a.startlocal>=? and a.startlocal<?
+                            and a.kind='APPOINTMENT' and a.clientidentitykind='PROJECT' and a.externalclientid is not null
+                        order by a.externalclientid,a.startlocal desc,a.id desc
+                    ) c where 1=1
+                    """;
+            if (!search.isEmpty()) {
+                sql+=" and (lower(c.displayname) like ? escape '!' or lower(coalesce(c.phone,'')) like ? escape '!'"
+                        +" or regexp_replace(coalesce(c.phone,''),'[^0-9]','','g') like ? escape '!')";
+                parameters.add(CrmSearch.pattern(search)); parameters.add(CrmSearch.pattern(search));
+                parameters.add(CrmSearch.pattern(Optional.ofNullable(kit.penny.clientbus.crm.api.CrmPhone.normalize(search)).orElse(search)));
+            }
+            if (externalClientId!=null) { sql+=" and c.externalclientid=?"; parameters.add(externalClientId); }
+            if (after!=null) { sql+=" and c.externalclientid>?"; parameters.add(after); }
+            var rows=jdbc.query(sql+" order by c.externalclientid limit 101",(rs,index) ->
+                    new CrmAppointmentClientDto(rs.getString("externalclientid"),rs.getString("displayname"),rs.getString("phone")),parameters.toArray());
+            boolean more=rows.size()>100;
+            var items=List.copyOf(rows.subList(0,Math.min(100,rows.size())));
+            String next=more ? Base64.getUrlEncoder().withoutPadding().encodeToString((revision+"\n"+items.getLast().id()).getBytes(StandardCharsets.UTF_8)) : null;
+            return new CrmAppointmentClientPageDto(items,next,more,sync.state(project,new CrmAppointmentScope("APPOINTMENTS",null,from,to)),revision);
+        });
+    }
     public CrmAppointmentPageDto history(UUID clientId,UUID workspaceId,CrmAppointmentFilter filter,String cursor) {
-        if (filter.crmClientId()!=null || filter.masterId()!=null) throw CrmException.invalid();
+        if (filter.crmClientId()!=null || filter.masterId()!=null || filter.externalClientId()!=null) throw CrmException.invalid();
         store.storage.requireReady();
         return tx.execute(status -> {
             UUID organization=store.guard.organization(),actor=store.guard.actor();
@@ -100,6 +147,10 @@ public class CrmAppointmentReader {
                     +(clientId==null ? " and c.id=:crmClient)" : " and c.client.id=:client)");
             parameters.put(clientId==null ? "crmClient" : "client",clientId==null ? filter.crmClientId() : clientId);
         }
+        if (filter.externalClientId()!=null) {
+            hql+=" and a.kind='APPOINTMENT' and a.clientIdentityKind='PROJECT' and a.externalClientId=:externalClient";
+            parameters.put("externalClient",filter.externalClientId());
+        }
         if (filter.masterId()!=null) {
             hql+=" and exists(select 1 from CrmAppointmentMasterEntity m,CrmMasterEntity catalog where m.appointment=a and catalog.id=:master and catalog.project=a.project and catalog.externalId=m.externalMasterId)";
             parameters.put("master",filter.masterId());
@@ -121,10 +172,12 @@ public class CrmAppointmentReader {
             var states=new ArrayList<CrmSyncStateDto>();
             states.add(sync.state(project,new CrmAppointmentScope("APPOINTMENTS",null,filter.dateFrom(),filter.dateTo())));
             var clients=store.em.createQuery("select c.id from CrmClientEntity c where c.project.id=:project"
-                    +(clientId!=null ? " and c.client.id=:client" : filter.crmClientId()!=null ? " and c.id=:crmClient" : " and 1=0")
+                    +(clientId!=null ? " and c.client.id=:client" : filter.crmClientId()!=null ? " and c.id=:crmClient"
+                        : filter.externalClientId()!=null ? " and c.externalId=:externalClient" : " and 1=0")
                     +" and c.identityKind='PROJECT' order by c.id",UUID.class).setParameter("project",project.getId()).setMaxResults(101);
             if (clientId!=null) clients.setParameter("client",clientId);
             else if (filter.crmClientId()!=null) clients.setParameter("crmClient",filter.crmClientId());
+            else if (filter.externalClientId()!=null) clients.setParameter("externalClient",filter.externalClientId());
             var ids=clients.getResultList();
             if (ids.size()>100) throw new CrmException(422,"CRM_QUERY_LIMIT_REACHED","Слишком много источников истории клиента.");
             for (UUID id : ids) states.add(sync.state(project,new CrmAppointmentScope("CLIENT_HISTORY",id,filter.dateFrom(),filter.dateTo())));

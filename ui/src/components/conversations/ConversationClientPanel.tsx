@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import ClientCrmPanel from '../crm/ClientCrmPanel'
 import {
     assignClientAccount,
     createClientFromConversation,
@@ -278,6 +279,7 @@ function ConversationClientDetails({
                 {error && <div className="conversation-client-panel-error" role="alert">{error}{retryDetails}</div>}
             </div>
 
+            {client && <ClientCrmPanel key={client.id + ':' + conversation.workspaceId} clientId={client.id} workspaceId={conversation.workspaceId} compact visible={visible} />}
             {clientAccount && <div className="conversation-client-panel-section">
                 <div className="conversation-client-section-header"><h4>Аккаунт</h4></div>
                 <AccountCard account={clientAccount} />

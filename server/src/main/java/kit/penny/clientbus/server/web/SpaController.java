@@ -17,6 +17,8 @@ public class SpaController {
             "/channels",
             "/channels/{*path}",
 
+            "/crm",
+
             "/employees",
             "/employees/{*path}",
 

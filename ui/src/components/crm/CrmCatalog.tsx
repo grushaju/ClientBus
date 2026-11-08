@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import * as api from '../../api/crmApi'
 import { useUiResource } from '../../api/events/useUiResource'
 import { affectsWorkspace, isAccessEvent, useUiScope } from '../../api/events/uiScope'
@@ -160,7 +161,7 @@ export function CrmMasterDrawer({ project, id, close }: ProjectProps & { id: str
         <div className="crm-drawer-content"><div className="crm-heading"><h2 id="crm-master-title">{master?.displayName ?? 'Карточка мастера'}</h2>
             <button type="button" className="ui-button ui-button-secondary" autoFocus onClick={close}>Закрыть</button></div>
             {error && <p role="alert" className="crm-error">{error} <button type="button" onClick={resource.reload}>Повторить</button></p>}
-            {master && <><p>{project.displayName} · ID {master.externalId}</p><h3>Услуги мастера</h3><ServiceRows project={project} query="" masterId={id} /></>}
+            {master && <><p>{project.displayName} · ID {master.externalId}</p><Link onClick={close} to={'/crm?' + new URLSearchParams({ workspace: project.workspaceId, project: project.id, tab: 'schedule', master: id })}>График мастера</Link><h3>Услуги мастера</h3><ServiceRows project={project} query="" masterId={id} /></>}
         </div>
     </dialog>
 }

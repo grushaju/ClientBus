@@ -1,0 +1,15 @@
+.page-status {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 160px;
+    padding: 24px;
+    overflow-wrap: anywhere;
+}
+
+.page-status h2 {
+    margin: 0 0 12px;
+}
+
+.page-status p {
+    margin: 0 0 16px;
+}

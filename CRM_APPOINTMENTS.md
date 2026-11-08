@@ -42,14 +42,19 @@ JOURNAL владеет бизнес-полями визита. Более сла
 
 ## Чтение
 
+Обновление APPOINTMENTS/CLIENT_HISTORY публикует одно итоговое `crm.invalidated` для всего запроса периода, включая частичный результат и ошибку. Промежуточные страницы сохраняются в БД без отдельного UI-события на каждую страницу; после ответа 202 UI перечитывает локальные записи и состояние, дальнейшая сверка также использует существующий recovery.
+
 Все GET читают только БД и не вызывают DIKIDI:
 
-- `GET /api/crm/projects/{projectId}/appointments?dateFrom=...&dateTo=...` — страницы по 100 визитов. Необязательны crmClientId, masterId (локальные UUID того же проекта), kind, appointmentState, confirmationState, attendanceState, paymentState, cursor.
+- `GET /api/crm/projects/{projectId}/appointments?dateFrom=...&dateTo=...` — страницы по 100 визитов. Необязательны crmClientId, masterId (локальные UUID того же проекта), externalClientId (внешняя PROJECT identity, несовместима с crmClientId), kind, appointmentState, confirmationState, attendanceState, paymentState, cursor.
+- `GET /api/crm/projects/{projectId}/appointment-clients?dateFrom=...&dateTo=...` — страницы по 100 клиентов из всех сохранённых визитов периода, независимо от загрузки `crm.client`. `q` ищет по имени/телефону, `externalClientId` задаёт точную identity, `cursor` связан с периодом, поиском, проектом и ревизией. Имя/телефон — исторический снимок последнего визита периода, внешняя identity подтверждена; это не создание внешнего профиля или связи с ClientBus.
 - `GET /api/crm/appointments/{id}` — визит с историческими строками, наблюдением и предупреждениями.
 - `GET /api/clients/{clientId}/crm/appointments?dateFrom=...&dateTo=...` — история по текущим связям ClientBus ↔ CRM, только APPOINTMENT. Необязательны workspaceId, kind и четыре состояния, cursor. Клиент должен принадлежать организации сотрудника. Данные и coverage недоступных Workspace не включаются.
 - `GET /api/crm/projects/{projectId}/sync-state?dataset=APPOINTMENTS&dateFrom=...&dateTo=...` — один выбранный scope. Для dataset=CLIENT_HISTORY требуется также crmClientId. Прежний вызов без dataset сохраняет список состояний каталога/клиентов и опционального графика.
 
 Порядок страниц — localStart/id. Cursor связан с сотрудником, организацией, фильтрами, доступными проектами, контекстом и ревизиями визитов/сопоставлений/каталога. Изменение этих данных требует начать чтение заново (409 CRM_CONTEXT_CHANGED). Агрегация ограничена 100 доступными проектами; при превышении требуется workspaceId (422 CRM_QUERY_LIMIT_REACHED). Ограничение не раскрывает число недоступных проектов. Coverage содержит точный APPOINTMENTS scope и применимые CLIENT_HISTORY scope; наличие строк не означает полное покрытие запрошенного периода.
+
+Фильтр `externalClientId` включает в coverage историю соответствующего PROJECT-клиента того же проекта, если профиль CRM уже импортирован. Выбор по внешнему ID и по локальному `crmClientId` возвращает одинаковые применимые scope; история другого клиента не включается. Без импортированного профиля фильтрация визитов продолжает работать, а coverage содержит только APPOINTMENTS.
 
 LocalDateTime хранится независимо от UTC. Без настроенного IANA timezone UTC равен NULL. При смене zoneRevision старый UTC сразу скрывается в REST; отдельный фоновый проход пересчитывает по 100 строк максимум двух проектов за проход. Пересчёт не освежает lastObservedAt и не затрагивает финансовые данные. DST gap/overlap не разрешается догадкой: UTC остаётся NULL, выдаётся предупреждение. Неизвестный kind/state, неполное критическое наблюдение и NOT_OBSERVED требуют проверки. DTO отдельно возвращает servicesComplete/mastersComplete; неполный состав сопровождается SERVICES_PARTIAL/MASTERS_PARTIAL, даже когда прежние дочерние строки сохранены.
 

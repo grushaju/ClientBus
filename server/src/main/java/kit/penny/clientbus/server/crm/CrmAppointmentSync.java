@@ -243,7 +243,7 @@ public class CrmAppointmentSync {
                             project.getId(),claim.scope().dataset(),claim.scope().key(),claim.generation(),claim.token());
                     if (changed!=1) throw CrmException.conflict("CRM_CONTEXT_CHANGED");
                     jdbc.update("update crm.syncstate set version=version+1 where projectid=? and dataset='WRITER:APPOINTMENTS' and scopekey='CONTROL'",project.getId());
-                    events.workspace(project.getWorkspace(),"crm.invalidated");
+                    if (finished) events.workspace(project.getWorkspace(),"crm.invalidated");
                 });
                 if (finished) return;
                 if (page.nextCursor().isBlank() || page.nextCursor().length()>512 || !cursors.add(page.nextCursor()))

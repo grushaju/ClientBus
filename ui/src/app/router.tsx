@@ -1,11 +1,10 @@
+import { lazy, type ReactNode } from 'react'
 import {
     createBrowserRouter,
 } from 'react-router-dom'
 
 import App from './App'
-
-import LoginPage
-    from '../pages/LoginPage'
+import PageBoundary from './PageBoundary'
 
 import ProtectedLayout
     from '../components/layout/ProtectedLayout'
@@ -13,30 +12,22 @@ import ProtectedLayout
 import RoleProtectedLayout
     from '../components/layout/RoleProtectedLayout'
 
-import InboxPage
-    from '../pages/InboxPage'
+const LoginPage = lazy(() => import('../pages/LoginPage'))
+const InboxPage = lazy(() => import('../pages/InboxPage'))
+const ClientsPage = lazy(() => import('../pages/ClientsPage'))
+const ClientDetailsPage = lazy(() => import('../pages/ClientDetailsPage'))
+const ChannelsPage = lazy(() => import('../pages/ChannelsPage'))
+const EmployeesPage = lazy(() => import('../pages/EmployeesPage'))
+const WorkspacesPage = lazy(() => import('../pages/WorkspacesPage'))
+const WorkspaceDetailsPage = lazy(() => import('../pages/WorkspaceDetailsPage'))
+const SettingsPage = lazy(() => import('../pages/SettingsPage'))
+const CrmPage = lazy(() => import('../pages/CrmPage'))
 
-import ClientsPage
-    from '../pages/ClientsPage'
-
-import ClientDetailsPage
-    from '../pages/ClientDetailsPage'
-
-import ChannelsPage
-    from '../pages/ChannelsPage'
-
-import EmployeesPage
-    from '../pages/EmployeesPage'
-
-import WorkspacesPage
-    from '../pages/WorkspacesPage'
-
-import WorkspaceDetailsPage
-    from '../pages/WorkspaceDetailsPage'
-
-import SettingsPage
-    from '../pages/SettingsPage'
-import CrmPage from '../pages/CrmPage'
+function loadPage(section: string, element: ReactNode) {
+    // Reset a failed/suspended page when changing sections, but preserve page
+    // state on query changes (CRM tabs/filters) and within the same section.
+    return <PageBoundary key={section}>{element}</PageBoundary>
+}
 
 export const router =
     createBrowserRouter([
@@ -46,7 +37,7 @@ export const router =
             children: [
                 {
                     path: 'login',
-                    element: <LoginPage />,
+                    element: loadPage('login', <LoginPage />),
                 },
                 {
                     element:
@@ -55,7 +46,7 @@ export const router =
                         {
                             index: true,
                             element:
-                                <InboxPage />,
+                                loadPage('inbox', <InboxPage />),
                         },
                         {
                             path: 'inbox',
@@ -63,13 +54,13 @@ export const router =
                                 {
                                     index: true,
                                     element:
-                                        <InboxPage />,
+                                        loadPage('inbox', <InboxPage />),
                                 },
                                 {
                                     path:
                                         ':conversationId',
                                     element:
-                                        <InboxPage />,
+                                        loadPage('inbox', <InboxPage />),
                                 },
                             ],
                         },
@@ -79,27 +70,27 @@ export const router =
                                 {
                                     index: true,
                                     element:
-                                        <ClientsPage />,
+                                        loadPage('clients', <ClientsPage />),
                                 },
                                 {
                                     path:
                                         ':clientId',
                                     element:
-                                        <ClientDetailsPage />,
+                                        loadPage('client-details', <ClientDetailsPage />),
                                 },
                             ],
                         },
                         {
                             path: 'channels/*',
                             element:
-                                <ChannelsPage />,
+                                loadPage('channels', <ChannelsPage />),
                         },
                         {
                             path: 'settings/*',
                             element:
-                                <SettingsPage />,
+                                loadPage('settings', <SettingsPage />),
                         },
-                        { path: 'crm', element: <CrmPage /> },
+                        { path: 'crm', element: loadPage('crm', <CrmPage />) },
                         {
                             element: (
                                 <RoleProtectedLayout
@@ -113,7 +104,7 @@ export const router =
                                     path:
                                         'employees/*',
                                     element:
-                                        <EmployeesPage />,
+                                        loadPage('employees', <EmployeesPage />),
                                 },
                                 {
                                     path:
@@ -122,13 +113,13 @@ export const router =
                                         {
                                             index: true,
                                             element:
-                                                <WorkspacesPage />,
+                                                loadPage('workspaces', <WorkspacesPage />),
                                         },
                                         {
                                             path:
                                                 ':workspaceId',
                                             element:
-                                                <WorkspaceDetailsPage />,
+                                                loadPage('workspace-details', <WorkspaceDetailsPage />),
                                         },
                                     ],
                                 },

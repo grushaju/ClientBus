@@ -49,6 +49,21 @@ public class CrmClientService {
         store.storage.requireReady();
         return tx.execute(status -> dto(accessible(id, store.guard.organization())));
     }
+    public List<CrmClientLinkDto> links(UUID clientId, UUID workspaceId) {
+        store.storage.requireReady();
+        return tx.execute(status -> {
+            UUID organization=store.guard.organization();
+            var client=store.em.find(ClientEntity.class,clientId);
+            if (client==null || !organization.equals(client.getOrganization().getId())) throw CrmStore.notFound();
+            if (workspaceId!=null) store.guard.workspace(workspaceId,false);
+            var query=store.em.createQuery("from CrmClientEntity c join fetch c.project p where c.client.id=:client and p.organization.id=:org"
+                    +(workspaceId==null ? "" : " and p.workspace.id=:workspace")+" order by p.id,c.id",CrmClientEntity.class)
+                    .setParameter("client",clientId).setParameter("org",organization);
+            if (workspaceId!=null) query.setParameter("workspace",workspaceId);
+            return query.getResultList().stream().filter(row -> store.guard.canReadWorkspace(row.getProject().getWorkspace().getId()))
+                    .map(row -> new CrmClientLinkDto(dto(row),CrmStore.dto(row.getProject()))).toList();
+        });
+    }
     public List<CrmClientCandidateDto> candidates(UUID id, String query) {
         store.storage.requireReady();
         String search=CrmSearch.normalize(query);
