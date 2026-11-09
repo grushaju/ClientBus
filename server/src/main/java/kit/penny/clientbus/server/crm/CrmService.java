@@ -115,6 +115,8 @@ public class CrmService {
             version(row, expectedVersion);
             if (store.projects.existsByConnectionId(id))
                 throw new CrmException(409, "CRM_CONNECTION_IN_USE", "К аккаунту привязаны проекты или их архивы. Сначала смените аккаунт в настройках проектов; архивный проект для этого нужно восстановить.");
+            if(store.em.createQuery("select count(o) from CrmOperationEntity o where o.connection.id=:id",Long.class).setParameter("id",id).getSingleResult()>0)
+                throw new CrmException(409,"CRM_RESOURCE_IN_USE","Подключение указано в журнале операций CRM. Отключите его вместо удаления.");
             store.connections.delete(row); store.em.flush();
             registry.invalidate(id);
             events.organization(organization, "crm.invalidated");
@@ -212,13 +214,13 @@ public class CrmService {
         return tx.execute(status -> {
             UUID organization = store.guard.organization(); store.guard.workspace(workspaceId, false);
             return store.projects.findAllByWorkspaceIdAndOrganizationIdOrderByCreatedAtAsc(workspaceId, organization).stream()
-                    .filter(row -> provider == null || row.getProvider() == provider).map(CrmStore::dto).toList();
+                    .filter(row -> provider == null || row.getProvider() == provider).map(store::projectDto).toList();
         });
     }
     public List<CrmProjectDto> organizationProjects() {
         store.storage.requireReady();
         return tx.execute(status -> store.projects.findAllByOrganizationIdOrderByCreatedAtAsc(store.guard.admin())
-                .stream().map(CrmStore::dto).toList());
+                .stream().map(store::projectDto).toList());
     }
     public void requireProjectAccess(UUID projectId) {
         store.storage.requireReady();
@@ -260,10 +262,10 @@ public class CrmService {
                         }
                         row.setDisplayName(info.displayName()); row.setCurrency(info.currency());
                         sync.invalidateProject(row.getId()); store.em.flush(); events.workspace(workspace, "crm.invalidated");
-                        return new Binding(CrmStore.dto(row), true);
+                        return new Binding(store.projectDto(row), true);
                     }
                     if (request.expectedArchiveVersion() != null) throw CrmException.conflict("CRM_VERSION_CONFLICT");
-                    return new Binding(CrmStore.dto(row), false);
+                    return new Binding(store.projectDto(row), false);
                 }
                 if (request.expectedArchiveVersion() != null) throw CrmException.conflict("CRM_VERSION_CONFLICT");
                 if (credentials.provider == CrmType.DIKIDI && store.projects.existsByWorkspaceIdAndProviderAndArchivedFalse(workspaceId, CrmType.DIKIDI))
@@ -276,7 +278,7 @@ public class CrmService {
                 row.setExternalId(externalId); row.setDisplayName(info.displayName()); row.setCurrency(info.currency());
                 row.setZoneId(zone); row.setZoneSource(zone == null ? null : "MANUAL");
                 store.em.persist(row); store.em.flush(); events.workspace(workspace, "crm.invalidated");
-                return new Binding(CrmStore.dto(row), true);
+                return new Binding(store.projectDto(row), true);
             });
         } catch (DataIntegrityViolationException | org.hibernate.exception.ConstraintViolationException error) {
             throw CrmException.conflict("CRM_PROJECT_BINDING_CONFLICT");
@@ -307,7 +309,7 @@ public class CrmService {
             project.setContextVersion(project.getContextVersion()+1);
             sync.invalidateProject(projectId);
             store.em.flush(); events.workspace(project.getWorkspace(), "crm.invalidated");
-            return CrmStore.dto(project);
+            return store.projectDto(project);
         });
     }
     public CrmProjectDto updateProject(UUID projectId, UpdateCrmProjectRequest request) {
@@ -330,7 +332,7 @@ public class CrmService {
                 project.setContextVersion(project.getContextVersion()+1); sync.invalidateProject(projectId);
                 events.workspace(project.getWorkspace(), "crm.invalidated");
             }
-            store.em.flush(); return CrmStore.dto(project);
+            store.em.flush(); return store.projectDto(project);
         });
     }
     public CrmProjectDto changeConnection(UUID projectId, ChangeCrmConnectionRequest request) {
@@ -357,7 +359,7 @@ public class CrmService {
                 project.setDisplayName(info.displayName()); project.setCurrency(info.currency());
                 events.workspace(project.getWorkspace(), "crm.invalidated");
             }
-            store.em.flush(); return CrmStore.dto(project);
+            store.em.flush(); return store.projectDto(project);
         });
         if (result.enabled()) startInitialRead(projectId);
         return result;

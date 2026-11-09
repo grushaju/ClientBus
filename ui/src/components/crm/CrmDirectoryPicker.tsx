@@ -19,7 +19,7 @@ export function CrmDirectoryPicker({ project, kind, value, change, all = true, p
     const root = useRef<HTMLDivElement>(null), trigger = useRef<HTMLButtonElement>(null), id = useId()
     const label = kind === 'master' ? 'Мастер' : 'Клиент CRM'
     const selection = value || legacyClientId || ''
-    const empty = all ? kind === 'master' ? 'Все мастера' : 'Все клиенты' : 'Выберите мастера'
+    const empty = all ? kind === 'master' ? 'Все мастера' : 'Все клиенты' : kind === 'master' ? 'Выберите мастера' : 'Выберите клиента CRM'
     const close = () => { setOpen(false); trigger.current?.focus() }
     useEffect(() => {
         if (!open || typeof document === 'undefined') return

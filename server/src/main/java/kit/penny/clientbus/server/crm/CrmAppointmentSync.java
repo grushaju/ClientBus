@@ -75,6 +75,7 @@ public class CrmAppointmentSync {
                         order by legacy.employeeid limit 1)) and e.organizationid=p.organizationid
                     join dbo.users u on u.userid=e.userid
                 where s.dataset in ('APPOINTMENTS','CLIENT_HISTORY') and s.statekind='SCOPE' and p.enabled
+                    and not (jsonb_exists(s.scope,'externalAppointmentId') and jsonb_exists(s.scope,'observationCompletedAt'))
                     and c.status not in ('DISABLED','REAUTH_REQUIRED') and u.isenabled
                     and (u.role='SUPER_ADMIN' or u.role='EMPLOYEE' and exists (
                         select 1 from dbo.employeeworkspace ew where ew.employeeid=e.employeeid and ew.workspaceid=p.workspaceid))
@@ -88,7 +89,7 @@ public class CrmAppointmentSync {
             var saved=map(rs.getString("scope"));
             return new Subscription(rs.getObject("projectid",UUID.class),rs.getObject("organizationid",UUID.class),
                     rs.getObject("employeeid",UUID.class),new CrmAppointmentScope(rs.getString("dataset"),saved.get("crmClientId")==null ? null : UUID.fromString((String)saved.get("crmClientId")),
-                    LocalDate.parse((String)saved.get("dateFrom")),LocalDate.parse((String)saved.get("dateTo"))));
+                    LocalDate.parse((String)saved.get("dateFrom")),LocalDate.parse((String)saved.get("dateTo")),(String)saved.get("externalAppointmentId")));
         },intervalMs,intervalMs,capacity);
         int started=0;
         for (var subscription : subscriptions) {
@@ -108,6 +109,7 @@ public class CrmAppointmentSync {
             if (intervalMs>0 && (!Boolean.TRUE.equals(jdbc.queryForObject("""
                     select exists(select 1 from crm.syncstate where projectid=? and dataset=? and scopekey=?
                         and (scope->>'refreshActorId'=? or scope->>'refreshActorId' is null)
+                        and not (jsonb_exists(scope,'externalAppointmentId') and jsonb_exists(scope,'observationCompletedAt'))
                         and lastattemptat<=clock_timestamp()-(
                             case when lasterrorcode='CRM_CONNECTION_BUSY' then least(?,10000) else ? end * interval '1 millisecond'))
                     """,Boolean.class,projectId,scope.dataset(),scope.key(),actor.toString(),intervalMs,intervalMs))
@@ -242,6 +244,12 @@ public class CrmAppointmentSync {
                             limited ? "CRM_SYNC_LIMIT_REACHED" : null,finished,complete,document,document,
                             project.getId(),claim.scope().dataset(),claim.scope().key(),claim.generation(),claim.token());
                     if (changed!=1) throw CrmException.conflict("CRM_CONTEXT_CHANGED");
+                    // Exact-object reads are durable one-shot tasks. Unknown completeness is normal for
+                    // this endpoint; only an actually returned and committed object completes the task.
+                    if(terminal && claim.query().externalAppointmentId()!=null && observed.contains(claim.query().externalAppointmentId())) {
+                        jdbc.update("update crm.syncstate set scope=scope || jsonb_build_object('observationCompletedAt',clock_timestamp()),version=version+1 where projectid=? and dataset=? and scopekey=? and generation=?",
+                                project.getId(),claim.scope().dataset(),claim.scope().key(),claim.generation());
+                    }
                     jdbc.update("update crm.syncstate set version=version+1 where projectid=? and dataset='WRITER:APPOINTMENTS' and scopekey='CONTROL'",project.getId());
                     if (finished) events.workspace(project.getWorkspace(),"crm.invalidated");
                 });

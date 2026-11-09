@@ -23,13 +23,13 @@ class DikidiProviderContractTest {
                 "m2":{"id":"m2","item_type":"master","is_master":"1","title":"Master two"}
              }}}}
             """;
-    private record Request(String method, URI uri, List<Map.Entry<String,String>> form, String project) {}
+    private record Request(String method, URI uri, List<Map.Entry<String,String>> form, String project, Duration timeout) {}
     private static final class Fake implements DikidiTransport {
         final List<Request> calls = new CopyOnWriteArrayList<>();
         final Deque<Response> responses = new ConcurrentLinkedDeque<>();
         void add(String... bodies) { for (String body : bodies) responses.add(new Response(200, body)); }
         public Response exchange(String method, URI uri, List<Map.Entry<String,String>> form, boolean ajax, String project, Duration timeout) {
-            calls.add(new Request(method, uri, form == null ? null : List.copyOf(form), project));
+            calls.add(new Request(method, uri, form == null ? null : List.copyOf(form), project, timeout));
             assertTrue(timeout.compareTo(Duration.ofSeconds(15)) <= 0);
             Response response = responses.poll();
             assertNotNull(response, "Unexpected HTTP call to " + uri.getPath()); return response;
@@ -47,6 +47,71 @@ class DikidiProviderContractTest {
         return request.form().stream().filter(e -> e.getKey().equals(key)).map(Map.Entry::getValue).findFirst().orElse(null);
     }
     private void loginThen(String... bodies) { fake.add(PUBLIC, CHECK, AUTH); fake.add(bodies); }
+    @Test void authenticationFailureBeforeAnyMutationIsAProvedRejection() {
+        var c=DikidiCommandsTest.command(CrmCommand.Type.CREATE);
+        fake.responses.add(new DikidiTransport.Response(401,"expired"));
+        try(var access=access(UUID.randomUUID(),1)) {
+            assertEquals(CrmCommandResult.Outcome.REJECTED,provider.command(access,PROJECT,c,java.time.Instant.now().plusSeconds(10),reference->fail()).outcome());
+            assertEquals(1,fake.calls.size());assertTrue(fake.calls.stream().noneMatch(call->call.uri().getPath().contains("newrecord")));
+        }
+    }
+
+    @Test void expiredAuthAfterReservationDoesNotReplayTheSaveAndReadOnlyReconciliationCanLogin() {
+        var c=DikidiCommandsTest.command(CrmCommand.Type.CREATE);
+        String catalog=CATALOG.replace("m1","200").replace("m2","201").replace("\"masters\":{","\"masters\":{\"services\":{\"data\":{\"200\":{\"400\":{\"id\":\"400\",\"master_id\":\"200\",\"cost\":\"15000\",\"time\":\"60\",\"active\":\"1\"}}}},");
+        loginThen("journal",catalog,"{\"company_id\":\"100\",\"unique_key\":\""+c.idempotencyKey()+"\",\"is_from_journal\":1,\"action_source_id\":3,\"company\":{\"currency\":{\"iso\":\"RUB\"}}}",
+                "{\"appointments\":{},\"timeworks\":{},\"dates_true\":[\"2030-01-10\"],\"times\":{\"200\":[\"2030-01-10 12:00:00\"]}}","{\"record_id\":500,\"master_id\":200}");
+        fake.responses.add(new DikidiTransport.Response(401,"expired"));
+        try(var access=access(UUID.randomUUID(),1)) {
+            var progress=new ArrayList<String>();
+            assertEquals(AUTH_REQUIRED,assertThrows(CrmFailure.class,()->provider.command(access,PROJECT,c,java.time.Instant.now().plusSeconds(30),progress::add)).code());
+            assertEquals(List.of("500"),progress);
+            assertEquals(1,fake.calls.stream().filter(call->call.uri().getPath().equals("/ajax/user/auth/")).count());
+            loginThen("journal",CATALOG.replace("m1","200").replace("m2","201"),DikidiCommandsTest.single("1","2030-01-10 12:00:00").toString());
+            assertEquals(CrmCommandResult.Outcome.CONFIRMED,provider.reconcile(access,PROJECT,c.withExternalReference("500"),java.time.Instant.now().plusSeconds(30)).outcome());
+            assertEquals(1,fake.calls.stream().filter(call->call.uri().getPath().contains("time_reservation")).count());
+            assertEquals(1,fake.calls.stream().filter(call->call.uri().getPath().contains("newrecord_record_save")).count());
+        }
+    }
+
+    @Test void availabilityReadsExplicitMasterServicesAndDateWithoutReserving() {
+        loginThen("<html>journal</html>",CATALOG.replace("m1","200").replace("m2","201"),
+                "{\"appointments\":{},\"timeworks\":{},\"dates_true\":[\"2030-01-10\"],\"times\":{\"200\":[\"2030-01-10 12:00:00\"]}}");
+        try(var access=access(UUID.randomUUID(),1)) {
+            var result=provider.availability(access,PROJECT,"200",List.of("300","301"),java.time.LocalDate.of(2030,1,10),java.time.Instant.now().plusSeconds(10));
+            assertEquals(List.of(java.time.LocalDateTime.of(2030,1,10,12,0)),result.starts());
+            assertEquals(List.of("300","301"),result.externalServiceIds());
+            var request=fake.calls.getLast(); assertEquals("GET",request.method());
+            assertEquals("/ajax/newrecord/to_master_get_datetime/",request.uri().getPath());
+            var query=request.uri().getRawQuery();assertTrue(query.contains("date=2030-01-10"));assertTrue(query.contains("master_id=200"));
+            assertTrue(query.contains("services_id%5B%5D=300"));assertTrue(query.contains("services_id%5B%5D=301"));
+            assertTrue(fake.calls.stream().allMatch(call->call.timeout().compareTo(Duration.ofSeconds(10))<=0),"The caller deadline also bounds authentication requests");
+            assertFalse(fake.calls.stream().anyMatch(call->call.uri().getPath().contains("reservation") || call.uri().getPath().contains("record_save")));
+        }
+    }
+    @Test void unavailableMasterPreventsTheAvailabilityRequest() {
+        loginThen("<html>journal</html>",CATALOG);
+        try(var access=access(UUID.randomUUID(),1)) {
+            assertEquals(CONTEXT_MISMATCH,assertThrows(CrmFailure.class,()->provider.availability(access,PROJECT,"200",List.of("300"),java.time.LocalDate.of(2030,1,10),java.time.Instant.now().plusSeconds(10))).code());
+            assertFalse(fake.calls.stream().anyMatch(call->call.uri().getPath().contains("newrecord")));
+        }
+    }
+    @Test void invalidOrExpiredAvailabilityRequestsNeverOpenASession() {
+        try(var access=access(UUID.randomUUID(),1)) {
+            for(var services:List.of(List.<String>of(),List.of("300","300"),List.of("300&company=2")))
+                assertEquals(INVALID_RESPONSE,assertThrows(CrmFailure.class,()->provider.availability(access,PROJECT,"200",services,java.time.LocalDate.of(2030,1,10),java.time.Instant.now().plusSeconds(10))).code());
+            assertEquals(TEMPORARY_FAILURE,assertThrows(CrmFailure.class,()->provider.availability(access,PROJECT,"200",List.of("300"),java.time.LocalDate.of(2030,1,10),java.time.Instant.now().minusSeconds(1))).code());
+            assertTrue(fake.calls.isEmpty());
+        }
+    }
+    @Test void availability429IsNotAnEmptyResultOrAnotherLogin() {
+        loginThen("<html>journal</html>",CATALOG.replace("m1","200").replace("m2","201"));fake.responses.add(new DikidiTransport.Response(429,"limited"));
+        try(var access=access(UUID.randomUUID(),1)) {
+            assertEquals(RATE_LIMITED,assertThrows(CrmFailure.class,()->provider.availability(access,PROJECT,"200",List.of("300"),java.time.LocalDate.of(2030,1,10),java.time.Instant.now().plusSeconds(10))).code());
+            assertEquals(1,fake.calls.stream().filter(call->call.uri().getHost().equals("auth.dikidi.ru") && call.uri().getPath().equals("/ajax/user/auth/")).count());
+            assertTrue(fake.responses.isEmpty());
+        }
+    }
 
     private static String projectPage(String html) {
         return tools.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(Map.of("append",".project-list","html",html));

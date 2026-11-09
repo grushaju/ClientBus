@@ -9,6 +9,17 @@ import static kit.penny.clientbus.crm.api.CrmFailure.Code.*;
 
 /** R02 only. HTML history labels and payment evidence do not own appointment/financial state. */
 final class DikidiAppointments {
+    static CrmAppointment single(JsonNode response,String project,String external) {
+        var section=response.path("master").path("record");
+        if(!section.isObject())fail(INVALID_RESPONSE);
+        var row=section.path(external);
+        if(row.isMissingNode() || row.isNull())return null;
+        String master=identifier(row.path("item_id"));
+        LocalDate date;
+        try { date=LocalDate.parse(row.path("begin").asString().substring(0,10)); }
+        catch(RuntimeException error){throw new CrmFailure(INVALID_RESPONSE);}
+        return parseRecord(external,row,master,date,project);
+    }
     static List<CrmAppointment> parse(JsonNode response,String project,LocalDate day) {
         JsonNode data=response.path("masters").path("records").path("data");
         if (!(data.isObject() || data.isArray() && data.isEmpty())) fail(INVALID_RESPONSE);
@@ -62,11 +73,14 @@ final class DikidiAppointments {
             snapshot.put("participants",names); client=null; kind="UNKNOWN";
         }
         var states=new LinkedHashMap<String,String>();
-        for (String field : List.of("status_id","is_deleted","is_accept","client_came_id","is_time_reservation","is_group_session")) {
+        for (String field : List.of("status_id","is_deleted","deleted_datetime","is_accept","client_came_id","is_time_reservation","is_group_session")) {
             var value=info.path(field); if (present(value)) states.put(field,scalar(value));
         }
         String deleted=flag(info.path("is_deleted"));
-        String state="1".equals(deleted) ? "DELETED" : "1".equals(states.get("status_id")) && "0".equals(deleted) ? "SCHEDULED" : "UNKNOWN";
+        String deletedAt=text(info.path("deleted_datetime"));
+        String state="1".equals(deleted) ? "DELETED"
+                : "2".equals(states.get("status_id")) && deletedAt!=null && !deletedAt.isBlank() ? "CANCELLED"
+                : "1".equals(states.get("status_id")) && ("0".equals(deleted) || deleted==null && info.path("deleted_datetime").isString() && deletedAt.isEmpty()) ? "SCHEDULED" : "UNKNOWN";
         String confirmation=switch (Objects.toString(flag(info.path("is_accept")),"")) { case "1" -> "CONFIRMED"; case "0" -> "UNCONFIRMED"; default -> "UNKNOWN"; };
         String attendance=switch (Objects.toString(text(info.path("client_came_id")),"")) { case "1" -> "ARRIVED"; case "2" -> "NO_SHOW"; case "0" -> "NOT_RECORDED"; default -> "UNKNOWN"; };
         var services=new ArrayList<CrmAppointmentService>(); boolean servicesComplete=info.has("services") && info.path("services").isArray();

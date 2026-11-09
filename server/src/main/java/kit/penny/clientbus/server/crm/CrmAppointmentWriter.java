@@ -171,6 +171,7 @@ public class CrmAppointmentWriter {
         if (source.mastersComplete()) for (var item : old) if (!observed.contains(item.getExternalMasterId())) store.em.remove(item);
     }
     public void missing(CrmProjectEntity project,CrmAppointmentQuery scope,long generation,Instant observedAt) {
+        if(scope.externalAppointmentId()!=null)return; // A single-object read never covers the rest of the day.
         var query=store.em.createQuery("update CrmAppointmentEntity a set a.observationState='NOT_OBSERVED',a.observationCheckedAt=:observed,a.missingGeneration=:generation,a.version=a.version+1 where a.project.id=:project and a.startLocal>=:start and a.startLocal<:end "
                 +"and a.lastObservedGeneration<:generation"+(scope.client()==null ? "" : " and a.kind='APPOINTMENT' and a.clientIdentityKind=:kind and a.externalClientId=:client"))
                 .setParameter("project",project.getId()).setParameter("start",scope.dateFrom().atStartOfDay()).setParameter("end",scope.dateTo().plusDays(1).atStartOfDay())
@@ -193,7 +194,8 @@ public class CrmAppointmentWriter {
         if (scope.client()!=null && (!scope.client().equals(source.client()) || !"APPOINTMENT".equals(source.kind()))) invalid();
         text(source.comment()); snapshot(source.clientSnapshot());
         if (source.providerState().size()>10 || source.providerState().entrySet().stream().anyMatch(entry ->
-                !Set.of("status_id","is_deleted","is_accept","client_came_id","is_time_reservation","is_group_session").contains(entry.getKey()) || entry.getValue().length()>128)) invalid();
+                    !Set.of("status_id","is_deleted","deleted_datetime","is_accept","client_came_id","is_time_reservation","is_group_session").contains(entry.getKey()) || entry.getValue().length()>128)) invalid();
+        if(scope.externalAppointmentId()!=null && !scope.externalAppointmentId().equals(source.externalId()))invalid();
         var lines=new HashSet<String>();
         for (var service : source.services()) { if (service.externalServiceId()!=null) id(service.externalServiceId()); if (service.externalLineId()!=null) { id(service.externalLineId()); if (!lines.add(service.externalLineId())) invalid(); }
             text(service.displayName()); money(service.price()); terms(service.durationSeconds(),service.currency());

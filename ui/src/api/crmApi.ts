@@ -50,6 +50,20 @@ export interface CrmReadPage<T> { items: T[]; nextCursor: string | null; hasMore
 export interface CrmPeriod { dateFrom: string; dateTo: string }
 export interface CrmAppointmentQuery extends CrmPeriod { masterId?: string; crmClientId?: string; externalClientId?: string; workspaceId?: string; kind?: string; appointmentState?: string; confirmationState?: string; attendanceState?: string; paymentState?: string; cursor?: string }
 export interface CrmFinance { appointmentId: string; snapshot: Record<string, unknown> | null; observedAt: string | null; completeness: string; sync: CrmSyncState }
+export interface CrmOperation {
+    id: string; projectId: string; type: 'CREATE' | 'MOVE' | 'CANCEL'; appointmentId: string | null
+    initiatorEmployeeId: string; idempotencyKey: string; contextVersion: number; zoneRevision: number
+    status: 'REQUESTED' | 'IN_FLIGHT' | 'CONFIRMED' | 'REJECTED' | 'UNKNOWN'
+    createdAt: string; updatedAt: string; errorCode: string | null; externalAppointmentId: string | null
+}
+export interface CrmOperationPage { items: CrmOperation[]; nextCursor: string | null; hasMore: boolean }
+export interface CrmOfferSelection { id: string; expectedVersion: number }
+export interface CrmCreateAppointment {
+    contextVersion: number; zoneRevision: number; crmClientId: string; masterId: string
+    offers: CrmOfferSelection[]; localStart: string; comment?: string
+}
+export interface CrmChangeAppointment { contextVersion: number; zoneRevision: number; expectedVersion: number; localStart?: string; reason?: string }
+export interface CrmAvailability { projectId: string; masterId: string; starts: string[]; zoneId: string; contextVersion: number; zoneRevision: number; observedAt: string }
 export interface CrmMasterPage { items: CrmMaster[]; nextCursor: string | null; hasMore: boolean; dataState: CrmSyncState; revision: number }
 export interface CrmServiceOffer {
     masterDisplayName: string
@@ -97,6 +111,19 @@ export const getCrmAppointmentClients = (id: string, query: CrmPeriod & { q?: st
     json<CrmReadPage<CrmAppointmentClient>>(`/api/crm/projects/${path(id)}/appointment-clients?${queryString(query)}`, { signal })
 export const getCrmFinance = (id: string, signal?: AbortSignal) => json<CrmFinance>(`/api/crm/appointments/${path(id)}/finance`, { signal })
 export const refreshCrmFinance = (id: string, signal?: AbortSignal) => json<CrmFinance>(`/api/crm/appointments/${path(id)}/finance/refresh`, { method: 'POST', signal })
+export const getCrmOperations = (id: string, query: { own?: boolean; active?: boolean; cursor?: string } = {}, signal?: AbortSignal) =>
+    json<CrmOperationPage>(`/api/crm/projects/${path(id)}/operations?${queryString(query)}`, { signal })
+export const getCrmOperation = (id: string, signal?: AbortSignal) => json<CrmOperation>(`/api/crm/operations/${path(id)}`, { signal })
+export const findCrmOperation = (id: string, key: string, signal?: AbortSignal) => json<CrmOperation>(`/api/crm/projects/${path(id)}/operations/by-key/${path(key)}`, { signal })
+export const reconcileCrmOperation = (id: string, signal?: AbortSignal) => json<CrmOperation>(`/api/crm/operations/${path(id)}/reconcile`, { method: 'POST', signal })
+export const createCrmAppointment = (id: string, key: string, value: CrmCreateAppointment, signal?: AbortSignal) =>
+    json<CrmOperation>(`/api/crm/projects/${path(id)}/appointments`, { ...body('POST', value, signal), headers: { 'Idempotency-Key': key } })
+export const changeCrmAppointment = (id: string, key: string, type: 'MOVE' | 'CANCEL', value: CrmChangeAppointment, signal?: AbortSignal) =>
+    json<CrmOperation>(`/api/crm/appointments/${path(id)}/${type === 'MOVE' ? 'move' : 'cancel'}`, { ...body('POST', value, signal), headers: { 'Idempotency-Key': key } })
+export const getCrmAvailability = (id: string, value: { contextVersion: number; zoneRevision: number; masterId: string; offers: CrmOfferSelection[]; date: string }, signal?: AbortSignal) =>
+    json<CrmAvailability>(`/api/crm/projects/${path(id)}/availability`, body('POST', value, signal))
+export const getCrmMoveAvailability = (id: string, value: { contextVersion: number; zoneRevision: number; expectedVersion: number; date: string }, signal?: AbortSignal) =>
+    json<CrmAvailability>(`/api/crm/appointments/${path(id)}/availability`, body('POST', value, signal))
 export const getCrmTypes = (signal?: AbortSignal) => json<CrmType[]>('/api/crm/types', { signal })
 export const getCrmConnections = (signal?: AbortSignal) => json<CrmConnection[]>('/api/crm/connections', { signal })
 export const createCrmConnection = (value: { provider: CrmType; login: string; secret: string; displayName?: string }, signal?: AbortSignal) =>

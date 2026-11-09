@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import * as api from '../../api/crmApi'
 import { CrmAppointmentRows, crmStates } from './CrmAppointments'
 import { CrmDirectoryPicker } from './CrmDirectoryPicker'
+import { CrmOperationsPanel } from './CrmOperations'
 import { CrmPeriodFields, crmPeriodValid, crmShift, crmToday, useCrmAction, useCrmRead } from './CrmReadShared'
 
 function CoreAppointments({ clientId, project, query }: { clientId: string; project: api.CrmProject; query: api.CrmAppointmentQuery }) {
@@ -28,7 +29,7 @@ export function CrmProjectAppointments({ project }: { project: api.CrmProject })
         ['attendanceState', 'Посещение', ['NOT_RECORDED', 'ARRIVED', 'NO_SHOW', 'UNKNOWN']],
         ['paymentState', 'Оплата', ['UNPAID', 'PARTIALLY_PAID', 'PAID', 'UNKNOWN']],
     ]
-    return <><CrmPeriodFields value={period} change={value => change({ ...value })} />
+    return <><CrmOperationsPanel project={project} /><CrmPeriodFields value={period} change={value => change({ ...value })} />
         {clientId && <button type="button" className="ui-button ui-button-secondary" onClick={() => change({ clientId: '' })}>Показать всех клиентов</button>}
         <div className="crm-toolbar crm-appointment-filters">{!clientId && <><CrmDirectoryPicker project={project} kind="master" value={query.masterId ?? ''} change={masterId => change({ masterId })} />
             <CrmDirectoryPicker project={project} kind="client" period={period} disabled={!crmPeriodValid(period)} value={query.externalClientId ?? ''} legacyClientId={query.crmClientId} change={externalClientId => change({ externalClientId, crmClientId: '' })} /></>}

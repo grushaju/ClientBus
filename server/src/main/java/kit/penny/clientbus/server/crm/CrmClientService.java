@@ -61,7 +61,7 @@ public class CrmClientService {
                     .setParameter("client",clientId).setParameter("org",organization);
             if (workspaceId!=null) query.setParameter("workspace",workspaceId);
             return query.getResultList().stream().filter(row -> store.guard.canReadWorkspace(row.getProject().getWorkspace().getId()))
-                    .map(row -> new CrmClientLinkDto(dto(row),CrmStore.dto(row.getProject()))).toList();
+                    .map(row -> new CrmClientLinkDto(dto(row),store.projectDto(row.getProject()))).toList();
         });
     }
     public List<CrmClientCandidateDto> candidates(UUID id, String query) {

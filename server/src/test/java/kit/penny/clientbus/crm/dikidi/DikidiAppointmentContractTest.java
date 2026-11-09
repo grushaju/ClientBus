@@ -63,6 +63,19 @@ class DikidiAppointmentContractTest {
         assertEquals(3600L,item.masters().getFirst().durationSeconds());
         assertEquals("SCHEDULED",item.appointmentState()); assertEquals("CONFIRMED",item.confirmationState()); assertEquals("NO_SHOW",item.attendanceState());
     }
+    @Test void targetedReadKeepsCancelledHistoryEvenWhenTheDayListOmitsIt() {
+        String info=INFO.replace("\"is_deleted\":\"0\",","").replace("\"status_id\":\"1\"","\"status_id\":\"2\",\"deleted_datetime\":\"2026-11-01 09:00:00\"");
+        String value=row("500","m1","2026-11-01 10:00:00","2026-11-01 11:00:00",info);
+        var fake=new Fake(response("{}"));
+        fake.responses.add(new DikidiTransport.Response(200,"{\"company\":{\"accesses\":{\"100\":{\"owner\":true}}},\"master\":{\"record\":{\"500\":"+value+"}}}"));
+        var query=new CrmAppointmentQuery(DAY,DAY,null,"500");
+        try(var adapter=provider(fake);var access=access()) {
+            var page=adapter.readAppointments(access,"100",query,null);
+            assertEquals(1,page.items().size());assertEquals("CANCELLED",page.items().getFirst().appointmentState());assertEquals(query,page.scope());
+        }
+        assertTrue(fake.calls.getLast().form().contains(Map.entry("request[get][]","master.record")));
+        assertTrue(fake.calls.getLast().form().contains(Map.entry("request[options][master][record][]","500")));
+    }
     @Test void sameVisitUnderSeveralMastersIsMergedWithoutMultiplyingServices() {
         String info=INFO+",\"masters\":[{\"id\":\"m1\",\"record_from\":\"10:00:00\",\"record_to\":\"11:00:00\",\"duration\":60},{\"id\":\"m2\",\"record_from\":\"11:00:00\",\"record_to\":\"12:00:00\",\"duration\":60}]";
         String rows=data(row("r1","m1","10:00:00","11:00:00",info));

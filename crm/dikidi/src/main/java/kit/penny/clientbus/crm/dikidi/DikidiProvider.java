@@ -12,7 +12,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 import static kit.penny.clientbus.crm.api.CrmFailure.Code.*;
 
-/** Safe owner reads only. No booking endpoints are present. */
+/** Verified owner reads and bounded commands. Mutating sequences never use the read/auth retry loop. */
 public final class DikidiProvider implements CrmProvider, AutoCloseable {
     public record Settings(Duration connectTimeout, Duration requestTimeout, int maxResponseBytes) {
         public Settings {
@@ -39,6 +39,70 @@ public final class DikidiProvider implements CrmProvider, AutoCloseable {
     }
     public DikidiProvider(Settings settings, Supplier<DikidiTransport> factory) { this.settings = settings; this.factory = factory; }
     @Override public String code() { return "DIKIDI"; }
+
+    @Override public Set<CrmCommand.Type> commandCapabilities(){return Set.of(CrmCommand.Type.CREATE,CrmCommand.Type.MOVE,CrmCommand.Type.CANCEL);}
+    @Override public void prepareCommand(CrmAccess access,String project,CrmCommand command,Instant until) {
+        projectId(project);DikidiCommands.validate(command);if(until==null)throw new CrmFailure(INVALID_RESPONSE);
+        execute(access,project,(session,deadline)->{catalog(session,project,deadline);return null;},until);
+    }
+    @Override public CrmCommandResult command(CrmAccess access,String project,CrmCommand command,Instant until,CrmCommandPort.Progress progress) {
+        projectId(project);DikidiCommands.validate(command);
+        if(until==null || !until.isAfter(Instant.now()) || command.type()==CrmCommand.Type.CREATE && progress==null)throw new CrmFailure(CAPABILITY_UNVERIFIED);
+        boolean[] effectStarted={false};
+        try {
+            return executeOnce(access,project,until,(session,deadline)->{
+                var catalog=catalog(session,project,deadline,command.type()==CrmCommand.Type.CREATE);
+                return DikidiCommands.run((method,path,form)->{
+                    if(path.startsWith("/ajax/newrecord/time_reservation/") || path.startsWith("/owner/ajax/journal/newrecord_record_save/")
+                            || path.startsWith("/ru/owner/ajax/journal/record_save/") || path.startsWith("/ru/owner/ajax/journal/remove/"))effectStarted[0]=true;
+                    return tree(call(session,method,"https://dikidi.ru"+path,form,true,project,deadline));
+                },project,command,catalog,progress);
+            });
+        } catch(CrmFailure failure) {
+            if(!effectStarted[0])return new CrmCommandResult(CrmCommandResult.Outcome.REJECTED,command.externalAppointmentId());
+            throw failure;
+        }
+    }
+    @Override public CrmCommandResult reconcile(CrmAccess access,String project,CrmCommand command,Instant until) {
+        projectId(project);DikidiCommands.validate(command);
+        if(until==null)throw new CrmFailure(INVALID_RESPONSE);
+        return execute(access,project,(session,deadline)->{
+            catalog(session,project,deadline);
+            return DikidiCommands.reconcile((method,path,form)->tree(call(session,method,"https://dikidi.ru"+path,form,true,project,deadline)),project,command);
+        },until);
+    }
+
+    private <T> T executeOnce(CrmAccess access,String project,Instant until,Read<T> action) {
+        var remaining=Duration.between(Instant.now(),until);
+        if(remaining.isNegative() || remaining.isZero())throw new CrmFailure(TEMPORARY_FAILURE);
+        long deadline=System.nanoTime()+(remaining.compareTo(Duration.ofSeconds(75))>0 ? Duration.ofSeconds(75).toNanos():remaining.toNanos());
+        var session=session(access);
+        try { if(!session.lock.tryLock(2,TimeUnit.SECONDS))throw new CrmFailure(CONNECTION_BUSY); }
+        catch(InterruptedException e){Thread.currentThread().interrupt();throw new CrmFailure(TEMPORARY_FAILURE);}
+        try {
+            if(!session.authenticated)login(session,access,deadline);
+            return action.apply(session,deadline);
+        } catch(CrmFailure e){if(e.code()==AUTH_REQUIRED)session.authenticated=false;throw e;}
+        finally{session.lastUsed=System.nanoTime();session.lock.unlock();}
+    }
+
+    @Override public CrmAvailability availability(CrmAccess access,String project,String master,List<String> services,LocalDate date,Instant until) {
+        projectId(project); projectId(master);
+        if (services==null || services.isEmpty() || services.size()>10 || services.stream().anyMatch(id->id==null || !id.matches("[0-9]{1,20}"))
+                || new HashSet<>(services).size()!=services.size() || date==null || date.getYear()<2000 || date.getYear()>2100 || until==null)
+            throw new CrmFailure(INVALID_RESPONSE);
+        if (!until.isAfter(Instant.now())) throw new CrmFailure(TEMPORARY_FAILURE);
+        var selected=List.copyOf(services);
+        return execute(access,project,(session,deadline)->{
+            var catalog=catalog(session,project,deadline);
+            if (parseMasters(catalog).stream().noneMatch(row->master.equals(row.externalId()))) throw new CrmFailure(CONTEXT_MISMATCH);
+            String address="https://dikidi.ru/ajax/newrecord/to_master_get_datetime/?company_id="+project+"&master_id="+master
+                    +"&date="+date+"&action_source_id=3&is-from-journal=1";
+            for (var service:selected) address+="&services_id%5B%5D="+service;
+            Instant observed=Instant.now();
+            return DikidiAvailability.parse(tree(call(session,"GET",address,null,true,project,deadline)),project,master,selected,date,observed);
+        },until);
+    }
 
     @Override public CrmFinanceSnapshot readFinance(CrmAccess access,String project,CrmFinanceQuery query) {
         projectId(project);
@@ -128,6 +192,14 @@ public final class DikidiProvider implements CrmProvider, AutoCloseable {
         catch (DateTimeException error) { throw new CrmFailure(INVALID_RESPONSE); }
         if (day.isBefore(query.dateFrom()) || day.isAfter(query.dateTo())) throw new CrmFailure(INVALID_RESPONSE);
         return execute(access,project,(session,deadline) -> {
+            if(query.externalAppointmentId()!=null) {
+                projectId(query.externalAppointmentId());catalog(session,project,deadline);
+                var root=DikidiCommands.single((method,path,form)->tree(call(session,method,"https://dikidi.ru"+path,form,true,project,deadline)),project,query.externalAppointmentId());
+                if(!root.path("company").path("accesses").path(project).isContainer() || root.path("company").path("accesses").path(project).isEmpty())throw new CrmFailure(CONTEXT_MISMATCH);
+                var row=DikidiAppointments.single(root,project,query.externalAppointmentId());
+                var items=row!=null && row.localStart().toLocalDate().equals(day) && (query.client()==null || "APPOINTMENT".equals(row.kind()) && query.client().equals(row.client())) ? List.of(row) : List.<CrmAppointment>of();
+                return new CrmAppointmentPage(items,null,Instant.now(),CrmReadResult.Completeness.UNKNOWN,project,query);
+            }
             call(session,"GET","https://dikidi.ru/ru/owner/journal/?company="+project,null,false,project,deadline);
             var form=new ArrayList<>(List.of(Map.entry("request[get][]","company.accesses"),Map.entry("request[get][]","masters.info"),
                     Map.entry("request[get][]","masters.records"),Map.entry("request[options][company][accesses][]",project),
@@ -171,7 +243,15 @@ public final class DikidiProvider implements CrmProvider, AutoCloseable {
     }
     @FunctionalInterface private interface Read<T> { T apply(Session session, long deadline); }
     private <T> T execute(CrmAccess access, String project, Read<T> read) {
+        return execute(access,project,read,null);
+    }
+    private <T> T execute(CrmAccess access, String project, Read<T> read,Instant until) {
         long started = System.nanoTime(), deadline = started + Duration.ofSeconds(75).toNanos();
+        if (until!=null) {
+            var remaining=Duration.between(Instant.now(),until);
+            if (remaining.isNegative() || remaining.isZero()) throw new CrmFailure(TEMPORARY_FAILURE);
+            if (remaining.compareTo(Duration.ofSeconds(75))<0) deadline=Math.min(deadline,started+remaining.toNanos());
+        }
         var session = session(access);
         try {
             if (!session.lock.tryLock(2, TimeUnit.SECONDS)) throw new CrmFailure(CONNECTION_BUSY);

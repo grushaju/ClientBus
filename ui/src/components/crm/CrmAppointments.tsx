@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import * as api from '../../api/crmApi'
 import { useCrmPages } from './useCrmPages'
+import { CrmAppointmentActions } from './CrmOperations'
 import { CrmDialog, CrmPageStatus, CrmStatus, crmLocal, crmMoney, useCrmAction, useCrmRead } from './CrmReadShared'
 
 export const crmStates: Record<string, string> = {
@@ -33,7 +34,7 @@ function FinanceDetails({ row, archived, canRefresh }: { row: api.CrmAppointment
             </> : <p>Сохранённых финансовых данных нет. Это не означает нулевую оплату.</p>}</>}
     </section>
 }
-export function CrmAppointmentCard({ id, workspaceId, archived, close, canRefresh = !archived }: { id: string; workspaceId?: string; archived: boolean; canRefresh?: boolean; close: () => void }) {
+export function CrmAppointmentCard({ id, workspaceId, archived, close, canRefresh = !archived, project }: { id: string; workspaceId?: string; archived: boolean; canRefresh?: boolean; close: () => void; project?: api.CrmProject }) {
     const data = useCrmRead('crm-appointment:' + id, workspaceId, signal => api.getCrmAppointment(id, signal))
     const [finance, setFinance] = useState(false), row = data.data
     return <CrmDialog title="Запись CRM" close={close}>
@@ -51,6 +52,7 @@ export function CrmAppointmentCard({ id, workspaceId, archived, close, canRefres
             {row.warnings.length > 0 && <details><summary>Предупреждения источника</summary><ul>{row.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul></details>}
             {row.lastObservedAt && <p>Последнее наблюдение: {new Date(row.lastObservedAt).toLocaleString('ru-RU')}</p>}
             {row.kind === 'APPOINTMENT' && <><button type="button" className="ui-button ui-button-secondary" aria-expanded={finance} onClick={() => setFinance(!finance)}>Финансы визита</button>{finance && <FinanceDetails key={row.id} row={row} archived={archived} canRefresh={canRefresh} />}</>}
+            {project && <CrmAppointmentActions project={project} row={row} changed={data.reload} />}
             {archived && <p>Архив: доступен только просмотр сохранённых данных.</p>}
         </> : !data.error && <p>Загрузка записи…</p>}
     </CrmDialog>
@@ -88,6 +90,6 @@ export function CrmAppointmentRows({ project, clientId, query, compact = false, 
             </button>
         </li>)}</ul>{compact && !!data.page?.items.length && <Link to={'/crm?' + fullQuery}>Все визиты во вкладке «Записи»</Link>}
         {!compact ? <CrmPageStatus data={{ ...data, page: data.page ? { ...data.page, items: visible ?? [] } : null }} empty="В загруженных данных подходящие записи не найдены." /> : <>{data.error && <p role="alert">{data.error} <button type="button" onClick={data.reload}>Повторить</button></p>}{data.loading && !data.page && <p>Загрузка визитов…</p>}{searching && !data.error && <p role="status">Поиск ближайших визитов…</p>}{data.page && !searching && !visible?.length && !data.error && <p>В загруженных данных ближайшие визиты не найдены.</p>}</>}
-        {selected && <CrmAppointmentCard key={selected.id} id={selected.id} workspaceId={selected.workspaceId} archived={selectedProject?.archived ?? true} canRefresh={!!selectedProject && !selectedProject.archived && selectedProject.enabled && !!selectedProject.zoneId && !['DISABLED', 'REAUTH_REQUIRED'].includes(selectedProject.connectionState)} close={() => setSelected(null)} />}
+        {selected && <CrmAppointmentCard key={selected.id} id={selected.id} workspaceId={selected.workspaceId} project={selectedProject} archived={selectedProject?.archived ?? true} canRefresh={!!selectedProject && !selectedProject.archived && selectedProject.enabled && !!selectedProject.zoneId && !['DISABLED', 'REAUTH_REQUIRED'].includes(selectedProject.connectionState)} close={() => setSelected(null)} />}
     </>
 }

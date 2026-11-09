@@ -30,6 +30,7 @@ public class CrmStorage implements ApplicationRunner {
                     jdbc.execute("alter table crm.project add constraint projectarchiveck check (not archived or not enabled)");
                 });
         normalizePrices();
+        initializeOperations();
         ready = true;
     }
     /** Returns true only for the exact legacy index, which may be upgraded. */
@@ -67,6 +68,25 @@ public class CrmStorage implements ApplicationRunner {
         }
         // Also handles padded writes made by an older instance during an application upgrade.
         jdbc.update("update crm.masterservice set price=trim_scale(price) where scale(price)>scale(trim_scale(price))");
+    }
+    private void initializeOperations() {
+        jdbc.execute("create unique index if not exists uqoperationactiveappointment on crm.operation(targetappointmentid) where targetappointmentid is not null and status in ('REQUESTED','IN_FLIGHT','UNKNOWN')");
+        var rows=jdbc.queryForList("""
+                select i.indisunique,i.indisvalid,i.indnatts,tn.nspname as tableschema,t.relname as tablename,
+                    pg_get_indexdef(i.indexrelid,1,true) as keycolumn,pg_get_expr(i.indpred,i.indrelid) as predicate
+                from pg_index i join pg_class idx on idx.oid=i.indexrelid join pg_namespace ns on ns.oid=idx.relnamespace
+                    join pg_class t on t.oid=i.indrelid join pg_namespace tn on tn.oid=t.relnamespace
+                where ns.nspname='crm' and idx.relname='uqoperationactiveappointment'
+                """);
+        if (rows.size()!=1) throw new IllegalStateException("CRM operation index is missing");
+        var row=rows.getFirst();
+        String predicate=String.valueOf(row.get("predicate")).replaceAll("::(?:character varying|text)(?:\\[\\])?","")
+                .replaceAll("[()\\s]","").toLowerCase(java.util.Locale.ROOT);
+        if (!Boolean.TRUE.equals(row.get("indisunique")) || !Boolean.TRUE.equals(row.get("indisvalid"))
+                || ((Number)row.get("indnatts")).intValue()!=1 || !"crm".equals(row.get("tableschema"))
+                || !"operation".equals(row.get("tablename")) || !"targetappointmentid".equals(row.get("keycolumn"))
+                || !"targetappointmentidisnotnullandstatus=anyarray['requested','in_flight','unknown']".equals(predicate))
+            throw new IllegalStateException("CRM operation index does not match its contract");
     }
     public void requireReady() {
         if (!ready) throw new CrmException(503, "CRM_STORAGE_NOT_READY", "Хранилище CRM ещё не готово.");

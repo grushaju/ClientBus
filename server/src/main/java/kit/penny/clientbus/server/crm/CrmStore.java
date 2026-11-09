@@ -17,10 +17,11 @@ public class CrmStore {
     final CrmMasterRepository masters;
     final CrmAccessGuard guard;
     final CrmStorage storage;
+    private final CrmRegistry registry;
     public CrmStore(EntityManager em, CrmConnectionRepository connections, CrmProjectRepository projects,
-                    CrmMasterRepository masters, CrmAccessGuard guard, CrmStorage storage) {
+                    CrmMasterRepository masters, CrmAccessGuard guard, CrmStorage storage, CrmRegistry registry) {
         this.em = em; this.connections = connections; this.projects = projects; this.masters = masters;
-        this.guard = guard; this.storage = storage;
+        this.guard = guard; this.storage = storage; this.registry=registry;
     }
     CrmConnectionEntity connection(UUID id, UUID organization) {
         return connections.findByIdAndOrganizationId(id, organization).orElseThrow(CrmStore::notFound);
@@ -73,14 +74,21 @@ public class CrmStore {
                 row.getSecretCiphertext() != null && row.getSecretCiphertext().length > 0, row.getStatus(),
                 row.getLastCheckedAt(), row.getLastErrorCode(), row.getVersion(), row.getDisplayName());
     }
-    static CrmProjectDto dto(CrmProjectEntity row) {
+    CrmProjectDto projectDto(CrmProjectEntity row) {
         List<CrmCapabilityDto> capabilities = new ArrayList<>();
+        var commands=registry.require(row.getProvider()).commandCapabilities();
         for (String code : List.of("LIST_PROJECTS", "READ_MASTERS", "READ_SERVICES", "READ_CLIENTS", "READ_APPOINTMENTS",
                 "READ_CLIENT_HISTORY", "READ_WORK_INTERVALS", "READ_AVAILABILITY", "READ_FINANCIAL_CONTEXT",
                 "CREATE_APPOINTMENT", "MOVE_APPOINTMENT", "CANCEL_APPOINTMENT")) {
             boolean implemented = Set.of("READ_MASTERS","READ_SERVICES","READ_CLIENTS","READ_WORK_INTERVALS","READ_APPOINTMENTS","READ_CLIENT_HISTORY").contains(code)
-                    || code.equals("LIST_PROJECTS") && row.getProvider()==CrmType.DIKIDI;
-            String state = !implemented ? "UNVERIFIED" : !row.isEnabled() || row.getConnection().getStatus() == CrmConnectionStatus.DISABLED
+                    || code.equals("LIST_PROJECTS") && row.getProvider()==CrmType.DIKIDI
+                    || code.equals("CREATE_APPOINTMENT") && commands.contains(kit.penny.clientbus.crm.api.CrmCommand.Type.CREATE)
+                    || code.equals("MOVE_APPOINTMENT") && commands.contains(kit.penny.clientbus.crm.api.CrmCommand.Type.MOVE)
+                    || code.equals("CANCEL_APPOINTMENT") && commands.contains(kit.penny.clientbus.crm.api.CrmCommand.Type.CANCEL)
+                    || code.equals("READ_AVAILABILITY") && (commands.contains(kit.penny.clientbus.crm.api.CrmCommand.Type.CREATE) || commands.contains(kit.penny.clientbus.crm.api.CrmCommand.Type.MOVE));
+            boolean command = code.endsWith("_APPOINTMENT") || code.equals("READ_AVAILABILITY");
+            String state = !implemented ? "UNVERIFIED" : !row.isEnabled() || command && row.isArchived() || row.getConnection().getStatus() == CrmConnectionStatus.DISABLED
+                    || command && (row.getZoneId()==null || row.getConnection().getStatus()!=CrmConnectionStatus.CONNECTED && row.getConnection().getStatus()!=CrmConnectionStatus.REAUTH_REQUIRED)
                     ? "CONFIGURATION_REQUIRED" : row.getConnection().getStatus() == CrmConnectionStatus.REAUTH_REQUIRED
                     ? "REAUTH_REQUIRED" : "AVAILABLE";
             capabilities.add(new CrmCapabilityDto(code, state, implemented ? null : "NOT_IMPLEMENTED"));

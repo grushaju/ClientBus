@@ -60,6 +60,7 @@ class CrmFoundationIntegrationTest {
     private CrmFinanceService finance;
     private CrmAppointmentTimes appointmentTimes;
     private CrmStore store;
+    private CrmOperationService operations;
     private UiDomainEvents events;
     private CrmDeletionGuard deletion;
     private FakeProvider provider;
@@ -91,7 +92,7 @@ class CrmFoundationIntegrationTest {
                 WorkspaceEntity.class, EmployeeWorkspaceEntity.class, CrmConnectionEntity.class,
                 CrmProjectEntity.class, CrmMasterEntity.class, CrmServiceEntity.class, CrmMasterServiceEntity.class,
                 CrmSyncStateEntity.class, ClientEntity.class, ClientAccountEntity.class, CrmClientEntity.class,CrmWorkIntervalEntity.class,
-                CrmAppointmentEntity.class,CrmAppointmentServiceEntity.class,CrmAppointmentMasterEntity.class)) metadata.addAnnotatedClass(type);
+                CrmAppointmentEntity.class,CrmAppointmentServiceEntity.class,CrmAppointmentMasterEntity.class,CrmOperationEntity.class)) metadata.addAnnotatedClass(type);
         return metadata.buildMetadata().buildSessionFactory();
     }
     @AfterAll static void closeDatabase() {
@@ -142,15 +143,15 @@ class CrmFoundationIntegrationTest {
                         return result;
                     } catch (InvocationTargetException error) { throw error.getCause(); }
                 });
+        provider = new FakeProvider(); var registry = new CrmRegistry(List.of(provider));
         store = new CrmStore(em, repositories.getRepository(CrmConnectionRepository.class),
-                repositories.getRepository(CrmProjectRepository.class), masterRepository, access, storage);
+                repositories.getRepository(CrmProjectRepository.class), masterRepository, access, storage,registry);
         events = mock(UiDomainEvents.class);
         doAnswer(invocation -> {
             assertTrue(TransactionSynchronizationManager.isActualTransactionActive());
             assertTrue(UiEventTypes.ALL.contains(invocation.getArgument(1, String.class)));
             return null;
         }).when(events).workspace(any(), anyString());
-        provider = new FakeProvider(); var registry = new CrmRegistry(List.of(provider));
         cipher = new CrmSecretCipher(new CrmSettings(Base64.getEncoder().encodeToString(new byte[32]), "test-key", 1000, 2000, 4096));
         var serviceRepository = repositories.getRepository(CrmServiceRepository.class);
         var offerRepository = repositories.getRepository(CrmMasterServiceRepository.class);
@@ -166,6 +167,7 @@ class CrmFoundationIntegrationTest {
         appointmentReader=new CrmAppointmentReader(store,appointmentSync,jdbc,manager);
         appointmentTimes=new CrmAppointmentTimes(store,jdbc,manager,events);
         service = new CrmService(store, registry, cipher, sync, manager, events);
+        operations=new CrmOperationService(store,registry,cipher,events,jdbc,manager);
         deletion = new CrmDeletionGuard(store, events);
     }
     private EmployeeEntity employee(OrganizationEntity org, UserRole role, String name) {
@@ -756,7 +758,303 @@ class CrmFoundationIntegrationTest {
         assertEquals("TARGET_DELETED", detached.mappingReason());
         assertEquals(0, jdbc.queryForObject("select count(*) from dbo.employee where employeeid=?", Integer.class, removed));
     }
+    private record OperationFixture(CrmProjectDto project,CrmCreateAppointmentRequest request) {}
+    private OperationFixture operationFixture() throws Exception {
+        provider.commands=EnumSet.allOf(CrmCommand.Type.class);
+        var project=bind(connection()); awaitIdle();
+        project=service.updateProject(project.id(),new UpdateCrmProjectRequest(project.version(),null,"Europe/Moscow"));
+        var context=project;
+        jdbc.update("update crm.connection set status='CONNECTED' where id=?",project.connectionId());
+        return tx.execute(status -> {
+            var parent=em.find(CrmProjectEntity.class,context.id());
+            var master=em.createQuery("from CrmMasterEntity m where m.project.id=:project order by m.externalId",CrmMasterEntity.class).setParameter("project",context.id()).getResultList().getFirst();
+            var client=new CrmClientEntity(); client.setProject(parent); client.setExternalId("operation-client"); client.setIdentityKind("PROJECT"); client.setDisplayName("Operation client"); client.setLastObservedAt(Instant.now()); em.persist(client);
+            var service=new CrmServiceEntity(); service.setProject(parent); service.setExternalId("operation-service"); service.setDisplayName("Operation service"); service.setLastObservedAt(Instant.now()); em.persist(service);
+            var offer=new CrmMasterServiceEntity(); offer.setProject(parent); offer.setMaster(master); offer.setService(service); offer.setPrice(new BigDecimal("1200.25")); offer.setCurrency("RUB"); offer.setDurationSeconds(1800L); offer.setLastObservedAt(Instant.now()); offer.setOfferState(Map.of("active",true)); em.persist(offer); em.flush();
+            return new OperationFixture(context,new CrmCreateAppointmentRequest(context.contextVersion(),context.zoneRevision(),client.getId(),master.getId(),List.of(new CrmCreateAppointmentRequest.Offer(offer.getId(),offer.getVersion())),LocalDate.of(2030,1,10).atTime(12,0),"Intent"));
+        });
+    }
+    @Test void operationAcceptsOnceAndReplaysBeforeCheckingAChangedContext() throws Exception {
+        var f=operationFixture(); UUID key=UUID.randomUUID();
+        var accepted=operations.create(f.project().id(),key,f.request());
+        assertEquals("REQUESTED",accepted.status()); assertEquals(0,provider.effects.get());
+        assertEquals(accepted.id(),operations.byKey(f.project().id(),key).id());
+        operations.run(accepted.id()); operations.run(accepted.id());
+        assertEquals(1,provider.effects.get()); assertEquals("CONFIRMED",operations.get(accepted.id()).status());
+        jdbc.update("update crm.project set contextversion=contextversion+1,enabled=false where id=?",f.project().id());
+        assertEquals(accepted.id(),operations.create(f.project().id(),key,f.request()).id());
+        var r=f.request(); var different=new CrmCreateAppointmentRequest(r.contextVersion(),r.zoneRevision(),r.crmClientId(),r.masterId(),r.offers(),r.localStart(),"Other intent");
+        assertEquals("CRM_IDEMPOTENCY_CONFLICT",assertThrows(CrmException.class,() -> operations.create(f.project().id(),key,different)).code());
+    }
+    @Test void operationAdmissionIsConcurrentAndTheSameKeyReturnsOneJournalRow() throws Exception {
+        var f=operationFixture(); UUID key=UUID.randomUUID();
+        var pool=Executors.newFixedThreadPool(2);
+        try {
+            var a=pool.submit(() -> operations.create(f.project().id(),key,f.request()));
+            var b=pool.submit(() -> operations.create(f.project().id(),key,f.request()));
+            assertEquals(a.get(10,TimeUnit.SECONDS).id(),b.get(10,TimeUnit.SECONDS).id());
+            assertEquals(1,jdbc.queryForObject("select count(*) from crm.operation",Integer.class));
+        } finally { pool.shutdownNow(); }
+    }
+    @Test void operationTimeoutIsUnknownAndNeverSendsAgainEvenAfterContextChanges() throws Exception {
+        var f=operationFixture(); provider.commandResult=command -> { throw new CrmFailure(CrmFailure.Code.TEMPORARY_FAILURE); };
+        var op=operations.create(f.project().id(),UUID.randomUUID(),f.request()); operations.run(op.id());
+        assertEquals("UNKNOWN",operations.get(op.id()).status()); assertEquals(1,operations.list(f.project().id(),true,true,null).items().size());
+        jdbc.update("update crm.project set contextversion=contextversion+1 where id=?",f.project().id());
+        operations.run(op.id()); assertEquals(1,provider.effects.get());
+        provider.reconcileResult=command -> new CrmCommandResult(CrmCommandResult.Outcome.CONFIRMED,"created-record");
+        assertEquals("CONFIRMED",operations.reconcile(op.id()).status()); assertEquals(1,provider.effects.get());
+    }
+    @Test void operationChecksLiveAccessAfterAvailabilityAndBeforeItsCheckpoint() throws Exception {
+        var f=operationFixture(); var op=operations.create(f.project().id(),UUID.randomUUID(),f.request());
+        provider.afterAvailability=() -> jdbc.update("update dbo.users set isenabled=false where userid=(select userid from dbo.employee where employeeid=?)",admin);
+        operations.run(op.id());
+        assertEquals("REJECTED",jdbc.queryForObject("select status from crm.operation where id=?",String.class,op.id()));
+        assertEquals(0,provider.effects.get());
+    }
+    @Test void operationRejectsAnOldQuoteOrInvalidTimeAndKeepsCapabilitiesClosed() throws Exception {
+        var f=operationFixture(); var r=f.request();
+        provider.commands=Set.of();
+        assertEquals("CRM_CAPABILITY_UNVERIFIED",assertThrows(CrmException.class,() -> operations.create(f.project().id(),UUID.randomUUID(),r)).code());
+        assertEquals(0,jdbc.queryForObject("select count(*) from crm.operation",Integer.class));
+        provider.commands=EnumSet.allOf(CrmCommand.Type.class);
+        jdbc.update("update crm.masterservice set version=version+1 where id=?",r.offers().getFirst().id());
+        assertEquals("CRM_VERSION_CONFLICT",assertThrows(CrmException.class,() -> operations.create(f.project().id(),UUID.randomUUID(),r)).code());
+        var invalid=new CrmCreateAppointmentRequest(r.contextVersion(),r.zoneRevision(),r.crmClientId(),r.masterId(),r.offers(),r.localStart().withNano(1),null);
+        assertThrows(CrmException.class,() -> operations.create(f.project().id(),UUID.randomUUID(),invalid));
+    }
+    @Test void operationRecoveryKeepsExpiredEffectsUnknownAndExpiresOnlyUnstartedWork() throws Exception {
+        var f=operationFixture(); var effect=operations.create(f.project().id(),UUID.randomUUID(),f.request());
+        jdbc.update("update crm.operation set status='IN_FLIGHT',effectstartedat=clock_timestamp()-interval '2 minutes',deadlineat=clock_timestamp()-interval '1 second' where id=?",effect.id());
+        var queued=operations.create(f.project().id(),UUID.randomUUID(),f.request());
+        jdbc.update("update crm.operation set createdat=clock_timestamp()-interval '6 minutes' where id=?",queued.id());
+        assertTrue(operations.due().isEmpty());
+        assertEquals("UNKNOWN",operations.get(effect.id()).status()); assertEquals("REJECTED",operations.get(queued.id()).status());
+        operations.run(effect.id()); assertEquals(0,provider.effects.get());
+    }
+    @Test void operationReadsAndKeysAreIsolatedByActorAndWorkspaceAndProtectTheAuthor() throws Exception {
+        var f=operationFixture(); var op=operations.create(f.project().id(),UUID.randomUUID(),f.request());
+        tx.executeWithoutResult(status -> assertEquals("CRM_RESOURCE_IN_USE",assertThrows(CrmException.class,() -> deletion.employee(em.find(EmployeeEntity.class,admin))).code()));
+        actor.set(member);
+        assertThrows(AccessDeniedException.class,() -> operations.get(op.id()));
+        assertThrows(CrmException.class,() -> operations.byKey(f.project().id(),op.idempotencyKey()));
+        assertTrue(operations.list(f.project().id(),true,false,null).items().isEmpty());
+        assertThrows(AccessDeniedException.class,() -> operations.list(f.project().id(),false,false,null));
+        jdbc.update("update dbo.employeeworkspace set issupervisor=true where employeeid=? and workspaceid=?",member,workspace);
+        assertEquals(op.id(),operations.get(op.id()).id());
+        actor.set(target); assertThrows(AccessDeniedException.class,() -> operations.get(op.id()));
+    }
+    @Test void operationConcurrencyGivesOnlyOneWorkerTheDurableEffectPermit() throws Exception {
+        var f=operationFixture(); var op=operations.create(f.project().id(),UUID.randomUUID(),f.request());
+        var entered=new CountDownLatch(1); var release=new CountDownLatch(1);
+        provider.commandResult=command -> { assertEquals("IN_FLIGHT",jdbc.queryForObject("select status from crm.operation where id=?",String.class,command.operationId())); entered.countDown(); await(release); return new CrmCommandResult(CrmCommandResult.Outcome.CONFIRMED,"record"); };
+        var pool=Executors.newFixedThreadPool(2);
+        try {
+            var a=pool.submit(() -> operations.run(op.id())); assertTrue(entered.await(5,TimeUnit.SECONDS));
+            var b=pool.submit(() -> operations.run(op.id())); b.get(5,TimeUnit.SECONDS); release.countDown(); a.get(5,TimeUnit.SECONDS);
+            assertEquals(1,provider.effects.get()); assertEquals("CONFIRMED",operations.get(op.id()).status());
+        } finally { release.countDown(); pool.shutdownNow(); }
+    }
+    @Test void operationUnverifiedReconciliationNeverTreatsAbsenceAsRejected() throws Exception {
+        var f=operationFixture(); var op=operations.create(f.project().id(),UUID.randomUUID(),f.request());
+        provider.commandResult=command -> new CrmCommandResult(CrmCommandResult.Outcome.UNKNOWN,null); operations.run(op.id());
+        assertEquals("UNKNOWN",operations.reconcile(op.id()).status()); assertEquals(1,provider.effects.get());
+        assertEquals(1,operations.list(f.project().id(),true,true,null).items().size());
+    }
+    @Test void operationMovePreservesTheFullSnapshotAndUnknownCancellationBlocksAnotherCommand() throws Exception {
+        var f=operationFixture();
+        var source=appointment("operation-target",0,10,"operation-client");
+        var single=new CrmAppointment(source.externalId(),source.kind(),source.client(),source.clientSnapshot(),source.localStart(),source.localEnd(),source.appointmentState(),source.confirmationState(),source.attendanceState(),source.providerState(),source.comment(),
+                List.of(source.services().getFirst()),List.of(source.masters().getFirst()),true,true,source.presentFields(),source.source());
+        loadAppointments(f.project().id(),CrmReadResult.Completeness.COMPLETE,List.of(single));
+        var target=appointments(f.project().id()).items().getFirst();
+        jdbc.update("update crm.appointment set financialsnapshot='{\"amount\":123456789.1234}'::jsonb where id=?",target.id());
+        var move=new CrmChangeAppointmentRequest(f.project().contextVersion(),f.project().zoneRevision(),target.version(),f.request().localStart(),null);
+        var op=operations.change(target.id(),UUID.randomUUID(),move,false);
+        var cancel=new CrmChangeAppointmentRequest(move.contextVersion(),move.zoneRevision(),move.expectedVersion(),null,"Reason");
+        assertEquals("CRM_OPERATION_CONFLICT",assertThrows(CrmException.class,() -> operations.change(target.id(),UUID.randomUUID(),cancel,true)).code());
+        provider.commandResult=command -> {
+            assertEquals(CrmCommand.Type.MOVE,command.type()); assertEquals("m1",command.externalMasterId());
+            assertTrue(command.preservedSnapshot().contains("123456789.1234")); assertTrue(command.preservedSnapshot().contains("Original note"));
+            assertEquals(new BigDecimal("1200"),command.offers().getFirst().price());
+            return new CrmCommandResult(CrmCommandResult.Outcome.CONFIRMED,"operation-target");
+        };
+        operations.run(op.id()); assertEquals("CONFIRMED",operations.get(op.id()).status());
+        int originalScopes=jdbc.queryForObject("select count(*) from crm.syncstate where projectid=? and dataset='APPOINTMENTS' and statekind='SCOPE'",Integer.class,f.project().id());
+        operations.queueConfirmedReads();
+        assertEquals(originalScopes+3,jdbc.queryForObject("select count(*) from crm.syncstate where projectid=? and dataset='APPOINTMENTS' and statekind='SCOPE'",Integer.class,f.project().id()));
+        operations.queueConfirmedReads();
+        assertEquals(originalScopes+3,jdbc.queryForObject("select count(*) from crm.syncstate where projectid=? and dataset='APPOINTMENTS' and statekind='SCOPE'",Integer.class,f.project().id()));
+        var cancelled=operations.change(target.id(),UUID.randomUUID(),cancel,true);
+        provider.commandResult=command -> new CrmCommandResult(CrmCommandResult.Outcome.CONFIRMED,"different-target");
+        operations.run(cancelled.id()); assertEquals("UNKNOWN",operations.get(cancelled.id()).status());
+        assertEquals("CRM_OPERATION_CONFLICT",assertThrows(CrmException.class,() -> operations.change(target.id(),UUID.randomUUID(),cancel,true)).code());
+    }
+    @Test void operationConfirmedInAnOldContextDoesNotScheduleReadsUnderTheNewBinding() throws Exception {
+        var f=operationFixture(); var op=operations.create(f.project().id(),UUID.randomUUID(),f.request()); operations.run(op.id());
+        jdbc.update("update crm.project set contextversion=contextversion+1 where id=?",f.project().id());
+        operations.queueConfirmedReads();
+        assertEquals("CONFIRMED",operations.get(op.id()).status());
+        assertEquals(0,jdbc.queryForObject("select count(*) from crm.syncstate where projectid=? and dataset='APPOINTMENTS'",Integer.class,f.project().id()));
+    }
+    @Test void operationListUsesScopedStablePaginationAndNeverIncludesAnotherInitiator() throws Exception {
+        var f=operationFixture();
+        for (int i=0;i<52;i++) operations.create(f.project().id(),UUID.randomUUID(),f.request());
+        var first=operations.list(f.project().id(),true,true,null); assertEquals(50,first.items().size()); assertTrue(first.hasMore());
+        var next=operations.list(f.project().id(),true,true,first.nextCursor()); assertEquals(2,next.items().size()); assertFalse(next.hasMore());
+        var ids=new HashSet<UUID>(); first.items().forEach(row -> assertTrue(ids.add(row.id()))); next.items().forEach(row -> assertTrue(ids.add(row.id())));
+        assertThrows(CrmException.class,() -> operations.list(f.project().id(),true,false,first.nextCursor()));
+        actor.set(member); assertThrows(CrmException.class,() -> operations.list(f.project().id(),true,true,first.nextCursor()));
+    }
+    @Test void operationReservationCheckpointSurvivesLostSaveAndFeedsReconciliation() throws Exception {
+        var f=operationFixture();provider.reserveReference="700001";
+        provider.commandResult=command->{throw new CrmFailure(CrmFailure.Code.TEMPORARY_FAILURE);};
+        var operation=operations.create(f.project().id(),UUID.randomUUID(),f.request());operations.run(operation.id());
+        var uncertain=operations.get(operation.id());assertEquals("UNKNOWN",uncertain.status());assertEquals("700001",uncertain.externalAppointmentId());
+        operations.run(operation.id());assertEquals(1,provider.effects.get());
+        provider.reconcileResult=command->{assertEquals("700001",command.externalAppointmentId());return new CrmCommandResult(CrmCommandResult.Outcome.CONFIRMED,"700001");};
+        assertEquals("CONFIRMED",operations.reconcile(operation.id()).status());assertEquals(1,provider.effects.get());
+        operations.queueConfirmedReads();
+        assertEquals(1,jdbc.queryForObject("select count(*) from crm.syncstate where projectid=? and scope->>'externalAppointmentId'='700001'",Integer.class,f.project().id()));
+    }
+    @Test void operationInvalidReservationCheckpointStopsTheFinalSave() throws Exception {
+        var f=operationFixture();provider.reserveReference="invalid";
+        var operation=operations.create(f.project().id(),UUID.randomUUID(),f.request());operations.run(operation.id());
+        assertEquals("UNKNOWN",operations.get(operation.id()).status());assertEquals(0,provider.effects.get());
+        assertNull(operations.get(operation.id()).externalAppointmentId());
+    }
+    @Test void operationCannotReplaceTheCheckpointReferenceWithAnotherCreatedObject() throws Exception {
+        var f=operationFixture();provider.reserveReference="700001";
+        provider.commandResult=command->new CrmCommandResult(CrmCommandResult.Outcome.CONFIRMED,"700002");
+        var op=operations.create(f.project().id(),UUID.randomUUID(),f.request());operations.run(op.id());
+        var result=operations.get(op.id());assertEquals("UNKNOWN",result.status());assertEquals("700001",result.externalAppointmentId());assertEquals("CRM_INVALID_RESPONSE",result.errorCode());
+    }
+    @Test void operationHistoricalConnectionCannotBeDeletedAfterProjectRebinding() throws Exception {
+        var f=operationFixture();operations.create(f.project().id(),UUID.randomUUID(),f.request());
+        var replacement=service.createConnection(new CreateCrmConnectionRequest(CrmType.DIKIDI,"79990000001","test-only"));
+        jdbc.update("update crm.project set connectionid=? where id=?",replacement.id(),f.project().id());
+        var historical=service.connection(f.project().connectionId());
+        assertEquals("CRM_RESOURCE_IN_USE",assertThrows(CrmException.class,()->service.deleteConnection(historical.id(),historical.version())).code());
+    }
+    @Test void operationCancelledObjectIsRefreshedByIdWhenTheDayListNoLongerContainsIt() throws Exception {
+        var f=operationFixture();var original=appointment("cancel-target",0,10,"operation-client");
+        loadAppointments(f.project().id(),CrmReadResult.Completeness.COMPLETE,List.of(original));
+        var target=appointments(f.project().id()).items().getFirst();
+        var request=new CrmChangeAppointmentRequest(f.project().contextVersion(),f.project().zoneRevision(),target.version(),null,null);
+        var op=operations.change(target.id(),UUID.randomUUID(),request,true);operations.run(op.id());operations.queueConfirmedReads();
+        var cancelled=new CrmAppointment(original.externalId(),original.kind(),original.client(),original.clientSnapshot(),original.localStart(),original.localEnd(),"CANCELLED",original.confirmationState(),original.attendanceState(),Map.of("status_id","2","deleted_datetime","2026-11-01 09:00:00"),original.comment(),original.services(),original.masters(),true,true,original.presentFields(),original.source());
+        provider.appointmentsReader=read->new CrmAppointmentPage("cancel-target".equals(read.query().externalAppointmentId())?List.of(cancelled):List.of(),null,Instant.now(),CrmReadResult.Completeness.UNKNOWN,read.project(),read.query());
+        // Run the saved scopes as the real restart poll would; exact-object observation owns the cancelled state.
+        for(int i=0;i<4;i++){appointmentSync.refreshDue(1000);awaitAppointments();}
+        assertEquals("CANCELLED",appointmentReader.appointment(target.id()).appointmentState());
+        assertEquals(1,jdbc.queryForObject("select count(*) from crm.appointment where projectid=?",Integer.class,f.project().id()));
+        assertEquals(1,jdbc.queryForObject("select count(*) from crm.syncstate where projectid=? and jsonb_exists(scope,'externalAppointmentId') and jsonb_exists(scope,'observationCompletedAt')",Integer.class,f.project().id()));
+    }
+    @Test void operationObservationIsCommittedBeforeEffectAndSurvivesReconciliation() throws Exception {
+        var f=operationFixture();loadAppointments(f.project().id(),CrmReadResult.Completeness.COMPLETE,List.of(appointment("snapshot-target",0,10,"operation-client")));
+        var target=appointments(f.project().id()).items().getFirst();
+        var op=operations.change(target.id(),UUID.randomUUID(),new CrmChangeAppointmentRequest(f.project().contextVersion(),f.project().zoneRevision(),target.version(),null,null),true);
+        provider.observedSnapshot="{\"id\":\"snapshot-target\",\"info\":{\"payment\":{\"document_id\":\"700\"}}}";
+        provider.commandResult=command->{
+            assertEquals("700",jdbc.queryForObject("select (payload->>'preservedSnapshot')::jsonb->'providerBefore'->'info'->'payment'->>'document_id' from crm.operation where id=?",String.class,op.id()));
+            throw new CrmFailure(CrmFailure.Code.TEMPORARY_FAILURE);
+        };
+        operations.run(op.id());assertEquals("UNKNOWN",operations.get(op.id()).status());assertEquals(1,provider.effects.get());
+        provider.reconcileResult=command->{
+            var snapshot=tools.jackson.databind.json.JsonMapper.builder().build().readTree(command.preservedSnapshot());
+            assertEquals("700",snapshot.path("providerBefore").path("info").path("payment").path("document_id").asString());
+            assertTrue(snapshot.path("appointment").has("startlocal"));
+            return new CrmCommandResult(CrmCommandResult.Outcome.CONFIRMED,command.externalAppointmentId());
+        };
+        assertEquals("CONFIRMED",operations.reconcile(op.id()).status());assertEquals(1,provider.effects.get());
+    }
+    @Test void invalidObservationCannotStartAnExistingAppointmentEffect() throws Exception {
+        var f=operationFixture();loadAppointments(f.project().id(),CrmReadResult.Completeness.COMPLETE,List.of(appointment("invalid-snapshot",0,10,"operation-client")));
+        var target=appointments(f.project().id()).items().getFirst();
+        var op=operations.change(target.id(),UUID.randomUUID(),new CrmChangeAppointmentRequest(f.project().contextVersion(),f.project().zoneRevision(),target.version(),null,null),true);
+        provider.observedSnapshot="[]";operations.run(op.id());
+        assertEquals("UNKNOWN",operations.get(op.id()).status());assertEquals(0,provider.effects.get());
+    }
+    @Test void exactObjectTaskRetriesFailuresAndEmptyReadsThenStopsUntilAnotherOperation() throws Exception {
+        var f=operationFixture();var op=operations.create(f.project().id(),UUID.randomUUID(),f.request());operations.run(op.id());operations.queueConfirmedReads();
+        jdbc.update("update crm.syncstate set lastattemptat=clock_timestamp()+interval '1 day' where projectid=? and not jsonb_exists(scope,'externalAppointmentId')",f.project().id());
+        var exactReads=new AtomicInteger();
+        provider.appointmentsReader=read->{
+            assertEquals("created-record",read.query().externalAppointmentId());
+            int call=exactReads.incrementAndGet();if(call==1)throw new CrmFailure(CrmFailure.Code.TEMPORARY_FAILURE);
+            int day=(int)java.time.temporal.ChronoUnit.DAYS.between(SCHEDULE_DAY,read.query().dateFrom());
+            return new CrmAppointmentPage(call==2?List.of():List.of(appointment("created-record",day,12,"operation-client")),null,Instant.now(),CrmReadResult.Completeness.UNKNOWN,read.project(),read.query());
+        };
+        for(int i=1;i<=3;i++){
+            jdbc.update("update crm.syncstate set lastattemptat=clock_timestamp()-interval '1 day' where projectid=? and jsonb_exists(scope,'externalAppointmentId')",f.project().id());
+            assertEquals(1,appointmentSync.refreshDue(1000));awaitAppointments();
+            assertEquals(i,exactReads.get());
+            assertEquals(i==3?1:0,jdbc.queryForObject("select count(*) from crm.syncstate where projectid=? and jsonb_exists(scope,'observationCompletedAt')",Integer.class,f.project().id()));
+        }
+        jdbc.update("update crm.syncstate set lastattemptat=clock_timestamp()-interval '1 day' where projectid=? and jsonb_exists(scope,'externalAppointmentId')",f.project().id());
+        assertEquals(0,appointmentSync.refreshDue(1000));assertEquals(3,exactReads.get());
+        var next=operations.create(f.project().id(),UUID.randomUUID(),f.request());operations.run(next.id());operations.queueConfirmedReads();
+        assertEquals(0,jdbc.queryForObject("select count(*) from crm.syncstate where projectid=? and jsonb_exists(scope,'observationCompletedAt')",Integer.class,f.project().id()));
+    }
+    private CrmAppointmentDto movableAppointment(OperationFixture fixture) throws Exception {
+        var source=appointment("move-availability",0,10,"operation-client");
+        String master=tx.execute(status -> em.find(CrmMasterEntity.class,fixture.request().masterId()).getExternalId());
+        var service=source.services().getFirst();
+        var historical=new CrmAppointmentService(service.externalServiceId(),service.externalLineId(),service.displayName(),service.durationSeconds(),service.price(),null);
+        var row=new CrmAppointment(source.externalId(),source.kind(),source.client(),source.clientSnapshot(),source.localStart(),source.localEnd(),source.appointmentState(),source.confirmationState(),source.attendanceState(),source.providerState(),source.comment(),
+                List.of(historical),List.of(new CrmAppointmentMaster(master,"Historical master",source.localStart(),source.localEnd(),3600L,null,null)),true,true,source.presentFields(),source.source());
+        loadAppointments(fixture.project().id(),CrmReadResult.Completeness.COMPLETE,List.of(row));
+        return appointments(fixture.project().id()).items().getFirst();
+    }
+    @Test void operationMoveAvailabilityUsesHistoricalServicesWithoutCreatingAnOperation() throws Exception {
+        var f=operationFixture();var row=movableAppointment(f);actor.set(member);
+        var request=new CrmMoveAvailabilityRequest(f.project().contextVersion(),f.project().zoneRevision(),row.version(),SCHEDULE_DAY.plusDays(1));
+        var result=operations.moveAvailability(row.id(),request);
+        assertEquals(f.request().masterId(),result.masterId());assertEquals(List.of(request.date().atTime(12,0)),result.starts());
+        assertEquals(List.of("s1"),provider.availabilityServiceIds);
+        assertEquals(0,jdbc.queryForObject("select count(*) from crm.operation",Integer.class));assertEquals(0,provider.effects.get());
+        assertEquals(row.version(),appointmentReader.appointment(row.id()).version());
+    }
+    @Test void operationMoveAvailabilityRejectsStaleVersionsAndUnauthorizedReadersBeforeExternalRead() throws Exception {
+        var f=operationFixture();var row=movableAppointment(f);var calls=new AtomicInteger();provider.afterAvailability=calls::incrementAndGet;
+        var valid=new CrmMoveAvailabilityRequest(f.project().contextVersion(),f.project().zoneRevision(),row.version(),SCHEDULE_DAY);
+        assertEquals("CRM_VERSION_CONFLICT",assertThrows(CrmException.class,()->operations.moveAvailability(row.id(),new CrmMoveAvailabilityRequest(valid.contextVersion(),valid.zoneRevision(),row.version()+1,SCHEDULE_DAY))).code());
+        actor.set(target);assertThrows(AccessDeniedException.class,()->operations.moveAvailability(row.id(),valid));
+        actor.set(admin);jdbc.update("update crm.appointment set sourceattributes=sourceattributes || '{\"servicesComplete\":false}'::jsonb where id=?",row.id());
+        assertEquals("CRM_CAPABILITY_UNVERIFIED",assertThrows(CrmException.class,()->operations.moveAvailability(row.id(),valid)).code());assertEquals(0,calls.get());
+    }
+    @Test void operationMoveAvailabilityDiscardsAResponseWhenTheAppointmentChangedDuringTheRead() throws Exception {
+        var f=operationFixture();var row=movableAppointment(f);
+        provider.afterAvailability=()->jdbc.update("update crm.appointment set version=version+1 where id=?",row.id());
+        var request=new CrmMoveAvailabilityRequest(f.project().contextVersion(),f.project().zoneRevision(),row.version(),SCHEDULE_DAY);
+        assertEquals("CRM_VERSION_CONFLICT",assertThrows(CrmException.class,()->operations.moveAvailability(row.id(),request)).code());
+        assertEquals(0,provider.effects.get());assertEquals(0,jdbc.queryForObject("select count(*) from crm.operation",Integer.class));
+    }
     private static final class FakeProvider implements CrmProvider {
+        volatile String reserveReference;
+        volatile String observedSnapshot;
+        @Override public CrmCommandResult command(CrmAccess access,String project,CrmCommand command,Instant deadline,CrmCommandPort.Progress progress) {
+            if(reserveReference!=null)progress.reserved(reserveReference);
+            if(observedSnapshot!=null)progress.observed(observedSnapshot);
+            return command(access,project,command,deadline);
+        }
+        volatile Set<CrmCommand.Type> commands=Set.of();
+        final AtomicInteger effects=new AtomicInteger();
+        volatile Runnable afterAvailability=() -> {};
+        volatile List<String> availabilityServiceIds=List.of();
+        volatile Function<CrmCommand,CrmCommandResult> commandResult=command -> new CrmCommandResult(CrmCommandResult.Outcome.CONFIRMED,command.externalAppointmentId()==null ? "created-record" : command.externalAppointmentId());
+        volatile Function<CrmCommand,CrmCommandResult> reconcileResult=command -> new CrmCommandResult(CrmCommandResult.Outcome.UNKNOWN,null);
+        @Override public Set<CrmCommand.Type> commandCapabilities() { return commands; }
+        @Override public CrmAvailability availability(CrmAccess access,String project,String master,List<String> services,LocalDate day,Instant deadline) {
+            assertFalse(TransactionSynchronizationManager.isActualTransactionActive()); availabilityServiceIds=List.copyOf(services);afterAvailability.run();
+            return new CrmAvailability(project,master,services,day,List.of(day.atTime(12,0)),Instant.now());
+        }
+        @Override public CrmCommandResult command(CrmAccess access,String project,CrmCommand command,Instant deadline) {
+            assertFalse(TransactionSynchronizationManager.isActualTransactionActive()); effects.incrementAndGet(); return commandResult.apply(command);
+        }
+        @Override public CrmCommandResult reconcile(CrmAccess access,String project,CrmCommand command,Instant deadline) {
+            assertFalse(TransactionSynchronizationManager.isActualTransactionActive()); return reconcileResult.apply(command);
+        }
         volatile java.util.function.Supplier<List<CrmProjectInfo>> projectLister=List::of;
         public List<CrmProjectInfo> listProjects(CrmAccess access) {
             assertFalse(TransactionSynchronizationManager.isActualTransactionActive()); return projectLister.get();
@@ -1636,7 +1934,7 @@ class CrmFoundationIntegrationTest {
     @Test void hibernateUpdatePreservesExistingDboAndCrmAndNamesHaveNoUnderscores() throws Exception {
         var connection = connection(); var project = bind(connection); awaitIdle();
         var mapped = first(project.id()); service.linkEmployee(mapped.id(), target, mapped.version());
-        assertEquals(Set.of("connection","project","master","service","masterservice","syncstate","client","workinterval","appointment","appointmentservice","appointmentmaster"),
+        assertEquals(Set.of("connection","project","master","service","masterservice","syncstate","client","workinterval","appointment","appointmentservice","appointmentmaster","operation"),
                 new HashSet<>(jdbc.queryForList("select tablename from pg_tables where schemaname='crm'",String.class)));
         for (String sql : List.of("select column_name from information_schema.columns where table_schema='crm'",
                 "select indexname from pg_indexes where schemaname='crm'",
@@ -1645,6 +1943,7 @@ class CrmFoundationIntegrationTest {
         sync.close(); assertTrue(((ThreadPoolExecutor)ReflectionTestUtils.getField(sync,"executor")).awaitTermination(3,TimeUnit.SECONDS));
         factory.close(); StandardServiceRegistryBuilder.destroy(hibernate);
         // Reproduce the deployed 12.3 shape before allowing Hibernate to add 12.4.1.
+        jdbc.execute("drop table crm.operation");
         jdbc.execute("drop table crm.appointmentservice"); jdbc.execute("drop table crm.appointmentmaster"); jdbc.execute("drop table crm.appointment");
         jdbc.execute("alter table crm.connection drop column healthgeneration, drop column healthappliedgeneration");
         jdbc.execute("drop table crm.masterservice"); jdbc.execute("drop table crm.service");
@@ -1660,7 +1959,7 @@ class CrmFoundationIntegrationTest {
         assertEquals(1,jdbc.queryForObject("select count(*) from dbo.workspace where workspaceid=?",Integer.class,workspace));
         assertEquals(target, jdbc.queryForObject("select employeeid from crm.master where id=?", UUID.class, mapped.id()));
         assertEquals("initial one", jdbc.queryForObject("select displayname from crm.master where id=?", String.class, mapped.id()));
-        assertEquals(11, jdbc.queryForObject("select count(*) from pg_tables where schemaname='crm'", Integer.class));
+        assertEquals(12, jdbc.queryForObject("select count(*) from pg_tables where schemaname='crm'", Integer.class));
     }
     private static CrmClient externalClient(String id, String name) {
         return new CrmClient(id,"PROJECT",name,Map.of("phone","+7 (999) 123-45-67"),Map.of("source","R08"),Set.of("displayName","phone"));
@@ -2986,7 +3285,9 @@ class CrmFoundationIntegrationTest {
                 var metadata = new MetadataSources(registry);
                 for (var type : List.of(OrganizationEntity.class,UserEntity.class,EmployeeEntity.class,WorkspaceEntity.class,
                         CrmConnectionEntity.class,CrmProjectEntity.class,CrmMasterEntity.class,CrmServiceEntity.class,
-                        CrmMasterServiceEntity.class,CrmSyncStateEntity.class)) metadata.addAnnotatedClass(type);
+                        CrmMasterServiceEntity.class,CrmSyncStateEntity.class,EmployeeWorkspaceEntity.class,ClientEntity.class,ClientAccountEntity.class,
+                        CrmClientEntity.class,CrmWorkIntervalEntity.class,CrmAppointmentEntity.class,CrmAppointmentServiceEntity.class,
+                        CrmAppointmentMasterEntity.class,CrmOperationEntity.class)) metadata.addAnnotatedClass(type);
                 try (var orm = metadata.buildMetadata().buildSessionFactory()) { new CrmStorage(bootJdbc).initialize(); }
             } finally { StandardServiceRegistryBuilder.destroy(registry); }
             if (pass==0) {

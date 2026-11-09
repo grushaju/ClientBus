@@ -24,6 +24,9 @@ public class CrmDeletionGuard {
     public void employee(EmployeeEntity employee) {
         store.storage.requireReady();
         store.em.lock(employee, LockModeType.PESSIMISTIC_WRITE);
+        if (store.em.createQuery("select count(o) from CrmOperationEntity o where o.initiatorEmployee.id=:id",Long.class)
+                .setParameter("id",employee.getId()).getSingleResult()>0)
+            throw new CrmException(409,"CRM_RESOURCE_IN_USE","Сотрудник указан автором операций CRM. Отключите его учётную запись.");
         if (store.masters.existsByMappingUpdatedById(employee.getId()) || store.em.createQuery(
                 "select count(c) from CrmClientEntity c where c.mappingUpdatedBy.id=:id",Long.class)
                 .setParameter("id",employee.getId()).getSingleResult()>0)

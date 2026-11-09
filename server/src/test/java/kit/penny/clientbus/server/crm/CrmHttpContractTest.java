@@ -23,14 +23,50 @@ class CrmHttpContractTest {
     private CrmScheduleReader scheduleReader;
     private CrmAppointmentSync appointments;
     private CrmAppointmentReader appointmentReader;
+    private CrmOperationService operations;
     private MockMvc mvc;
     @BeforeEach void setup() {
         service = mock(CrmService.class); sync = mock(CrmCatalogSync.class); catalog = mock(CrmCatalogReader.class);
         clientSync = mock(CrmClientSync.class); clients = mock(CrmClientService.class);
         schedules=mock(CrmScheduleSync.class); scheduleReader=mock(CrmScheduleReader.class);
         appointments=mock(CrmAppointmentSync.class); appointmentReader=mock(CrmAppointmentReader.class);
-        mvc = MockMvcBuilders.standaloneSetup(new CrmController(service,sync,clientSync,schedules,appointments), new CrmCatalogController(catalog), new CrmClientController(clients),new CrmScheduleController(scheduleReader),new CrmAppointmentController(appointmentReader))
+        operations=mock(CrmOperationService.class);
+        mvc = MockMvcBuilders.standaloneSetup(new CrmController(service,sync,clientSync,schedules,appointments), new CrmCatalogController(catalog), new CrmClientController(clients),new CrmScheduleController(scheduleReader),new CrmAppointmentController(appointmentReader),new CrmOperationController(operations))
                 .setControllerAdvice(new CrmRequestErrors(), new GlobalExceptionHandler()).build();
+    }
+    @Test void appointmentCommandsRequireADurableKeyAndValidateTheirIntentBeforeAdmission() throws Exception {
+        UUID project=UUID.randomUUID(),key=UUID.randomUUID(),id=UUID.randomUUID();
+        var op=new CrmOperationDto(id,project,"CREATE",null,UUID.randomUUID(),key,1,1,"REQUESTED",java.time.Instant.now(),java.time.Instant.now(),null,null);
+        when(operations.create(eq(project),eq(key),any())).thenReturn(op);
+        String route="/api/crm/projects/"+project+"/appointments";
+        String body="{\"contextVersion\":1,\"zoneRevision\":1,\"crmClientId\":\""+UUID.randomUUID()+"\",\"masterId\":\""+UUID.randomUUID()+"\",\"offers\":[{\"id\":\""+UUID.randomUUID()+"\",\"expectedVersion\":0}],\"localStart\":\"2030-01-10T12:00:00\"}";
+        mvc.perform(post(route).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isBadRequest());
+        mvc.perform(post(route).header("Idempotency-Key","invalid").contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isBadRequest());
+        mvc.perform(post(route).header("Idempotency-Key",key).contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isBadRequest());
+        verifyNoInteractions(operations);
+        mvc.perform(post(route).header("Idempotency-Key",key).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isAccepted()).andExpect(jsonPath("$.id").value(id.toString())).andExpect(jsonPath("$.status").value("REQUESTED"));
+        verify(operations).create(eq(project),eq(key),any());
+        when(operations.create(eq(project),eq(key),any())).thenReturn(new CrmOperationDto(id,project,"CREATE",null,op.initiatorEmployeeId(),key,1,1,"CONFIRMED",op.createdAt(),op.updatedAt(),null,"external-id"));
+        mvc.perform(post(route).header("Idempotency-Key",key).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(id.toString())).andExpect(jsonPath("$.status").value("CONFIRMED"));
+    }
+    @Test void operationRecoveryEndpointsAreReadsAndReconciliationIsExplicit() throws Exception {
+        UUID project=UUID.randomUUID(),key=UUID.randomUUID(),id=UUID.randomUUID();
+        mvc.perform(get("/api/crm/projects/"+project+"/operations/by-key/"+key)).andExpect(status().isOk()); verify(operations).byKey(project,key);
+        mvc.perform(get("/api/crm/projects/"+project+"/operations").param("active","true")).andExpect(status().isOk()); verify(operations).list(project,true,true,null);
+        mvc.perform(get("/api/crm/operations/"+id)).andExpect(status().isOk()); verify(operations).get(id);
+        mvc.perform(post("/api/crm/operations/"+id+"/reconcile")).andExpect(status().isOk()); verify(operations).reconcile(id);
+        verifyNoMoreInteractions(operations);
+    }
+    @Test void moveAvailabilityRequiresAnAppointmentVersionAndUsesItsOwnReadEndpoint() throws Exception {
+        UUID id=UUID.randomUUID();String route="/api/crm/appointments/"+id+"/availability";
+        mvc.perform(post(route).contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isBadRequest());
+        mvc.perform(post(route).contentType(MediaType.APPLICATION_JSON).content("{\"contextVersion\":1,\"zoneRevision\":1,\"expectedVersion\":-1,\"date\":\"2030-01-10\"}")).andExpect(status().isBadRequest());
+        verifyNoInteractions(operations);
+        var request=new CrmMoveAvailabilityRequest(1L,1L,0L,java.time.LocalDate.of(2030,1,10));
+        mvc.perform(post(route).contentType(MediaType.APPLICATION_JSON).content("{\"contextVersion\":1,\"zoneRevision\":1,\"expectedVersion\":0,\"date\":\"2030-01-10\"}")).andExpect(status().isOk());
+        verify(operations).moveAvailability(id,request);verifyNoMoreInteractions(operations);
     }
     @Test void detachingAProjectRequiresAValidVersionAndIsASeparateOperationFromDisabling() throws Exception {
         UUID id=UUID.randomUUID(); String route="/api/crm/projects/"+id+"/detach";

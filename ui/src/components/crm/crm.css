@@ -114,6 +114,11 @@
 .crm-client-context .crm-panel { padding: 0; border: 0; }
 .crm-client-links li { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .crm-prewrap { white-space: pre-wrap; overflow-wrap: anywhere; }
+.crm-operation-panel { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 12px 0; }
+.crm-operation-panel > details[open] { flex-basis: 100%; }
+.crm-operation-panel > button { justify-self: start; }
+.crm-operation-panel summary { cursor: pointer; min-height: 32px; }
+.crm-operation { display: grid; gap: 8px; padding: 12px; border: 1px solid #dce3ee; border-radius: 8px; overflow-wrap: anywhere; }
 .crm-tabs { flex-wrap: wrap; gap: 14px; }
 .crm-label-mobile { display: none; }
 .conversation-client-panel .crm-client-context { margin: 0; padding: 14px; border-radius: 0; border: 0; border-bottom: 1px solid #e2e7ee; }
