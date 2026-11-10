@@ -112,7 +112,7 @@ public class CrmStore {
             default -> "CRM_" + error.code().name();
         };
         int status = switch (error.code()) {
-            case RATE_LIMITED -> 429;
+            case RATE_LIMITED,COOLDOWN -> 429;
             case TEMPORARY_FAILURE, CONNECTION_BUSY -> 503;
             case INVALID_RESPONSE, CONTEXT_MISMATCH -> 502;
             default -> 409;
@@ -121,10 +121,19 @@ public class CrmStore {
             case AUTH_REQUIRED -> "Не удалось авторизоваться в DIKIDI. Проверьте вход с номером и паролем, указанными в подключении.";
             case ACCESS_DENIED -> "У подключения нет доступа к выбранным данным DIKIDI.";
             case RATE_LIMITED -> "Лимит обращений к CRM. Повторите позже.";
+            case COOLDOWN -> "DIKIDI временно приостановил обращения. Повторите после указанного времени.";
             case CONNECTION_BUSY -> "Подключение CRM занято другим запросом. Повторите позже.";
+            case OBSERVATION_CONFLICT -> "Данные CRM изменились во время чтения. Повторите обновление периода.";
             case TEMPORARY_FAILURE -> "CRM временно недоступна.";
             case INVALID_RESPONSE, CONTEXT_MISMATCH -> "Ответ CRM не прошёл проверку.";
             default -> "Возможность CRM пока недоступна.";
-        });
+        },error.retryAt());
+    }
+    void requireNetwork(CrmProjectEntity project) {
+        var retry=registry.require(project.getProvider()).retryAt(project.getConnection().getId());
+        if(retry!=null&&retry.isAfter(java.time.Instant.now()))throw failure(new CrmFailure(CrmFailure.Code.COOLDOWN,retry,true));
+    }
+    kit.penny.clientbus.common.dto.crm.CrmSyncStateDto pauseState(CrmProjectEntity project,kit.penny.clientbus.common.dto.crm.CrmSyncStateDto state) {
+        return state.withRetryAt(registry.require(project.getProvider()).retryAt(project.getConnection().getId()));
     }
 }

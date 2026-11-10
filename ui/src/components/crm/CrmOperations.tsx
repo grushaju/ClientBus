@@ -57,6 +57,7 @@ function JournalRows({ project, own, active, cursor, page }: { project: api.CrmP
         <ul className="crm-appointments">{rows.map(row => <li className="crm-operation" key={row.id}>
             <strong>{types[row.type]} · {states[row.status]}</strong><small>{new Date(row.createdAt).toLocaleString('ru-RU')} · ID {row.id}</small>
             {row.externalAppointmentId && <span>Внешний ID: {row.externalAppointmentId}</span>}{row.errorCode && <span className="crm-error-text">{row.errorCode}</span>}
+            {row.retryAt && <span>Обращения доступны после {new Date(row.retryAt).toLocaleString('ru-RU')}</span>}
             {row.status === 'UNKNOWN' && <><p>Действие могло выполниться в DIKIDI. Сверка проверяет результат и не повторяет команду.</p><button type="button" className="ui-button ui-button-secondary" disabled={action.busy} onClick={() => void action.run(signal => api.reconcileCrmOperation(row.id, signal), () => data.reload())}>Сверить результат</button></>}
         </li>)}</ul>
         {cursor && <button type="button" className="ui-button ui-button-secondary" onClick={() => page(undefined)}>К началу журнала</button>}

@@ -14,7 +14,9 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(kit.penny.clientbus.server.crm.CrmException.class)
     public ResponseEntity<ErrorResponse> handleCrm(kit.penny.clientbus.server.crm.CrmException exception) {
-        return ResponseEntity.status(exception.status()).body(new ErrorResponse(exception.code(), exception.getMessage()));
+        var response=ResponseEntity.status(exception.status());
+        if(exception.retryAt()!=null)response.header("Retry-After",Long.toString(Math.max(1,java.time.Duration.between(java.time.Instant.now(),exception.retryAt()).toSeconds())));
+        return response.body(new ErrorResponse(exception.code(),exception.getMessage(),exception.retryAt()));
     }
 
     @ExceptionHandler(ConversationAssignmentConflictException.class)
@@ -106,7 +108,8 @@ public class GlobalExceptionHandler {
 
     public record ErrorResponse(
             String code,
-            String message
+            String message,java.time.Instant retryAt
     ) {
+        public ErrorResponse(String code,String message){this(code,message,null);}
     }
 }

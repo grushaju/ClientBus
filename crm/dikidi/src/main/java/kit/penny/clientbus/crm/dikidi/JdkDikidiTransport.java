@@ -39,6 +39,10 @@ final class JdkDikidiTransport implements DikidiTransport {
     }
     @Override public Response exchange(String method, URI uri, List<Map.Entry<String, String>> form,
                                        boolean ajax, String projectId, Duration timeout) {
+        return exchange(method,uri,form,ajax,projectId,timeout,new Observer(){});
+    }
+    @Override public Response exchange(String method,URI uri,List<Map.Entry<String,String>> form,
+            boolean ajax,String projectId,Duration timeout,Observer observer) {
         long deadline = System.nanoTime() + timeout.toNanos();
         for (int redirect = 0; redirect <= 4; redirect++) {
             destination(uri);
@@ -64,9 +68,22 @@ final class JdkDikidiTransport implements DikidiTransport {
             var request=builder.build();
             // Apply to every real send, including redirects after method/body conversion.
             policy.beforeRequest(method,uri,form);
-            CompletableFuture<HttpResponse<byte[]>> exchange = client.sendAsync(request, info -> new LimitedBody(maxBytes));
+            observer.beforeSend();
+            remaining=deadline-System.nanoTime();
+            if(remaining<=0)throw new CrmFailure(TEMPORARY_FAILURE,null,true);
+            request=builder.timeout(Duration.ofNanos(remaining)).build();
+            // Once handed to HttpClient absence of a network effect is no longer provable.
+            observer.dispatched();
+            var limitedResponse=new java.util.concurrent.atomic.AtomicBoolean();
+            CompletableFuture<HttpResponse<byte[]>> exchange = client.sendAsync(request, info -> {
+                // Persist a pause on headers, even if a 429 body is oversized or never completes.
+                if(info.statusCode()==429){limitedResponse.set(true);observer.response(new Response(429,"",info.headers().firstValue("Retry-After").orElse(null)));}
+                return new LimitedBody(maxBytes);
+            });
             try {
                 HttpResponse<byte[]> result = exchange.get(Math.max(1, TimeUnit.NANOSECONDS.toMillis(remaining)), TimeUnit.MILLISECONDS);
+                var response=new Response(result.statusCode(),result.statusCode()>=300&&result.statusCode()<400?"":new String(result.body(),StandardCharsets.UTF_8),result.headers().firstValue("Retry-After").orElse(null));
+                if(!limitedResponse.get())observer.response(response);
                 if (Set.of(301,302,303,307,308).contains(result.statusCode())) {
                     String location = result.headers().firstValue("Location").orElseThrow(() -> new CrmFailure(INVALID_RESPONSE));
                     URI next = uri.resolve(location); destination(next);
@@ -79,7 +96,7 @@ final class JdkDikidiTransport implements DikidiTransport {
                     }
                     continue;
                 }
-                return new Response(result.statusCode(), new String(result.body(), StandardCharsets.UTF_8));
+                return response;
             } catch (InterruptedException error) {
                 exchange.cancel(true);
                 Thread.currentThread().interrupt(); throw new CrmFailure(TEMPORARY_FAILURE);

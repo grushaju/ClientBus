@@ -36,8 +36,8 @@ export function CrmProjectAppointments({ project }: { project: api.CrmProject })
             {choices.map(([key, label, values]) => <label key={key}>{label}<select value={params.get(key) ?? ''} onChange={event => change({ [key]: event.target.value })}><option value="">Все</option>{values.map(value => <option key={value} value={value}>{crmStates[value]}</option>)}</select></label>)}
         </div>
         <p>Часовой пояс: {project.zoneId ?? 'не указан; показано исходное местное время'}</p>
-        {!clientId && <button type="button" className="ui-button ui-button-secondary" disabled={!crmPeriodValid(period) || action.busy || project.archived || !project.enabled || !project.zoneId || ['DISABLED', 'REAUTH_REQUIRED'].includes(project.connectionState)}
-            onClick={() => void action.run(signal => api.refreshCrmData(project.id, { dataset: 'APPOINTMENTS', ...period }, signal), () => setRefresh(value => value + 1))}>Обновить записи периода</button>}
+        {!clientId && <div className="crm-actions">{[false, true].map(force => <button key={String(force)} type="button" className="ui-button ui-button-secondary" disabled={!crmPeriodValid(period) || action.busy || project.archived || !project.enabled || !project.zoneId || ['DISABLED', 'REAUTH_REQUIRED'].includes(project.connectionState)}
+            onClick={() => void action.run(signal => api.refreshCrmData(project.id, { dataset: 'APPOINTMENTS', ...period, ...(force ? { force: true } : {}) }, signal), () => setRefresh(value => value + 1))}>{force ? 'Запросить свежие данные' : 'Обновить записи периода'}</button>)}</div>}
         {action.error && <p role="alert" className="crm-error">{action.error}</p>}
         {crmPeriodValid(period) && (clientId ? <CoreAppointments key={clientId + ':' + JSON.stringify(query)} clientId={clientId} project={project} query={query} /> : <CrmAppointmentRows key={project.id + ':' + JSON.stringify(query)} project={project} query={query} refresh={refresh} />)}
     </>

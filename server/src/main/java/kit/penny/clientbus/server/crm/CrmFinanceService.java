@@ -50,6 +50,7 @@ public class CrmFinanceService {
             store.em.refresh(row,LockModeType.PESSIMISTIC_WRITE);
             if (!"APPOINTMENT".equals(row.getKind())) throw CrmStore.failure(new CrmFailure(CrmFailure.Code.CAPABILITY_UNVERIFIED));
             var credentials=store.credentials(project.getConnection());
+            store.requireNetwork(project);
             var control=control(project,true); Instant now=now();
             if (control.getClaimUntil()!=null && control.getClaimUntil().isAfter(now))
                 throw new CrmException(429,"CRM_CONNECTION_BUSY","Финансы проекта уже обновляются.");
@@ -182,7 +183,7 @@ public class CrmFinanceService {
                 row.getFinancialObservedAt()==null ? "NEVER_LOADED" : current ? "CURRENT" : "STALE",row.getFinancialCompleteness(),
                 error,state==null ? 0 : state.getGeneration(),Map.of("appointmentId",row.getId().toString()),
                 state==null ? Map.of() : state.getSuccessfulCoverage(),state==null ? Map.of() : state.getAttemptCoverage());
-        return new CrmFinanceDto(row.getId(),row.getFinancialSnapshot(),row.getFinancialObservedAt(),row.getFinancialCompleteness(),sync);
+        return new CrmFinanceDto(row.getId(),row.getFinancialSnapshot(),row.getFinancialObservedAt(),row.getFinancialCompleteness(),store.pauseState(project,sync));
     }
     private static boolean scopeMatches(CrmAppointmentEntity row) {
         if (!(row.getFinancialSnapshot().get("scope") instanceof Map<?,?> scope)

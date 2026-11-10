@@ -5,7 +5,9 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 
-public record RefreshCrmRequest(@NotBlank String dataset, UUID masterId, LocalDate dateFrom, LocalDate dateTo, UUID crmClientId) {
+public record RefreshCrmRequest(@NotBlank String dataset,UUID masterId,LocalDate dateFrom,LocalDate dateTo,UUID crmClientId,Boolean force) {
+    public RefreshCrmRequest { force=Boolean.TRUE.equals(force); }
+    public RefreshCrmRequest(String dataset,UUID masterId,LocalDate from,LocalDate to,UUID client){this(dataset,masterId,from,to,client,false);}
     public RefreshCrmRequest(String dataset) { this(dataset, null, null, null, null); }
     public RefreshCrmRequest(String dataset,UUID masterId,LocalDate dateFrom,LocalDate dateTo) { this(dataset,masterId,dateFrom,dateTo,null); }
     @AssertTrue

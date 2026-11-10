@@ -140,6 +140,14 @@ class CrmHttpContractTest {
                 .andExpect(status().isOk()); verify(appointmentReader).history(eq(client),isNull(),any(),isNull());
         verifyNoInteractions(service,appointments,schedules,sync,clientSync);
     }
+    @Test void forceIsExplicitAndCooldownIncludesMachineReadableRetryTime() throws Exception {
+        UUID project=UUID.randomUUID();String endpoint="/api/crm/projects/"+project+"/refresh";
+        var from=java.time.LocalDate.of(2026,11,1);var retry=java.time.Instant.now().plusSeconds(120);
+        when(appointments.refresh(project,"APPOINTMENTS",null,from,from,true)).thenThrow(new CrmException(429,"CRM_COOLDOWN","Pause",retry));
+        mvc.perform(post(endpoint).contentType(MediaType.APPLICATION_JSON).content("{\"dataset\":\"APPOINTMENTS\",\"dateFrom\":\"2026-11-01\",\"dateTo\":\"2026-11-01\",\"force\":true}"))
+                .andExpect(status().isTooManyRequests()).andExpect(header().exists("Retry-After")).andExpect(jsonPath("$.retryAt").value(retry.toString()));
+        verify(service).requireProjectAccess(project);verify(appointments).refresh(project,"APPOINTMENTS",null,from,from,true);
+    }
     @Test void appointmentClientsAndExternalReferenceFiltersAreLocalValidatedReads() throws Exception {
         UUID project=UUID.randomUUID(); var from=java.time.LocalDate.parse("2026-11-01");
         String route="/api/crm/projects/"+project+"/appointment-clients";

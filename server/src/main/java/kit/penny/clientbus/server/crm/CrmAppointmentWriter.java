@@ -22,6 +22,10 @@ public class CrmAppointmentWriter {
             var existing=store.em.createQuery("from CrmAppointmentEntity where project.id=:project and externalId=:external",CrmAppointmentEntity.class)
                     .setParameter("project",project.getId()).setParameter("external",source.externalId()).getResultList();
             boolean created=existing.isEmpty(); var row=created ? new CrmAppointmentEntity() : existing.getFirst();
+            if(!created && page.observation()!=null) {
+                long epoch=number(row.getSourceAttributes().get("journalEpoch")),sequence=number(row.getSourceAttributes().get("journalSequence"));
+                if(epoch>page.observation().epoch() || epoch==page.observation().epoch()&&sequence>=page.observation().sequence())continue;
+            }
             if (created) { row.setProject(project); row.setExternalId(source.externalId()); }
             boolean authoritative="JOURNAL".equals(source.source());
             boolean replace=authoritative || !"JOURNAL".equals(row.getSourceAttributes().get("source"));
@@ -50,6 +54,7 @@ public class CrmAppointmentWriter {
                 if (row.getComment()==null && !journalFields(row).contains("comment") && source.presentFields().contains("comment")) row.setComment(source.comment());
             }
             var attributes=new LinkedHashMap<>(row.getSourceAttributes());
+            if(page.observation()!=null){attributes.put("journalEpoch",page.observation().epoch());attributes.put("journalSequence",page.observation().sequence());attributes.put("journalDay",page.observation().day().toString());}
             if (replace) {
                 if (authoritative) {
                     var observed=journalFields(row); observed.addAll(source.presentFields());
@@ -75,6 +80,7 @@ public class CrmAppointmentWriter {
         if (fields instanceof Collection<?> values) for (Object value : values) if (value instanceof String name) result.add(name);
         return result;
     }
+    private static long number(Object value){return value instanceof Number number?number.longValue():-1;}
     private CrmClientEntity client(UUID project,CrmClientReference ref) {
         return store.em.createQuery("from CrmClientEntity where project.id=:project and identityKind=:kind and externalId=:external",CrmClientEntity.class)
                 .setParameter("project",project).setParameter("kind",ref.identityKind()).setParameter("external",ref.externalId()).getResultList().stream().findFirst().orElse(null);

@@ -1,4 +1,4 @@
-import { apiFetch } from './apiClient'
+import { apiFetch, ApiError } from './apiClient'
 
 export type CrmType = 'DIKIDI' | 'AMO' | 'BITRIX'
 export interface CrmConnection {
@@ -20,6 +20,7 @@ export interface CrmMaster {
     mappingReason: string | null; lastObservedAt: string | null; observationState?: 'OBSERVED' | 'NOT_OBSERVED' | 'UNKNOWN'; version: number
 }
 export interface CrmSyncState {
+    retryAt?: string | null
     dataset: string; status: string; lastAttemptAt: string | null; lastSuccessAt: string | null
     freshness: 'NEVER_LOADED' | 'CURRENT' | 'STALE'; completeness: string; errorCode: string | null; generation: number
     attemptCoverage?: { projectErrorCode?: string }
@@ -51,6 +52,7 @@ export interface CrmPeriod { dateFrom: string; dateTo: string }
 export interface CrmAppointmentQuery extends CrmPeriod { masterId?: string; crmClientId?: string; externalClientId?: string; workspaceId?: string; kind?: string; appointmentState?: string; confirmationState?: string; attendanceState?: string; paymentState?: string; cursor?: string }
 export interface CrmFinance { appointmentId: string; snapshot: Record<string, unknown> | null; observedAt: string | null; completeness: string; sync: CrmSyncState }
 export interface CrmOperation {
+    retryAt?: string | null
     id: string; projectId: string; type: 'CREATE' | 'MOVE' | 'CANCEL'; appointmentId: string | null
     initiatorEmployeeId: string; idempotencyKey: string; contextVersion: number; zoneRevision: number
     status: 'REQUESTED' | 'IN_FLIGHT' | 'CONFIRMED' | 'REJECTED' | 'UNKNOWN'
@@ -94,7 +96,7 @@ export const linkCrmClient = (row: CrmClient, clientId: string | null, signal?: 
 export const createLinkedCrmClient = (row: CrmClient, value: { firstName: string; lastName: string; phoneList: string[] }, signal?: AbortSignal) =>
     json<CrmClient>(`/api/crm/clients/${path(row.id)}/client`, body('POST', { ...value, expectedVersion: row.version }, signal))
 export const getClientCrmLinks = (id: string, workspaceId?: string, signal?: AbortSignal) => json<CrmClientLink[]>(`/api/crm/clientbus-clients/${path(id)}/links?${queryString({ workspaceId })}`, { signal })
-export const refreshCrmData = (id: string, value: { dataset: string; masterId?: string; crmClientId?: string } & Partial<CrmPeriod>, signal?: AbortSignal) =>
+export const refreshCrmData = (id: string, value: { dataset: string; masterId?: string; crmClientId?: string; force?: boolean } & Partial<CrmPeriod>, signal?: AbortSignal) =>
     json<CrmSyncState>(`/api/crm/projects/${path(id)}/refresh`, body('POST', value, signal))
 export const getCrmWorkIntervals = (id: string, query: CrmPeriod & { masterId: string; cursor?: string }, signal?: AbortSignal) =>
     json<CrmReadPage<CrmWorkInterval>>(`/api/crm/projects/${path(id)}/work-intervals?${queryString(query)}`, { signal })
@@ -184,6 +186,7 @@ export const crmConnectionLabel = (state: CrmConnection['status']) => ({
     DEGRADED: 'Ошибка подключения', DISABLED: 'Отключено',
 }[state])
 export function crmError(error: unknown): string {
-    return error instanceof Error ? error.message : 'Не удалось выполнить действие CRM.'
+    const message = error instanceof Error ? error.message : 'Не удалось выполнить действие CRM.'
+    return error instanceof ApiError && error.retryAt ? `${message} Повторить после ${new Date(error.retryAt).toLocaleString('ru-RU')}.` : message
 }
 export const crmAccountName = (connection: CrmConnection) => connection.displayName || `${connection.provider} · ${connection.loginHint}`

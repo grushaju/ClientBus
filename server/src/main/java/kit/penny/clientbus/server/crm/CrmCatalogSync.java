@@ -64,7 +64,7 @@ public class CrmCatalogSync {
                         where legacy.organizationid=p.organizationid and legacyuser.isenabled and legacyuser.role='SUPER_ADMIN'
                         order by legacy.employeeid limit 1)) and e.organizationid=p.organizationid
                     join dbo.users u on u.userid=e.userid
-                where p.enabled and c.status not in ('DISABLED','REAUTH_REQUIRED') and u.isenabled
+                where p.enabled and c.status not in ('DISABLED','REAUTH_REQUIRED') and (c.requestnotbefore is null or c.requestnotbefore<=clock_timestamp()) and u.isenabled
                     and (u.role='SUPER_ADMIN' or u.role='EMPLOYEE' and exists (
                         select 1 from dbo.employeeworkspace ew where ew.employeeid=e.employeeid and ew.workspaceid=p.workspaceid))
                     and (s.lastattemptat is null or s.lastattemptat<=clock_timestamp()-(
@@ -90,7 +90,7 @@ public class CrmCatalogSync {
             store.em.refresh(project, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
             store.guard.workspace(actor, project.getWorkspace().getId());
             if (!project.isEnabled()) throw new CrmException(409, "CRM_CONFIGURATION_REQUIRED", "Проект CRM отключён.");
-            store.credentials(project.getConnection()); registry.require(project.getProvider());
+            store.requireNetwork(project);store.credentials(project.getConnection()); registry.require(project.getProvider());
             if (intervalMs > 0 && (project.getConnection().getStatus() == CrmConnectionStatus.REAUTH_REQUIRED
                     || Boolean.TRUE.equals(jdbc.queryForObject("""
                         select exists(select 1 from crm.syncstate where projectid=? and dataset='CATALOG' and scopekey='ALL'
@@ -269,16 +269,16 @@ public class CrmCatalogSync {
                         completeness, code, rs.getLong("generation"), Map.of(), Map.of(),
                         projectError == null ? Map.of() : Map.of("projectErrorCode", projectError));
             }, projectId, dataset);
-            if (rows.isEmpty()) return new CrmSyncStateDto(dataset, "IDLE", null, null, "NEVER_LOADED", "UNKNOWN", null, 0);
+            if (rows.isEmpty()) return store.pauseState(project,new CrmSyncStateDto(dataset, "IDLE", null, null, "NEVER_LOADED", "UNKNOWN", null, 0));
             var latest = rows.getFirst();
             if ("MASTERS".equals(dataset) && rows.size() == 2 && latest.lastSuccessAt() == null && rows.getLast().lastSuccessAt() != null) {
                 // The catalog attempt owns execution/error state, while the old master observation
                 // remains valid history. Never lend that observation to services or CATALOG.
                 var legacy = rows.getLast();
-                return new CrmSyncStateDto(dataset, latest.status(), latest.lastAttemptAt(), legacy.lastSuccessAt(), "STALE",
-                        legacy.completeness(), latest.errorCode(), latest.generation());
+                return store.pauseState(project,new CrmSyncStateDto(dataset, latest.status(), latest.lastAttemptAt(), legacy.lastSuccessAt(), "STALE",
+                        legacy.completeness(), latest.errorCode(), latest.generation()));
             }
-            return latest;
+            return store.pauseState(project,latest);
         });
     }
     public long revision(UUID projectId) {

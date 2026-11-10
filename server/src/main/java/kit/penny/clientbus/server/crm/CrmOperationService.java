@@ -161,7 +161,7 @@ public class CrmOperationService {
     void run(UUID id) {
         Prepared initial;
         try { initial=tx.execute(status -> prepare(id,false)); }
-        catch (RuntimeException failure) { reject(id,code(failure)); return; }
+        catch (RuntimeException failure) { reject(id,code(failure),retryAt(failure)); return; }
         if (initial==null) return;
         try (var access=initial.credentials().open(cipher)) {
             var command=initial.command(); var provider=registry.require(initial.credentials().provider);
@@ -183,7 +183,7 @@ public class CrmOperationService {
                         prepared.command().externalMasterId(),prepared.command().offers(),prepared.command().localStart().toLocalDate());
                 return prepared;
             }); }
-            catch (RuntimeException failure) { reject(id,code(failure)); return; }
+            catch (RuntimeException failure) { reject(id,code(failure),retryAt(failure)); return; }
             if (acquired==null) return;
             // After this checkpoint ALL failures are uncertain unless the adapter proves rejection.
             try {
@@ -196,7 +196,7 @@ public class CrmOperationService {
                 });
                 finish(id,acquired.command(),result,null);
             } catch (RuntimeException failure) { finish(id,acquired.command(),null,code(failure)); }
-        } catch (RuntimeException failure) { reject(id,code(failure)); }
+        } catch (RuntimeException failure) { reject(id,code(failure),retryAt(failure)); }
     }
     public CrmOperationDto reconcile(UUID id) {
         store.storage.requireReady();
@@ -222,11 +222,13 @@ public class CrmOperationService {
     }
     List<UUID> due() {
         store.storage.requireReady();
-        tx.executeWithoutResult(status -> {
-            var changed=jdbc.queryForList("update crm.operation set status='UNKNOWN',errorcode='CRM_RESULT_UNKNOWN',updatedat=clock_timestamp(),version=version+1 where status='IN_FLIGHT' and deadlineat<clock_timestamp() returning projectid",UUID.class);
-            var expired=jdbc.queryForList("update crm.operation set status='REJECTED',errorcode='CRM_OPERATION_EXPIRED',updatedat=clock_timestamp(),version=version+1 where status='REQUESTED' and createdat<clock_timestamp()-interval '5 minutes' returning projectid",UUID.class);
-            var projects=new HashSet<>(changed); projects.addAll(expired);
-            projects.forEach(this::invalidate);
+        var expiredProjects=jdbc.queryForList("select distinct projectid from crm.operation where status='IN_FLIGHT' and deadlineat<clock_timestamp() or status='REQUESTED' and createdat<clock_timestamp()-interval '5 minutes' order by projectid limit 32",UUID.class);
+        for(var project:expiredProjects)tx.executeWithoutResult(status -> {
+            jdbc.queryForObject("select id from crm.project where id=? for update",UUID.class,project);
+            int changed=jdbc.update("update crm.operation set status='UNKNOWN',errorcode='CRM_RESULT_UNKNOWN',updatedat=clock_timestamp(),version=version+1 where projectid=? and status='IN_FLIGHT' and deadlineat<clock_timestamp()",project);
+            if(changed>0)new CrmJournalStore(jdbc).invalidate(project);
+            int expired=jdbc.update("update crm.operation set status='REJECTED',errorcode='CRM_OPERATION_EXPIRED',updatedat=clock_timestamp(),version=version+1 where projectid=? and status='REQUESTED' and createdat<clock_timestamp()-interval '5 minutes'",project);
+            if(changed+expired>0)invalidate(project);
         });
         return jdbc.queryForList("select id from crm.operation where status='REQUESTED' order by createdat,id limit 32",UUID.class);
     }
@@ -281,6 +283,7 @@ public class CrmOperationService {
         if (beginEffect) {
             var acquired=jdbc.query("update crm.operation set status='IN_FLIGHT',effectstartedat=clock_timestamp(),deadlineat=clock_timestamp()+interval '90 seconds',updatedat=clock_timestamp(),version=version+1 where id=? and status='REQUESTED' returning deadlineat",(rs,index) -> rs.getTimestamp(1).toInstant(),id);
             if (acquired.isEmpty()) return null;
+            new CrmJournalStore(jdbc).invalidate(project.getId());
             deadline=acquired.getFirst().minusSeconds(15);
         }
         return new Prepared(row,store.credentials(project.getConnection()),command,deadline);
@@ -288,6 +291,10 @@ public class CrmOperationService {
     private void finish(UUID id,CrmCommand command,CrmCommandResult result,String error) {
         String state="UNKNOWN",reference=null;
         if (result!=null && result.outcome()!=null) {
+            if(result.errorCode()!=null) {
+                try{error=CrmStore.failure(new CrmFailure(CrmFailure.Code.valueOf(result.errorCode()),result.retryAt(),true)).code();}
+                catch(IllegalArgumentException invalid){error="CRM_INVALID_RESPONSE";}
+            }
             reference=result.externalAppointmentId();
             if (reference!=null && (reference.isBlank() || reference.length()>128 || command.type()!=CrmCommand.Type.CREATE && !reference.equals(command.externalAppointmentId()))) { error="CRM_INVALID_RESPONSE"; reference=null; }
             else if (result.outcome()==CrmCommandResult.Outcome.CONFIRMED && reference!=null
@@ -296,11 +303,14 @@ public class CrmOperationService {
         }
         if ("UNKNOWN".equals(state) && error==null) error="CRM_RESULT_UNKNOWN";
         final String outcome=state,ref=reference,code=error;
+        final Instant retryAt=result==null?null:result.retryAt();
         tx.executeWithoutResult(status -> {
+            UUID projectId=jdbc.queryForObject("select projectid from crm.operation where id=?",UUID.class,id);
+            jdbc.queryForObject("select id from crm.project where id=? for update",UUID.class,projectId);
             String known=jdbc.queryForObject("select externalreference from crm.operation where id=? for update",String.class,id);
             boolean mismatch=known!=null && ref!=null && !known.equals(ref);
-            var projects=jdbc.queryForList("update crm.operation set status=?,externalreference=coalesce(?,externalreference),errorcode=?,updatedat=clock_timestamp(),version=version+1 where id=? and status in ('IN_FLIGHT','UNKNOWN') returning projectid",UUID.class,mismatch?"UNKNOWN":outcome,mismatch?null:ref,mismatch?"CRM_INVALID_RESPONSE":code,id);
-            projects.forEach(this::invalidate);
+            var projects=jdbc.queryForList("update crm.operation set status=?,externalreference=coalesce(?,externalreference),errorcode=?,retryat=?,updatedat=clock_timestamp(),version=version+1 where id=? and status in ('IN_FLIGHT','UNKNOWN') returning projectid",UUID.class,mismatch?"UNKNOWN":outcome,mismatch?null:ref,mismatch?"CRM_INVALID_RESPONSE":code,retryAt==null?null:Timestamp.from(retryAt),id);
+            projects.forEach(project->{new CrmJournalStore(jdbc).invalidate(project);invalidate(project);});
         });
     }
     private void reservation(UUID id,String reference) {
@@ -328,7 +338,10 @@ public class CrmOperationService {
         });
     }
     private void reject(UUID id,String code) {
-        tx.executeWithoutResult(status -> jdbc.queryForList("update crm.operation set status='REJECTED',errorcode=?,updatedat=clock_timestamp(),version=version+1 where id=? and status='REQUESTED' returning projectid",UUID.class,code,id).forEach(this::invalidate));
+        reject(id,code,null);
+    }
+    private void reject(UUID id,String code,Instant retryAt) {
+        tx.executeWithoutResult(status -> jdbc.queryForList("update crm.operation set status='REJECTED',errorcode=?,retryat=?,updatedat=clock_timestamp(),version=version+1 where id=? and status='REQUESTED' returning projectid",UUID.class,code,retryAt==null?null:Timestamp.from(retryAt),id).forEach(this::invalidate));
     }
     private CrmOperationDto insert(CrmProjectEntity project,UUID actor,UUID key,UUID id,String hash,String body,CrmCommand command,UUID target,Long expected) {
         var context=store.context(project);
@@ -402,6 +415,7 @@ public class CrmOperationService {
         if (!project.isEnabled() || project.getZoneId()==null) throw CrmException.conflict("CRM_CONFIGURATION_REQUIRED");
         if (project.getConnection().getStatus()!=kit.penny.clientbus.common.enums.CrmConnectionStatus.CONNECTED) throw CrmException.conflict("CRM_REAUTH_REQUIRED");
         if (!registry.require(project.getProvider()).commandCapabilities().contains(type)) throw CrmException.conflict("CRM_CAPABILITY_UNVERIFIED");
+        store.requireNetwork(project);
     }
     private Row authorized(UUID id) {
         var row=row(id); var project=project(row.dto().projectId());
@@ -415,7 +429,7 @@ public class CrmOperationService {
     private Row map(ResultSet rs,int index) throws SQLException {
         UUID project=rs.getObject("projectid",UUID.class),actor=rs.getObject("initiatoremployeeid",UUID.class);
         var dto=new CrmOperationDto(rs.getObject("id",UUID.class),project,rs.getString("type"),rs.getObject("targetappointmentid",UUID.class),actor,rs.getObject("idempotencykey",UUID.class),
-                rs.getLong("contextversion"),rs.getLong("zonerevision"),rs.getString("status"),rs.getTimestamp("createdat").toInstant(),rs.getTimestamp("updatedat").toInstant(),rs.getString("errorcode"),rs.getString("externalreference"));
+                rs.getLong("contextversion"),rs.getLong("zonerevision"),rs.getString("status"),rs.getTimestamp("createdat").toInstant(),rs.getTimestamp("updatedat").toInstant(),rs.getString("errorcode"),rs.getString("externalreference"),rs.getTimestamp("retryat")==null?null:rs.getTimestamp("retryat").toInstant());
         var context=new CrmContext(project,rs.getObject("organizationid",UUID.class),rs.getObject("workspaceid",UUID.class),rs.getString("provider"),rs.getString("externalprojectid"),rs.getObject("connectionid",UUID.class),rs.getLong("credentialversion"),dto.contextVersion(),dto.zoneRevision());
         return new Row(dto,context,rs.getString("requestbody"),JSON.readValue(rs.getString("payload"),CrmCommand.class),rs.getString("requesthash"));
     }
@@ -457,5 +471,9 @@ public class CrmOperationService {
         if (failure instanceof CrmFailure crm) return CrmStore.failure(crm).code();
         if (failure instanceof AccessDeniedException) return "ACCESS_DENIED";
         return "CRM_TEMPORARILY_UNAVAILABLE";
+    }
+    private static Instant retryAt(RuntimeException failure){
+        if(failure instanceof CrmException crm)return crm.retryAt();
+        return failure instanceof CrmFailure crm?crm.retryAt():null;
     }
 }

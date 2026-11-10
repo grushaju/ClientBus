@@ -46,6 +46,7 @@ export function CrmStatus({ state, archived = false }: { state?: api.CrmSyncStat
         {!archived && state.freshness === 'STALE' && ' · сохранённые данные требуют обновления'}
         {!archived && ['QUEUED', 'RUNNING'].includes(state.status) && ' · обновление выполняется'}
         {!archived && state.status === 'FAILED' && ' · последняя попытка завершилась ошибкой'}
+        {!archived && state.retryAt && Date.parse(state.retryAt) > Date.now() && ` · DIKIDI приостановил обращения до ${new Date(state.retryAt).toLocaleString('ru-RU')}. Сохранённые данные доступны.`}
         {!archived && state.errorCode && <span className="crm-error-text"> · {state.errorCode}</span>}
     </p>
 }

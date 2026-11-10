@@ -67,7 +67,7 @@ public class CrmScheduleSync {
                         order by legacy.employeeid limit 1)) and e.organizationid=p.organizationid
                     join dbo.users u on u.userid=e.userid
                 where s.dataset='WORK_INTERVALS' and s.statekind='SCOPE' and p.enabled
-                    and c.status not in ('DISABLED','REAUTH_REQUIRED') and u.isenabled
+                    and c.status not in ('DISABLED','REAUTH_REQUIRED') and (c.requestnotbefore is null or c.requestnotbefore<=clock_timestamp()) and u.isenabled
                     and (u.role='SUPER_ADMIN' or u.role='EMPLOYEE' and exists (
                         select 1 from dbo.employeeworkspace ew where ew.employeeid=e.employeeid and ew.workspaceid=p.workspaceid))
                     and s.lastattemptat<=clock_timestamp()-(
@@ -96,7 +96,7 @@ public class CrmScheduleSync {
             store.em.refresh(project, LockModeType.PESSIMISTIC_WRITE);
             store.guard.workspace(actor,project.getWorkspace().getId());
             if (!project.isEnabled()) throw new CrmException(409,"CRM_CONFIGURATION_REQUIRED","Проект CRM отключён.");
-            store.credentials(project.getConnection()); registry.require(project.getProvider());
+            store.requireNetwork(project);store.credentials(project.getConnection()); registry.require(project.getProvider());
             if (intervalMs>0 && (!Boolean.TRUE.equals(jdbc.queryForObject("""
                     select exists(select 1 from crm.syncstate where projectid=? and dataset='WORK_INTERVALS' and scopekey=?
                         and (scope->>'refreshActorId'=? or scope->>'refreshActorId' is null)
@@ -128,7 +128,7 @@ public class CrmScheduleSync {
                             and c.generation=s.generation and c.claimuntil>clock_timestamp()
                             where s.projectid=? and s.dataset='WORK_INTERVALS' and s.scopekey=?)
                         """, Boolean.class, projectId, scope.key());
-                if (!Boolean.TRUE.equals(same)) throw new CrmException(429,"CRM_RATE_LIMITED","График проекта уже обновляется. Повторите позже.");
+                if (!Boolean.TRUE.equals(same)) throw new CrmException(503,"CRM_CONNECTION_BUSY","График проекта уже обновляется. Повторите позже.");
                 return null;
             }
             long generation=generations.getFirst();
@@ -274,7 +274,7 @@ public class CrmScheduleSync {
             return new CrmSyncStateDto("WORK_INTERVALS",status,attempt,success,success == null ? "NEVER_LOADED" : current ? "CURRENT" : "STALE",
                     completeness,error,rs.getLong("generation"),scope.fields(),successful,attempted);
         },project.getId(),scope.key());
-        return rows.isEmpty() ? new CrmSyncStateDto("WORK_INTERVALS","IDLE",null,null,"NEVER_LOADED","UNKNOWN",null,0,scope.fields(),Map.of(),Map.of()) : rows.getFirst();
+        return store.pauseState(project,rows.isEmpty() ? new CrmSyncStateDto("WORK_INTERVALS","IDLE",null,null,"NEVER_LOADED","UNKNOWN",null,0,scope.fields(),Map.of(),Map.of()) : rows.getFirst());
     }
     private static Map<String,Object> map(String json) { return JSON.readValue(json,new TypeReference<>() {}); }
     long revision(UUID projectId) {

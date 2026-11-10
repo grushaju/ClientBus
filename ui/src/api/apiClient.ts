@@ -6,12 +6,14 @@ export class ApiError extends Error {
     readonly status: number
     readonly code?: string
     readonly retryAfterMs: number
+    readonly retryAt?: string
 
     constructor(
         status: number,
         message: string,
         code?: string,
         retryAfterMs = 0,
+        retryAt?: string,
     ) {
         super(message)
 
@@ -19,12 +21,14 @@ export class ApiError extends Error {
         this.status = status
         this.code = code
         this.retryAfterMs = retryAfterMs
+        this.retryAt = retryAt
     }
 }
 
 interface ApiErrorResponse {
     code?: string
     message?: string
+    retryAt?: string
 }
 
 export function getApiErrorCode(
@@ -90,12 +94,14 @@ export async function apiFetch(
             `Request failed with status ${response.status}`
 
         let code: string | undefined
+        let retryAt: string | undefined
 
         try {
             const body =
                 await response.json() as ApiErrorResponse
 
             code = body.code
+            if (typeof body.retryAt === 'string' && Number.isFinite(Date.parse(body.retryAt))) retryAt = body.retryAt
 
             if (body.message) {
                 message = body.message
@@ -109,6 +115,7 @@ export async function apiFetch(
             message,
             code,
             retryAfterDelay(response.headers.get('Retry-After')),
+            retryAt,
         )
     }
 

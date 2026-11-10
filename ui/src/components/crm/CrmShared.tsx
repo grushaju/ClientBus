@@ -22,6 +22,7 @@ export function CrmFreshness({ state, archived = false }: { state?: CrmSyncState
         {!archived && ['QUEUED', 'RUNNING'].includes(state.status) && ' · обновляем…'}
         {!archived && state.attemptCoverage?.projectErrorCode && ' · название проекта не обновлено'}
         {!archived && state.status === 'FAILED' && <span className="crm-error-text"> · Обновление не удалось. Сохранённые данные доступны.</span>}
+        {!archived && state.retryAt && Date.parse(state.retryAt) > Date.now() && ` · DIKIDI приостановил обращения до ${new Date(state.retryAt).toLocaleString('ru-RU')}`}
     </div>
 }
 export function OfferTerms({ offer }: { offer: CrmServiceOffer }) {

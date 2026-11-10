@@ -26,7 +26,7 @@ import java.util.function.LongSupplier;
 @Service
 public class CrmAppointmentSync {
     private record Claim(CrmContext context, CrmAppointmentScope scope, CrmAppointmentQuery query,
-                         UUID actorId, UUID token, long generation) {}
+                         UUID actorId,UUID token,long generation,long epoch,boolean force,Instant barrier) {}
     private record Subscription(UUID projectId, UUID organizationId, UUID actorId, CrmAppointmentScope scope) {}
     private final CrmStore store;
     private final JdbcTemplate jdbc;
@@ -36,6 +36,7 @@ public class CrmAppointmentSync {
     private final UiDomainEvents events;
     private final CrmAppointmentWriter writer;
     private final LongSupplier nanoTime;
+    private final CrmJournalStore journals;
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private final ThreadPoolExecutor executor = new ThreadPoolExecutor(2, 2, 30, TimeUnit.SECONDS,
             new SynchronousQueue<>(), task -> { var thread = new Thread(task, "crm-appointments"); thread.setDaemon(true); return thread; },
@@ -50,12 +51,16 @@ public class CrmAppointmentSync {
             CrmRegistry registry, CrmSecretCipher cipher, UiDomainEvents events, CrmAppointmentWriter writer,LongSupplier nanoTime) {
         this.store=store; this.jdbc=jdbc; tx=new TransactionTemplate(manager); this.registry=registry;
         this.cipher=cipher; this.events=events; this.writer=writer; this.nanoTime=nanoTime;
+        this.journals=new CrmJournalStore(jdbc);
     }
     public CrmSyncStateDto refresh(UUID projectId, String dataset, UUID crmClientId, LocalDate from, LocalDate to) {
+        return refresh(projectId,dataset,crmClientId,from,to,false);
+    }
+    public CrmSyncStateDto refresh(UUID projectId,String dataset,UUID crmClientId,LocalDate from,LocalDate to,boolean force) {
         var scope = new CrmAppointmentScope(dataset, crmClientId, from, to);
         store.storage.requireReady();
         UUID organization=store.guard.organization(), actor=store.guard.actor();
-        submit(claim(projectId,organization,actor,scope,0),false);
+        submit(claim(projectId,organization,actor,scope,0,force),false);
         return state(projectId,dataset,crmClientId,from,to);
     }
     /** Polls saved requests after restart as well; no request SecurityContext or JWT is retained. */
@@ -76,7 +81,7 @@ public class CrmAppointmentSync {
                     join dbo.users u on u.userid=e.userid
                 where s.dataset in ('APPOINTMENTS','CLIENT_HISTORY') and s.statekind='SCOPE' and p.enabled
                     and not (jsonb_exists(s.scope,'externalAppointmentId') and jsonb_exists(s.scope,'observationCompletedAt'))
-                    and c.status not in ('DISABLED','REAUTH_REQUIRED') and u.isenabled
+                    and c.status not in ('DISABLED','REAUTH_REQUIRED') and (c.requestnotbefore is null or c.requestnotbefore<=clock_timestamp()) and u.isenabled
                     and (u.role='SUPER_ADMIN' or u.role='EMPLOYEE' and exists (
                         select 1 from dbo.employeeworkspace ew where ew.employeeid=e.employeeid and ew.workspaceid=p.workspaceid))
                     and s.lastattemptat<=clock_timestamp()-(
@@ -94,18 +99,18 @@ public class CrmAppointmentSync {
         int started=0;
         for (var subscription : subscriptions) {
             try {
-                if (submit(claim(subscription.projectId(),subscription.organizationId(),subscription.actorId(),subscription.scope(),intervalMs),true)) started++;
+                if (submit(claim(subscription.projectId(),subscription.organizationId(),subscription.actorId(),subscription.scope(),intervalMs,false),true)) started++;
             } catch (CrmException | AccessDeniedException ignored) { /* Recheck configuration and access next poll. */ }
         }
         return started;
     }
-    private Claim claim(UUID projectId,UUID organization,UUID actor,CrmAppointmentScope scope,long intervalMs) {
+    private Claim claim(UUID projectId,UUID organization,UUID actor,CrmAppointmentScope scope,long intervalMs,boolean force) {
         return tx.execute(status -> {
             var project=store.projects.findByIdAndOrganizationId(projectId,organization).orElseThrow(CrmStore::notFound);
             store.em.refresh(project, LockModeType.PESSIMISTIC_WRITE);
             store.guard.workspace(actor,project.getWorkspace().getId());
             if (!project.isEnabled()) throw new CrmException(409,"CRM_CONFIGURATION_REQUIRED","Проект CRM отключён.");
-            store.credentials(project.getConnection()); registry.require(project.getProvider());
+            store.requireNetwork(project);store.credentials(project.getConnection()); registry.require(project.getProvider());
             if (intervalMs>0 && (!Boolean.TRUE.equals(jdbc.queryForObject("""
                     select exists(select 1 from crm.syncstate where projectid=? and dataset=? and scopekey=?
                         and (scope->>'refreshActorId'=? or scope->>'refreshActorId' is null)
@@ -136,20 +141,20 @@ public class CrmAppointmentSync {
                         select exists(select 1 from crm.syncstate s join crm.syncstate c on c.projectid=s.projectid
                             and c.dataset='WRITER:APPOINTMENTS' and c.scopekey='CONTROL' and c.claimtoken=s.claimtoken
                             and c.generation=s.generation and c.claimuntil>clock_timestamp()
-                            where s.projectid=? and s.dataset=? and s.scopekey=?)
-                        """, Boolean.class, projectId, scope.dataset(), scope.key());
-                if (!Boolean.TRUE.equals(same)) throw new CrmException(429,"CRM_RATE_LIMITED","Визиты проекта уже обновляются. Повторите позже.");
+                            where s.projectid=? and s.dataset=? and s.scopekey=? and (not ? or s.attemptcoverage->>'force'='true'))
+                        """, Boolean.class, projectId, scope.dataset(), scope.key(),force);
+                if (!Boolean.TRUE.equals(same)) throw new CrmException(503,"CRM_CONNECTION_BUSY","Визиты проекта уже обновляются. Повторите позже.");
                 return null;
             }
             long generation=generations.getFirst();
             jdbc.update("""
                     update crm.syncstate set generation=?,version=version+1,claimtoken=?,connectionid=?,credentialversion=?,
                         contextversion=?,zonerevision=?,status='QUEUED',lastattemptat=clock_timestamp(),
-                        lasterrorcode=null,attemptcoverage='{}'::jsonb,updatedat=clock_timestamp()
+                        lasterrorcode=null,attemptcoverage=jsonb_build_object('force',cast(? as boolean)),updatedat=clock_timestamp()
                     where projectid=? and dataset=? and scopekey=?
                     """, generation,token,context.connectionId(),context.credentialVersion(),context.contextVersion(),
-                    context.zoneRevision(),projectId,scope.dataset(),scope.key());
-            return new Claim(context,scope,scope.query(client),actor,token,generation);
+                    context.zoneRevision(),force,projectId,scope.dataset(),scope.key());
+            return new Claim(context,scope,scope.query(client),actor,token,generation,journals.epoch(projectId),force,Instant.now());
         });
     }
     private boolean submit(Claim claim,boolean periodic) {
@@ -189,7 +194,8 @@ public class CrmAppointmentSync {
                 return store.credentials(project.getConnection());
             });
             String cursor=null; var cursors=new HashSet<String>(); var observed=new HashSet<String>();
-            boolean allComplete=true; Instant oldestObservation=null; int total=0;
+            var origins=new HashMap<String,java.time.LocalDate>();boolean repaired=false;
+            boolean allComplete=true,allLive=true; Instant oldestObservation=null; int total=0;
             for (int number=0;number<31;number++) {
                 if (Thread.currentThread().isInterrupted() || expired(deadline)) {
                     limited(claim); return;
@@ -197,7 +203,7 @@ public class CrmAppointmentSync {
                 tx.executeWithoutResult(status -> {
                     var project=store.requireContext(claim.context());
                     store.guard.workspace(claim.actorId(),project.getWorkspace().getId()); requireClaim(claim);
-                    health.set(CrmHealthCheck.begin(project.getConnection()));
+                    health.set(CrmHealthCheck.snapshot(project.getConnection()));
                     jdbc.update("update crm.syncstate set claimuntil=clock_timestamp()+interval '120 seconds' where projectid=? and dataset='WRITER:APPOINTMENTS' and scopekey='CONTROL' and claimtoken=? and generation=?",
                             project.getId(),claim.token(),claim.generation());
                 });
@@ -205,23 +211,49 @@ public class CrmAppointmentSync {
                 try (var access=credentials.open(cipher)) {
                     if (Thread.currentThread().isInterrupted() || expired(deadline)) { limited(claim); return; }
                     var provider=registry.require(credentials.provider);
+                    var options=new CrmJournalOptions(claim.context().projectId(),claim.context().contextVersion(),claim.context().zoneRevision(),claim.epoch(),claim.force(),claim.barrier(),Instant.now().plusNanos(Math.max(1,deadline-nanoTime.getAsLong())));
                     page=claim.scope().crmClientId()==null
-                            ? provider.readAppointments(access,claim.context().externalProjectId(),claim.query(),cursor)
-                            : provider.readClientHistory(access,claim.context().externalProjectId(),claim.query(),cursor);
+                            ? provider.readAppointments(access,claim.context().externalProjectId(),claim.query(),cursor,options)
+                            : provider.readClientHistory(access,claim.context().externalProjectId(),claim.query(),cursor,options);
                 }
                 if (page==null || !claim.context().externalProjectId().equals(page.externalProjectId()) || !claim.query().equals(page.scope()))
                     throw new CrmFailure(CrmFailure.Code.CONTEXT_MISMATCH);
                 if (page.observedAt()==null || page.completeness()==null || page.observedAt().isAfter(Instant.now().plusSeconds(300))
                         || page.items().size()>5000 || total+page.items().size()>20000)
                     throw new CrmFailure(CrmFailure.Code.INVALID_RESPONSE);
-                for (var item : page.items()) if (!observed.add(item.externalId())) throw new CrmFailure(CrmFailure.Code.INVALID_RESPONSE);
-                total+=page.items().size(); allComplete &= page.completeness()==CrmReadResult.Completeness.COMPLETE;
+                java.time.LocalDate previousDay=null;
+                var pageIds=new HashSet<String>();
+                for(var item:page.items()){
+                    if(!pageIds.add(item.externalId()))throw new CrmFailure(CrmFailure.Code.INVALID_RESPONSE);
+                    if(observed.contains(item.externalId())){
+                        if(page.observation()==null||origins.get(item.externalId())==null||origins.get(item.externalId()).equals(page.observation().day()))throw new CrmFailure(CrmFailure.Code.INVALID_RESPONSE);
+                        if(previousDay!=null&&!previousDay.equals(origins.get(item.externalId())))throw new CrmFailure(CrmFailure.Code.OBSERVATION_CONFLICT);
+                        previousDay=origins.get(item.externalId());
+                    }
+                }
+                final List<CrmAppointmentPage> batches;
+                if(previousDay!=null){
+                    if(repaired)throw new CrmFailure(CrmFailure.Code.OBSERVATION_CONFLICT);
+                    batches=repair(claim,credentials,previousDay,page.observation().day(),deadline);repaired=true;
+                    var days=Set.of(previousDay,page.observation().day());
+                    observed.removeIf(id->days.contains(origins.get(id)));origins.entrySet().removeIf(entry->days.contains(entry.getValue()));
+                }else batches=List.of(page);
+                for(var batch:batches)for(var item:batch.items()){
+                    if(!observed.add(item.externalId()))throw new CrmFailure(CrmFailure.Code.OBSERVATION_CONFLICT);
+                    if(batch.observation()!=null)origins.put(item.externalId(),batch.observation().day());
+                }
+                total=observed.size();if(total>20000)throw new CrmFailure(CrmFailure.Code.INVALID_RESPONSE);
+                allComplete &= page.completeness()==CrmReadResult.Completeness.COMPLETE;
+                allLive &= page.observation()==null;
                 oldestObservation=oldestObservation==null || page.observedAt().isBefore(oldestObservation) ? page.observedAt() : oldestObservation;
                 boolean terminal=page.nextCursor()==null;
                 boolean limited=!terminal && (number==30 || expired(deadline));
                 boolean finished=terminal || limited, complete=terminal && allComplete;
+                // Reused observations must never infer absence using a newer worker generation.
+                boolean markMissing=complete&&allLive;
                 if (Thread.currentThread().isInterrupted()) throw new CrmFailure(CrmFailure.Code.TEMPORARY_FAILURE);
                 var coverage=new HashMap<String,Object>(claim.scope().fields());
+                if(!finished)coverage.put("force",claim.force());
                 coverage.put("completeness",complete ? "COMPLETE" : terminal && page.completeness()==CrmReadResult.Completeness.UNKNOWN ? "UNKNOWN" : "PARTIAL");
                 coverage.put("pages",number+1); coverage.put("items",total); coverage.put("observedAt",oldestObservation.toString());
                 String document=JSON.writeValueAsString(coverage);
@@ -229,9 +261,18 @@ public class CrmAppointmentSync {
                 tx.executeWithoutResult(status -> {
                     var project=store.requireContext(claim.context());
                     store.guard.workspace(claim.actorId(),project.getWorkspace().getId()); requireClaim(claim);
-                    writer.apply(project,page,claim.generation());
-                    if (complete) writer.missing(project,claim.query(),claim.generation(),coverageObserved);
-                    health.get().apply(project.getConnection(),CrmConnectionStatus.CONNECTED,null);
+                    if(page.observation()!=null && (page.observation().epoch()!=journals.epoch(project.getId())||page.observation().epoch()!=claim.epoch()||page.observation().sequence()<1
+                            ||page.observation().day()==null||page.observation().day().isBefore(claim.query().dateFrom())||page.observation().day().isAfter(claim.query().dateTo())))throw CrmException.conflict("CRM_CONTEXT_CHANGED");
+                    for(var batch:batches){
+                        if(batch.observation()!=null&&batch.observation().epoch()!=journals.epoch(project.getId()))throw CrmException.conflict("CRM_CONTEXT_CHANGED");
+                        writer.apply(project,batch,claim.generation());
+                    }
+                    if (markMissing) writer.missing(project,claim.query(),claim.generation(),coverageObserved);
+                    if(page.observation()==null)health.get().apply(project.getConnection(),CrmConnectionStatus.CONNECTED,null);
+                    else if(!page.observation().cacheHit()){
+                        var sourceHealth=CrmHealthCheck.source(page.observation().health());
+                        if(sourceHealth!=null)sourceHealth.apply(project.getConnection(),CrmConnectionStatus.CONNECTED,null);
+                    }
                     store.em.flush(); requireClaim(claim);
                     if (finished && release(claim,"SUCCEEDED")!=1) throw CrmException.conflict("CRM_CONTEXT_CHANGED");
                     int changed=jdbc.update("""
@@ -258,12 +299,31 @@ public class CrmAppointmentSync {
                     throw new CrmFailure(CrmFailure.Code.INVALID_RESPONSE);
                 cursor=page.nextCursor();
             }
-        } catch (CrmFailure error) { fail(claim,CrmStore.failure(error).code(),health.get()); }
+        } catch (CrmFailure error) { fail(claim,CrmStore.failure(error).code(),error.journalOrigin()?CrmHealthCheck.source(error.sourceHealth()):health.get()); }
         catch (CrmException error) { fail(claim,error.code(),health.get()); }
         catch (AccessDeniedException error) { fail(claim,"ACCESS_DENIED",health.get()); }
         catch (RuntimeException error) { fail(claim,"CRM_TEMPORARILY_UNAVAILABLE",health.get()); }
     }
     private boolean expired(long deadline) { return nanoTime.getAsLong()-deadline>=0; }
+    private List<CrmAppointmentPage> repair(Claim claim,CrmCredentials credentials,java.time.LocalDate first,java.time.LocalDate second,long deadline){
+        var pages=new ArrayList<CrmAppointmentPage>();var ids=new HashSet<String>();Instant barrier=Instant.now();
+        for(var day:List.of(first,second)){
+            if(expired(deadline)||Thread.currentThread().isInterrupted())throw new CrmFailure(CrmFailure.Code.TEMPORARY_FAILURE);
+            var query=new CrmAppointmentQuery(day,day,claim.query().client());
+            var options=new CrmJournalOptions(claim.context().projectId(),claim.context().contextVersion(),claim.context().zoneRevision(),claim.epoch(),true,barrier,Instant.now().plusNanos(Math.max(1,deadline-nanoTime.getAsLong())));
+            CrmAppointmentPage page;
+            try(var access=credentials.open(cipher)){
+                var provider=registry.require(credentials.provider);
+                page=query.client()==null?provider.readAppointments(access,claim.context().externalProjectId(),query,null,options):provider.readClientHistory(access,claim.context().externalProjectId(),query,null,options);
+            }
+            if(page==null||page.nextCursor()!=null||!query.equals(page.scope())||!claim.context().externalProjectId().equals(page.externalProjectId())||page.observedAt()==null
+                    ||page.observedAt().isAfter(Instant.now().plusSeconds(5))||page.observation()==null||page.observation().cacheHit()||page.observation().epoch()!=claim.epoch()
+                    ||!day.equals(page.observation().day())||page.observation().sequence()<1||page.items().size()>5000)throw new CrmFailure(CrmFailure.Code.INVALID_RESPONSE);
+            for(var item:page.items())if(!ids.add(item.externalId()))throw new CrmFailure(CrmFailure.Code.OBSERVATION_CONFLICT);
+            pages.add(page);
+        }
+        return pages;
+    }
     private void limited(Claim claim) {
         tx.executeWithoutResult(status -> {
             var project=store.requireContext(claim.context());
@@ -338,11 +398,11 @@ public class CrmAppointmentSync {
             return new CrmSyncStateDto(scope.dataset(),status,attempt,success,success == null ? "NEVER_LOADED" : current ? "CURRENT" : "STALE",
                     completeness,error,rs.getLong("generation"),scope.fields(),successful,attempted);
         },project.getId(),scope.dataset(),scope.key());
-        return rows.isEmpty() ? new CrmSyncStateDto(scope.dataset(),"IDLE",null,null,"NEVER_LOADED","UNKNOWN",null,0,scope.fields(),Map.of(),Map.of()) : rows.getFirst();
+        return store.pauseState(project,rows.isEmpty() ? new CrmSyncStateDto(scope.dataset(),"IDLE",null,null,"NEVER_LOADED","UNKNOWN",null,0,scope.fields(),Map.of(),Map.of()) : rows.getFirst());
     }
     private static Map<String,Object> map(String json) { return JSON.readValue(json,new TypeReference<>() {}); }
     long revision(UUID projectId) {
-        return jdbc.query("select version from crm.syncstate where projectid=? and dataset='WRITER:APPOINTMENTS' and scopekey='CONTROL'",
+        return jdbc.query("select appointmentdatarevision from crm.project where id=?",
                 (rs,index) -> rs.getLong(1),projectId).stream().findFirst().orElse(0L);
     }
     @PreDestroy public void close() { executor.shutdownNow(); }

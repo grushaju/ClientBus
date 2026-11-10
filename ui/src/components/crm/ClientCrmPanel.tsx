@@ -19,8 +19,8 @@ function ClientCrmContent({ clientId, workspaceId, compact }: { clientId: string
         {data.loading && !data.data && <p>Загрузка связей CRM…</p>}
         {data.data && !data.data.length && <p>В этой области нет связи с клиентом CRM. <Link to={'/crm?' + new URLSearchParams({ ...(workspaceId ? { workspace: workspaceId } : {}), tab: 'clients' })}>Выбрать клиента CRM</Link></p>}
         <ul className="crm-client-links">{data.data?.map(link => <li key={link.client.id}><button type="button" className="crm-text-button" onClick={() => setSelected(link)}>{link.project.displayName} · {link.client.displayName}{link.project.archived ? ' · архив' : ''}</button>
-            {!compact && <button type="button" className="ui-button ui-button-secondary" disabled={action.busy || link.project.archived || !link.project.enabled || !link.project.zoneId || !crmPeriodValid(dates) || ['DISABLED', 'REAUTH_REQUIRED'].includes(link.project.connectionState)}
-                onClick={() => void action.run(signal => api.refreshCrmData(link.project.id, { dataset: 'CLIENT_HISTORY', crmClientId: link.client.id, ...dates }, signal), data.reload)}>Обновить историю</button>}
+            {!compact && [false, true].map(force => <button key={String(force)} type="button" className="ui-button ui-button-secondary" disabled={action.busy || link.project.archived || !link.project.enabled || !link.project.zoneId || !crmPeriodValid(dates) || ['DISABLED', 'REAUTH_REQUIRED'].includes(link.project.connectionState)}
+                onClick={() => void action.run(signal => api.refreshCrmData(link.project.id, { dataset: 'CLIENT_HISTORY', crmClientId: link.client.id, ...dates, ...(force ? { force: true } : {}) }, signal), data.reload)}>{force ? 'Запросить свежую историю' : 'Обновить историю'}</button>)}
         </li>)}</ul>
         {action.error && <p role="alert" className="crm-error">{action.error}</p>}
         {!!data.data?.length && <><div className="crm-actions"><button type="button" className="ui-button ui-button-secondary" aria-pressed={direction === 'future'} onClick={() => { setDirection('future'); setPeriod(null) }}>Будущие визиты</button>

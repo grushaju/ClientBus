@@ -31,7 +31,44 @@ public class CrmStorage implements ApplicationRunner {
                 });
         normalizePrices();
         initializeOperations();
+        jdbc.execute("alter table crm.operation add column if not exists retryat timestamp with time zone");
+        jdbc.execute("alter table crm.connection add column if not exists requestnotbefore timestamp with time zone");
+        jdbc.execute("alter table crm.connection add column if not exists requestbackoff integer not null default 0");
+        jdbc.execute("alter table crm.project add column if not exists journalepoch bigint not null default 0");
+        jdbc.execute("alter table crm.project add column if not exists journalreadsequence bigint not null default 0");
+        new TransactionTemplate(new DataSourceTransactionManager(java.util.Objects.requireNonNull(jdbc.getDataSource())))
+                .executeWithoutResult(status->{jdbc.execute("select pg_advisory_xact_lock(12661)");initializeDataRevision();});
         ready = true;
+    }
+    /** Projection revisions are independent of claim/attempt versions, including dependent datasets. */
+    private void initializeDataRevision(){
+        jdbc.execute("alter table crm.project add column if not exists appointmentdatarevision bigint not null default 0");
+        jdbc.execute("""
+                create or replace function crm.appointment_projection_content(value jsonb) returns jsonb language sql immutable as $$
+                select (value - array['version','createdat','updatedat','lastobservedat','lastobservedgeneration','observationcheckedat',
+                    'missinggeneration','financialobservedat','financialgeneration','financialsnapshot','financialcompleteness','importgeneration'])
+                    || case when value ? 'sourceattributes' then jsonb_build_object('sourceattributes',coalesce(value->'sourceattributes','{}'::jsonb)
+                        - array['journalEpoch','journalSequence','journalDay','historyObservedAt']) else '{}'::jsonb end
+                $$
+                """);
+        jdbc.execute("""
+                create or replace function crm.bump_appointment_datarevision() returns trigger language plpgsql as $$
+                declare previous jsonb; currentrow jsonb; target_project uuid;
+                begin
+                    if TG_OP='INSERT' then previous='{}'::jsonb; currentrow=to_jsonb(NEW);
+                    elsif TG_OP='DELETE' then previous=to_jsonb(OLD); currentrow='{}'::jsonb;
+                    else previous=to_jsonb(OLD); currentrow=to_jsonb(NEW); end if;
+                    if crm.appointment_projection_content(previous) is not distinct from crm.appointment_projection_content(currentrow) then return null; end if;
+                    target_project=coalesce(currentrow->>'projectid',previous->>'projectid')::uuid;
+                    if target_project is null then select projectid into target_project from crm.appointment where id=coalesce(currentrow->>'appointmentid',previous->>'appointmentid')::uuid; end if;
+                    if target_project is not null then update crm.project set appointmentdatarevision=appointmentdatarevision+1 where id=target_project; end if;
+                    return null;
+                end $$
+                """);
+        for(String table:java.util.List.of("appointment","appointmentservice","appointmentmaster","client","master","service","masterservice")){
+            // Names are fixed above. Never drop a live trigger, even when another instance boots.
+            jdbc.execute("do $$ begin if not exists(select 1 from pg_trigger where tgrelid='crm."+table+"'::regclass and tgname='appointment_datarevision') then create trigger appointment_datarevision after insert or update or delete on crm."+table+" for each row execute function crm.bump_appointment_datarevision(); end if; end $$");
+        }
     }
     /** Returns true only for the exact legacy index, which may be upgraded. */
     private boolean validateIndex() {

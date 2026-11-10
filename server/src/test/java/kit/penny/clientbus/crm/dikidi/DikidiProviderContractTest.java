@@ -55,6 +55,30 @@ class DikidiProviderContractTest {
             assertEquals(1,fake.calls.size());assertTrue(fake.calls.stream().noneMatch(call->call.uri().getPath().contains("newrecord")));
         }
     }
+    @Test void cooldownAtPhysicalAdmissionProvesRejectionOnlyBeforeTheFirstMutatingStep(){
+        for(boolean afterReservation:List.of(false,true)){
+            fake.calls.clear();fake.responses.clear();
+            var c=DikidiCommandsTest.command(CrmCommand.Type.CREATE);var id=UUID.randomUUID();var pauses=DikidiRequests.memory();
+            String catalog=CATALOG.replace("m1","200").replace("m2","201").replace("\"masters\":{","\"masters\":{\"services\":{\"data\":{\"200\":{\"400\":{\"id\":\"400\",\"master_id\":\"200\",\"cost\":\"15000\",\"time\":\"60\",\"active\":\"1\"}}}},");
+            loginThen("journal",catalog,"{\"company_id\":\"100\",\"unique_key\":\""+c.idempotencyKey()+"\",\"is_from_journal\":1,\"action_source_id\":3,\"company\":{\"currency\":{\"iso\":\"RUB\"}}}",
+                    "{\"appointments\":{},\"timeworks\":{},\"dates_true\":[\"2030-01-10\"],\"times\":{\"200\":[\"2030-01-10 12:00:00\"]}}","{\"record_id\":500,\"master_id\":200}");
+            DikidiTransport transport=(method,uri,form,ajax,project,timeout)->{
+                var response=fake.exchange(method,uri,form,ajax,project,timeout);
+                if(uri.getPath().contains(afterReservation?"time_reservation":"to_master_get_datetime"))pauses.block(id,java.time.Instant.now().plusSeconds(60));
+                return response;
+            };
+            try(var adapter=new DikidiProvider(new DikidiProvider.Settings(Duration.ofSeconds(2),Duration.ofSeconds(15),65536),()->transport,new DikidiRequests(DikidiRequests.Settings.defaults(),pauses));var access=access(id,1)){
+                if(afterReservation)assertEquals(COOLDOWN,assertThrows(CrmFailure.class,()->adapter.command(access,PROJECT,c,java.time.Instant.now().plusSeconds(30),reference->{})).code());
+                else{
+                    var result=adapter.command(access,PROJECT,c,java.time.Instant.now().plusSeconds(30),reference->fail());
+                    assertEquals(CrmCommandResult.Outcome.REJECTED,result.outcome());assertEquals("COOLDOWN",result.errorCode());assertNotNull(result.retryAt());
+                }
+                assertEquals(afterReservation?1:0,fake.calls.stream().filter(call->call.uri().getPath().contains("time_reservation")).count());
+                assertEquals(0,fake.calls.stream().filter(call->call.uri().getPath().contains("newrecord_record_save")).count());
+                assertEquals(1,passwordLogins());
+            }
+        }
+    }
 
     @Test void expiredAuthAfterReservationDoesNotReplayTheSaveAndReadOnlyReconciliationCanLogin() {
         var c=DikidiCommandsTest.command(CrmCommand.Type.CREATE);
@@ -204,7 +228,11 @@ class DikidiProviderContractTest {
                 provider.readMasters(access, PROJECT);
                 assertEquals(status == 403 ? ACCESS_DENIED : status == 429 ? RATE_LIMITED : TEMPORARY_FAILURE,
                         assertThrows(CrmFailure.class, () -> provider.verifyConnection(access)).code());
-                provider.verifyConnection(access);
+                if(status==429){
+                    int calls=fake.calls.size();
+                    assertEquals(COOLDOWN,assertThrows(CrmFailure.class,()->provider.verifyConnection(access)).code());
+                    assertEquals(calls,fake.calls.size());
+                }else provider.verifyConnection(access);
                 assertEquals(1, passwordLogins());
             }
         }

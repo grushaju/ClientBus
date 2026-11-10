@@ -99,7 +99,8 @@ public class CrmController {
         if ("WORK_INTERVALS".equals(request.dataset())) return ResponseEntity.accepted().body(
                 schedules.refresh(id,request.masterId(),request.dateFrom(),request.dateTo()));
         if (Set.of("APPOINTMENTS","CLIENT_HISTORY").contains(request.dataset())) return ResponseEntity.accepted().body(
-                appointments.refresh(id,request.dataset(),request.crmClientId(),request.dateFrom(),request.dateTo()));
+                request.force()?appointments.refresh(id,request.dataset(),request.crmClientId(),request.dateFrom(),request.dateTo(),true)
+                        :appointments.refresh(id,request.dataset(),request.crmClientId(),request.dateFrom(),request.dateTo()));
         if (!Set.of("MASTERS", "SERVICES", "CATALOG").contains(request.dataset()))
             throw new CrmException(409, "CRM_CAPABILITY_UNVERIFIED", "Этот набор CRM ещё не реализован.");
         return ResponseEntity.accepted().body("MASTERS".equals(request.dataset()) ? sync.refresh(id) : sync.refresh(id, request.dataset()));

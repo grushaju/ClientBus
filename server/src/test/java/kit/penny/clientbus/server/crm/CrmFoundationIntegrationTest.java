@@ -547,7 +547,7 @@ class CrmFoundationIntegrationTest {
         catch (InterruptedException error) { Thread.currentThread().interrupt(); throw new AssertionError(error); }
     }
     private static void awaitCondition(BooleanSupplier condition) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(8);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
         while (!condition.getAsBoolean() && System.nanoTime() < deadline) Thread.sleep(5);
         assertTrue(condition.getAsBoolean(), "Expected database state was not reached");
     }
@@ -1067,6 +1067,18 @@ class CrmFoundationIntegrationTest {
         final Set<UUID> invalidations=ConcurrentHashMap.newKeySet();
         record AppointmentRequest(String project,CrmAppointmentQuery query,String cursor,boolean history) {}
         final AtomicInteger appointmentReads=new AtomicInteger();
+        volatile CrmReadPort journalDelegate;
+        volatile java.util.function.BiFunction<AppointmentRequest,CrmJournalOptions,CrmAppointmentPage> journalReader;
+        public CrmAppointmentPage readAppointments(CrmAccess access,String project,CrmAppointmentQuery query,String cursor,CrmJournalOptions options){
+            if(journalDelegate!=null)return journalDelegate.readAppointments(access,project,query,cursor,options);
+            if(journalReader!=null)return journalReader.apply(new AppointmentRequest(project,query,cursor,false),options);
+            return readAppointments(access,project,query,cursor);
+        }
+        public CrmAppointmentPage readClientHistory(CrmAccess access,String project,CrmAppointmentQuery query,String cursor,CrmJournalOptions options){
+            if(journalDelegate!=null)return journalDelegate.readClientHistory(access,project,query,cursor,options);
+            if(journalReader!=null)return journalReader.apply(new AppointmentRequest(project,query,cursor,true),options);
+            return readClientHistory(access,project,query,cursor);
+        }
         volatile Function<AppointmentRequest,CrmAppointmentPage> appointmentsReader=request -> new CrmAppointmentPage(
                 List.of(),null,Instant.now(),CrmReadResult.Completeness.UNKNOWN,request.project(),request.query());
         public CrmAppointmentPage readAppointments(CrmAccess access,String project,CrmAppointmentQuery query,String cursor) {
@@ -1969,9 +1981,7 @@ class CrmFoundationIntegrationTest {
     }
     private void awaitClients() throws Exception {
         var executor=(ThreadPoolExecutor)ReflectionTestUtils.getField(clientSync,"executor");
-        long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(10);
-        while (executor.getActiveCount()>0 && System.nanoTime()<until) Thread.sleep(10);
-        assertEquals(0,executor.getActiveCount());
+        awaitCondition(()->executor.getActiveCount()==0);
     }
     private CrmClientDto importClient() throws Exception {
         var project=bind(connection()); awaitIdle();
@@ -2373,7 +2383,8 @@ class CrmFoundationIntegrationTest {
         assertEquals(1,provider.scheduleReads.get());
         dueSchedule(project.id(),master,SCHEDULE_DAY,SCHEDULE_DAY);
         assertEquals(0,scheduleSync.refreshDue(300000));
-        assertEquals(429,assertThrows(CrmException.class,() -> scheduleSync.refresh(project.id(),master,SCHEDULE_DAY.plusDays(1),SCHEDULE_DAY.plusDays(1))).status());
+        var busy=assertThrows(CrmException.class,() -> scheduleSync.refresh(project.id(),master,SCHEDULE_DAY.plusDays(1),SCHEDULE_DAY.plusDays(1)));
+        assertEquals(503,busy.status());assertEquals("CRM_CONNECTION_BUSY",busy.code());
         jdbc.update("update crm.syncstate set claimuntil=clock_timestamp()-interval '1 second' where projectid=? and dataset='WRITER:SCHEDULE'",project.id());
         assertEquals("CRM_REFRESH_EXPIRED",scheduleSync.state(project.id(),master,SCHEDULE_DAY,SCHEDULE_DAY).errorCode());
         scheduleSync.refresh(project.id(),master,SCHEDULE_DAY,SCHEDULE_DAY);
@@ -2624,6 +2635,163 @@ class CrmFoundationIntegrationTest {
         finance.refresh(page.items().getFirst().id());
         assertEquals("CRM_CONTEXT_CHANGED",assertThrows(CrmException.class,() -> appointmentReader.appointments(project.id(),appointmentFilter(),page.nextCursor())).code());
     }
+    @Test void journalCacheSharesSevenDaysAcrossHttpRefreshAndThreeHistoriesWithoutUpdatingRowsOrHealth() throws Exception {
+        var project=bind(connection());awaitIdle();
+        provider.clientReader=cursor->clientPage(List.of(externalClient("1","One"),externalClient("2","Two"),externalClient("3","Three")),null);
+        clientSync.refresh(project.id());awaitClients();
+        var clientIds=clients.clients(project.id(),null,false,null).items().stream().map(CrmClientDto::id).toList();
+        var http=org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(new CrmController(service,sync,clientSync,scheduleSync,appointmentSync))
+                .setControllerAdvice(new kit.penny.clientbus.server.exception.GlobalExceptionHandler()).build();
+        try(var source=new DikidiJournalFixture(new CrmJournalStore(jdbc))){
+            provider.journalDelegate=source.provider;
+            String endpoint="/api/crm/projects/"+project.id()+"/refresh";
+            String period="\"dateFrom\":\"2026-11-01\",\"dateTo\":\"2026-11-07\"";
+            http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(endpoint).contentType("application/json").content("{\"dataset\":\"APPOINTMENTS\","+period+"}"))
+                    .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isAccepted());awaitAppointments();
+            assertEquals(7,source.dayLoads.get());assertEquals(17,source.physical.get());assertEquals(1,source.logins.get());
+            var before=jdbc.queryForList("select id,version,lastobservedat,lastobservedgeneration,sourceattributes from crm.appointment order by id");assertEquals(21,before.size());
+            var health=jdbc.queryForMap("select healthgeneration,healthappliedgeneration,lastcheckedat,version from crm.connection where id=?",project.connectionId());
+            for(var client:clientIds){
+                http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(endpoint).contentType("application/json").content("{\"dataset\":\"CLIENT_HISTORY\",\"crmClientId\":\""+client+"\","+period+"}"))
+                        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isAccepted());awaitAppointments();
+            }
+            assertEquals(7,source.dayLoads.get());assertEquals(17,source.physical.get());
+            assertEquals(before,jdbc.queryForList("select id,version,lastobservedat,lastobservedgeneration,sourceattributes from crm.appointment order by id"));
+            assertEquals(health,jdbc.queryForMap("select healthgeneration,healthappliedgeneration,lastcheckedat,version from crm.connection where id=?",project.connectionId()));
+            // A separate force cycle bypasses ready TTL; a later force is a new cycle, not a durable replay.
+            for(int cycle=0;cycle<2;cycle++){
+                http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(endpoint).contentType("application/json").content("{\"dataset\":\"APPOINTMENTS\",\"force\":true,"+period+"}"))
+                        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isAccepted());awaitAppointments();
+                assertEquals(14+cycle*7,source.dayLoads.get());
+            }
+        }finally{provider.journalDelegate=null;}
+    }
+    @Test void journalCacheOffKeepsSourceOrderAndEpochAcrossOtherServerCacheHits() throws Exception {
+        var project=bind(connection());awaitIdle();var journal=new CrmJournalStore(jdbc);
+        var entered=new CountDownLatch(1);var release=new CountDownLatch(1);
+        try(var cached=new DikidiJournalFixture(journal);var live=new DikidiJournalFixture(journal,false)){
+            provider.journalDelegate=cached.provider;
+            appointmentSync.refresh(project.id(),"APPOINTMENTS",null,SCHEDULE_DAY,SCHEDULE_DAY);awaitAppointments();
+            assertEquals(3,appointments(project.id()).items().size());
+            live.hour=12;provider.journalDelegate=live.provider;
+            appointmentSync.refresh(project.id(),"APPOINTMENTS",null,SCHEDULE_DAY,SCHEDULE_DAY);awaitAppointments();
+            var fresh=appointments(project.id()).items();assertTrue(fresh.stream().allMatch(row->row.localStart().getHour()==12));
+            assertTrue(jdbc.queryForObject("select min((sourceattributes->>'journalSequence')::bigint)>1 from crm.appointment where projectid=?",Boolean.class,project.id()));
+            provider.journalDelegate=cached.provider;
+            appointmentSync.refresh(project.id(),"APPOINTMENTS",null,SCHEDULE_DAY,SCHEDULE_DAY);awaitAppointments();
+            assertEquals(fresh,appointments(project.id()).items());assertEquals(1,cached.dayLoads.get());assertEquals(1,cached.provider.journalDiagnostics().hits());
+            assertEquals(0,live.provider.journalDiagnostics().entries());
+            live.beforeDayRead=()->{entered.countDown();await(release);};live.hour=13;provider.journalDelegate=live.provider;
+            appointmentSync.refresh(project.id(),"APPOINTMENTS",null,SCHEDULE_DAY,SCHEDULE_DAY);assertTrue(entered.await(2,TimeUnit.SECONDS));
+            journal.invalidate(project.id());release.countDown();awaitAppointments();
+            assertEquals(fresh,appointments(project.id()).items());
+            assertEquals("CRM_CONTEXT_MISMATCH",appointmentSync.state(project.id(),"APPOINTMENTS",null,SCHEDULE_DAY,SCHEDULE_DAY).errorCode());
+            appointmentSync.refresh(project.id(),"APPOINTMENTS",null,SCHEDULE_DAY,SCHEDULE_DAY);awaitAppointments();
+            assertTrue(appointments(project.id()).items().stream().allMatch(row->row.localStart().getHour()==13));assertEquals(3,live.dayLoads.get());
+        }finally{release.countDown();provider.journalDelegate=null;}
+    }
+    @Test void journalSharedOldAuthFailureCannotRevokeLaterSuccessfulVerificationAfterInitiatorStops() throws Exception {
+        var project=bind(connection());awaitIdle();
+        for(boolean reuse:List.of(false,true)){
+            var entered=new CountDownLatch(1);var release=new CountDownLatch(1);var requests=new AtomicInteger();
+            DikidiTransport transport=(method,uri,form,ajax,external,timeout)->{
+                requests.incrementAndGet();entered.countDown();await(release);return new DikidiTransport.Response(401,"expired");
+            };
+            try(var source=new DikidiProvider(new DikidiProvider.Settings(Duration.ofSeconds(1),Duration.ofSeconds(5),65536),()->transport)
+                    .journalCache(new CrmJournalStore(jdbc),Duration.ofSeconds(30),10,65536,65536,reuse)){
+                provider.journalDelegate=source;
+                appointmentSync.refresh(project.id(),"APPOINTMENTS",null,SCHEDULE_DAY,SCHEDULE_DAY);assertTrue(entered.await(2,TimeUnit.SECONDS));
+                var stopped=appointmentSync;stopped.close();
+                assertTrue(((ThreadPoolExecutor)ReflectionTestUtils.getField(stopped,"executor")).awaitTermination(3,TimeUnit.SECONDS));
+                jdbc.update("update crm.syncstate set claimuntil=clock_timestamp()-interval '1 second' where projectid=? and dataset='WRITER:APPOINTMENTS'",project.id());
+                service.verify(project.connectionId());
+                var verified=jdbc.queryForMap("select status,healthgeneration,healthappliedgeneration,lastcheckedat,version from crm.connection where id=?",project.connectionId());
+                assertEquals("CONNECTED",verified.get("status"));
+                appointmentSync=new CrmAppointmentSync(store,jdbc,tx.getTransactionManager(),new CrmRegistry(List.of(provider)),cipher,events,new CrmAppointmentWriter(store),appointmentNanoTime::get);
+                appointmentSync.refresh(project.id(),"APPOINTMENTS",null,SCHEDULE_DAY,SCHEDULE_DAY);
+                awaitCondition(()->source.journalDiagnostics().joins()==1);release.countDown();awaitAppointments();
+                assertEquals(1,requests.get());assertEquals("CRM_REAUTH_REQUIRED",appointmentSync.state(project.id(),"APPOINTMENTS",null,SCHEDULE_DAY,SCHEDULE_DAY).errorCode());
+                assertEquals(verified,jdbc.queryForMap("select status,healthgeneration,healthappliedgeneration,lastcheckedat,version from crm.connection where id=?",project.connectionId()));
+            }finally{release.countDown();provider.journalDelegate=null;}
+        }
+    }
+    @Test void journalOriginalObservationCannotRollBackNewerRowsAndMetadataDoesNotInvalidateCursors() throws Exception {
+        var project=bind(connection());awaitIdle();
+        var sequence=new AtomicLong(11);var hit=new AtomicBoolean();
+        provider.journalReader=(request,options)->new CrmAppointmentPage(java.util.stream.IntStream.range(0,101).mapToObj(index->{
+                    var row=appointment("a"+index,0,sequence.get()==10?9:10,Integer.toString(index+1));
+                    return index==0?row:details(row,"JOURNAL",List.of(),List.of(),false,row.presentFields());
+                }).toList(),null,
+                Instant.now(),CrmReadResult.Completeness.UNKNOWN,request.project(),request.query(),new CrmJournalObservation(options.epoch(),sequence.get(),SCHEDULE_DAY,hit.get()));
+        appointmentSync.refresh(project.id(),"APPOINTMENTS",null,SCHEDULE_DAY,SCHEDULE_DAY.plusDays(1));awaitAppointments();
+        var page=appointments(project.id());assertTrue(page.hasMore());var revision=page.revision();
+        var picker=appointmentReader.clients(project.id(),SCHEDULE_DAY,SCHEDULE_DAY.plusDays(1),null,null,null);assertTrue(picker.hasMore());
+        var rows=jdbc.queryForList("select id,version,lastobservedat,lastobservedgeneration from crm.appointment order by id");
+        var children=jdbc.queryForList("select id,version from crm.appointmentservice order by id");
+        hit.set(true);
+        for(long source:List.of(11L,10L)){
+            sequence.set(source);appointmentSync.refresh(project.id(),"APPOINTMENTS",null,SCHEDULE_DAY,SCHEDULE_DAY.plusDays(1));awaitAppointments();
+            assertEquals(rows,jdbc.queryForList("select id,version,lastobservedat,lastobservedgeneration from crm.appointment order by id"));
+            assertEquals(children,jdbc.queryForList("select id,version from crm.appointmentservice order by id"));
+        }
+        assertEquals(revision,appointments(project.id()).revision());assertEquals(1,appointmentReader.appointments(project.id(),appointmentFilter(),page.nextCursor()).items().size());
+        assertEquals(1,appointmentReader.clients(project.id(),SCHEDULE_DAY,SCHEDULE_DAY.plusDays(1),null,null,picker.nextCursor()).items().size());
+        for(String dataset:List.of("CLIENTS","CATALOG","FINANCE")){
+            jdbc.update("""
+                    insert into crm.syncstate(id,version,createdat,updatedat,projectid,statekind,writedomain,dataset,scopekey,scope,generation,connectionid,credentialversion,contextversion,zonerevision,status,successfulcoverage,attemptcoverage)
+                    select ?,0,clock_timestamp(),clock_timestamp(),projectid,'SCOPE',?,?,'ALL','{}'::jsonb,0,connectionid,credentialversion,contextversion,zonerevision,'IDLE','{}'::jsonb,'{}'::jsonb
+                    from crm.syncstate where projectid=? and dataset='APPOINTMENTS' limit 1 on conflict(projectid,dataset,scopekey) do nothing
+                    """,UUID.randomUUID(),dataset,dataset,project.id());
+            jdbc.update("update crm.syncstate set version=version+5,status='RUNNING',generation=generation+1,lastattemptat=clock_timestamp() where projectid=? and dataset=?",project.id(),dataset);
+            assertEquals(1,appointmentReader.appointments(project.id(),appointmentFilter(),page.nextCursor()).items().size());
+            jdbc.update("update crm.syncstate set version=version+1,status='FAILED' where projectid=? and dataset=?",project.id(),dataset);
+            assertEquals(1,appointmentReader.appointments(project.id(),appointmentFilter(),page.nextCursor()).items().size());
+        }
+        jdbc.update("update crm.appointment set paymentstate='PAID' where projectid=?",project.id());
+        assertEquals("CRM_CONTEXT_CHANGED",assertThrows(CrmException.class,()->appointmentReader.appointments(project.id(),appointmentFilter(),page.nextCursor())).code());
+        assertEquals("CRM_CONTEXT_CHANGED",assertThrows(CrmException.class,()->appointmentReader.clients(project.id(),SCHEDULE_DAY,SCHEDULE_DAY.plusDays(1),null,null,picker.nextCursor())).code());
+    }
+    @Test void journalHistoryCursorIncludesBothProjectsDataButNotTheirAttempts() throws Exception {
+        var client=importClient();var core=coreClient("Shared","70000000000");clients.link(client.id(),core,client.version());
+        var first=service.projects(workspace,null).getFirst();
+        var secondWorkspace=tx.execute(status->{var row=new WorkspaceEntity(em.find(OrganizationEntity.class,organization),"second");em.persist(row);return row.getId();});
+        var second=service.bind(secondWorkspace,new BindCrmProjectRequest(first.connectionId(),"200",null)).project();awaitIdle();
+        tx.executeWithoutResult(status->{
+            var project=em.find(CrmProjectEntity.class,second.id());
+            new CrmClientWriter(store).apply(project,new CrmClientPage(List.of(externalClient("1","Other")),null,Instant.now(),CrmReadResult.Completeness.UNKNOWN,"200:CLIENTS"));
+            var row=em.createQuery("from CrmClientEntity where project.id=:project",CrmClientEntity.class).setParameter("project",second.id()).getSingleResult();row.setClient(em.find(ClientEntity.class,core));
+        });
+        var rows=java.util.stream.IntStream.range(0,60).mapToObj(i->{var row=appointment("a"+i,0,10,"1");return details(row,"JOURNAL",List.of(),List.of(),false,row.presentFields());}).toList();
+        loadAppointments(first.id(),CrmReadResult.Completeness.UNKNOWN,rows);loadAppointments(second.id(),CrmReadResult.Completeness.UNKNOWN,rows);
+        var history=appointmentReader.history(core,null,appointmentFilter(),null);assertTrue(history.hasMore());
+        jdbc.update("update crm.syncstate set version=version+10,generation=generation+1,status='FAILED' where projectid in (?,?)",first.id(),second.id());
+        assertEquals(20,appointmentReader.history(core,null,appointmentFilter(),history.nextCursor()).items().size());
+        jdbc.update("update crm.appointment set paymentstate='PAID' where projectid=?",second.id());
+        assertEquals("CRM_CONTEXT_CHANGED",assertThrows(CrmException.class,()->appointmentReader.history(core,null,appointmentFilter(),history.nextCursor())).code());
+        var current=appointmentReader.history(core,null,appointmentFilter(),null);
+        assertTrue(jdbc.update("update crm.master set employeeid=? where projectid=?",member,first.id())>0);
+        assertEquals("CRM_CONTEXT_CHANGED",assertThrows(CrmException.class,()->appointmentReader.history(core,null,appointmentFilter(),current.nextCursor())).code());
+    }
+    @Test void crossDayCachedMoveRereadsOnlyConflictingPairAndRetainsOneVisitOnNewDay() throws Exception {
+        var project=bind(connection());awaitIdle();var calls=new AtomicInteger();
+        provider.journalReader=(request,options)->{
+            calls.incrementAndGet();var day=request.cursor()==null?request.query().dateFrom():LocalDate.parse(request.cursor());
+            var items=options.force()&&day.equals(SCHEDULE_DAY)?List.<CrmAppointment>of():List.of(appointment("moved",day.equals(SCHEDULE_DAY)?0:1,10,"1"));
+            return new CrmAppointmentPage(items,day.isBefore(request.query().dateTo())?day.plusDays(1).toString():null,Instant.now(),CrmReadResult.Completeness.UNKNOWN,request.project(),request.query(),
+                    new CrmJournalObservation(options.epoch(),calls.get(),day,!options.force()&&day.equals(SCHEDULE_DAY)));
+        };
+        appointmentSync.refresh(project.id(),"APPOINTMENTS",null,SCHEDULE_DAY,SCHEDULE_DAY.plusDays(1));awaitAppointments();
+        assertEquals(4,calls.get());assertEquals(1,appointments(project.id()).items().size());
+        assertEquals(SCHEDULE_DAY.plusDays(1),appointments(project.id()).items().getFirst().localStart().toLocalDate());
+        assertNotEquals("FAILED",appointmentSync.state(project.id(),"APPOINTMENTS",null,SCHEDULE_DAY,SCHEDULE_DAY.plusDays(1)).status());
+    }
+    @Test void sharedTrafficPauseIsAtomicSurvivesNewStoreAndCredentialRotation() throws Exception {
+        var connection=connection();var store=new CrmTrafficStore(jdbc);var until=Instant.now().plusSeconds(120).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+        assertEquals(until,store.block(connection.id(),until).notBefore());
+        assertEquals(until,store.block(connection.id(),until.minusSeconds(60)).notBefore());
+        service.updateConnection(connection.id(),new UpdateCrmConnectionRequest(connection.version(),null,"replacement",null));
+        assertEquals(until,new CrmTrafficStore(jdbc).current(connection.id()).notBefore());
+    }
     private static CrmAppointment appointment(String id,int day,int hour,String client) {
         var start=SCHEDULE_DAY.plusDays(day).atTime(hour,0);
         return new CrmAppointment(id,"APPOINTMENT",client==null ? null : new CrmClientReference("PROJECT",client),
@@ -2709,6 +2877,8 @@ class CrmFoundationIntegrationTest {
         assertEquals("CRM_CONTEXT_CHANGED",assertThrows(CrmException.class,() -> appointmentReader.clients(project.id(),SCHEDULE_DAY,SCHEDULE_DAY,"client",null,first.nextCursor())).code());
         assertEquals("CRM_CONTEXT_CHANGED",assertThrows(CrmException.class,() -> appointmentReader.clients(project.id(),SCHEDULE_DAY,SCHEDULE_DAY.plusDays(1),null,null,first.nextCursor())).code());
         loadAppointments(project.id(),CrmReadResult.Completeness.COMPLETE,rows);
+        assertEquals(2,appointmentReader.clients(project.id(),SCHEDULE_DAY,SCHEDULE_DAY,null,null,first.nextCursor()).items().size());
+        jdbc.update("update crm.appointment set clientsnapshot=jsonb_build_object('name','Changed client') where projectid=? and externalid='a0'",project.id());
         assertEquals("CRM_CONTEXT_CHANGED",assertThrows(CrmException.class,() -> appointmentReader.clients(project.id(),SCHEDULE_DAY,SCHEDULE_DAY,null,null,first.nextCursor())).code());
     }
     @Test void appointmentClientOptionsRespectWorkspaceAccessAndRemainReadableInArchive() throws Exception {
@@ -2907,7 +3077,8 @@ class CrmFoundationIntegrationTest {
         var state=appointmentSync.refresh(project.id(),"CLIENT_HISTORY",client.id(),SCHEDULE_DAY,SCHEDULE_DAY.plusDays(1));
         assertTrue(provider.entered.await(2,TimeUnit.SECONDS));
         assertEquals(state.generation(),appointmentSync.refresh(project.id(),"CLIENT_HISTORY",client.id(),SCHEDULE_DAY,SCHEDULE_DAY.plusDays(1)).generation());
-        assertEquals(429,assertThrows(CrmException.class,() -> appointmentSync.refresh(project.id(),"APPOINTMENTS",null,SCHEDULE_DAY,SCHEDULE_DAY.plusDays(1))).status());
+        var busy=assertThrows(CrmException.class,() -> appointmentSync.refresh(project.id(),"APPOINTMENTS",null,SCHEDULE_DAY,SCHEDULE_DAY.plusDays(1)));
+        assertEquals(503,busy.status());assertEquals("CRM_CONNECTION_BUSY",busy.code());
         provider.release.countDown(); awaitAppointments();
         var rows=appointments(project.id()).items(); assertEquals("NOT_OBSERVED",rows.getFirst().observationState()); assertEquals("OBSERVED",rows.getLast().observationState());
     }

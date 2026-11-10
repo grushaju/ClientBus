@@ -1,6 +1,8 @@
 package kit.penny.clientbus.crm.api;
 
 public interface CrmReadPort {
+    default CrmAppointmentPage readAppointments(CrmAccess access,String project,CrmAppointmentQuery query,String cursor,CrmJournalOptions options){return readAppointments(access,project,query,cursor);}
+    default CrmAppointmentPage readClientHistory(CrmAccess access,String project,CrmAppointmentQuery query,String cursor,CrmJournalOptions options){return readClientHistory(access,project,query,cursor);}
     default CrmFinanceSnapshot readFinance(CrmAccess access, String externalProjectId, CrmFinanceQuery query) {
         throw new CrmFailure(CrmFailure.Code.CAPABILITY_UNVERIFIED);
     }

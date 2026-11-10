@@ -56,7 +56,7 @@ public class CrmClientSync {
             var project = store.project(projectId, organization);
             store.em.refresh(project, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
             if (!project.isEnabled()) throw new CrmException(409, "CRM_CONFIGURATION_REQUIRED", "Проект CRM отключён.");
-            store.credentials(project.getConnection()); registry.require(project.getProvider());
+            store.requireNetwork(project);store.credentials(project.getConnection()); registry.require(project.getProvider());
             CrmContext context = store.context(project);
             initialize(context, "CONTROL", "WRITER:CLIENTS", "CONTROL");
             initialize(context, "SCOPE", "CLIENTS", "ALL");
@@ -85,8 +85,8 @@ public class CrmClientSync {
         if (claim != null) {
             try { executor.execute(() -> run(claim)); }
             catch (RejectedExecutionException error) {
-                fail(claim, "CRM_RATE_LIMITED");
-                throw new CrmException(429, "CRM_RATE_LIMITED", "Загрузка CRM занята. Повторите позже.");
+                fail(claim,"CRM_CONNECTION_BUSY");
+                throw new CrmException(503,"CRM_CONNECTION_BUSY","Загрузка CRM занята. Повторите позже.");
             }
         }
         return state(projectId, dataset);
@@ -263,8 +263,8 @@ public class CrmClientSync {
                 return new CrmSyncStateDto(dataset, state, attempt, success, success == null ? "NEVER_LOADED" : current ? "CURRENT" : "STALE",
                         completeness, code, rs.getLong("generation"));
             }, projectId);
-            if (rows.isEmpty()) return new CrmSyncStateDto(dataset, "IDLE", null, null, "NEVER_LOADED", "UNKNOWN", null, 0);
-            return rows.getFirst();
+            if (rows.isEmpty()) return store.pauseState(project,new CrmSyncStateDto(dataset, "IDLE", null, null, "NEVER_LOADED", "UNKNOWN", null, 0));
+            return store.pauseState(project,rows.getFirst());
         });
     }
     public long revision(UUID projectId) {

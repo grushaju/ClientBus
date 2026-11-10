@@ -4,6 +4,24 @@ import type { CrmConnection, CrmProject, CrmMaster, CrmSyncState, CrmClient, Crm
 import type {} from '../src/api/events/uiDiagnostics'
 import { randomUUID } from 'node:crypto'
 
+test('CRM 12.6.1: обычное и принудительное обновление различаются; 429 сохраняет записи', async ({ page, api }) => {
+    const fixture = await installCrm(page); const modes: boolean[] = []
+    const retryAt = '2099-11-10T10:00:00Z'
+    await page.route('**/api/crm/projects/crm-project/refresh', route => {
+        modes.push(route.request().postDataJSON().force === true)
+        return route.fulfill({ status: 429, headers: { 'Retry-After': '120' }, json: { code: 'CRM_COOLDOWN', message: 'DIKIDI временно приостановил обращения.', retryAt } })
+    })
+    await page.goto('/crm?tab=appointments&dateFrom=2026-11-08&dateTo=2026-11-08')
+    await expect(page.locator('.crm-appointment-row')).toHaveCount(1)
+    await page.getByRole('button', { name: 'Обновить записи периода', exact: true }).click()
+    await expect(page.getByRole('alert').filter({ hasText: 'Повторить после' })).toBeVisible()
+    await expect(page.locator('.crm-appointment-row')).toHaveCount(1)
+    await page.getByRole('button', { name: 'Запросить свежие данные', exact: true }).click()
+    await expect.poll(() => modes).toEqual([false, true])
+    await expect(page.locator('.crm-appointment-row')).toHaveCount(1)
+    expect(fixture.counters.unknown).toEqual([])
+})
+
 test('CRM 12.6: непроверенные команды закрыты, журнал читается только при раскрытии', async ({ page, api }) => {
     const fixture = await installCrm(page); let reads = 0
     await page.route('**/api/crm/projects/crm-project/operations?*', route => {
