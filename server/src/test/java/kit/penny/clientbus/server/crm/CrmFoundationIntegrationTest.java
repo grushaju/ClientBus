@@ -1006,6 +1006,96 @@ class CrmFoundationIntegrationTest {
         loadAppointments(fixture.project().id(),CrmReadResult.Completeness.COMPLETE,List.of(row));
         return appointments(fixture.project().id()).items().getFirst();
     }
+    @Test void operationHistoryLinksConfirmedCreationMoveAndCancellationWithoutExposingSnapshots() throws Exception {
+        var f=operationFixture();var row=movableAppointment(f);
+        var create=operations.create(f.project().id(),UUID.randomUUID(),f.request());
+        jdbc.update("update crm.operation set status='CONFIRMED',externalreference=? where id=?",row.externalId(),create.id());
+        var move=operations.change(row.id(),UUID.randomUUID(),new CrmChangeAppointmentRequest(f.project().contextVersion(),f.project().zoneRevision(),row.version(),f.request().localStart(),null),false);
+        jdbc.update("update crm.operation set status='CONFIRMED' where id=?",move.id());
+        var cancel=operations.change(row.id(),UUID.randomUUID(),new CrmChangeAppointmentRequest(f.project().contextVersion(),f.project().zoneRevision(),row.version(),null,"Local cancellation reason"),true);
+        var history=operations.history(row.id(),true,null);
+        assertEquals(List.of(cancel.id(),move.id(),create.id()),history.items().stream().map(entry->entry.operation().id()).toList());
+        assertEquals("Local cancellation reason",history.items().getFirst().cancelComment());
+        assertNotNull(history.items().get(1).oldStart());assertEquals(f.request().localStart().toString(),history.items().get(1).newStart());
+        assertNotNull(history.items().getFirst().authorName());assertFalse(history.hasMore());
+        assertFalse(tools.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(history).contains("preservedSnapshot"));assertEquals(0,provider.effects.get());
+        actor.set(member);assertTrue(operations.history(row.id(),true,null).items().isEmpty());
+        assertThrows(AccessDeniedException.class,()->operations.history(row.id(),false,null));
+        jdbc.update("update dbo.employeeworkspace set issupervisor=true where employeeid=? and workspaceid=?",member,workspace);
+        assertEquals(3,operations.history(row.id(),false,null).items().size());
+        actor.set(target);assertThrows(AccessDeniedException.class,()->operations.history(row.id(),true,null));
+    }
+    @Test void operationHistoryAndPendingCreationAreFencedByProjectContextAndPaginateWithinTheCard() throws Exception {
+        var f=operationFixture();var row=movableAppointment(f);
+        var create=operations.create(f.project().id(),UUID.randomUUID(),f.request());
+        assertEquals(create.id(),operations.pendingCreates(f.project().id(),null).items().getFirst().id());
+        jdbc.update("update crm.operation set status='CONFIRMED',externalreference=? where id=?",row.externalId(),create.id());
+        for(int i=0;i<51;i++) {
+            var op=operations.create(f.project().id(),UUID.randomUUID(),f.request());
+            jdbc.update("update crm.operation set status='CONFIRMED',externalreference=? where id=?",row.externalId(),op.id());
+        }
+        var first=operations.history(row.id(),true,null);assertEquals(50,first.items().size());assertTrue(first.hasMore());
+        var second=operations.history(row.id(),true,first.nextCursor());assertEquals(2,second.items().size());assertFalse(second.hasMore());
+        UUID otherWorkspace=tx.execute(status -> { var entity=new WorkspaceEntity(em.find(OrganizationEntity.class,organization),"History other workspace");em.persist(entity);return entity.getId(); });
+        var other=service.bind(otherWorkspace,new BindCrmProjectRequest(f.project().connectionId(),"200",null)).project();awaitIdle();
+        loadAppointments(other.id(),CrmReadResult.Completeness.COMPLETE,List.of(appointment(row.externalId(),0,10,"operation-client")));
+        var otherRow=appointments(other.id()).items().getFirst();
+        assertTrue(operations.history(otherRow.id(),false,null).items().isEmpty());
+        assertThrows(CrmException.class,()->operations.history(otherRow.id(),false,first.nextCursor()));
+        var ids=new HashSet<UUID>();first.items().forEach(entry->assertTrue(ids.add(entry.operation().id())));second.items().forEach(entry->assertTrue(ids.add(entry.operation().id())));
+        var unknown=operations.create(f.project().id(),UUID.randomUUID(),f.request());jdbc.update("update crm.operation set status='UNKNOWN' where id=?",unknown.id());
+        assertEquals(unknown.id(),operations.pendingCreates(f.project().id(),null).items().getFirst().id());
+        assertEquals(50,operations.history(row.id(),true,null).items().size());
+        jdbc.update("update crm.project set contextversion=contextversion+1 where id=?",f.project().id());
+        assertEquals(50,operations.history(row.id(),true,null).items().size());assertEquals(unknown.id(),operations.pendingCreates(f.project().id(),null).items().getFirst().id());
+        assertThrows(CrmException.class,()->operations.history(row.id(),true,first.nextCursor()));
+        jdbc.update("update crm.project set historycontextversion=contextversion where id=?",f.project().id());
+        assertTrue(operations.history(row.id(),true,null).items().isEmpty());assertTrue(operations.pendingCreates(f.project().id(),null).items().isEmpty());
+        assertEquals("CRM_CONTEXT_CHANGED",assertThrows(CrmException.class,()->operations.byKey(f.project().id(),unknown.idempotencyKey())).code());
+    }
+    @Test void operationHistorySurvivesSettingsSecretRotationAndArchiveButNotRebinding() throws Exception {
+        var f=operationFixture();var row=movableAppointment(f);
+        var op=operations.create(f.project().id(),UUID.randomUUID(),f.request());
+        jdbc.update("update crm.operation set status='CONFIRMED',externalreference=? where id=?",row.externalId(),op.id());
+        var pending=operations.create(f.project().id(),UUID.randomUUID(),f.request());jdbc.update("update crm.operation set status='UNKNOWN' where id=?",pending.id());
+        var project=service.updateProject(f.project().id(),new UpdateCrmProjectRequest(f.project().version(),false,"Europe/Berlin"));
+        assertEquals(1,operations.history(row.id(),true,null).items().size());assertEquals(pending.id(),operations.pendingCreates(project.id(),null).items().getFirst().id());
+        var connection=service.connections().stream().filter(c->c.id().equals(f.project().connectionId())).findFirst().orElseThrow();
+        service.updateConnection(connection.id(),new UpdateCrmConnectionRequest(connection.version(),null,"rotated-secret",null));
+        assertEquals(1,operations.history(row.id(),true,null).items().size());assertEquals(pending.id(),operations.byKey(project.id(),pending.idempotencyKey()).id());
+        project=service.detachProject(project.id(),project.version());
+        assertEquals(1,operations.history(row.id(),true,null).items().size());assertEquals(1,operations.pendingCreates(project.id(),null).items().size());
+        service.bind(workspace,new BindCrmProjectRequest(connection.id(),"100",null,project.version()));awaitIdle();
+        assertTrue(operations.history(row.id(),true,null).items().isEmpty());assertTrue(operations.pendingCreates(project.id(),null).items().isEmpty());
+        assertEquals(0,provider.effects.get());
+    }
+    @Test void operationHistoryKeepsLegacyBoundaryOnSettingsAndResetsItOnLoginChange() throws Exception {
+        var f=operationFixture();var row=movableAppointment(f);
+        var op=operations.create(f.project().id(),UUID.randomUUID(),f.request());
+        jdbc.update("update crm.operation set status='CONFIRMED',externalreference=? where id=?",row.externalId(),op.id());
+        jdbc.update("update crm.project set historycontextversion=null where id=?",f.project().id());
+        var project=service.updateProject(f.project().id(),new UpdateCrmProjectRequest(f.project().version(),false,null));
+        assertEquals(f.project().contextVersion(),jdbc.queryForObject("select historycontextversion from crm.project where id=?",Long.class,project.id()));
+        assertEquals(1,operations.history(row.id(),true,null).items().size());
+        var connection=service.connections().stream().filter(c->c.id().equals(f.project().connectionId())).findFirst().orElseThrow();
+        service.updateConnection(connection.id(),new UpdateCrmConnectionRequest(connection.version(),"79990009999","replacement-account-secret",null));
+        assertTrue(operations.history(row.id(),true,null).items().isEmpty());
+        assertEquals("CRM_CONTEXT_CHANGED",assertThrows(CrmException.class,()->operations.byKey(f.project().id(),op.idempotencyKey())).code());
+    }
+    @Test void operationPendingCreationManagersCanRecoverOtherAuthorsButMembersCannot() throws Exception {
+        var f=operationFixture();var first=operations.create(f.project().id(),UUID.randomUUID(),f.request());
+        jdbc.update("update crm.operation set status='UNKNOWN' where id=?",first.id());
+        actor.set(member);var own=operations.create(f.project().id(),UUID.randomUUID(),f.request());
+        assertEquals(own.id(),operations.pendingCreates(f.project().id(),true,null).items().getFirst().id());
+        assertThrows(AccessDeniedException.class,()->operations.pendingCreates(f.project().id(),false,null));
+        jdbc.update("update dbo.employeeworkspace set issupervisor=true where employeeid=? and workspaceid=?",member,workspace);
+        assertEquals(2,operations.pendingCreates(f.project().id(),false,null).items().size());
+        provider.reconcileResult=command->new CrmCommandResult(CrmCommandResult.Outcome.CONFIRMED,"manager-recovered");
+        assertEquals("CONFIRMED",operations.reconcile(first.id()).status());assertEquals(0,provider.effects.get());
+        jdbc.update("update dbo.employeeworkspace set issupervisor=false where employeeid=? and workspaceid=?",member,workspace);
+        assertThrows(AccessDeniedException.class,()->operations.pendingCreates(f.project().id(),false,null));
+        actor.set(target);assertThrows(AccessDeniedException.class,()->operations.pendingCreates(f.project().id(),true,null));
+    }
     @Test void operationMoveAvailabilityUsesHistoricalServicesWithoutCreatingAnOperation() throws Exception {
         var f=operationFixture();var row=movableAppointment(f);actor.set(member);
         var request=new CrmMoveAvailabilityRequest(f.project().contextVersion(),f.project().zoneRevision(),row.version(),SCHEDULE_DAY.plusDays(1));

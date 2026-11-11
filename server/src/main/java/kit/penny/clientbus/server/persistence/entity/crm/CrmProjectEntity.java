@@ -53,6 +53,10 @@ public class CrmProjectEntity extends CrmRecord {
     @Column(name = "contextversion", nullable = false)
     private long contextVersion = 1;
 
+    // Null on pre-existing rows: retain their current conservative context boundary.
+    @Column(name = "historycontextversion")
+    private Long historyContextVersion = 1L;
+
     @Column(name = "enabled", nullable = false)
     private boolean enabled = true;
 
@@ -81,7 +85,12 @@ public class CrmProjectEntity extends CrmRecord {
     public long getZoneRevision() { return zoneRevision; }
     public void setZoneRevision(long zoneRevision) { this.zoneRevision = zoneRevision; }
     public long getContextVersion() { return contextVersion; }
-    public void setContextVersion(long contextVersion) { this.contextVersion = contextVersion; }
+    public void setContextVersion(long contextVersion) {
+        if (historyContextVersion == null) historyContextVersion = this.contextVersion;
+        this.contextVersion = contextVersion;
+    }
+    public long getHistoryContextVersion() { return historyContextVersion == null ? contextVersion : historyContextVersion; }
+    public void resetHistoryContext() { historyContextVersion = contextVersion; }
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
     public boolean isArchived() { return archived; }

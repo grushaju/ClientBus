@@ -80,18 +80,53 @@ public class CrmOperationService {
     public CrmOperationDto byKey(UUID projectId,UUID key) {
         requireKey(key); store.storage.requireReady();
         return tx.execute(status -> {
-            project(projectId); var row=find(projectId,store.guard.actor(),key);
-            if (row==null) throw CrmStore.notFound(); return row.dto();
+            var project=project(projectId); var row=find(projectId,store.guard.actor(),key);
+            if (row==null) throw CrmStore.notFound(); requireHistoryBinding(row,project); return row.dto();
         });
     }
     public CrmOperationPageDto list(UUID projectId,boolean own,boolean active,String cursor) {
+        return list(projectId,own,active,cursor,null,false);
+    }
+    public CrmOperationPageDto pendingCreates(UUID projectId,String cursor) { return pendingCreates(projectId,true,cursor); }
+    public CrmOperationPageDto pendingCreates(UUID projectId,boolean own,String cursor) {
+        return list(projectId,own,true,cursor,null,true);
+    }
+    public CrmOperationHistoryPageDto history(UUID appointmentId,boolean own,String cursor) {
+        store.storage.requireReady();
+        return tx.execute(status -> {
+            var appointment=store.em.find(CrmAppointmentEntity.class,appointmentId);
+            if(appointment==null)throw CrmStore.notFound();
+            var page=list(appointment.getProject().getId(),own,false,cursor,appointmentId,false);
+            // Fetch safe details and author labels in one bounded query, without an N+1 per card page.
+            var entries=page.items().isEmpty()?List.<CrmOperationHistoryDto>of():jdbc.query(
+                SELECT.replace("select o.*", "select coalesce(nullif(trim(e.firstname || ' ' || e.lastname),''),'Удалённый сотрудник') as authorname,o.*")
+                +" left join dbo.employee e on e.employeeid=o.initiatoremployeeid and e.organizationid=p.organizationid where o.id in ("
+                +String.join(",",Collections.nCopies(page.items().size(),"?"))+") order by o.createdat desc,o.id desc",(rs,index)-> {
+                    var row=map(rs,index); var command=row.command();
+                    String old=JSON.readTree(command.preservedSnapshot()).path("appointment").path("startlocal").asString(null);
+                    return new CrmOperationHistoryDto(row.dto(),rs.getString("authorname"),old,
+                        command.type()==CrmCommand.Type.CANCEL?null:command.localStart().toString(),
+                        command.type()==CrmCommand.Type.CANCEL?command.comment():null,command.zoneId());
+                },page.items().stream().map(CrmOperationDto::id).toArray());
+            return new CrmOperationHistoryPageDto(entries,page.nextCursor(),page.hasMore());
+        });
+    }
+    private CrmOperationPageDto list(UUID projectId,boolean own,boolean active,String cursor,UUID appointmentId,boolean pendingCreates) {
         store.storage.requireReady();
         return tx.execute(status -> {
             var project=project(projectId); UUID actor=store.guard.actor();
             if (!own) store.guard.workspace(project.getWorkspace().getId(),true);
-            String scope=hash(projectId+"/"+actor+"/"+own+"/"+active);
+            String scope=hash(projectId+"/"+actor+"/"+own+"/"+active+"/"+appointmentId+"/"+pendingCreates+"/"+project.getContextVersion());
             var parameters=new ArrayList<Object>(); parameters.add(projectId);
             String sql=SELECT+" where o.projectid=?";
+            sql+=" and o.connectionid=? and o.contextversion>=? and o.externalprojectid=?";
+            parameters.add(project.getConnection().getId()); parameters.add(project.getHistoryContextVersion()); parameters.add(project.getExternalId());
+            if(appointmentId!=null) {
+                var appointment=store.em.find(CrmAppointmentEntity.class,appointmentId);
+                sql+=" and (o.targetappointmentid=? or (o.type='CREATE' and o.status='CONFIRMED' and o.externalreference=?))";
+                parameters.add(appointmentId); parameters.add(appointment.getExternalId());
+            }
+            if(pendingCreates)sql+=" and o.type='CREATE'";
             if (own) { sql+=" and o.initiatoremployeeid=?"; parameters.add(actor); }
             if (active) sql+=" and o.status in ('REQUESTED','IN_FLIGHT','UNKNOWN')";
             if (cursor!=null) {
@@ -420,7 +455,12 @@ public class CrmOperationService {
     private Row authorized(UUID id) {
         var row=row(id); var project=project(row.dto().projectId());
         if (!row.dto().initiatorEmployeeId().equals(store.guard.actor())) store.guard.workspace(project.getWorkspace().getId(),true);
-        return row;
+        requireHistoryBinding(row,project); return row;
+    }
+    private void requireHistoryBinding(Row row,CrmProjectEntity project) {
+        if (!row.context().connectionId().equals(project.getConnection().getId())
+                || !row.context().externalProjectId().equals(project.getExternalId())
+                || row.dto().contextVersion()<project.getHistoryContextVersion()) throw CrmException.conflict("CRM_CONTEXT_CHANGED");
     }
     private Row find(UUID project,UUID actor,UUID key) {
         return jdbc.query(SELECT+" where o.projectid=? and o.initiatoremployeeid=? and o.idempotencykey=?",this::map,project,actor,key).stream().findFirst().orElse(null);

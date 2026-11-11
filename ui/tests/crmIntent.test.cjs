@@ -34,7 +34,7 @@ test('a lost response survives reload and prevents a new automatic POST', async 
     const first = api.readIntent(scope)
     const reloaded = load('../crm/crmIntent.ts', { '../../api/apiClient': { getApiErrorCode: error => error.code } })
     assert.equal(reloaded.readIntent(scope).key, first.key)
-    await assert.rejects(reloaded.sendIntent(scope, 'CREATE', async () => { calls++ }), /незавершённую/)
+    await assert.rejects(reloaded.sendIntent(scope, 'CREATE', async () => { calls++ }), /Повторный запрос не отправлен/)
     assert.equal(calls, 1)
 })
 test('UNKNOWN remains pending and only a proved terminal result clears the pointer', async t => {
@@ -51,7 +51,7 @@ test('concurrent tabs share one durable intent and only one starts POST', async 
     const first = api.sendIntent(scope, 'CREATE', send)
     const second = api.sendIntent(scope, 'CREATE', send).catch(error => error)
     await new Promise(resolve => setImmediate(resolve)); assert.equal(calls, 1); release()
-    await first; assert.match((await second).message, /незавершённую/)
+    await first; assert.match((await second).message, /Повторный запрос не отправлен/)
 })
 test('storage failure blocks POST and does not pretend that an operation was sent', async t => {
     const { api, storage } = fixture(t); storage.fail = true; let calls = 0
@@ -109,6 +109,6 @@ test('cancellation after starting POST preserves the key and blocks another POST
     await new Promise(resolve => setImmediate(resolve))
     const rejected = assert.rejects(pending, { name: 'AbortError' }); controller.abort(); await rejected
     const key = api.readIntent(scope).key
-    await assert.rejects(api.sendIntent(scope, 'CREATE', async () => { calls++ }), /незавершённую/)
+    await assert.rejects(api.sendIntent(scope, 'CREATE', async () => { calls++ }), /Повторный запрос не отправлен/)
     assert.equal(calls, 1); assert.equal(api.readIntent(scope).key, key)
 })

@@ -22,20 +22,80 @@ test('CRM 12.6.1: обычное и принудительное обновле�
     expect(fixture.counters.unknown).toEqual([])
 })
 
-test('CRM 12.6: непроверенные команды закрыты, журнал читается только при раскрытии', async ({ page, api }) => {
+test('CRM 12.6.2: история только в карточке и читается при раскрытии', async ({ page, api }) => {
     const fixture = await installCrm(page); let reads = 0
-    await page.route('**/api/crm/projects/crm-project/operations?*', route => {
+    await page.route('**/api/crm/appointments/visit-1/history?*', route => {
         reads++; expect(new URL(route.request().url()).searchParams.get('own')).toBe('true')
         return route.fulfill({ json: { items: [], hasMore: false, nextCursor: null } })
     })
-    await page.goto('/crm?tab=appointments')
+    await page.goto('/crm?tab=appointments&dateFrom=2026-11-08&dateTo=2026-11-08')
     await expect(page.getByRole('button', { name: '+ Запись', exact: true })).toBeDisabled()
+    await expect(page.getByText('Операции с визитами', { exact: true })).toHaveCount(0)
     expect(reads).toBe(0)
-    await page.locator('.crm-operation-panel summary').click()
-    await expect(page.getByText('Операции по этим условиям не найдены.', { exact: true })).toBeVisible()
+    await page.locator('.crm-appointment-row').first().click()
+    const dialog = page.getByRole('dialog', { name: 'Запись CRM', exact: true })
+    expect(reads).toBe(0)
+    await dialog.getByText('История действий', { exact: true }).click()
+    await expect(dialog.getByText('Действий в ClientBus пока нет.', { exact: true })).toBeVisible()
     expect(reads).toBeGreaterThan(0)
-    await expect(page.getByRole('checkbox', { name: 'Только мои операции', exact: true })).toHaveCount(0)
     expect(fixture.counters.unknown).toEqual([])
+})
+
+test('CRM 12.6.2: незавершённое создание восстанавливается без локального ключа', async ({ page }) => {
+    const fixture = await installCrm(page); let unknown = true, reconciles = 0
+    const id = randomUUID(), key = randomUUID()
+    const operation = () => ({ id, projectId: 'crm-project', type: 'CREATE', appointmentId: null, initiatorEmployeeId: 'employee-1', idempotencyKey: key,
+        contextVersion: 1, zoneRevision: 1, status: unknown ? 'UNKNOWN' : 'CONFIRMED', createdAt: '2026-11-08T09:00:00Z', externalAppointmentId: null })
+    await page.route('**/api/crm/projects/crm-project/pending-creations?*', route => route.fulfill({ json: { items: unknown ? [operation()] : [], hasMore: false, nextCursor: null } }))
+    await page.route('**/api/crm/operations/' + id + '/reconcile', route => { unknown = false; reconciles++; return route.fulfill({ json: operation() }) })
+    await page.goto('/crm?tab=appointments')
+    await expect(page.getByRole('region', { name: 'Незавершённое создание записи' })).toBeVisible()
+    await page.reload()
+    await page.getByRole('button', { name: 'Сверить результат', exact: true }).click()
+    await expect(page.getByRole('region', { name: 'Незавершённое создание записи' })).toHaveCount(0)
+    expect(reconciles).toBe(1); expect(fixture.counters.creates).toBe(0); expect(fixture.counters.unknown).toEqual([])
+})
+
+test('CRM 12.6.2: ключ прежнего контекста не раскрывает историю и не очищается', async ({ page }) => {
+    const fixture = await installCrm(page), key = randomUUID()
+    const storageKey = 'clientbus.crm.intent.v1:organization-1:employee-1:crm-project'
+    await page.addInitScript(({ storageKey, key }) => localStorage.setItem(storageKey, JSON.stringify({ key, type: 'CREATE' })), { storageKey, key })
+    await page.route('**/api/crm/projects/crm-project/operations/by-key/' + key, route => route.fulfill({ status: 409, json: {
+        code: 'CRM_CONTEXT_CHANGED', message: 'Действие относится к прежнему подключению проекта. Ключ сохранён.',
+    } }))
+    await page.goto('/crm?tab=appointments')
+    await expect(page.getByRole('alert')).toContainText('прежнему подключению проекта')
+    await expect(page.getByText('PRIVATE OLD VISIT')).toHaveCount(0)
+    expect(await page.evaluate(value => JSON.parse(localStorage.getItem(value)!).key, storageKey)).toBe(key)
+    expect(fixture.counters.creates).toBe(0); expect(fixture.counters.unknown).toEqual([])
+})
+
+test('CRM 12.6.2: супервизор сверяет чужое создание без карточки', async ({ page, api }) => {
+    api.role = 'supervisor'; const fixture = await installCrm(page); let pending = true, reads = 0, reconciles = 0
+    const id = randomUUID(), operation = { id, projectId: 'crm-project', type: 'CREATE', appointmentId: null, initiatorEmployeeId: 'another-employee',
+        idempotencyKey: randomUUID(), contextVersion: 1, zoneRevision: 1, status: 'UNKNOWN', createdAt: '2026-11-08T09:00:00Z' }
+    await page.route('**/api/crm/projects/crm-project/pending-creations?*', route => {
+        reads++; expect(new URL(route.request().url()).searchParams.get('own')).toBe('false')
+        return route.fulfill({ json: { items: pending ? [operation] : [], hasMore: false, nextCursor: null } })
+    })
+    await page.route('**/api/crm/operations/' + id + '/reconcile', route => { pending = false; reconciles++; return route.fulfill({ json: { ...operation, status: 'CONFIRMED' } }) })
+    await page.goto('/crm?tab=appointments')
+    await page.getByRole('button', { name: 'Сверить результат', exact: true }).click()
+    await expect(page.getByRole('region', { name: 'Незавершённое создание записи' })).toHaveCount(0)
+    expect(reads).toBeGreaterThan(1); expect(reconciles).toBe(1); expect(fixture.counters.creates).toBe(0)
+})
+
+test('CRM 12.6.2: обновление настроек сохраняет доступ к прежнему незавершённому действию', async ({ page }) => {
+    const fixture = await installCrm(page); fixture.project!.contextVersion = 2
+    const key = randomUUID(), storageKey = 'clientbus.crm.intent.v1:organization-1:employee-1:crm-project'
+    const operation = { id: randomUUID(), projectId: 'crm-project', type: 'CREATE', initiatorEmployeeId: 'employee-1', idempotencyKey: key,
+        contextVersion: 1, status: 'UNKNOWN', createdAt: '2026-11-08T09:00:00Z' }
+    await page.addInitScript(({ key, storageKey }) => localStorage.setItem(storageKey, JSON.stringify({ key, type: 'CREATE' })), { key, storageKey })
+    await page.route('**/api/crm/projects/crm-project/operations/by-key/' + key, route => route.fulfill({ json: operation }))
+    await page.goto('/crm?tab=appointments')
+    await expect(page.getByRole('button', { name: 'Сверить результат', exact: true })).toBeVisible()
+    await expect(page.getByRole('alert')).toHaveCount(0)
+    expect(await page.evaluate(value => JSON.parse(localStorage.getItem(value)!).key, storageKey)).toBe(key)
 })
 
 test('CRM 12.6: потерянный POST сохраняет ключ; reload и сверка не повторяют создание', async ({ page, api }) => {
@@ -45,6 +105,7 @@ test('CRM 12.6: потерянный POST сохраняет ключ; reload и
     const id = randomUUID(), storageKey = 'clientbus.crm.intent.v1:organization-1:employee-1:crm-project'
     const operation = () => ({ id, projectId: 'crm-project', type: 'CREATE', appointmentId: null, initiatorEmployeeId: 'employee-1', idempotencyKey: key,
         contextVersion: 1, zoneRevision: 1, status, createdAt: '2026-11-08T09:00:00Z', updatedAt: '2026-11-08T09:00:00Z', errorCode: null, externalAppointmentId: null })
+    await page.route('**/api/crm/projects/crm-project/pending-creations?*', route => route.fulfill({ json: { items: status === 'UNKNOWN' && key ? [operation()] : [], nextCursor: null, hasMore: false } }))
     await page.route('**/api/crm/projects/crm-project/operations**', route => {
         const url = new URL(route.request().url())
         return route.fulfill({ json: url.pathname.includes('/by-key/') ? operation() : { items: status === 'UNKNOWN' || url.searchParams.get('active') !== 'true' ? [operation()] : [], nextCursor: null, hasMore: false } })
@@ -70,9 +131,8 @@ test('CRM 12.6: потерянный POST сохраняет ключ; reload и
     await selectCrmWorkingTime(dialog)
     await expect(dialog.getByRole('button', { name: 'Создать запись', exact: true })).toBeEnabled()
     await dialog.getByRole('button', { name: 'Создать запись', exact: true }).click()
-    await expect(dialog.getByRole('alert')).toContainText('При потере ответа проверьте журнал операций.')
+    await expect(dialog.getByRole('alert')).toContainText('При потере ответа проверьте незавершённое действие или историю записи.')
     await page.reload()
-    await page.locator('.crm-operation-panel summary').click()
     await expect(page.locator('.crm-operation')).toContainText('Результат неизвестен')
     expect(creates).toBe(1)
     await page.getByRole('button', { name: 'Сверить результат', exact: true }).click()
@@ -87,9 +147,8 @@ test('CRM 12.6: lookup 404 сохраняет намерение и не отп�
     await page.route('**/api/crm/projects/crm-project/operations?*', route => route.fulfill({ json: { items: [], hasMore: false, nextCursor: null } }))
     await page.route('**/api/crm/projects/crm-project/operations/by-key/' + key, route => { lookups++; return route.fulfill({ status: 404, json: { code: 'NOT_FOUND', message: 'Not found' } }) })
     await page.goto('/crm?tab=appointments')
-    await page.locator('.crm-operation-panel summary').click()
     await expect(page.getByText(/Это не подтверждает отказ/)).toBeVisible()
-    await page.getByRole('button', { name: 'Проверить операции', exact: true }).click()
+    await page.getByRole('button', { name: 'Проверить результат', exact: true }).click()
     await expect.poll(() => lookups).toBeGreaterThan(1)
     expect(await page.evaluate(value => JSON.parse(localStorage.getItem(value)!).key, storageKey)).toBe(key)
     expect(fixture.counters.creates).toBe(0); expect(fixture.counters.unknown).toEqual([])
@@ -381,6 +440,7 @@ async function installCrm(page: Page, existing = true) {
             (!url.searchParams.get('crmClientId') || row.crmClientId === url.searchParams.get('crmClientId')) &&
             (!url.searchParams.get('masterId') || row.masters.some(master => master.masterId === url.searchParams.get('masterId'))) &&
             ['kind', 'appointmentState', 'confirmationState', 'attendanceState', 'paymentState'].every(key => !url.searchParams.get(key) || row[key as keyof CrmAppointment] === url.searchParams.get(key))), url.searchParams)) }
+        if (path === '/api/crm/projects/crm-project/pending-creations' || path === '/api/crm/appointments/visit-1/history') return reply({ items: [], nextCursor: null, hasMore: false })
         if (path === '/api/crm/appointments/visit-1') return reply(visits[0])
         if (path === '/api/crm/appointments/visit-1/finance' || path === '/api/crm/appointments/visit-1/finance/refresh') {
             counters.financeReads++; return reply({ appointmentId: 'visit-1', observedAt: '2026-11-08T09:00:00Z', completeness: 'UNKNOWN', sync: { ...state, dataset: 'FINANCE' },

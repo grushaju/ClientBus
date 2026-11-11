@@ -59,6 +59,17 @@ class CrmHttpContractTest {
         mvc.perform(post("/api/crm/operations/"+id+"/reconcile")).andExpect(status().isOk()); verify(operations).reconcile(id);
         verifyNoMoreInteractions(operations);
     }
+    @Test void appointmentHistoryAndPendingCreationsAreReadOnlyAndForwardTheCardScope() throws Exception {
+        UUID appointment=UUID.randomUUID(),project=UUID.randomUUID();
+        mvc.perform(get("/api/crm/appointments/"+appointment+"/history")).andExpect(status().isOk());
+        verify(operations).history(appointment,true,null);
+        mvc.perform(get("/api/crm/appointments/"+appointment+"/history").param("own","false").param("cursor","next")).andExpect(status().isOk());
+        verify(operations).history(appointment,false,"next");
+        mvc.perform(get("/api/crm/projects/"+project+"/pending-creations").param("cursor","next")).andExpect(status().isOk());
+        verify(operations).pendingCreates(project,true,"next");
+        mvc.perform(get("/api/crm/projects/"+project+"/pending-creations").param("own","false")).andExpect(status().isOk());
+        verify(operations).pendingCreates(project,false,null);verifyNoMoreInteractions(operations);
+    }
     @Test void moveAvailabilityRequiresAnAppointmentVersionAndUsesItsOwnReadEndpoint() throws Exception {
         UUID id=UUID.randomUUID();String route="/api/crm/appointments/"+id+"/availability";
         mvc.perform(post(route).contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isBadRequest());

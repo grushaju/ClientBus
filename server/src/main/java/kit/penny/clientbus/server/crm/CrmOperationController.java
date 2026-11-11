@@ -30,6 +30,12 @@ public class CrmOperationController {
     @GetMapping("/projects/{id}/operations")
     public CrmOperationPageDto list(@PathVariable UUID id,@RequestParam(defaultValue="true") boolean own,
             @RequestParam(defaultValue="false") boolean active,@RequestParam(required=false) String cursor) { return service.list(id,own,active,cursor); }
+    @GetMapping("/appointments/{id}/history")
+    public CrmOperationHistoryPageDto history(@PathVariable UUID id,@RequestParam(defaultValue="true") boolean own,
+            @RequestParam(required=false) String cursor) { return service.history(id,own,cursor); }
+    @GetMapping("/projects/{id}/pending-creations")
+    public CrmOperationPageDto pendingCreates(@PathVariable UUID id,@RequestParam(defaultValue="true") boolean own,
+            @RequestParam(required=false) String cursor) { return service.pendingCreates(id,own,cursor); }
     @PostMapping("/operations/{id}/reconcile") public CrmOperationDto reconcile(@PathVariable UUID id) { return service.reconcile(id); }
     private static ResponseEntity<CrmOperationDto> accepted(CrmOperationDto operation) {
         return ResponseEntity.status(java.util.Set.of("CONFIRMED","REJECTED").contains(operation.status()) ? 200 : 202).body(operation);

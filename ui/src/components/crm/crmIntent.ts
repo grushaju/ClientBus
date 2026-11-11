@@ -13,7 +13,7 @@ export function readIntent(scope: CrmIntentScope): CrmIntent | null {
     const value = localStorage.getItem(intentKey(scope))
     if (!value) return null
     const intent = JSON.parse(value) as CrmIntent
-    if (!uuid.test(intent.key) || !['CREATE', 'MOVE', 'CANCEL'].includes(intent.type) || intent.operationId && !uuid.test(intent.operationId)) throw Error('Не удалось прочитать незавершённую операцию CRM. Требуется проверка журнала.')
+    if (!uuid.test(intent.key) || !['CREATE', 'MOVE', 'CANCEL'].includes(intent.type) || intent.operationId && !uuid.test(intent.operationId)) throw Error('Не удалось прочитать незавершённую операцию CRM. Требуется проверка незавершённого действия.')
     return { key: intent.key, type: intent.type, ...(intent.operationId ? { operationId: intent.operationId } : {}) }
 }
 function changed(scope: CrmIntentScope) { window.dispatchEvent(new CustomEvent('clientbus:crm-intent', { detail: intentKey(scope) })) }
@@ -44,7 +44,7 @@ export async function sendIntent(scope: CrmIntentScope, type: CrmIntent['type'],
     try {
         const started = await locked(scope, () => {
             signal?.throwIfAborted()
-            if (readIntent(scope)) throw Error('Сначала проверьте незавершённую операцию в журнале. Повторный запрос не отправлен.')
+            if (readIntent(scope)) throw Error('Сначала проверьте незавершённое действие с записью. Повторный запрос не отправлен.')
             intent = { key: crypto.randomUUID(), type }
             try { write(scope, intent) } catch { throw Error('Не удалось сохранить ключ операции. Запрос не отправлен.') }
             // Storage listeners may cancel the form synchronously. No POST has started yet.

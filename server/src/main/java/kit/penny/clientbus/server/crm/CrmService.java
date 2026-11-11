@@ -77,6 +77,7 @@ public class CrmService {
             if (renamed) row.setDisplayName(displayName(request.displayName()));
             if (request.login() != null && !login(request.login()).equals(row.getLogin()) && request.secret() == null)
                 throw CrmException.invalid();
+            boolean loginChanged = request.login() != null && !login(request.login()).equals(row.getLogin());
             boolean changed = false;
             if (request.secret() != null) {
                 if (request.secret().isBlank()) throw CrmException.invalid();
@@ -94,6 +95,7 @@ public class CrmService {
                 // Match the project UUID order used when unlinking mappings during core deletion.
                 for (var project : store.projects.findAllByConnectionIdOrderByIdAsc(id)) {
                     store.em.lock(project, LockModeType.PESSIMISTIC_WRITE);
+                    if (loginChanged) { project.setContextVersion(project.getContextVersion()+1); project.resetHistoryContext(); }
                     sync.invalidateProject(project.getId());
                     events.workspace(project.getWorkspace(), "crm.invalidated");
                 }
@@ -257,6 +259,7 @@ public class CrmService {
                         row.setArchived(false); row.setEnabled(true);
                         row.setConnection(store.connection(credentials.id, organization));
                         row.setContextVersion(row.getContextVersion()+1);
+                        row.resetHistoryContext();
                         if (zone != null && !zone.equals(row.getZoneId())) {
                             row.setZoneId(zone); row.setZoneSource("MANUAL"); row.setZoneRevision(row.getZoneRevision()+1);
                         }
@@ -355,7 +358,7 @@ public class CrmService {
             if (!context.equals(store.context(project))) throw CrmException.conflict("CRM_CONTEXT_CHANGED");
             if (!project.getConnection().getId().equals(credentials.id)) {
                 project.setConnection(store.connection(credentials.id, credentials.organizationId));
-                project.setContextVersion(project.getContextVersion()+1); sync.invalidateProject(projectId);
+                project.setContextVersion(project.getContextVersion()+1); project.resetHistoryContext(); sync.invalidateProject(projectId);
                 project.setDisplayName(info.displayName()); project.setCurrency(info.currency());
                 events.workspace(project.getWorkspace(), "crm.invalidated");
             }

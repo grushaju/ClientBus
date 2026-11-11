@@ -58,6 +58,8 @@ export interface CrmOperation {
     status: 'REQUESTED' | 'IN_FLIGHT' | 'CONFIRMED' | 'REJECTED' | 'UNKNOWN'
     createdAt: string; updatedAt: string; errorCode: string | null; externalAppointmentId: string | null
 }
+export interface CrmOperationHistory { operation: CrmOperation; authorName: string; oldStart: string | null; newStart: string | null; cancelComment: string | null; zoneId: string }
+export interface CrmOperationHistoryPage { items: CrmOperationHistory[]; nextCursor: string | null; hasMore: boolean }
 export interface CrmOperationPage { items: CrmOperation[]; nextCursor: string | null; hasMore: boolean }
 export interface CrmOfferSelection { id: string; expectedVersion: number }
 export interface CrmCreateAppointment {
@@ -115,6 +117,10 @@ export const getCrmFinance = (id: string, signal?: AbortSignal) => json<CrmFinan
 export const refreshCrmFinance = (id: string, signal?: AbortSignal) => json<CrmFinance>(`/api/crm/appointments/${path(id)}/finance/refresh`, { method: 'POST', signal })
 export const getCrmOperations = (id: string, query: { own?: boolean; active?: boolean; cursor?: string } = {}, signal?: AbortSignal) =>
     json<CrmOperationPage>(`/api/crm/projects/${path(id)}/operations?${queryString(query)}`, { signal })
+export const getCrmAppointmentHistory = (id: string, query: { own?: boolean; cursor?: string } = {}, signal?: AbortSignal) =>
+    json<CrmOperationHistoryPage>(`/api/crm/appointments/${path(id)}/history?${queryString(query)}`, { signal })
+export const getCrmPendingCreations = (id: string, query: { own?: boolean; cursor?: string } = {}, signal?: AbortSignal) =>
+    json<CrmOperationPage>(`/api/crm/projects/${path(id)}/pending-creations?${queryString(query)}`, { signal })
 export const getCrmOperation = (id: string, signal?: AbortSignal) => json<CrmOperation>(`/api/crm/operations/${path(id)}`, { signal })
 export const findCrmOperation = (id: string, key: string, signal?: AbortSignal) => json<CrmOperation>(`/api/crm/projects/${path(id)}/operations/by-key/${path(key)}`, { signal })
 export const reconcileCrmOperation = (id: string, signal?: AbortSignal) => json<CrmOperation>(`/api/crm/operations/${path(id)}/reconcile`, { method: 'POST', signal })

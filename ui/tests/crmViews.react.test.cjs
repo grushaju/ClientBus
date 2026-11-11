@@ -18,7 +18,7 @@ const button = (ui, name) => ui.root.findAllByType('button').find(row => typeof 
 const click = (ui, name) => act(async () => { const row = button(ui, name); assert.ok(row, 'Missing button ' + name); row.props.onClick() })
 const field = (ui, label) => ui.root.findAllByType('label').find(row => row.children[0] === label).findAll(node => ['input', 'select'].includes(node.type))[0]
 const change = (ui, label, value) => act(async () => field(ui, label).props.onChange({ target: { value } }))
-async function fixture(t, name, props = {}, overrides = {}, admin = false) {
+async function fixture(t, name, props = {}, overrides = {}, admin = false, intentMocks) {
     const invalidations = new Map(), calls = []
     const api = { crmError: error => error.message,
         getCrmClients: async () => page([client]), getCrmClient: async () => client,
@@ -43,7 +43,8 @@ async function fixture(t, name, props = {}, overrides = {}, admin = false) {
         '../../auth/AuthContext': { useAuth: () => auth }, '../../workspace/WorkspaceContext': { useWorkspace: () => ({ currentWorkspace: { id: 'w' }, workspaces: [{ id: 'w', name: 'Рабочее пространство' }] }) },
         'react-router-dom': { Link: props => React.createElement('a', props) },
     }
-    const filename = ['CrmClients', 'CrmClientCard'].includes(name) ? 'CrmClients' : ['CrmAppointmentCard', 'CrmAppointmentRows'].includes(name) ? 'CrmAppointments' : name
+    if (intentMocks) mocks['./crmIntent'] = intentMocks
+    const filename = ['CrmAppointmentHistory', 'CrmOperationsPanel'].includes(name) ? 'CrmOperations' : ['CrmClients', 'CrmClientCard'].includes(name) ? 'CrmClients' : ['CrmAppointmentCard', 'CrmAppointmentRows'].includes(name) ? 'CrmAppointments' : name
     const module = load('../crm/' + filename + '.tsx', mocks), Component = module[name] || module.default
     let ui, attributes = { project, id: 'external', canManage: admin, close() {}, changed() {}, ...props }
     const render = () => React.createElement(Component, attributes)
@@ -359,4 +360,68 @@ test('a new appointment query reads once after an earlier period refresh', async
     assert.equal(reads, 1)
     await f.update({ refresh: 2 })
     assert.equal(reads, 2)
+})
+
+test('appointment action history is lazy, card-scoped and hides technical IDs until details', async t => {
+    const calls = []
+    const operation = { id: 'operation-id', type: 'MOVE', status: 'CONFIRMED', createdAt: '2026-11-08T09:00:00Z', externalAppointmentId: 'external-visit' }
+    const f = await fixture(t, 'CrmAppointmentHistory', { row: visit }, { getCrmAppointmentHistory: async (...args) => {
+        calls.push(args); return { items: [{ operation, authorName: 'Катя Катина', oldStart: '2026-11-08T12:00:00', newStart: '2026-11-09T14:00:00', zoneId: 'Europe/Moscow', cancelComment: null }], hasMore: false }
+    } })
+    assert.equal(calls.length, 0)
+    await act(async () => f.ui.root.findByType('details').props.onToggle({ currentTarget: { open: true } }))
+    assert.equal(calls.length, 1); assert.equal(calls[0][0], 'a'); assert.equal(calls[0][1].own, true)
+    assert.match(text(f.ui), /Катя Катина/); assert.match(text(f.ui), /Прежнее начало/); assert.match(text(f.ui), /Новое начало/)
+    const technical = f.ui.root.findAllByType('details')[1]
+    assert.equal(technical.props.open, undefined)
+    await act(async () => f.ui.root.findAllByType('details')[0].props.onToggle({ currentTarget: { open: false } }))
+    assert.equal(calls.length, 1)
+})
+test('manager history paginates and reconciles UNKNOWN without resending the command', async t => {
+    const calls = [], operation = { id: 'unknown-id', type: 'CANCEL', status: 'UNKNOWN', createdAt: '2026-11-08T09:00:00Z' }
+    const f = await fixture(t, 'CrmAppointmentHistory', { row: visit }, {
+        getCrmAppointmentHistory: async (id, query) => { calls.push(['history', id, query]); return { items: [{ operation, authorName: 'Катя', cancelComment: 'Причина отмены' }], hasMore: !query.cursor, nextCursor: 'next' } },
+        reconcileCrmOperation: async id => { calls.push(['reconcile', id]); return operation },
+    }, true)
+    await act(async () => f.ui.root.findByType('details').props.onToggle({ currentTarget: { open: true } }))
+    assert.equal(calls[0][2].own, false); assert.match(text(f.ui), /Причина отмены/)
+    await click(f.ui, 'Следующая страница истории'); assert.equal(calls[1][2].cursor, 'next')
+    await click(f.ui, 'Сверить результат'); assert.deepEqual(calls[2], ['reconcile', 'unknown-id'])
+    assert.equal(calls.filter(row => row[0] === 'history').length, 3)
+})
+test('late card history cannot populate the next appointment', async t => {
+    const old = deferred()
+    const f = await fixture(t, 'CrmAppointmentHistory', { row: visit }, { getCrmAppointmentHistory: async id => id === 'a' ? old.promise : { items: [], hasMore: false } })
+    await act(async () => f.ui.root.findByType('details').props.onToggle({ currentTarget: { open: true } }))
+    await f.update({ row: { ...visit, id: 'next' } })
+    await act(async () => old.resolve({ items: [{ operation: { id: 'old', type: 'MOVE', status: 'CONFIRMED', createdAt: '2026-11-08T09:00:00Z' }, authorName: 'OLD AUTHOR' }], hasMore: false }))
+    assert.doesNotMatch(text(f.ui), /OLD AUTHOR/); assert.match(text(f.ui), /Действий в ClientBus пока нет/)
+})
+
+test('reconciliation from a card resolves the authors durable pointer without the project panel', async t => {
+    const resolved = [], operation = { id: 'own-operation', initiatorEmployeeId: 'actor', type: 'MOVE', status: 'UNKNOWN', createdAt: '2026-11-08T09:00:00Z' }
+    const f = await fixture(t, 'CrmAppointmentHistory', { row: visit }, {
+        getCrmAppointmentHistory: async () => ({ items: [{ operation, authorName: 'Автор' }], hasMore: false }),
+        reconcileCrmOperation: async () => ({ ...operation, status: 'CONFIRMED' }),
+    }, false, { resolveIntent: async (scope, result) => resolved.push([scope.employeeId, result.id, result.status]) })
+    await act(async () => f.ui.root.findByType('details').props.onToggle({ currentTarget: { open: true } }))
+    await click(f.ui, 'Сверить результат')
+    assert.deepEqual(resolved, [['actor', 'own-operation', 'CONFIRMED']])
+})
+
+for (const status of ['CONFIRMED', 'REJECTED']) test('reading own ' + status + ' from card resolves the intent without project panel', async t => {
+    const resolved = [], operation = { id: 'own-done', idempotencyKey: 'pending-key', initiatorEmployeeId: 'actor', type: 'MOVE', status, createdAt: '2026-11-08T09:00:00Z' }
+    const f = await fixture(t, 'CrmAppointmentHistory', { row: visit }, {
+        getCrmAppointmentHistory: async () => ({ items: [{ operation, authorName: 'Автор' }, { operation: { ...operation, id: 'other', initiatorEmployeeId: 'another' }, authorName: 'Другой' }], hasMore: false }),
+    }, false, { readIntent: () => ({ key: 'pending-key' }), resolveIntent: async (scope, result) => resolved.push([scope.employeeId, result.id]) })
+    await act(async () => f.ui.root.findByType('details').props.onToggle({ currentTarget: { open: true } }))
+    assert.deepEqual(resolved, [['actor', 'own-done']])
+})
+
+test('own completed history stays readable when local storage is unavailable', async t => {
+    const f = await fixture(t, 'CrmAppointmentHistory', { row: visit }, {
+        getCrmAppointmentHistory: async () => ({ items: [{ operation: { id: 'done', initiatorEmployeeId: 'actor', type: 'CREATE', status: 'CONFIRMED', createdAt: '2026-11-08T09:00:00Z' }, authorName: 'Читаемый автор' }], hasMore: false }),
+    }, false, { readIntent() { throw Error('Storage unavailable') }, resolveIntent() { throw Error('Must not resolve without a matching pointer') } })
+    await act(async () => f.ui.root.findByType('details').props.onToggle({ currentTarget: { open: true } }))
+    assert.match(text(f.ui), /Читаемый автор/); assert.doesNotMatch(text(f.ui), /Storage unavailable/)
 })
