@@ -81,6 +81,9 @@ export async function apiFetch(
         input,
         {
             ...init,
+            // REST reads must never be served from the HTTP cache; per-call
+            // init.cache still wins when a caller explicitly sets it.
+            cache: init.cache ?? 'no-store',
             headers
         }
     )

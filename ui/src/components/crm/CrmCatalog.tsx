@@ -132,7 +132,7 @@ function MasterRows({ project, query, mapping, unlinked, onMaster, refresh }: Pr
                 </option>}
                 {visibleCandidates.map(row => <option key={row.id} value={row.id}>{row.displayName || row.username} · {row.username}{!row.enabled ? ' · отключён' : ''}</option>)}
             </select>{saving === master.id && <small role="status">Сохраняем…</small>}</label>}
-            {!mapping && <span className="crm-row-hint">Услуги и условия →</span>}
+            {!mapping && <button type="button" className="crm-text-button crm-row-hint" onClick={() => onMaster(master.id)}>Услуги и условия →</button>}
         </li>)}</ul>
         <PageStatus data={data} archived={project.archived} empty={unlinked ? 'Мастеров без связи по этим условиям нет.' : query ? 'Мастера не найдены.' : 'В каталоге пока нет мастеров.'} moreLabel="Показать ещё мастеров" />
     </>

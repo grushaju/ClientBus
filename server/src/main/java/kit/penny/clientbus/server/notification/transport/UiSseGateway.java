@@ -25,6 +25,9 @@ import static kit.penny.clientbus.server.security.policy.AccessPolicy.Resource.*
 @Service
 @ConditionalOnProperty(prefix="clientbus.notifications", name="sse-enabled", havingValue="true")
 public class UiSseGateway {
+    // Отказ в приёме стрима без employee/count диагностировать невозможно: ни лог, ни тело ответа
+    // не говорят, какой из двух лимитов сработал и сколько стримов живёт сейчас.
+    private static final System.Logger LOG = System.getLogger(UiSseGateway.class.getName());
     public interface Sink {
         void send(UiEventEnvelope event) throws Exception;
         void close();
@@ -138,9 +141,14 @@ public class UiSseGateway {
         synchronized (this) {
             if (!ready()) { metrics.admission(UiTransportMetrics.Admission.PIPELINE);throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE); }
             if (closers.getQueue().remainingCapacity()==0) { metrics.admission(UiTransportMetrics.Admission.CLEANUP_BUSY);throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"Stream cleanup busy"); }
-            if (connections.size()>=config.maxConnections() || connections.values().stream()
-                    .filter(c -> c.subject.employeeId().equals(subject.employeeId())).count()>=config.maxConnectionsPerEmployee())
-                { metrics.admission(UiTransportMetrics.Admission.LIMIT);throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,"Stream limit reached"); }
+            long employeeStreams = connections.values().stream()
+                    .filter(c -> c.subject.employeeId().equals(subject.employeeId())).count();
+            if (connections.size()>=config.maxConnections() || employeeStreams>=config.maxConnectionsPerEmployee())
+                { metrics.admission(UiTransportMetrics.Admission.LIMIT);
+                  LOG.log(System.Logger.Level.WARNING, "SSE admission refused for employee " + subject.employeeId()
+                        + ": live streams " + connections.size() + "/" + config.maxConnections()
+                        + ", employee streams " + employeeStreams + "/" + config.maxConnectionsPerEmployee());
+                  throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,"Stream limit reached"); }
             connection=new Connection(subject,organization,workspace,sink,epoch);
             connection.pending.put("ready",new Pending(null,new UiEventEnvelope(UUID.randomUUID(),1,"stream.ready",Instant.now(),null,null,null,
                     new StreamReadyDto(connection.id,alertsAfter,limits.heartbeatSeconds())),null));

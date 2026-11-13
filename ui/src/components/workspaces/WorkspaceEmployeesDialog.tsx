@@ -234,6 +234,9 @@ export function WorkspaceEmployeesDialog({
                     ? err.message
                     : 'Не удалось добавить сотрудников',
             )
+            // Promise.all отваливается на первой ошибке, но часть назначений
+            // уже применилась на сервере — список должен отразить факт.
+            onUpdated()
         } finally {
             setSaving(false)
         }

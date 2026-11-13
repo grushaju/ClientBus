@@ -91,6 +91,11 @@ export function useConversationMessages(conversationId: string | undefined, visi
     }, [session])
     const isCurrent = (generation: number) => session.active && currentSession.current === session
         && (!scope || scope.isCurrent()) && session.generation === generation
+    // Актуальный workspaceId читается через ref в момент构造 history-контекста:
+    // иначе либо контекст рождается с устаревшим workspaceId, либо добавление
+    // его в deps перезапускает загрузку сообщений при прилете метаданных.
+    const workspaceIdRef = useRef(workspaceId)
+    workspaceIdRef.current = workspaceId
     const handleUnavailable = useCallback((error: unknown, generation: number) => {
         if (!isCurrent(generation) || ![403, 404].includes(getApiErrorStatus(error) ?? 0)) return false
         session.unavailable = true
@@ -131,7 +136,7 @@ export function useConversationMessages(conversationId: string | undefined, visi
             let historyMessages: MessageDto[] = []
             let historyStartReached = false
             let historyError: string | null = null
-            const context = scope?.historyAccount ? { account: scope.historyAccount, workspaceId,
+            const context = scope?.historyAccount ? { account: scope.historyAccount, workspaceId: workspaceIdRef.current,
                 anchorMessageId: oldestExternalMessage(messages)?.id ?? null } : undefined
             // History status waiting is independent of cache visibility and live reconciliation.
             session.initialPending = false
@@ -210,7 +215,7 @@ export function useConversationMessages(conversationId: string | undefined, visi
                 const frontier = scope?.historyAccount ? oldestExternalMessage(snapshot.messages)
                     : snapshot.messages.find(message => message.externalId)
                 const cursor = frontier?.externalId ?? null
-                const context = scope?.historyAccount ? { account: scope.historyAccount, workspaceId,
+                const context = scope?.historyAccount ? { account: scope.historyAccount, workspaceId: workspaceIdRef.current,
                     anchorMessageId: frontier?.id ?? null, manual } : undefined
                 session.historyPending = true
                 const result = await request.read(signal => syncConversationHistory(conversationId, cursor, PAGE_SIZE, signal, context), 180_000)
@@ -415,13 +420,39 @@ export function useConversationMessages(conversationId: string | undefined, visi
         if (!conversationId || !visible || scope?.managedPolling) return
         let timer: ReturnType<typeof setTimeout>
         let cancelled = false
+        let running = false
         const tick = async () => {
-            if (session.unavailable) return
-            if (typeof document === 'undefined' || !document.hidden) await refreshMessages()
+            // Ре-ентрантность: visibilitychange может поймать тик в середине
+            // await — без гарда заведётся вторая параллельная цепочка таймеров.
+            if (session.unavailable || running) return
+            running = true
+            try {
+                if (typeof document === 'undefined' || !document.hidden) {
+                    // A rejection here must not tear down the setTimeout chain and
+                    // silently kill polling until the next remount.
+                    try { await refreshMessages() } catch { /* handled inside refreshMessages */ }
+                }
+            } finally {
+                running = false
+            }
             if (!cancelled && !session.unavailable) timer = setTimeout(tick, REFRESH_INTERVAL)
         }
         timer = setTimeout(tick, REFRESH_INTERVAL)
-        return () => { cancelled = true; clearTimeout(timer) }
+        // On returning to a foreground tab, refresh immediately instead of
+        // waiting up to REFRESH_INTERVAL for the next scheduled tick.
+        const hasVisibilityApi = typeof document !== 'undefined'
+            && typeof document.addEventListener === 'function'
+        const onVisibility = () => {
+            if (document.hidden || cancelled || session.unavailable) return
+            clearTimeout(timer)
+            void tick()
+        }
+        if (hasVisibilityApi) document.addEventListener('visibilitychange', onVisibility)
+        return () => {
+            cancelled = true
+            clearTimeout(timer)
+            if (hasVisibilityApi) document.removeEventListener('visibilitychange', onVisibility)
+        }
     }, [conversationId, visible, refreshMessages, scope?.managedPolling])
 
     useUiInvalidation(conversationId ?? '', !!conversationId,

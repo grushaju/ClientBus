@@ -2,9 +2,11 @@
 /server/target/
 /crm/api/target/
 /crm/dikidi/target/
-/fe/dist/
-/fe/node_modules/
+/ui/dist/
+/ui/node_modules/
 /server/data/
 /data/
 /data/telegram/
 /ui/debug.log
+/.agents/
+/.dsh-acl-reports/

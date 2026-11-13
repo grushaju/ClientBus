@@ -123,10 +123,24 @@ function SettingsPage() {
     const avatarInputRef =
         useRef<HTMLInputElement>(null)
 
+    // Синхронизация только при смене сотрудника: identity-refresh (например,
+    // после загрузки аватара) создаёт новый объект currentEmployee с тем же id
+    // и иначе откатывал бы несохранённые правки имени/контактов к серверным.
+    const syncedEmployeeIdRef = useRef<string | null>(null)
     useEffect(() => {
         if (!currentEmployee) {
+            // Разлогин: при повторном входе тем же сотрудником форма обязана
+            // снова синхронизироваться с сервером, а не показывать старые
+            // несохранённые правки прошлой сессии.
+            syncedEmployeeIdRef.current = null
             return
         }
+
+        if (syncedEmployeeIdRef.current === currentEmployee.id) {
+            return
+        }
+
+        syncedEmployeeIdRef.current = currentEmployee.id
 
         setFirstName(
             currentEmployee.firstName ?? '',
@@ -151,10 +165,18 @@ function SettingsPage() {
         currentEmployee,
     ])
 
+    const syncedOrganizationIdRef = useRef<string | null>(null)
     useEffect(() => {
         if (!currentOrganization) {
+            syncedOrganizationIdRef.current = null
             return
         }
+
+        if (syncedOrganizationIdRef.current === currentOrganization.id) {
+            return
+        }
+
+        syncedOrganizationIdRef.current = currentOrganization.id
 
         setOrganizationName(
             currentOrganization.name,

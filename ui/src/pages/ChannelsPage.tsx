@@ -216,6 +216,9 @@ function ChannelsPageContent() {
         setEditChannel(null)
     }
 
+    // Один одновременный toggle: повторный клик до ре-рендера не шлёт второй POST.
+    const togglingAccountsRef = useRef<Set<string>>(new Set())
+
     function handleDisable(
         channel: ChannelDto,
     ) {
@@ -226,24 +229,18 @@ function ChannelsPageContent() {
             return
         }
 
+        if (togglingAccountsRef.current.has(channel.account.id)) return
+        togglingAccountsRef.current.add(channel.account.id)
+
         setError(null)
 
         disableTelegramChannel(
             channel.account.id,
         )
             .then(() => {
-                setChannels(current =>
-                    sortChannels(
-                        current.map(item =>
-                            item.id === channel.id
-                                ? {
-                                    ...item,
-                                    status: 'DISABLED',
-                                }
-                                : item,
-                        ),
-                    ),
-                )
+                // Фактический статус берётся с сервера вместо захардкоженного
+                // оптимистичного 'DISABLED' (реальное состояние может отличаться).
+                loadChannels()
             })
             .catch(err => {
                 setError(
@@ -251,6 +248,9 @@ function ChannelsPageContent() {
                         ? err.message
                         : 'Не удалось отключить канал',
                 )
+            })
+            .finally(() => {
+                togglingAccountsRef.current.delete(channel.account!.id)
             })
     }
 
@@ -264,24 +264,16 @@ function ChannelsPageContent() {
             return
         }
 
+        if (togglingAccountsRef.current.has(channel.account.id)) return
+        togglingAccountsRef.current.add(channel.account.id)
+
         setError(null)
 
         enableTelegramChannel(
             channel.account.id,
         )
             .then(() => {
-                setChannels(current =>
-                    sortChannels(
-                        current.map(item =>
-                            item.id === channel.id
-                                ? {
-                                    ...item,
-                                    status: 'CONNECTED',
-                                }
-                                : item,
-                        ),
-                    ),
-                )
+                loadChannels()
             })
             .catch(err => {
                 setError(
@@ -289,6 +281,9 @@ function ChannelsPageContent() {
                         ? err.message
                         : 'Не удалось включить канал',
                 )
+            })
+            .finally(() => {
+                togglingAccountsRef.current.delete(channel.account!.id)
             })
     }
 

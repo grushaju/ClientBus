@@ -1,4 +1,5 @@
 import {
+    useEffect,
     useState,
 } from 'react'
 
@@ -24,6 +25,12 @@ export function DeleteWorkspaceDialog({
 
     const [error, setError] =
         useState<string | null>(null)
+
+    // Диалог смонтирован постоянно (управляется open-флагом); при повторном
+    // открытии показывалась ошибка прошлого сеанса.
+    useEffect(() => {
+        if (open) { setError(null); setSaving(false) }
+    }, [open])
 
     if (!open) {
         return null

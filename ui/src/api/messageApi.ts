@@ -114,15 +114,21 @@ export async function sendOutboundMessage(
         )
     }
 
-    const response = await apiFetch(
-        '/api/messages/outbound',
-        {
-            method: 'POST',
-            body: formData
-        }
-    )
+    // Uploads (photo/audio) may be slow, so the timeout is wider than the
+    // default request budget; without any bound the composer stayed in
+    // "Отправка…" forever on a stalled connection.
+    return withCancellation(async requestSignal => {
+        const response = await apiFetch(
+            '/api/messages/outbound',
+            {
+                method: 'POST',
+                body: formData,
+                signal: requestSignal
+            }
+        )
 
-    return response.json()
+        return response.json()
+    }, [], 120_000)
 }
 
 export async function retryOutboundMessage(

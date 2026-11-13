@@ -118,7 +118,7 @@ function WorkspaceCrmContent({ workspaceId }: Props) {
                 <label>Часовой пояс проекта<CrmTimeZoneSelect label="Часовой пояс проекта" value={zone} disabled={busy || loading} onChange={setZone} /></label>
                 <button type="button" className="ui-button ui-button-secondary" disabled={busy || loading || !zone} onClick={() => saveZone(project)}>Сохранить часовой пояс</button>
             </div>}
-            {!project.archived && ['DISABLED', 'REAUTH_REQUIRED'].includes(project.connectionState) && <Link to={`/settings?section=crm&account=${encodeURIComponent(project.connectionId)}&${recoveryQuery(project, params.get('returnTab') ?? 'services')}`}>
+            {!project.archived && ['DISABLED', 'REAUTH_REQUIRED'].includes(project.connectionState) && <Link to={`/settings?section=crm&account=${encodeURIComponent(project.connectionId)}&${recoveryQuery(project, params.get('returnTab') ?? 'appointments')}`}>
                 {project.connectionState === 'DISABLED' ? 'Включить аккаунт' : 'Восстановить доступ к аккаунту'}</Link>}
             {!project.archived && <div className="crm-actions">
                 <button type="button" className="ui-button ui-button-secondary" disabled={busy || loading} onClick={() => { setEditing(project); setZone(project.zoneId ?? ''); setConnectionId(project.connectionId) }}>Настроить проект</button>

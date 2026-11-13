@@ -44,7 +44,10 @@ class CrmSpaRoutingTest {
                 .andExpect(status().isNotFound());
     }
 
-    @Configuration
+    // Lite-mode config: registered explicitly via context.register below. Must stay free of
+    // @Configuration/@Component, otherwise the application's package scan in every
+    // @SpringBootTest context would pick it up and replace the real JwtAuthenticationFilter
+    // with the mock-backed bean below (regression seen in Stage 12.7).
     @EnableWebMvc
     @Import(SpaController.class)
     static class WebConfig {

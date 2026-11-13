@@ -16,6 +16,18 @@ type AttachmentMode =
     | 'IMAGE'
     | 'AUDIO'
 
+interface ComposerDraft {
+    content: string
+    attachments: File[]
+    attachmentMode: AttachmentMode
+}
+
+// Черновики живут вне компонента: ConversationView размонтирует composer при
+// переключении диалога (key=`composer:${id}`), иначе набранный текст и
+// вложения терялись бы при каждом переходе A→B→A. File-объекты не требуют
+// revokeObjectURL, поэтому их безопасно держать в памяти до отправки.
+const composerDrafts = new Map<string, ComposerDraft>()
+
 interface Props {
     conversationId: string
     onSent?: (message: MessageDto) => void | Promise<void>
@@ -26,13 +38,13 @@ function MessageComposer({
                              onSent,
                          }: Props) {
     const [content, setContent] =
-        useState('')
+        useState(() => composerDrafts.get(conversationId)?.content ?? '')
 
     const [attachments, setAttachments] =
-        useState<File[]>([])
+        useState<File[]>(() => composerDrafts.get(conversationId)?.attachments ?? [])
 
     const [attachmentMode, setAttachmentMode] =
-        useState<AttachmentMode>('NONE')
+        useState<AttachmentMode>(() => composerDrafts.get(conversationId)?.attachmentMode ?? 'NONE')
 
     const [menuOpen, setMenuOpen] =
         useState(false)
@@ -50,6 +62,27 @@ function MessageComposer({
     currentConversation.current = conversationId
     const mounted = useRef(false)
     useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
+
+    const draftRef = useRef({ content, attachments, attachmentMode })
+    draftRef.current = { content, attachments, attachmentMode }
+    // Снимок черновика, изъятого из хранилища на время отправки: при
+    // размонтировании в полёте он не сохраняется заново, при успехе — не
+    // воскресает, при сбое — возвращается в хранилище (см. handleSend).
+    const sentDraftRef = useRef<{ conversationId: string; draft: ComposerDraft } | null>(null)
+    useEffect(() => {
+        const draftConversationId = conversationId
+        return () => {
+            const draft = draftRef.current
+            const sent = sentDraftRef.current
+            if (sent && sent.conversationId === draftConversationId
+                && sent.draft.content === draft.content && sent.draft.attachments === draft.attachments) return
+            if (draft.content.trim() || draft.attachments.length) {
+                composerDrafts.set(draftConversationId, draft)
+            } else {
+                composerDrafts.delete(draftConversationId)
+            }
+        }
+    }, [conversationId])
 
     const clearAttachments = () => {
         setAttachments([])
@@ -202,6 +235,12 @@ function MessageComposer({
         sendingRef.current = true
         const sentConversationId = conversationId
         const isCurrent = () => mounted.current && currentConversation.current === sentConversationId
+        // Черновик изымается из хранилища в момент отправки: размонтирование в
+        // полёте не сохранит его заново, а успех — не воскресит. При сбое он
+        // будет возвращён обратно в catch.
+        const inFlightDraft: ComposerDraft = { content, attachments, attachmentMode: effectiveMode }
+        sentDraftRef.current = { conversationId: sentConversationId, draft: inFlightDraft }
+        composerDrafts.delete(sentConversationId)
         setSending(true)
         setError(null)
 
@@ -222,6 +261,7 @@ function MessageComposer({
                 trimmedContent || null,
                 attachments,
             )
+            // Принято сервером: черновик изъят из хранилища ещё до отправки.
             if (!isCurrent()) return
             setContent('')
             clearAttachments()
@@ -229,12 +269,29 @@ function MessageComposer({
             // presented as an unsent message that the operator might send again.
             try { await onSent?.(message) } catch { /* The thread shows refresh failures separately. */ }
         } catch (err) {
-            if (!isCurrent()) return
-            setError(
-                err instanceof Error
-                    ? err.message
-                    : 'Не удалось отправить сообщение',
-            )
+            // Сбой: черновик обязан пережить размонтирование. Если компонент
+            // уже размонтирован и сам ничего не сохранил (в полёте не было
+            // правок) — возвращаем изъятый на отправку снимок.
+            sentDraftRef.current = null
+            if (!isCurrent()) {
+                if (!composerDrafts.has(sentConversationId)) {
+                    composerDrafts.set(sentConversationId, inFlightDraft)
+                }
+                return
+            }
+            // Timeout does not prove non-delivery: prompt to check the thread
+            // rather than a blind resend that could duplicate the message.
+            if (err instanceof DOMException && err.name === 'TimeoutError') {
+                setError(
+                    'Ответ о доставке не получен. Проверьте переписку: возможно, сообщение уже отправлено. Повторно отправляйте только если его нет в истории.',
+                )
+            } else {
+                setError(
+                    err instanceof Error
+                        ? err.message
+                        : 'Не удалось отправить сообщение',
+                )
+            }
         } finally {
             sendingRef.current = false
             if (isCurrent()) setSending(false)

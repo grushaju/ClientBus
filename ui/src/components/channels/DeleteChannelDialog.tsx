@@ -1,4 +1,5 @@
 import {
+    useEffect,
     useState,
 } from 'react'
 
@@ -22,6 +23,14 @@ export function DeleteChannelDialog({
 
     const [error, setError] =
         useState<string | null>(null)
+
+    const channelId = channel?.id ?? null
+    // Диалог остаётся смонтированным между удалениями; без сброса при смене
+    // канала следующая карточка открывается с чужой прошлой ошибкой.
+    useEffect(() => {
+        setError(null)
+        setDeleting(false)
+    }, [channelId])
 
     if (!channel) {
         return null

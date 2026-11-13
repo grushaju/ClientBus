@@ -30,6 +30,13 @@ clientbus:
     history-submission-enabled: true
     metrics-poll-ms: 10000
     metrics-query-timeout-seconds: 2
+    # Heartbeat SSE в секундах (1..60): короче — half-open сокеты (убитые idle-прокси без FIN)
+    # быстрее освобождают слоты; клиентный idle-лимит подстраивается сам (heartbeat*2.5+5 с).
+    heartbeat-seconds: ${CLIENTBUS_NOTIFICATIONS_HEARTBEAT_SECONDS:15}
+    gateway:
+      # Потоков на сотрудника: для shared-стендовых аккаунтов (несколько вкладок, устройства,
+      # Playwright-воркеры) поднимать env: CLIENTBUS_NOTIFICATIONS_GATEWAY_MAX_CONNECTIONS_PER_EMPLOYEE=8
+      max-connections-per-employee: ${CLIENTBUS_NOTIFICATIONS_GATEWAY_MAX_CONNECTIONS_PER_EMPLOYEE:4}
 
   sync:
     recent-chats:

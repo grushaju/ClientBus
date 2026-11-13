@@ -12,7 +12,8 @@ import {
 import { useAuth } from '../auth/AuthContext'
 
 import {
-    getApiErrorCode
+    getApiErrorCode,
+    getApiErrorStatus
 } from '../api/apiClient'
 
 type LoginMode =
@@ -108,9 +109,21 @@ function LoginPage() {
                 setError(
                     'Ваша учётная запись отключена. Обратитесь к администратору.'
                 )
-            } else {
+            } else if ([400, 401, 403].includes(getApiErrorStatus(error) ?? 0)) {
+                // Сервер ответил и отверг креденшалы.
                 setError(
                     'Неверный логин или пароль'
+                )
+            } else if (getApiErrorStatus(error) !== undefined) {
+                // 5xx и прочие ответы сервера — не про пароли.
+                setError(
+                    'Сервер временно недоступен. Попробуйте ещё раз позже.'
+                )
+            } else {
+                // Нет ApiError — сетевой сбой/таймаут; вводить в заблуждение
+                // про «неверный пароль» нельзя.
+                setError(
+                    'Не удалось связаться с сервером. Проверьте подключение и попробуйте снова.'
                 )
             }
         } finally {

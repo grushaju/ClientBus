@@ -27,7 +27,7 @@ interface TelegramConnectionFlowProps {
 }
 
 const POLL_INTERVAL_MS = 500
-const POLL_ATTEMPTS = 20
+const POLL_ATTEMPTS = 60
 
 const TERMINAL_AUTHORIZATION_STATES:
     TelegramAuthorizationStatus[] = [
@@ -221,6 +221,19 @@ export function TelegramConnectionFlow({
 
     const cancelledRef = useRef(false)
 
+    const startRequestedRef = useRef<string | null>(null)
+
+    const [retryKey, setRetryKey] = useState(0)
+
+    // props живут в ref-ах, чтобы handleStatus был стабилен: ре-рендер
+    // родителя с новой идентичностью onConnected не перезапускает
+    // уже идущую авторизацию (повторный POST /telegram/start).
+    const channelRef = useRef(channel)
+    const onConnectedRef = useRef(onConnected)
+
+    channelRef.current = channel
+    onConnectedRef.current = onConnected
+
     const handleStatus = useCallback(
         (nextStatus: TelegramAuthorizationStatus) => {
             setStatus(nextStatus)
@@ -230,13 +243,14 @@ export function TelegramConnectionFlow({
                 !connectedHandledRef.current
             ) {
                 connectedHandledRef.current = true
-                onConnected(channel)
+                onConnectedRef.current(channelRef.current)
             }
         },
-        [channel, onConnected],
+        [],
     )
 
     useEffect(() => {
+        let disposed = false
         cancelledRef.current = false
 
         async function initialize() {
@@ -252,7 +266,7 @@ export function TelegramConnectionFlow({
             setError(null)
 
             const isCancelled = () =>
-                cancelledRef.current
+                disposed || cancelledRef.current
 
             try {
                 if (
@@ -260,6 +274,25 @@ export function TelegramConnectionFlow({
                     channel.status === 'DISCONNECTED' ||
                     channel.status === 'ERROR'
                 ) {
+                    if (
+                        startRequestedRef.current ===
+                        accountId
+                    ) {
+                        // start для этого аккаунта уже отправлялся
+                        // в текущей сессии окна — только дожидаемся
+                        // состояния, не перезапуская авторизацию.
+                        await waitForAuthorizationState(
+                            accountId,
+                            handleStatus,
+                            isCancelled,
+                        )
+
+                        return
+                    }
+
+                    startRequestedRef.current =
+                        accountId
+
                     await startTelegramConnection(
                         accountId,
                     )
@@ -305,12 +338,14 @@ export function TelegramConnectionFlow({
         void initialize()
 
         return () => {
+            disposed = true
             cancelledRef.current = true
         }
     }, [
         accountId,
         channel.status,
         handleStatus,
+        retryKey,
     ])
 
     async function handleSubmitCode(
@@ -469,6 +504,25 @@ export function TelegramConnectionFlow({
                             onClick={onClose}
                         >
                             Закрыть
+                        </button>
+
+                        <button
+                            type="button"
+                            className="ui-button ui-button-primary"
+                            onClick={() => {
+                                setError(null)
+                                setStatus(null)
+                                setLoading(true)
+                                connectedHandledRef.current =
+                                    false
+                                startRequestedRef.current =
+                                    null
+                                setRetryKey(
+                                    (key) => key + 1,
+                                )
+                            }}
+                        >
+                            Повторить
                         </button>
                     </div>
                 </>

@@ -28,8 +28,10 @@
 .crm-page label, .crm-panel label { display: grid; gap: 6px; font-size: 14px; }
 .crm-page input:not([type=checkbox]), .crm-page select, .crm-panel input:not([type=checkbox]), .crm-panel select { width: 100%; min-width: 0; min-height: 40px; border: 1px solid #bdc8d8; background: #fff; color: #202938; border-radius: 7px; padding: 8px 10px; box-sizing: border-box; }
 .crm-page :focus-visible, .crm-panel :focus-visible { outline: 2px solid #345fbb; outline-offset: 3px; }
-.crm-page a, .crm-panel a { color: #2453a6; }
-.crm-panel a.ui-button-primary { color: #fff; }
+/* Ссылки-в-тексте синие, но якоря, оформленные кнопками (.ui-button*),
+   сохраняют цвет из своих классов: иначе .crm-page a перебивает specificity
+   правил ui-button-primary/secondary (синий текст на синей кнопке). */
+.crm-page a:not([class*='ui-button']), .crm-panel a:not([class*='ui-button']) { color: #2453a6; }
 .crm-catalog-heading { margin: 14px 0 12px; padding: 12px 14px; border: 1px solid #dde3ed; border-radius: 9px; background: #fff; }
 .crm-catalog-refresh { min-width: 138px; }
 .crm-action-placeholder { visibility: hidden; pointer-events: none; }
@@ -61,7 +63,7 @@
 .crm-masters { gap: 0; }
 .crm-master { border: 0; border-bottom: 1px solid #e2e7ee; padding: 14px 16px; grid-template-columns: minmax(140px, 1fr) minmax(160px, 1fr); min-height: 74px; box-sizing: border-box; }
 .crm-master.mapping { min-height: 82px; padding-top: 10px; padding-bottom: 10px; }
-.crm-row-hint { color: #536178; font-size: 14px; justify-self: end; }
+.crm-row-hint { font-size: 14px; justify-self: end; }
 .crm-candidate-search { max-width: 400px; margin: 8px 0 12px; }
 .crm-candidate-search summary, .crm-mapping-help summary { cursor: pointer; color: #365379; font-size: 14px; padding: 6px 0; }
 .crm-candidate-search label { margin-top: 8px; }

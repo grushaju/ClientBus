@@ -39,3 +39,11 @@ build/
 /test-results/
 /playwright/.auth/
 /.env.e2e.local
+
+# Build/tooling artifacts that should not be tracked
+*.tsbuildinfo
+debug.log
+# vite.config.js/.d.ts are compiled from vite.config.ts (tsconfig.node composite)
+# and can silently shadow the real config (Vite resolves .js before .ts).
+vite.config.js
+vite.config.d.ts

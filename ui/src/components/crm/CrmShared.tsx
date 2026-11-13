@@ -1,14 +1,14 @@
 import { Link, useSearchParams } from 'react-router-dom'
 import type { CrmProject, CrmServiceOffer, CrmSyncState } from '../../api/crmApi'
 
-export function crmLocation(workspaceId: string, projectId?: string, tab = 'services') {
+export function crmLocation(workspaceId: string, projectId?: string, tab = 'appointments') {
     return '/crm?' + new URLSearchParams({ workspace: workspaceId, ...(projectId ? { project: projectId } : {}), tab })
 }
 export function ReturnToCrm() {
     const [params] = useSearchParams()
     const workspace = params.get('returnWorkspace'), project = params.get('returnProject')
     if (!workspace) return null
-    return <Link className="ui-button ui-button-secondary" to={crmLocation(workspace, project ?? undefined, params.get('returnTab') ?? 'services')}>Вернуться в CRM</Link>
+    return <Link className="ui-button ui-button-secondary" to={crmLocation(workspace, project ?? undefined, params.get('returnTab') ?? 'appointments')}>Вернуться в CRM</Link>
 }
 export function recoveryQuery(project: CrmProject, tab: string) {
     return new URLSearchParams({ returnWorkspace: project.workspaceId, returnProject: project.id, returnTab: tab })

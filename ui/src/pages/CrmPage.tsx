@@ -96,7 +96,7 @@ function WorkspaceCatalog({ workspaceId }: { workspaceId: string }) {
     const memoryKey = 'crm-tab:' + currentEmployee?.id
     const [tab, setTab] = useState(() => {
         if (['masters', 'services', 'clients', 'schedule', 'appointments'].includes(params.get('tab') ?? '')) return params.get('tab')!
-        try { return sessionStorage.getItem(memoryKey) ?? 'services' } catch { return 'services' }
+        try { return sessionStorage.getItem(memoryKey) ?? 'appointments' } catch { return 'appointments' }
     })
     useEffect(() => { const requested = params.get('tab'); if (requested && ['masters', 'services', 'clients', 'schedule', 'appointments'].includes(requested)) setTab(requested) }, [params.get('tab')])
     const resource = useUiResource('crm-projects:' + workspaceId, true,

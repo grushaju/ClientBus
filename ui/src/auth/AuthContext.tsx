@@ -55,6 +55,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setLoading(token !== null)
     }, [])
     const logout = useCallback(() => {
+        // Parallel 401s dispatch repeated session-expired events; after the
+        // first logout both tokens are null and re-entry would rebuild the
+        // whole session (epoch++, SSE stream, coordinator) for nothing.
+        if (!getAccessToken() && !session.current.token) return
         if (getAccessToken() === session.current.token) clearAccessToken()
         replaceSession(getAccessToken())
     }, [replaceSession])

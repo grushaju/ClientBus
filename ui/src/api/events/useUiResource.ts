@@ -22,10 +22,22 @@ export function useUiResource<T>(key: string, enabled: boolean, matches: (event:
         if (!owner.active || currentOwner.current !== owner || !enabled || owner.denied) return Promise.resolve()
         if (signal?.aborted) return Promise.reject(abortError())
         if (owner.running) {
-            const previous = owner.running, controller = owner.controller
-            const cancel = () => controller?.abort()
-            signal?.addEventListener('abort', cancel, { once: true })
-            return previous.finally(() => signal?.removeEventListener('abort', cancel)).then(() => refresh(signal))
+            const previous = owner.running
+            // Abort of a waiter (unmount, coordinator timeout) only drops this
+            // waiter's wait; the shared read continues for its initiator.
+            if (!signal) return previous.then(() => refresh())
+            return new Promise<void>((resolve, reject) => {
+                const onAbort = () => reject(abortError())
+                signal.addEventListener('abort', onAbort, { once: true })
+                previous.then(() => {
+                    signal.removeEventListener('abort', onAbort)
+                    if (signal.aborted) reject(abortError())
+                    else refresh(signal).then(resolve, reject)
+                }, error => {
+                    signal.removeEventListener('abort', onAbort)
+                    reject(error)
+                })
+            })
         }
         const controller = new AbortController(), epoch = owner.epoch, callbacks = handlers.current
         bindRequestBudget(controller.signal, scope?.requestBudget)

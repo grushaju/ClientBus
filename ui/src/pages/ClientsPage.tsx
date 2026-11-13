@@ -65,14 +65,15 @@ function ClientsPageContent() {
     const handleSearch = (
         value: string,
     ) => {
+        // replace: поиск посимвольно не должен плодить записи истории браузера
         if (!value.trim()) {
-            setSearchParams({})
+            setSearchParams({}, { replace: true })
             return
         }
 
         setSearchParams({
             q: value,
-        })
+        }, { replace: true })
     }
 
     const handleCreated = (
