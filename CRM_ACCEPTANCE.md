@@ -64,6 +64,31 @@ A01/A02/A03/A04/A05/A06 в [исследовательском протокол�
 
 После исправлений прошли все 213 серверных CRM/DIKIDI-тестов без failures/errors/skips, включая 61 контрактную проверку и 131 PostgreSQL-сценарий CrmFoundationIntegrationTest. Логи повторной проверки: `server/target/crm-acceptance-review-fixes-contracts.log`, `crm-acceptance-review-fixes-live-october.log`, `crm-acceptance-review-fixes-live-november.log`; серверная CRM-регрессия — `crm-acceptance-review-fixes-crm.log`. Общий прогон 1170 и UI-результаты в основной таблице относятся к состоянию до этих исправлений; полный серверный набор после них не повторялся.
 
+## Регрессия и приёмка 12.7 (13.11.2026)
+
+Базовая версия: коммит `5fe2ea0` («Stage 12.6.2 done») с несохранёнными изменениями рабочего дерева (~205 путей на момент прогона); все проверки выполнены над рабочим деревом, а не над состоянием коммита. Миграции, коммиты и push не выполнялись. Окружение: Docker 29.7.2, Testcontainers (`clientbus-postgres-test`, `clientbus-kafka-test`), Chromium для Playwright установлен 13.11.2026.
+
+Обнаруженная и исправленная регрессия. Первый полный backend-прогон дал 30 failures и 4 errors в 10 классах с единым механизмом: вложенный `@Configuration WebConfig` класса `CrmSpaRoutingTest` (добавлен коммитом `02f6cf8`) попадал в сканируемом пакете приложения в каждый `@SpringBootTest`-контекст, подменял настоящий `JwtAuthenticationFilter` бином с `mock(JwtService.class)` (валидный JWT давал `UNAUTHENTICATED`) и отключал `@EnableWebMvc`-обработку статики. Бинисекция worktree подтвердил границы: 4ae2ae1 зелёный, 02f6cf8 красный. Исправление — только тестовый файл: конфигурация остаётся registered явно через `context.register` в lite-контексте теста и больше не содержит сканируемых аннотаций; производственный код не изменён, вся временная диагностика удалена.
+
+Намеренное изменение UI этого периода: дефолтная вкладка CRM — «Записи» (`appointments`) вместо «Услуги»; перенесены и дефолты `crmLocation`/`returnTab` (решение пользователя от 13.11.2026). Принятые e2e-спецификации приведены к новому дефолту (три места: явный переход на вкладку «Услуги» и явная проверка дефолта «Записи») и прогнаны повторно целиком.
+
+Результаты прогонов (логи в `server/target`):
+
+| Проверка | Результат | Лог |
+| --- | --- | --- |
+| Полный backend surefire | 1344 теста, 0 failures, 0 errors, 0 skips (8:12) | `crm-12-7-server-full2.log` (первый прогон до фикса 30F+4E — `crm-12-7-server.log`) |
+| Целевые 6 классов после фикса (JWT/SSE/SPA/transport/history) | 57/57 | `crm-12-7-verifyfix.log` |
+| UI unit | 492/492 | `crm-12-7-ui.log` |
+| e2e types | OK, повторено после правки спецификаций | `crm-12-7-e2e-types.log` |
+| UI production build / `process-resources` | OK / OK | `crm-12-7-build.log`, `crm-12-7-resources.log` |
+| SHA-256 ui/dist ↔ server static | 68/68 файлов совпадают | `crm-12-7-hashes.json` |
+| Playwright desktop+mobile | 136 сценариев, 0 failures (3:00) | `crm-12-7-browser3.log` (первый прогон 96+4F из-за дефолт-таба — `crm-12-7-browser2.log`) |
+| NotificationBrowserAcceptance + NotificationCenterBrowserAcceptance | OK (6:47) | `crm-12-7-notification-browser2.log` |
+
+В рабочем дереве на момент приёмки также находятся ранее проверенные и не коммиченные изменения: предупреждение SSE-шлюза при отказе приёма подключения (`UiSseGateway`, 16/16 unit), кнопка-переход «Услуги и условия →» в каталоге CRM и конфигурационные ключи staging-регулирования (heartbeat, `max-connections-per-employee`) — судьба коммита и деплоя остаётся за пользователем.
+
+Явно НЕ выполнено и не объявляется выполненным: живое чтение DIKIDI `CrmDikidiReadAcceptance` (нужен UUID тестового проекта от пользователя; команда — в «Повторении» ниже), ручная приёмка по CRM_UI.md, живые оплаченные/смешанные/ресурсные и любые изменяющие DIKIDI-сценарии (границы A/W CRM_DIKIDI_PROTOCOL.md сохраняются), деплой staging-регулирования. Автоматизированная часть 12.7 завершена; критерии этапа 12, требующие живых проверок, остаются открытыми до их выполнения.
+
 ## Повторение
 
 Обычная регрессия не требует DIKIDI и не выбирает класс `CrmDikidiReadAcceptance`:
