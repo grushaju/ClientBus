@@ -21,6 +21,7 @@ D:\Projects\Java\ClientBus\connector\api\src\main\java\kit\penny\clientbus\conne
 D:\Projects\Java\ClientBus\connector\api\src\main\java\kit\penny\clientbus\connector\api\model\ConnectorConversation.java
 D:\Projects\Java\ClientBus\connector\api\src\main\java\kit\penny\clientbus\connector\api\host\HostChannelAccounts.java
 D:\Projects\Java\ClientBus\connector\api\src\main\java\kit\penny\clientbus\connector\api\command\ReadClientAccountAvatarCommand.java
+D:\Projects\Java\ClientBus\connector\api\src\main\java\kit\penny\clientbus\connector\api\error\ConnectorSendRejectedException.java
 D:\Projects\Java\ClientBus\connector\api\src\main\java\kit\penny\clientbus\connector\api\listener\AbstractEventDispatcher.java
 D:\Projects\Java\ClientBus\connector\api\src\main\java\kit\penny\clientbus\connector\api\command\SyncConversationHistoryCommand.java
 D:\Projects\Java\ClientBus\connector\api\src\main\java\kit\penny\clientbus\connector\api\event\OutboundSendCompleted.java
@@ -28,6 +29,7 @@ D:\Projects\Java\ClientBus\connector\api\src\main\java\kit\penny\clientbus\conne
 D:\Projects\Java\ClientBus\connector\api\src\main\java\kit\penny\clientbus\connector\api\capability\MessageSender.java
 D:\Projects\Java\ClientBus\connector\api\src\main\java\kit\penny\clientbus\connector\api\command\ChannelConnectorCommand.java
 D:\Projects\Java\ClientBus\connector\api\src\main\java\kit\penny\clientbus\connector\api\IChannelAccountLifecycle.java
+D:\Projects\Java\ClientBus\connector\api\src\main\java\kit\penny\clientbus\connector\api\error\ConnectorSendOutcomeUnknownException.java
 D:\Projects\Java\ClientBus\connector\api\src\main\java\kit\penny\clientbus\connector\api\model\ConnectorAttachment.java
 D:\Projects\Java\ClientBus\connector\api\src\main\java\kit\penny\clientbus\connector\api\command\SendMessageCommand.java
 D:\Projects\Java\ClientBus\connector\api\src\main\java\kit\penny\clientbus\connector\api\capability\DialogReader.java

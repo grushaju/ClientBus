@@ -314,11 +314,11 @@ class MessageInboundFlowIntegrationTest
 
         ConversationEntity conversation =
                 conversationRepository
-                        .findByChannelAccountIdAndClientAccountId(
+                        .findAllByChannelAccountIdAndClientAccountId(
                                 channelAccountId,
                                 clientAccount.getId()
                         )
-                        .orElseThrow();
+                        .getFirst();
 
         assertEquals(
                 channelAccountId,

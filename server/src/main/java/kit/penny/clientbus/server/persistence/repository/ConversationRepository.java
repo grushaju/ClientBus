@@ -29,16 +29,27 @@ public interface ConversationRepository
      * ---------------------------------------------------------
      * Basic lookup
      * ---------------------------------------------------------
+     *
+     * 13.2b: диалог однозначно определяется парой (аккаунт канала, внешняя ссылка
+     * диалога). Поиск по участнику возвращает СПИСОК: каналы вправе вести несколько
+     * диалогов с одним участником; применение результата по участнику допустимо
+     * только при единственном кандидате (иначе контекст неоднозначен).
      */
 
     Optional<ConversationEntity>
-    findByChannelAccountIdAndClientAccountId(
+    findByChannelAccountIdAndDialogExternalId(
+            UUID channelAccountId,
+            String dialogExternalId
+    );
+
+    List<ConversationEntity>
+    findAllByChannelAccountIdAndClientAccountId(
             UUID channelAccountId,
             UUID clientAccountId
     );
 
-    Optional<ConversationEntity>
-    findByChannelAccountIdAndClientAccountExternalId(
+    List<ConversationEntity>
+    findAllByChannelAccountIdAndClientAccountExternalId(
             UUID channelAccountId,
             String clientAccountExternalId
     );

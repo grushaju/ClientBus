@@ -26,7 +26,10 @@ public record PlatformConversationRequest(
 
         int unreadCount,
 
-        String avatarUrl
+        String avatarUrl,
+
+        /** 13.2b: внешняя ссылка диалога платформы; nullable для старых payload. */
+        String dialogExternalId
 
 ) {
 
@@ -49,6 +52,32 @@ public record PlatformConversationRequest(
                 lastMessageAt,
                 lastMessagePreview,
                 unreadCount,
+                null,
+                null
+        );
+    }
+
+    public PlatformConversationRequest(
+            UUID channelAccountId,
+            String clientExternalId,
+            String clientUsername,
+            String clientPhone,
+            String clientDisplayName,
+            Instant lastMessageAt,
+            String lastMessagePreview,
+            int unreadCount,
+            String avatarUrl
+    ) {
+        this(
+                channelAccountId,
+                clientExternalId,
+                clientUsername,
+                clientPhone,
+                clientDisplayName,
+                lastMessageAt,
+                lastMessagePreview,
+                unreadCount,
+                avatarUrl,
                 null
         );
     }

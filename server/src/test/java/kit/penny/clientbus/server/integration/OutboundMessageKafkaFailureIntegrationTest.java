@@ -5,6 +5,7 @@ import kit.penny.clientbus.common.enums.*;
 import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
 import kit.penny.clientbus.connector.api.IChannelConnector;
 import kit.penny.clientbus.connector.api.command.SendMessageCommand;
+import kit.penny.clientbus.connector.api.error.ConnectorSendRejectedException;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
@@ -64,6 +65,10 @@ class OutboundMessageKafkaFailureIntegrationTest
     private MessageProcessingService messageProcessingService;
 
     @Autowired
+    private org.springframework.kafka.config.KafkaListenerEndpointRegistry
+            kafkaListenerEndpointRegistry;
+
+    @Autowired
     private OrganizationRepository organizationRepository;
 
     @Autowired
@@ -110,7 +115,10 @@ class OutboundMessageKafkaFailureIntegrationTest
     }
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
+
+        ensureOutboundTopics();
+        restartOutboundConsumerContainer();
 
         when(
                 channelConnectorRegistry.getConnector(
@@ -119,11 +127,95 @@ class OutboundMessageKafkaFailureIntegrationTest
         ).thenReturn(channelConnector);
 
         doThrow(
-                new IllegalStateException(
+                new ConnectorSendRejectedException(
                         "Telegram connector failure"
                 )
         ).when(channelConnector)
                 .handle((SendMessageCommand)any());
+    }
+
+    /*
+     * Контейнер подписан на topicPattern: если на старте контекста топика ещё нет,
+     * переподписка произойдёт только после долгого metadata-интервала. Пересоздаём
+     * потребителя после того, как топик гарантированно существует.
+     */
+    private void restartOutboundConsumerContainer() {
+
+        org.springframework.kafka.listener.MessageListenerContainer container =
+                kafkaListenerEndpointRegistry.getListenerContainer(
+                        "kafkaOutboundMessageConsumer"
+                );
+
+        if (container == null) {
+            return;
+        }
+
+        if (container.isRunning()) {
+            container.stop();
+        }
+
+        container.start();
+    }
+
+    /*
+     * Класс не зависел от авто-создания топика брокером (одна партия по умолчанию):
+     * готовый 3-партиционный топик совпадает с соседними outbound-классами.
+     */
+    private void ensureOutboundTopics() throws Exception {
+
+        String topic =
+                kit.penny.clientbus.server.kafka.routing.KafkaTopicNames
+                        .outbound(ChannelType.TELEGRAM);
+
+        String dlqTopic =
+                kit.penny.clientbus.server.kafka.routing.KafkaTopicNames
+                        .dlq(topic);
+
+        try (
+                org.apache.kafka.clients.admin.AdminClient adminClient =
+                        org.apache.kafka.clients.admin.AdminClient.create(
+                                java.util.Map.of(
+                                        "bootstrap.servers",
+                                        getKafkaBootstrapServers()
+                                )
+                        )
+        ) {
+            java.util.Set<String> existingTopics =
+                    adminClient
+                            .listTopics()
+                            .names()
+                            .get(10, java.util.concurrent.TimeUnit.SECONDS);
+
+            java.util.List<org.apache.kafka.clients.admin.NewTopic> topics =
+                    new java.util.ArrayList<>();
+
+            if (!existingTopics.contains(topic)) {
+                topics.add(
+                        new org.apache.kafka.clients.admin.NewTopic(
+                                topic,
+                                3,
+                                (short) 1
+                        )
+                );
+            }
+
+            if (!existingTopics.contains(dlqTopic)) {
+                topics.add(
+                        new org.apache.kafka.clients.admin.NewTopic(
+                                dlqTopic,
+                                1,
+                                (short) 1
+                        )
+                );
+            }
+
+            if (!topics.isEmpty()) {
+                adminClient
+                        .createTopics(topics)
+                        .all()
+                        .get(10, java.util.concurrent.TimeUnit.SECONDS);
+            }
+        }
     }
 
     @AfterEach

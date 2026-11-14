@@ -51,7 +51,12 @@ public class TelegramConversationMapper {
                         chat.lastMessage
                 ),
                 Math.max(0, chat.unreadCount),
-                avatarUrl
+                avatarUrl,
+
+                /*
+                 * 13.2b: внешняя ссылка диалога Telegram — chatId.
+                 */
+                Long.toString(chat.id)
         );
     }
 

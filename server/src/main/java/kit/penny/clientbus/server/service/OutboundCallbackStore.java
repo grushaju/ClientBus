@@ -8,7 +8,14 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.scheduling.annotation.Scheduled;
 import java.util.*;
 
-/** One bounded correlation journal, not a send queue: external I/O never runs here. */
+/**
+ * One bounded correlation journal, not a send queue: external I/O never runs here.
+ *
+ * <p>13.2b: the correlation slot is the dialog reference when known and the counterpart id
+ * otherwise — an external update may only know the dialog id, while the send attempt was
+ * registered with the counterpart id, and the two must not be assumed equal anymore. The
+ * slot keeps per-counterpart isolation (external ids may repeat across dialogs).</p>
+ */
 @Service
 @Transactional(propagation=Propagation.MANDATORY)
 public class OutboundCallbackStore {
@@ -16,15 +23,19 @@ public class OutboundCallbackStore {
     private final NamedParameterJdbcTemplate jdbc;
     public OutboundCallbackStore(NamedParameterJdbcTemplate jdbc) { this.jdbc=jdbc; }
 
-    private Map<String,Object> key(UUID account,String recipient,String pending) {
-        if(account==null || recipient==null || recipient.isBlank() || recipient.length()>256
+    private static String slot(String recipient,String dialog) {
+        return dialog!=null && !dialog.isBlank() ? dialog : recipient;
+    }
+    private Map<String,Object> key(UUID account,String slot,String pending) {
+        if(account==null
+                || slot==null || slot.isBlank() || slot.length()>256
                 || pending==null || pending.isBlank() || pending.length()>256)
             throw new IllegalArgumentException("Invalid external correlation");
-        return new HashMap<>(Map.of("account",account,"recipient",recipient,"pending",pending));
+        return new HashMap<>(Map.of("account",account,"slot",slot,"pending",pending));
     }
     private Result lock(Map<String,Object> p,boolean knownAttempt) {
-        p.put("key",NotificationIdentity.digest("send-result/v1",p.get("account").toString(),
-                p.get("recipient").toString(),p.get("pending").toString()));
+        p.put("key",NotificationIdentity.digest("send-result/v2",p.get("account").toString(),
+                p.get("slot").toString(),p.get("pending").toString()));
         jdbc.query("select pg_advisory_xact_lock(hashtextextended(:key,0))",p,rs->{});
         var rows=read(p);
         if(!rows.isEmpty()) return rows.getFirst();
@@ -34,39 +45,52 @@ public class OutboundCallbackStore {
             Long count=jdbc.queryForObject("select count(*) from dbo.outboundsendcallback where messageid is null",Map.of(),Long.class);
             if(count!=null && count>=4096) return null;
         }
+        p.remove("dialog");
         p.put("id",UUID.randomUUID());
         jdbc.update("""
                 insert into dbo.outboundsendcallback(id,channelaccountid,recipientexternalid,pendingexternalid,createdat,retainuntil)
-                values(:id,:account,:recipient,:pending,clock_timestamp(),clock_timestamp()+interval '7 days')
+                values(:id,:account,:slot,:pending,clock_timestamp(),clock_timestamp()+interval '7 days')
                 """,p);
         return new Result(null,null,null,null);
     }
     private List<Result> read(Map<String,Object> p) {
         return jdbc.query("""
                 select messageid,sendattemptid,outcome,finalexternalid from dbo.outboundsendcallback
-                where channelaccountid=:account and recipientexternalid=:recipient and pendingexternalid=:pending for update
+                where channelaccountid=:account and coalesce(dialogexternalid,recipientexternalid)=:slot
+                  and pendingexternalid=:pending for update
                 """,p,(rs,n)->new Result(rs.getObject(1,UUID.class),rs.getObject(2,UUID.class),rs.getString(3),rs.getString(4)));
     }
-    public Result bind(UUID account,String recipient,String pending,UUID message,UUID attempt) {
-        var p=key(account,recipient,pending); var row=lock(p,true);
+    public Result bind(UUID account,String recipient,String dialog,String pending,UUID message,UUID attempt) {
+        var p=key(account,slot(recipient,dialog),pending);
+        p.put("recipient",recipient);
+        var row=lock(p,true);
         if(row.messageId()!=null && (!row.messageId().equals(message) || !Objects.equals(row.attemptId(),attempt)))
             throw new IllegalStateException("External identity is bound to another send attempt");
         p.put("message",Objects.requireNonNull(message));p.put("attempt",attempt);
+        p.put("dialog",dialog);
         jdbc.update("""
-                update dbo.outboundsendcallback set messageid=:message,sendattemptid=:attempt
-                where channelaccountid=:account and recipientexternalid=:recipient and pendingexternalid=:pending
+                update dbo.outboundsendcallback set messageid=:message,sendattemptid=:attempt,
+                       recipientexternalid=:recipient,dialogexternalid=:dialog
+                where channelaccountid=:account and coalesce(dialogexternalid,recipientexternalid)=:slot
+                  and pendingexternalid=:pending
                 """,p);
         return new Result(message,attempt,row.outcome(),row.finalExternalId());
     }
-    public Result record(UUID account,String recipient,String pending,String finalId,boolean failed) {
-        var p=key(account,recipient,pending); var row=lock(p,false);
+    /**
+     * @param externalRef the platform's own reference for the dialog the update addresses
+     *                    (Telegram chat id), or the counterpart id in legacy callers.
+     */
+    public Result record(UUID account,String externalRef,String pending,String finalId,boolean failed) {
+        var p=key(account,externalRef,pending);
+        var row=lock(p,false);
         if(row==null) return null;
         if(finalId==null || finalId.isBlank() || finalId.length()>256) throw new IllegalArgumentException("Invalid external result");
         String outcome=failed || "FAILED".equals(row.outcome()) ? "FAILED" : "SENT";
         p.put("outcome",outcome);p.put("final",finalId);
         jdbc.update("""
                 update dbo.outboundsendcallback set outcome=:outcome,finalexternalid=:final
-                where channelaccountid=:account and recipientexternalid=:recipient and pendingexternalid=:pending
+                where channelaccountid=:account and coalesce(dialogexternalid,recipientexternalid)=:slot
+                  and pendingexternalid=:pending
                 """,p);
         return new Result(row.messageId(),row.attemptId(),outcome,finalId);
     }

@@ -66,7 +66,7 @@ class OutboundAttemptIntegrationTest extends AbstractIntegrationTest {
     private UUID attempt(UUID id) { return jdbc.queryForObject("select sendattemptid from dbo.message where messageid=?", UUID.class, id); }
     private String value(UUID id, String column) { return jdbc.queryForObject("select "+column+" from dbo.message where messageid=?", String.class, id); }
     private int notices() { return jdbc.queryForObject("select count(*) from dbo.notification where organizationid=? and type='OUTBOUND_FAILED'", Integer.class, organization); }
-    private void bind(UUID id, UUID attempt, String pending) { messages.registerExternalAttempt(id,attempt,account,recipient,pending); }
+    private void bind(UUID id, UUID attempt, String pending) { messages.registerExternalAttempt(id,attempt,account,recipient,null, pending); }
     private UUID result(String pending, String finalId, boolean failed) { return messages.recordExternalOutcome(account,recipient,pending,finalId,failed); }
     private Path temporary(UUID id, UUID attempt) throws Exception {
         return Files.createTempFile("clientbus-telegram-"+account+"-"+id+"-"+attempt+"-", ".test");
@@ -146,7 +146,7 @@ class OutboundAttemptIntegrationTest extends AbstractIntegrationTest {
             next.setAssignedEmployee(em.find(EmployeeEntity.class,employee)); em.flush(); recipient=client.getExternalId(); return next.getId();
         });
         UUID second=outbound();
-        messages.registerExternalAttempt(first,firstAttempt,account,firstRecipient,"same"); bind(second,attempt(second),"same");
+        messages.registerExternalAttempt(first,firstAttempt,account,firstRecipient,null, "same"); bind(second,attempt(second),"same");
         messages.recordExternalOutcome(account,firstRecipient,"same","final",true);
         assertEquals("FAILED",value(first,"deliverystatus")); assertEquals("PENDING",value(second,"deliverystatus")); assertEquals(1,notices());
         result("same","final",false); assertEquals("SENT",value(second,"deliverystatus"));
@@ -162,7 +162,7 @@ class OutboundAttemptIntegrationTest extends AbstractIntegrationTest {
 
     @Test void invalidScopeAndRebindingRollbackWithoutChangingMessages() {
         UUID id=outbound(), a=attempt(id), second=outbound();
-        assertThrows(IllegalArgumentException.class,()->messages.registerExternalAttempt(id,a,account,"another-chat","pending"));
+        assertThrows(IllegalArgumentException.class,()->messages.registerExternalAttempt(id,a,account,"another-chat",null, "pending"));
         assertNull(value(id,"externalid")); bind(id,a,"pending");
         assertThrows(IllegalStateException.class,()->bind(second,attempt(second),"pending"));
         assertNull(value(second,"externalid")); assertEquals("pending",value(id,"externalid"));

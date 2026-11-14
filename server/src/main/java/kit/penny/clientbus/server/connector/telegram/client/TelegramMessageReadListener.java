@@ -43,6 +43,7 @@ public class TelegramMessageReadListener
         hostMessageReadMarks.markReadUpTo(
                 channelAccountId,
                 Long.toString(chatId),
+                null,
                 lastReadOutboxMessageId
         );
     }

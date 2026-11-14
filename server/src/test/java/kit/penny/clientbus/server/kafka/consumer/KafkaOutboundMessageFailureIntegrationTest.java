@@ -9,6 +9,7 @@ import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
 import kit.penny.clientbus.connector.api.model.ConnectorSendResult;
 import kit.penny.clientbus.connector.api.IChannelConnector;
 import kit.penny.clientbus.connector.api.command.SendMessageCommand;
+import kit.penny.clientbus.connector.api.error.ConnectorSendRejectedException;
 import kit.penny.clientbus.server.exception.ChannelUnavailableException;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.integration.AbstractIntegrationTest;
@@ -208,12 +209,12 @@ class KafkaOutboundMessageFailureIntegrationTest
                 channelConnector.handle((SendMessageCommand) any())
         )
                 .thenThrow(
-                        new IllegalStateException(
+                        new ConnectorSendRejectedException(
                                 "Temporary Telegram failure #1"
                         )
                 )
                 .thenThrow(
-                        new IllegalStateException(
+                        new ConnectorSendRejectedException(
                                 "Temporary Telegram failure #2"
                         )
                 )
@@ -332,7 +333,7 @@ class KafkaOutboundMessageFailureIntegrationTest
         assertEquals(1, dlqOffsetsBefore.size());
 
         doThrow(
-                new IllegalStateException(
+                new ConnectorSendRejectedException(
                         "Permanent Telegram failure"
                 )
         ).when(channelConnector)
@@ -805,6 +806,32 @@ class KafkaOutboundMessageFailureIntegrationTest
             if (!topics.isEmpty()) {
                 adminClient
                         .createTopics(topics)
+                        .all()
+                        .get(10, TimeUnit.SECONDS);
+            }
+
+            // Если топик появился раньше с брокерской партией по умолчанию,
+            // добиваем до трёх: часть сценариев пишет строго в партицию 2.
+            var descriptions =
+                    adminClient
+                            .describeTopics(java.util.List.of(TOPIC))
+                            .allTopicNames()
+                            .get(10, TimeUnit.SECONDS);
+
+            int actualPartitions =
+                    descriptions.get(TOPIC).partitions().size();
+
+            if (actualPartitions < 3) {
+                adminClient
+                        .createPartitions(
+                                java.util.Map.of(
+                                        TOPIC,
+                                        org.apache.kafka.clients.admin.NewPartitions
+                                                .increaseTo(
+                                                        3
+                                                )
+                                )
+                        )
                         .all()
                         .get(10, TimeUnit.SECONDS);
             }

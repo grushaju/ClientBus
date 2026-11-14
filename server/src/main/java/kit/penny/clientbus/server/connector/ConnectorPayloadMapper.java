@@ -32,7 +32,8 @@ public final class ConnectorPayloadMapper {
                 request.lastMessageAt(),
                 request.lastMessagePreview(),
                 request.unreadCount(),
-                request.avatarUrl());
+                request.avatarUrl(),
+                request.dialogExternalId());
     }
 
     public static List<PlatformConversationRequest> toPlatformConversations(List<ConnectorConversation> conversations) {
@@ -55,7 +56,8 @@ public final class ConnectorPayloadMapper {
                 conversation.lastMessageAt(),
                 conversation.lastMessagePreview(),
                 conversation.unreadCount(),
-                conversation.avatarUrl());
+                conversation.avatarUrl(),
+                conversation.dialogExternalId());
     }
 
     public static ConnectorInboundMessage toConnector(PlatformMessageRequest request) {
@@ -77,7 +79,8 @@ public final class ConnectorPayloadMapper {
                 request.attachments() == null
                         ? null
                         : request.attachments().stream().map(ConnectorPayloadMapper::toConnector).toList(),
-                request.origin());
+                request.origin(),
+                request.dialogExternalId());
     }
 
     public static List<ConnectorInboundMessage> toConnectorMessages(List<PlatformMessageRequest> requests) {
@@ -106,7 +109,8 @@ public final class ConnectorPayloadMapper {
                 message.attachments() == null
                         ? null
                         : message.attachments().stream().map(ConnectorPayloadMapper::toPlatform).toList(),
-                message.origin());
+                message.origin(),
+                message.dialogExternalId());
     }
 
     public static List<PlatformMessageRequest> toPlatformMessages(List<ConnectorInboundMessage> messages) {

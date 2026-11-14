@@ -193,8 +193,9 @@ public class ConversationService {
         if (channelAccount.getChannel().getType() != request.channelType())
             throw new IllegalArgumentException("ChannelAccount and requested channel type must match");
         var account = clientAccountRepository.findByChannelTypeAndExternalId(request.channelType(), request.externalId());
-        account.flatMap(a -> conversationRepository.findByChannelAccountIdAndClientAccountId(channelAccount.getId(), a.getId()))
-                .ifPresent(this::requireConversationAccess);
+        account.ifPresent(a -> conversationRepository
+                .findAllByChannelAccountIdAndClientAccountId(channelAccount.getId(), a.getId())
+                .forEach(this::requireConversationAccess));
         return new OutboundTarget(account.map(ClientAccountEntity::getAvatarUrl).orElse(null));
     }
 
@@ -291,12 +292,15 @@ public class ConversationService {
         }
 
         ConversationEntity existing =
-                conversationRepository
-                        .findByChannelAccountIdAndClientAccountId(
-                                channelAccount.getId(),
-                                clientAccount.getId()
-                        )
-                        .orElse(null);
+                uniqueCounterpartCandidate(
+                        conversationRepository
+                                .findAllByChannelAccountIdAndClientAccountId(
+                                        channelAccount.getId(),
+                                        clientAccount.getId()
+                                ),
+                        channelAccount.getId(),
+                        clientAccount.getId()
+                );
 
         if (existing != null) {
 
@@ -334,16 +338,62 @@ public class ConversationService {
             ChannelAccountEntity channelAccount,
             ClientAccountEntity clientAccount
     ) {
+        return createConversationInternal(
+                channelAccount,
+                clientAccount,
+                null
+        );
+    }
+
+    /**
+     * 13.2b: диалог определяется внешней ссылкой (dialogExternalId), когда платформа её даёт.
+     * Поиск по одному участнику применяется только при единственном кандидате; неоднозначный
+     * контекст не применяется никогда (IllegalStateException).
+     */
+    @Transactional
+    public ConversationEntity createConversationInternal(
+            ChannelAccountEntity channelAccount,
+            ClientAccountEntity clientAccount,
+            String dialogExternalId
+    ) {
+
+        String dialog = normalizeDialogExternalId(
+                dialogExternalId
+        );
 
         ConversationEntity existing =
-                conversationRepository
-                        .findByChannelAccountIdAndClientAccountId(
-                                channelAccount.getId(),
-                                clientAccount.getId()
-                        )
-                        .orElse(null);
+                dialog == null
+                        ? null
+                        : conversationRepository
+                                .findByChannelAccountIdAndDialogExternalId(
+                                        channelAccount.getId(),
+                                        dialog
+                                )
+                                .orElse(null);
+
+        boolean healedLegacyDialog = false;
+
+        if (existing == null) {
+
+            existing = uniqueCounterpartCandidate(
+                    conversationRepository
+                            .findAllByChannelAccountIdAndClientAccountId(
+                                    channelAccount.getId(),
+                                    clientAccount.getId()
+                            ),
+                    channelAccount.getId(),
+                    clientAccount.getId()
+            );
+
+            healedLegacyDialog = existing != null
+                    && dialog != null
+                    && existing.getDialogExternalId() == null;
+        }
 
         if (existing != null) {
+            if (healedLegacyDialog) {
+                existing.setDialogExternalId(dialog);
+            }
             return existing;
         }
 
@@ -366,6 +416,10 @@ public class ConversationService {
                         clientAccount
                 );
 
+        conversation.setDialogExternalId(
+                dialog
+        );
+
         try {
 
             return conversationRepository.saveAndFlush(
@@ -374,13 +428,67 @@ public class ConversationService {
 
         } catch (DataIntegrityViolationException e) {
 
+            if (dialog != null) {
+
+                ConversationEntity racedByDialog =
+                        conversationRepository
+                                .findByChannelAccountIdAndDialogExternalId(
+                                        channelAccount.getId(),
+                                        dialog
+                                )
+                                .orElse(null);
+
+                if (racedByDialog != null) {
+                    return racedByDialog;
+                }
+            }
+
             return conversationRepository
-                    .findByChannelAccountIdAndClientAccountId(
+                    .findAllByChannelAccountIdAndClientAccountId(
                             channelAccount.getId(),
                             clientAccount.getId()
                     )
+                    .stream()
+                    .findFirst()
                     .orElseThrow(() -> e);
         }
+    }
+
+    /*
+     * 13.2b: контекст по одному участнику восстанавливается только когда кандидат один;
+     * при нескольких диалогах результат неоднозначен и не применяется.
+     */
+    private static ConversationEntity uniqueCounterpartCandidate(
+            List<ConversationEntity> candidates,
+            java.util.UUID channelAccountId,
+            java.util.UUID clientAccountId
+    ) {
+        if (candidates.isEmpty()) {
+            return null;
+        }
+
+        if (candidates.size() == 1) {
+            return candidates.get(0);
+        }
+
+        throw new IllegalStateException(
+                "Ambiguous conversation context: channelAccountId="
+                        + channelAccountId
+                        + ", clientAccountId="
+                        + clientAccountId
+                        + " has "
+                        + candidates.size()
+                        + " dialogs; counterpart-only resolution is not applied"
+        );
+    }
+
+    private static String normalizeDialogExternalId(
+            String dialogExternalId
+    ) {
+        return dialogExternalId == null
+                || dialogExternalId.isBlank()
+                ? null
+                : dialogExternalId.trim();
     }
 
     @Transactional(readOnly = true)
@@ -862,20 +970,65 @@ public class ConversationService {
     ) {
 
         ConversationEntity conversation =
-                conversationRepository
-                        .findByChannelAccountIdAndClientAccountId(
-                                channelAccountId,
-                                clientAccountId
-                        )
-                        .orElseThrow(() ->
-                                new EntityNotFoundException(
-                                        "Conversation not found"
-                                )
-                        );
+                uniqueCounterpartCandidate(
+                        conversationRepository
+                                .findAllByChannelAccountIdAndClientAccountId(
+                                        channelAccountId,
+                                        clientAccountId
+                                ),
+                        channelAccountId,
+                        clientAccountId
+                );
+
+        if (conversation == null) {
+            throw new EntityNotFoundException(
+                    "Conversation not found"
+            );
+        }
 
         requireConversationAccess(conversation);
 
         return conversationMapper.toDto(conversation);
+    }
+
+    /**
+     * 13.2b: разрешение диалога для обработки: сначала внешняя ссылка диалога,
+     * затем участник — только при единственном кандидате.
+     */
+    @Transactional(readOnly = true)
+    public ConversationEntity findEntityForDialog(
+            UUID channelAccountId,
+            UUID clientAccountId,
+            String dialogExternalId
+    ) {
+        String dialog = normalizeDialogExternalId(
+                dialogExternalId
+        );
+
+        if (dialog != null) {
+
+            ConversationEntity byDialog =
+                    conversationRepository
+                            .findByChannelAccountIdAndDialogExternalId(
+                                    channelAccountId,
+                                    dialog
+                            )
+                            .orElse(null);
+
+            if (byDialog != null) {
+                return byDialog;
+            }
+        }
+
+        return uniqueCounterpartCandidate(
+                conversationRepository
+                        .findAllByChannelAccountIdAndClientAccountId(
+                                channelAccountId,
+                                clientAccountId
+                        ),
+                channelAccountId,
+                clientAccountId
+        );
     }
 
     @Transactional(readOnly = true)
@@ -884,12 +1037,15 @@ public class ConversationService {
             UUID clientAccountId
     ) {
 
-        return conversationRepository
-                .findByChannelAccountIdAndClientAccountId(
-                        channelAccountId,
-                        clientAccountId
-                )
-                .orElse(null);
+        return uniqueCounterpartCandidate(
+                conversationRepository
+                        .findAllByChannelAccountIdAndClientAccountId(
+                                channelAccountId,
+                                clientAccountId
+                        ),
+                channelAccountId,
+                clientAccountId
+        );
     }
 
     @Transactional(readOnly = true)
@@ -899,6 +1055,25 @@ public class ConversationService {
 
         return conversationRepository
                 .findById(conversationId)
+                .orElseThrow(() ->
+                        new EntityNotFoundException(
+                                "Conversation not found: "
+                                        + conversationId
+                        )
+                );
+    }
+
+    /**
+     * 13.2b: pessimistic conversation lock for accept-time authorization. Workspace,
+     * EMPLOYEE-role and current-assignment checks must run under this lock so that a
+     * concurrent reassignment cannot slip between the check and the queued send.
+     */
+    public ConversationEntity findEntityForUpdate(
+            UUID conversationId
+    ) {
+
+        return conversationRepository
+                .findByIdForUpdate(conversationId)
                 .orElseThrow(() ->
                         new EntityNotFoundException(
                                 "Conversation not found: "
@@ -1198,7 +1373,8 @@ public class ConversationService {
                         new ChannelReadKafkaCommand(
                                 channelAccount.getId(),
                                 conversation.getClientAccount().getExternalId(),
-                                lastInboundMessage.getExternalId()
+                                lastInboundMessage.getExternalId(),
+                                conversation.getDialogExternalId()
                         )
                 );
             }
@@ -1339,20 +1515,25 @@ public class ConversationService {
             String clientAccountExternalId
     ) {
         ConversationEntity conversation =
-                conversationRepository
-                        .findByChannelAccountIdAndClientAccountExternalId(
-                                channelAccountId,
-                                clientAccountExternalId
-                        )
-                        .orElseThrow(() ->
-                                new EntityNotFoundException(
-                                        "Conversation not found for " +
-                                                "channelAccountId="
-                                                + channelAccountId
-                                                + " and clientAccountExternalId="
-                                                + clientAccountExternalId
-                                )
-                        );
+                uniqueCounterpartCandidate(
+                        conversationRepository
+                                .findAllByChannelAccountIdAndClientAccountExternalId(
+                                        channelAccountId,
+                                        clientAccountExternalId
+                                ),
+                        channelAccountId,
+                        null
+                );
+
+        if (conversation == null) {
+            throw new EntityNotFoundException(
+                    "Conversation not found for " +
+                            "channelAccountId="
+                            + channelAccountId
+                            + " and clientAccountExternalId="
+                            + clientAccountExternalId
+            );
+        }
 
         conversation.setHistoryStartReached(true);
 

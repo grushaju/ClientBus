@@ -12,15 +12,14 @@ import java.util.UUID;
 @DynamicUpdate
 @Table(
         name = "conversation",
-        uniqueConstraints = {
-                @UniqueConstraint(
-                        name = "conversation_channel_client_uix",
-                        columnNames = {
-                                "channelaccountid",
-                                "clientaccountid"
-                        }
-                )
-        },
+        /*
+         * 13.2b: жёсткое 1:1 (канал-аккаунт, клиент) снято — диалог определяется внешней
+         * ссылкой диалога платформы (dialogexternalid). Ограничения создают частичные
+         * уникальные индексы миграции V2:
+         *   unique (channelaccountid, dialogexternalid) WHERE dialogexternalid IS NOT NULL;
+         *   unique (channelaccountid, clientaccountid) WHERE dialogexternalid IS NULL
+         * (легаси-строки без ссылки остаются одними на участника до самолечения).
+         */
         indexes = {
                 @Index(
                         name = "conversation_workspace_idx",
@@ -33,6 +32,10 @@ import java.util.UUID;
                 @Index(
                         name = "conversation_channel_account_idx",
                         columnList = "channelaccountid"
+                ),
+                @Index(
+                        name = "conversation_channel_dialog_idx",
+                        columnList = "channelaccountid, dialogexternalid"
                 ),
                 @Index(
                         name = "conversation_assigned_employee_idx",
@@ -94,6 +97,26 @@ public class ConversationEntity {
             )
     )
     private ClientAccountEntity clientAccount;
+
+    /**
+     * 13.2b: внешняя ссылка ДИАЛОГА в мессенджере (например chatId Telegram), когда платформа
+     * различает диалог и участника. NULL — легаси-строки и каналы, где диалог = участник;
+     * заполняется при первом входящем со ссылкой (самолечение) и при создании диалога.
+     * Уникальность обеспечивается частичным индексом (миграция V2).
+     */
+    @Column(
+            name = "dialogexternalid",
+            length = 200
+    )
+    private String dialogExternalId;
+
+    public String getDialogExternalId() {
+        return dialogExternalId;
+    }
+
+    public void setDialogExternalId(String dialogExternalId) {
+        this.dialogExternalId = dialogExternalId;
+    }
 
     /**
      * Сотрудник, которому сейчас назначен диалог.

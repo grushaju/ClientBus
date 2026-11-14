@@ -364,7 +364,16 @@ public class TelegramInboundMessageProcessor {
                         message.date
                 ),
 
-                content.attachments()
+                content.attachments(),
+
+                null,
+
+                /*
+                 * 13.2b: диалог Telegram адресуется chatId; участник — user.id.
+                 */
+                Long.toString(
+                        message.chatId
+                )
         );
     }
 

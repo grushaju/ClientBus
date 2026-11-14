@@ -273,10 +273,7 @@ class MessageProcessingServiceTest {
                 clientAccount
         );
 
-        when(conversationService.findEntityByAccounts(
-                channelAccountId,
-                clientAccountId
-        )).thenReturn(
+        when(conversationService.createConversationInternal(any(), any(), any())).thenReturn(
                 conversation
         );
 
@@ -318,11 +315,7 @@ class MessageProcessingServiceTest {
                         null
                 );
 
-        verify(conversationService)
-                .findEntityByAccounts(
-                        channelAccountId,
-                        clientAccountId
-                );
+        verify(conversationService).createConversationInternal(any(), any(), any());
 
         ArgumentCaptor<CreatePlatformMessageRequest>
                 requestCaptor =
@@ -431,10 +424,7 @@ class MessageProcessingServiceTest {
                 clientAccount
         );
 
-        when(conversationService.findEntityByAccounts(
-                channelAccountId,
-                clientAccountId
-        )).thenReturn(
+        when(conversationService.createConversationInternal(any(), any(), any())).thenReturn(
                 conversation
         );
 
@@ -555,10 +545,7 @@ class MessageProcessingServiceTest {
                 clientAccount
         );
 
-        when(conversationService.findEntityByAccounts(
-                channelAccountId,
-                clientAccountId
-        )).thenReturn(
+        when(conversationService.createConversationInternal(any(), any(), any())).thenReturn(
                 conversation
         );
 
@@ -617,7 +604,7 @@ class MessageProcessingServiceTest {
     // =========================================================
 
     @Test
-    void forwardMessage_existingTargetConversation_forwardsAttachments() {
+    void forwardMessage_existingTargetConversation_publishesQueuedForward() {
 
         ForwardMessageRequest request =
                 new ForwardMessageRequest(
@@ -627,133 +614,36 @@ class MessageProcessingServiceTest {
                         null
                 );
 
-        MessageAttachmentEntity sourceAttachment =
-                new MessageAttachmentEntity();
+        OutboundMessageTransactionService.OutboundMessageTransactionResult transaction =
+                transactionResult(forwardedMessageDto);
 
-        sourceAttachment.setMessage(
-                sourceMessageEntity
-        );
-
-        sourceAttachment.setType(
-                MessageAttachmentType.IMAGE
-        );
-
-        sourceAttachment.setFileName(
-                "photo.jpg"
-        );
-
-        sourceAttachment.setContentType(
-                "image/jpeg"
-        );
-
-        sourceAttachment.setSize(
-                1024
-        );
-
-        sourceAttachment.setStorageKey(
-                "storage/original-123"
-        );
-
-        sourceAttachment.setForwardFrom(
-                null
-        );
-
-        UUID forwardedId =
-                UUID.randomUUID();
-
-        when(forwardedMessageDto.id())
-                .thenReturn(forwardedId);
-
-        when(messageService.getMessageEntity(
-                sourceMessageId
-        )).thenReturn(
-                sourceMessageEntity
-        );
-
-        when(conversationService.findEntityForProcessing(
+        when(outboundMessageTransactionService.prepareForward(
+                sourceMessageId,
                 targetConversationId
         )).thenReturn(
-                targetConversation
+                transaction
         );
 
-        when(messageService.createForwardedMessage(
-                targetConversation,
-                sourceMessageEntity
-        )).thenReturn(
-                forwardedMessageDto
-        );
-
-        targetMessageEntity =
-                new MessageEntity(
-                        targetConversation,
-                        MessageType.TEXT,
-                        MessageDirection.OUTBOUND,
-                        MessageSenderType.EMPLOYEE
-                );
-
-        targetMessageEntity.setId(
-                forwardedId
-        );
-
-        when(messageService.getMessageEntityForProcessing(
-                forwardedId
-        )).thenReturn(
-                targetMessageEntity
-        );
-
-        when(messageAttachmentService
-                .getAttachmentsForProcessing(
-                        sourceMessageId
-                ))
-                .thenReturn(
-                        List.of(sourceAttachment)
-                );
-
-        MessageDto result =
+        MessageDto forwarded =
                 messageProcessingService.forwardMessage(
                         request
                 );
 
         assertSame(
                 forwardedMessageDto,
-                result
+                forwarded
         );
 
-        verify(messageService)
-                .getMessageEntity(
-                        sourceMessageId
-                );
-
-        verify(conversationService)
-                .findEntityForProcessing(
+        verify(outboundMessageTransactionService)
+                .prepareForward(
+                        sourceMessageId,
                         targetConversationId
                 );
 
-        verify(conversationService)
-                .requireForwardTargetAccess(
-                        targetConversation
-                );
-
-        verify(messageService)
-                .createForwardedMessage(
-                        targetConversation,
-                        sourceMessageEntity
-                );
-
-        verify(messageService)
-                .getMessageEntityForProcessing(
-                        forwardedId
-                );
-
-        verify(messageAttachmentService)
-                .getAttachmentsForProcessing(
-                        sourceMessageId
-                );
-
-        verify(messageAttachmentService)
-                .createForwardedAttachment(
-                        targetMessageEntity,
-                        sourceAttachment
+        verify(outboundMessagePublisher)
+                .publish(
+                        ChannelType.TELEGRAM,
+                        transaction.command()
                 );
     }
 
@@ -788,10 +678,8 @@ class MessageProcessingServiceTest {
                 targetChannelAccountId
         );
 
-        when(messageService.getMessageEntity(
-                sourceMessageId
-        )).thenReturn(
-                sourceMessageEntity
+        targetConversation.setId(
+                targetConversationId
         );
 
         when(clientAccountRepository.findById(
@@ -813,59 +701,25 @@ class MessageProcessingServiceTest {
                 targetConversation
         );
 
-        when(messageService.createForwardedMessage(
-                targetConversation,
-                sourceMessageEntity
+        OutboundMessageTransactionService.OutboundMessageTransactionResult transaction =
+                transactionResult(forwardedMessageDto);
+
+        when(outboundMessageTransactionService.prepareForward(
+                sourceMessageId,
+                targetConversationId
         )).thenReturn(
-                forwardedMessageDto
+                transaction
         );
 
-        UUID forwardedId = UUID.randomUUID();
-
-        when(forwardedMessageDto.id())
-                .thenReturn(forwardedId);
-
-        targetMessageEntity =
-                new MessageEntity(
-                        targetConversation,
-                        MessageType.TEXT,
-                        MessageDirection.OUTBOUND,
-                        MessageSenderType.EMPLOYEE
-                );
-
-        targetMessageEntity.setId(
-                forwardedId
-        );
-
-        when(messageService.getMessageEntityForProcessing(
-                forwardedId
-        )).thenReturn(
-                targetMessageEntity
-        );
-
-        when(messageAttachmentService
-                .getAttachmentsForProcessing(
-                        sourceMessageId
-                ))
-                .thenReturn(
-                        List.of()
-                );
-
-        MessageDto result =
+        MessageDto forwarded =
                 messageProcessingService.forwardMessage(
                         request
                 );
 
         assertSame(
                 forwardedMessageDto,
-                result
+                forwarded
         );
-
-        verify(clientAccountRepository)
-                .findById(targetClientAccountId);
-
-        verify(channelAccountRepository)
-                .findById(targetChannelAccountId);
 
         verify(conversationService)
                 .findOrCreateForForward(
@@ -873,15 +727,53 @@ class MessageProcessingServiceTest {
                         targetClientAccount
                 );
 
-        verify(messageService)
-                .createForwardedMessage(
-                        targetConversation,
-                        sourceMessageEntity
+        verify(outboundMessagePublisher)
+                .publish(
+                        ChannelType.TELEGRAM,
+                        transaction.command()
+                );
+    }
+
+    @Test
+    void forwardMessage_publishFailure_marksDeliveryFailed() {
+
+        ForwardMessageRequest request =
+                new ForwardMessageRequest(
+                        sourceMessageId,
+                        targetConversationId,
+                        null,
+                        null
                 );
 
-        verify(messageAttachmentService)
-                .getAttachmentsForProcessing(
-                        sourceMessageId
+        OutboundMessageTransactionService.OutboundMessageTransactionResult transaction =
+                transactionResult(forwardedMessageDto);
+
+        when(outboundMessageTransactionService.prepareForward(
+                sourceMessageId,
+                targetConversationId
+        )).thenReturn(
+                transaction
+        );
+
+        doThrow(
+                new IllegalStateException(
+                        "Kafka unavailable"
+                )
+        ).when(outboundMessagePublisher)
+                .publish(
+                        ChannelType.TELEGRAM,
+                        transaction.command()
+                );
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> messageProcessingService.forwardMessage(request)
+        );
+
+        verify(messageService)
+                .markDeliveryFailed(
+                        transaction.messageId(),
+                        transaction.command().sendAttemptId()
                 );
     }
 
@@ -896,8 +788,9 @@ class MessageProcessingServiceTest {
                         null
                 );
 
-        when(messageService.getMessageEntity(
-                sourceMessageId
+        when(outboundMessageTransactionService.prepareForward(
+                sourceMessageId,
+                targetConversationId
         )).thenThrow(
                 new EntityNotFoundException(
                         "Message not found: "
@@ -921,9 +814,10 @@ class MessageProcessingServiceTest {
         );
 
         verifyNoInteractions(
-                messageAttachmentService
+                outboundMessagePublisher
         );
     }
+
 
     // =========================================================
     // PLATFORM EVENTS

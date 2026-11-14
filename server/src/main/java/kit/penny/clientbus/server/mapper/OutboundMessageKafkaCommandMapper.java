@@ -29,7 +29,8 @@ public class OutboundMessageKafkaCommandMapper {
                 command.type(),
                 command.content(),
                 mapAttachments(command),
-                command.sendAttemptId()
+                command.sendAttemptId(),
+                command.dialogExternalId()
         );
     }
 

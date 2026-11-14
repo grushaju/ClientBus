@@ -22,7 +22,10 @@ public record ConnectorConversation(
 
         int unreadCount,
 
-        String avatarUrl
+        String avatarUrl,
+
+        /** External dialog reference (13.2b); nullable for legacy payloads. */
+        String dialogExternalId
 
 ) {
 
@@ -45,6 +48,32 @@ public record ConnectorConversation(
                 lastMessageAt,
                 lastMessagePreview,
                 unreadCount,
+                null,
+                null
+        );
+    }
+
+    public ConnectorConversation(
+            UUID channelAccountId,
+            String clientExternalId,
+            String clientUsername,
+            String clientPhone,
+            String clientDisplayName,
+            Instant lastMessageAt,
+            String lastMessagePreview,
+            int unreadCount,
+            String avatarUrl
+    ) {
+        this(
+                channelAccountId,
+                clientExternalId,
+                clientUsername,
+                clientPhone,
+                clientDisplayName,
+                lastMessageAt,
+                lastMessagePreview,
+                unreadCount,
+                avatarUrl,
                 null
         );
     }

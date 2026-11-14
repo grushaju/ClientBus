@@ -17,12 +17,34 @@ public record SyncConversationHistoryKafkaCommand(
 
         String beforeExternalId,
 
-        int limit
+        int limit,
+
+        /** 13.2b: внешняя ссылка диалога платформы; nullable для старых payload. */
+        String dialogExternalId
 
 ) {
+        public SyncConversationHistoryKafkaCommand(
+                UUID channelAccountId,
+                String conversationExternalId,
+                String beforeExternalId,
+                int limit
+        ) {
+                this(channelAccountId, conversationExternalId, beforeExternalId, limit, null);
+        }
+
         public record Result(
                 List<MessageDto> messages,
-                boolean historyStartReached
+                boolean historyStartReached,
+
+                /** 13.2b: причина завершения страницы истории; nullable для старых payload. */
+                String endReason
         ) {
+
+            public Result(
+                    List<MessageDto> messages,
+                    boolean historyStartReached
+            ) {
+                this(messages, historyStartReached, null);
+            }
         }
 }

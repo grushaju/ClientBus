@@ -97,7 +97,8 @@ public class RecentChatsSynchronizationService {
                             conversation.channelAccountId(),
                             conversation.clientExternalId(),
                             null,
-                            INITIAL_HISTORY_PAGE_SIZE
+                            INITIAL_HISTORY_PAGE_SIZE,
+                            conversation.dialogExternalId()
                     )
             );
 

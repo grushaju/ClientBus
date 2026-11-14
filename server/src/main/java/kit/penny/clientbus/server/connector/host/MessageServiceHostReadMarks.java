@@ -34,23 +34,24 @@ public class MessageServiceHostReadMarks
     @Override
     public void markReadUpTo(
             UUID channelAccountId,
+            String dialogExternalId,
             String clientExternalId,
             long lastReadExternalId
     ) {
         ConversationEntity conversation =
-                conversationRepository
-                        .findByChannelAccountIdAndClientAccountExternalId(
-                                channelAccountId,
-                                clientExternalId
-                        )
-                        .orElse(null);
+                resolveConversation(
+                        channelAccountId,
+                        dialogExternalId,
+                        clientExternalId
+                );
 
         if (conversation == null) {
             log.debug(
                     "Ignoring Telegram read update: "
                             + "conversation not found, "
-                            + "channelAccountId={}, chatId={}",
+                            + "channelAccountId={}, dialogId={}, chatId={}",
                     channelAccountId,
+                    dialogExternalId,
                     clientExternalId
             );
 
@@ -61,5 +62,56 @@ public class MessageServiceHostReadMarks
                 conversation.getId(),
                 lastReadExternalId
         );
+    }
+
+    /*
+     * 13.2b: сначала внешняя ссылка диалога; поиск по участнику — только при одном
+     * кандидате. Неоднозначный контекст игнорируется (не угадываем). Легаси-строки
+     * создавались без ссылки диалога, где чат и участник совпадали, поэтому при промахе
+     * по ссылке тот же идентификатор пробзуется как id участника.
+     */
+    private ConversationEntity resolveConversation(
+            UUID channelAccountId,
+            String dialogExternalId,
+            String clientExternalId
+    ) {
+        if (dialogExternalId != null
+                && !dialogExternalId.isBlank()) {
+
+            ConversationEntity byDialog =
+                    conversationRepository
+                            .findByChannelAccountIdAndDialogExternalId(
+                                    channelAccountId,
+                                    dialogExternalId
+                            )
+                            .orElse(null);
+
+            if (byDialog != null) {
+                return byDialog;
+            }
+        }
+
+        String counterpartReference =
+                clientExternalId != null
+                        && !clientExternalId.isBlank()
+                        ? clientExternalId
+                        : dialogExternalId;
+
+        if (counterpartReference == null
+                || counterpartReference.isBlank()) {
+
+            return null;
+        }
+
+        var candidates =
+                conversationRepository
+                        .findAllByChannelAccountIdAndClientAccountExternalId(
+                                channelAccountId,
+                                counterpartReference
+                        );
+
+        return candidates.size() == 1
+                ? candidates.get(0)
+                : null;
     }
 }

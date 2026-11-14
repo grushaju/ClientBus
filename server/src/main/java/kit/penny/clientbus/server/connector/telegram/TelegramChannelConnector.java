@@ -12,6 +12,7 @@ import kit.penny.clientbus.connector.api.model.DiscoveredClientAccount;
 import kit.penny.clientbus.connector.api.model.ConnectorSendResult;
 import kit.penny.clientbus.connector.api.IChannelConnector;
 import kit.penny.clientbus.connector.api.model.SyncConversationHistoryResult;
+import kit.penny.clientbus.connector.api.error.ConnectorSendOutcomeUnknownException;
 import kit.penny.clientbus.connector.api.command.*;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientContext;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientManager;
@@ -112,7 +113,10 @@ public class TelegramChannelConnector
 
         long chatId =
                 parseChatId(
-                        command.recipientExternalId()
+                        command.dialogExternalId() != null
+                                && !command.dialogExternalId().isBlank()
+                                ? command.dialogExternalId()
+                                : command.recipientExternalId()
                 );
 
         TelegramClientContext context =
@@ -158,7 +162,10 @@ public class TelegramChannelConnector
 
         long chatId =
                 parseChatId(
-                        command.recipientExternalId()
+                        command.dialogExternalId() != null
+                                && !command.dialogExternalId().isBlank()
+                                ? command.dialogExternalId()
+                                : command.recipientExternalId()
                 );
 
         long messageId =
@@ -783,19 +790,35 @@ public class TelegramChannelConnector
                         false
                 );
 
-        TdApi.Message message =
-                telegramClient
-                        .send(
-                                new TdApi.SendMessage(
-                                        chatId,
-                                        null,
-                                        null,
-                                        null,
-                                        null,
-                                        content
-                                )
-                        )
-                        .getObjectOrThrow();
+        TdApi.Message message;
+
+        try {
+
+            message =
+                    telegramClient
+                            .send(
+                                    new TdApi.SendMessage(
+                                            chatId,
+                                            null,
+                                            null,
+                                            null,
+                                            null,
+                                            content
+                                    )
+                            )
+                            .getObjectOrThrow();
+
+        } catch (RuntimeException e) {
+
+            /*
+             * 13.2b: the request reached TDLib; whether Telegram accepted the message
+             * cannot be proven from this failure. Never classify it as a safe retry.
+             */
+            throw new ConnectorSendOutcomeUnknownException(
+                    "Telegram send request failed with unknown outcome: chatId=" + chatId,
+                    e
+            );
+        }
 
         return new ConnectorSendResult(
                 String.valueOf(message.id), command.sendAttemptId()
@@ -886,19 +909,31 @@ public class TelegramChannelConnector
                             attachment.fileName()
                     );
 
-            TdApi.Message message =
-                    telegramClient
-                            .send(
-                                    new TdApi.SendMessage(
-                                            chatId,
-                                            null,
-                                            null,
-                                            null,
-                                            null,
-                                            content
-                                    )
-                            )
-                            .getObjectOrThrow();
+            TdApi.Message message;
+
+            try {
+
+                message =
+                        telegramClient
+                                .send(
+                                        new TdApi.SendMessage(
+                                                chatId,
+                                                null,
+                                                null,
+                                                null,
+                                                null,
+                                                content
+                                        )
+                                )
+                                .getObjectOrThrow();
+
+            } catch (RuntimeException e) {
+
+                throw new ConnectorSendOutcomeUnknownException(
+                        "Telegram send request failed with unknown outcome: chatId=" + chatId,
+                        e
+                );
+            }
 
             return new ConnectorSendResult(
                     String.valueOf(message.id), command.sendAttemptId()

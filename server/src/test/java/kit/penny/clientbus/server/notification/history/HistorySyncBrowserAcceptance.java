@@ -107,6 +107,18 @@ class HistorySyncBrowserAcceptance extends AbstractIntegrationTest {
     }
     @TestConfiguration @Profile("history-browser")
     static class Connectors {
+        /*
+         * The Control connector supports every channel type; the production Telegram
+         * connector would make the registry reject this context. It has no role in
+         * history acceptance and its removal keeps the fake registry exclusive.
+         */
+        @Bean static org.springframework.beans.factory.config.BeanFactoryPostProcessor removeRealTelegramConnector() {
+            return beanFactory -> {
+                if (beanFactory instanceof org.springframework.beans.factory.support.BeanDefinitionRegistry registry
+                        && registry.containsBeanDefinition("telegramChannelConnector"))
+                    registry.removeBeanDefinition("telegramChannelConnector");
+            };
+        }
         @Bean @Primary ChannelConnectorRegistry historyRegistry(Control control) { return new ChannelConnectorRegistry(List.of(control)); }
     }
     @TestComponent @Profile("history-browser") @RestController

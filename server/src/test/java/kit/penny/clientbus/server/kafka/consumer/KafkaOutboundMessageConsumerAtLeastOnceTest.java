@@ -25,6 +25,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
@@ -81,7 +82,7 @@ class KafkaOutboundMessageConsumerAtLeastOnceTest {
     }
 
     @Test
-    void sendSucceeds_registerExternalIdFails_consumerPropagatesException() {
+    void sendSucceeds_registerExternalIdFails_claimIsHeldWithoutRetry() {
 
         stubSuccessfulConnectorPath();
 
@@ -97,11 +98,10 @@ class KafkaOutboundMessageConsumerAtLeastOnceTest {
                         "Simulated failure after external send"
                 )
         ).when(messageService)
-                .registerExternalAttempt(MESSAGE_ID, ATTEMPT_ID, CHANNEL_ACCOUNT_ID, RECIPIENT_EXTERNAL_ID, EXTERNAL_MESSAGE_ID);
+                .registerExternalAttempt(MESSAGE_ID, ATTEMPT_ID, CHANNEL_ACCOUNT_ID, RECIPIENT_EXTERNAL_ID,null,  EXTERNAL_MESSAGE_ID);
 
-        assertThrows(
-                IllegalStateException.class,
-                () -> consumer.consume(
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() ->
+                consumer.consume(
                         event,
                         "clientbus.outbound.telegram"
                 )
@@ -119,7 +119,7 @@ class KafkaOutboundMessageConsumerAtLeastOnceTest {
 
         verify(
                 messageService
-        ).registerExternalAttempt(MESSAGE_ID, ATTEMPT_ID, CHANNEL_ACCOUNT_ID, RECIPIENT_EXTERNAL_ID, EXTERNAL_MESSAGE_ID);
+        ).registerExternalAttempt(MESSAGE_ID, ATTEMPT_ID, CHANNEL_ACCOUNT_ID, RECIPIENT_EXTERNAL_ID,null,  EXTERNAL_MESSAGE_ID);
 
         /*
          * The external platform may already have accepted
@@ -157,11 +157,10 @@ class KafkaOutboundMessageConsumerAtLeastOnceTest {
                         "Simulated failure after external send"
                 )
         ).when(messageService)
-                .registerExternalAttempt(MESSAGE_ID, ATTEMPT_ID, CHANNEL_ACCOUNT_ID, RECIPIENT_EXTERNAL_ID, EXTERNAL_MESSAGE_ID);
+                .registerExternalAttempt(MESSAGE_ID, ATTEMPT_ID, CHANNEL_ACCOUNT_ID, RECIPIENT_EXTERNAL_ID,null,  EXTERNAL_MESSAGE_ID);
 
-        assertThrows(
-                IllegalStateException.class,
-                () -> consumer.consume(
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() ->
+                consumer.consume(
                         event,
                         "clientbus.outbound.telegram"
                 )
@@ -187,7 +186,7 @@ class KafkaOutboundMessageConsumerAtLeastOnceTest {
         verify(
                 messageService,
                 times(1)
-        ).registerExternalAttempt(MESSAGE_ID, ATTEMPT_ID, CHANNEL_ACCOUNT_ID, RECIPIENT_EXTERNAL_ID, EXTERNAL_MESSAGE_ID);
+        ).registerExternalAttempt(MESSAGE_ID, ATTEMPT_ID, CHANNEL_ACCOUNT_ID, RECIPIENT_EXTERNAL_ID,null,  EXTERNAL_MESSAGE_ID);
 
         verify(
                 messageService,
@@ -223,7 +222,7 @@ class KafkaOutboundMessageConsumerAtLeastOnceTest {
         verify(
                 messageService,
                 never()
-        ).registerExternalAttempt(any(), any(), any(), anyString(), anyString());
+        ).registerExternalAttempt(any(), any(), any(), anyString(), isNull(),  anyString());
 
         verify(
                 messageService,
@@ -323,7 +322,11 @@ class KafkaOutboundMessageConsumerAtLeastOnceTest {
     }
 
     @Test
-    void connectorThrows_claimIsReleased() {
+    /*
+     * 13.2b: an unclassified connector exception no longer releases the claim:
+     * the external effect cannot be proven absent. The attempt is held.
+     */
+    void connectorThrows_claimIsHeldWithoutRetry() {
 
         KafkaEvent<OutboundMessageKafkaCommand> event =
                 createOutboundEvent();
@@ -357,9 +360,8 @@ class KafkaOutboundMessageConsumerAtLeastOnceTest {
                 )
         ).thenThrow(exception);
 
-        assertThrows(
-                RuntimeException.class,
-                () -> consumer.consume(
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() ->
+                consumer.consume(
                         event,
                         "clientbus.outbound.telegram"
                 )
@@ -376,13 +378,14 @@ class KafkaOutboundMessageConsumerAtLeastOnceTest {
         );
 
         verify(
-                messageService
+                messageService,
+                never()
         ).releaseOutboundDeliveryClaim(MESSAGE_ID, ATTEMPT_ID);
 
         verify(
                 messageService,
                 never()
-        ).registerExternalAttempt(any(), any(), any(), anyString(), anyString());
+        ).registerExternalAttempt(any(), any(), any(), anyString(), isNull(),  anyString());
     }
 
     @Test
@@ -415,9 +418,8 @@ class KafkaOutboundMessageConsumerAtLeastOnceTest {
                 )
         ).thenReturn(null);
 
-        assertThrows(
-                IllegalStateException.class,
-                () -> consumer.consume(
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() ->
+                consumer.consume(
                         event,
                         "clientbus.outbound.telegram"
                 )
@@ -432,7 +434,7 @@ class KafkaOutboundMessageConsumerAtLeastOnceTest {
         verify(
                 messageService,
                 never()
-        ).registerExternalAttempt(any(), any(), any(), anyString(), anyString());
+        ).registerExternalAttempt(any(), any(), any(), anyString(), isNull(),  anyString());
 
         verify(
                 messageService,
@@ -472,9 +474,8 @@ class KafkaOutboundMessageConsumerAtLeastOnceTest {
                 new ConnectorSendResult("   ", ATTEMPT_ID)
         );
 
-        assertThrows(
-                IllegalStateException.class,
-                () -> consumer.consume(
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() ->
+                consumer.consume(
                         event,
                         "clientbus.outbound.telegram"
                 )
@@ -489,7 +490,7 @@ class KafkaOutboundMessageConsumerAtLeastOnceTest {
         verify(
                 messageService,
                 never()
-        ).registerExternalAttempt(any(), any(), any(), anyString(), anyString());
+        ).registerExternalAttempt(any(), any(), any(), anyString(), isNull(),  anyString());
 
         verify(
                 messageService,
@@ -532,7 +533,7 @@ class KafkaOutboundMessageConsumerAtLeastOnceTest {
 
         inOrder.verify(
                 messageService
-        ).registerExternalAttempt(MESSAGE_ID, ATTEMPT_ID, CHANNEL_ACCOUNT_ID, RECIPIENT_EXTERNAL_ID, EXTERNAL_MESSAGE_ID);
+        ).registerExternalAttempt(MESSAGE_ID, ATTEMPT_ID, CHANNEL_ACCOUNT_ID, RECIPIENT_EXTERNAL_ID,null,  EXTERNAL_MESSAGE_ID);
     }
 
     private void stubSuccessfulConnectorPath() {

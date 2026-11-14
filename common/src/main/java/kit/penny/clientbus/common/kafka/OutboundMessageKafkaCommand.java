@@ -19,11 +19,19 @@ public record OutboundMessageKafkaCommand(
 
         List<PlatformOutboundAttachment> attachments,
 
-        UUID sendAttemptId
+        UUID sendAttemptId,
+
+        /** 13.2b: внешняя ссылка диалога платформы; nullable для старых payload. */
+        String dialogExternalId
 
 ) {
     public OutboundMessageKafkaCommand(UUID messageId, UUID channelAccountId, String recipientExternalId,
             MessageType type, String content, List<PlatformOutboundAttachment> attachments) {
-        this(messageId, channelAccountId, recipientExternalId, type, content, attachments, null);
+        this(messageId, channelAccountId, recipientExternalId, type, content, attachments, null, null);
+    }
+
+    public OutboundMessageKafkaCommand(UUID messageId, UUID channelAccountId, String recipientExternalId,
+            MessageType type, String content, List<PlatformOutboundAttachment> attachments, UUID sendAttemptId) {
+        this(messageId, channelAccountId, recipientExternalId, type, content, attachments, sendAttemptId, null);
     }
 }

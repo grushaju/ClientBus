@@ -117,13 +117,18 @@ public class MessageService {
     }
 
     @Transactional
-    public MessageDto registerExternalAttempt(UUID messageId, UUID attempt, UUID account, String recipient, String pending) {
+    public MessageDto registerExternalAttempt(UUID messageId, UUID attempt, UUID account, String recipient, String dialog, String pending) {
         // Correlation row always precedes the message lock, including in callback transactions.
-        var result=outboundCallbacks.bind(account,recipient,pending,messageId,attempt);
+        var result=outboundCallbacks.bind(account,recipient,dialog,pending,messageId,attempt);
         var message=lockedMessage(messageId);
         if(!sameAttempt(message,attempt)) return messageMapper.toDto(message);
         if(!account.equals(message.getConversation().getChannelAccount().getId())
                 || !recipient.equals(message.getConversation().getClientAccount().getExternalId()))
+            throw new IllegalArgumentException("Outbound correlation scope mismatch");
+        // 13.2b: the dialog reference is validated when the host already knows one.
+        if(dialog != null
+                && message.getConversation().getDialogExternalId() != null
+                && !dialog.equals(message.getConversation().getDialogExternalId()))
             throw new IllegalArgumentException("Outbound correlation scope mismatch");
         if(message.getDeliveryStatus()!=MessageDeliveryStatus.PENDING
                 || message.getProcessingStatus()!=MessageProcessingStatus.PROCESSING) return messageMapper.toDto(message);
@@ -1415,13 +1420,16 @@ public class MessageService {
 
                                     beforeExternalId,
 
-                                    limit
+                                    limit,
+
+                                    conversation
+                                            .getDialogExternalId()
                             )
                     );
                 });
 
         if (request == null) {
-            return new SyncConversationHistoryKafkaCommand.Result(java.util.List.of(), true);
+            return new SyncConversationHistoryKafkaCommand.Result(java.util.List.of(), true, "HISTORY_START_REACHED");
         }
 
         UUID correlationId =

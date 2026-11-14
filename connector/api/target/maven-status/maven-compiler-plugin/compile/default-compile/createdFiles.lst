@@ -10,6 +10,8 @@ kit\penny\clientbus\connector\api\model\SyncConversationHistoryResult.class
 kit\penny\clientbus\connector\api\host\HostAttachmentStorage.class
 kit\penny\clientbus\connector\api\host\HostChannelStatus.class
 kit\penny\clientbus\connector\api\listener\AbstractEventDispatcher.class
+kit\penny\clientbus\connector\api\error\ConnectorSendOutcomeUnknownException.class
+kit\penny\clientbus\connector\api\error\ConnectorSendRejectedException.class
 kit\penny\clientbus\connector\api\model\ClientAccountAvatar.class
 kit\penny\clientbus\connector\api\model\DiscoveredClientAccount.class
 kit\penny\clientbus\connector\api\command\ReadClientAccountAvatarCommand.class

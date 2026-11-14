@@ -73,7 +73,8 @@ public class KafkaSyncConversationHistoryCommandPublisher
                         command.channelAccountId(),
                         command.conversationExternalId(),
                         command.beforeExternalId(),
-                        limit
+                        limit,
+                        command.dialogExternalId()
                 );
 
         KafkaEvent<SyncConversationHistoryKafkaCommand> event =
@@ -139,7 +140,8 @@ public class KafkaSyncConversationHistoryCommandPublisher
                         command.channelAccountId(),
                         command.conversationExternalId(),
                         command.beforeExternalId(),
-                        limit
+                        limit,
+                        command.dialogExternalId()
                 );
 
         KafkaEvent<SyncConversationHistoryKafkaCommand> event =

@@ -52,6 +52,14 @@ public class OutboundMessageTransactionService {
         List<AttachmentContent> normalizedAttachments =
                 normalizeAttachments(attachments);
 
+        /*
+         * 13.2b: lock the conversation before any authorization check so that
+         * workspace/assignment state cannot change between check and queue commit.
+         */
+        conversationService.findEntityForUpdate(
+                request.conversationId()
+        );
+
         MessageDto message =
                 messageService.createOutboundMessage(
                         new CreateOutboundMessageRequest(
@@ -146,7 +154,8 @@ public class OutboundMessageTransactionService {
                             message.type(),
                             message.content(),
                             outboundAttachments,
-                            messageService.getMessageEntityForProcessing(messageId).getSendAttemptId()
+                            messageService.getMessageEntityForProcessing(messageId).getSendAttemptId(),
+                            conversation.getDialogExternalId()
                     );
 
             /*
@@ -228,7 +237,7 @@ public class OutboundMessageTransactionService {
 
         try {
             ConversationEntity conversation =
-                    conversationService.findEntityForProcessing(
+                    conversationService.findEntityForUpdate(
                             conversationId
                     );
 
@@ -299,6 +308,9 @@ public class OutboundMessageTransactionService {
                     conversation.getClientAccount()
                             .getExternalId();
 
+            String dialogExternalId =
+                    conversation.getDialogExternalId();
+
             conversationService.requireExternalOperationsAvailable(
                     conversation
             );
@@ -340,7 +352,8 @@ public class OutboundMessageTransactionService {
                             messageType,
                             messageContent,
                             outboundAttachments,
-                            messageService.getMessageEntityForProcessing(messageId).getSendAttemptId()
+                            messageService.getMessageEntityForProcessing(messageId).getSendAttemptId(),
+                            dialogExternalId
                     );
 
             /*
@@ -353,6 +366,155 @@ public class OutboundMessageTransactionService {
 
             return new OutboundMessageTransactionResult(
                     message,
+                    channelType,
+                    command
+            );
+
+        } catch (RuntimeException e) {
+            try {
+                messageService.markProcessingFailed(
+                        messageId
+                );
+            } catch (RuntimeException ignored) {
+                // Preserve original exception.
+            }
+
+            throw e;
+        }
+    }
+
+    /**
+     * 13.2b: forward acceptance. The target conversation is locked FOR UPDATE first and
+     * the forward-target authorization runs under that lock, so an assignment or workspace
+     * change cannot race with the acceptance. The forwarded message receives the same
+     * QUEUED + Kafka publication flow as a normal outbound message: a forwarded message
+     * that is never published would stay in the queue forever.
+     */
+    @Transactional
+    public OutboundMessageTransactionResult prepareForward(
+            UUID sourceMessageId,
+            UUID targetConversationId
+    ) {
+        if (sourceMessageId == null) {
+            throw new IllegalArgumentException(
+                    "Source messageId must not be null"
+            );
+        }
+
+        if (targetConversationId == null) {
+            throw new IllegalArgumentException(
+                    "Target conversationId must not be null"
+            );
+        }
+
+        ConversationEntity conversation =
+                conversationService.findEntityForUpdate(
+                        targetConversationId
+                );
+
+        conversationService.requireForwardTargetAccess(
+                conversation
+        );
+
+        MessageEntity sourceMessage =
+                messageService.getMessageEntity(
+                        sourceMessageId
+                );
+
+        MessageDto forwarded =
+                messageService.createForwardedMessage(
+                        conversation,
+                        sourceMessage
+                );
+
+        UUID messageId = forwarded.id();
+
+        try {
+            /*
+             * RECEIVED -> PROCESSING
+             */
+            messageService.startProcessing(
+                    messageId
+            );
+
+            ChannelAccountEntity channelAccount =
+                    conversation.getChannelAccount();
+
+            if (channelAccount == null) {
+                throw new IllegalStateException(
+                        "Conversation has no ChannelAccount: "
+                                + conversation.getId()
+                );
+            }
+
+            ChannelType channelType =
+                    channelAccount.getChannel()
+                            .getType();
+
+            if (channelType == null) {
+                throw new IllegalStateException(
+                        "ChannelAccount has no ChannelType: "
+                                + channelAccount.getId()
+                );
+            }
+
+            MessageEntity targetMessage =
+                    messageService.getMessageEntityForProcessing(
+                            messageId
+                    );
+
+            for (MessageAttachmentEntity sourceAttachment :
+                    messageAttachmentService.getAttachmentsForProcessing(
+                            sourceMessageId
+                    )) {
+
+                messageAttachmentService.createForwardedAttachment(
+                        targetMessage,
+                        sourceAttachment
+                );
+            }
+
+            List<PlatformOutboundAttachment> outboundAttachments =
+                    messageAttachmentService
+                            .getAttachmentsForProcessing(messageId)
+                            .stream()
+                            .map(attachment ->
+                                    new PlatformOutboundAttachment(
+                                            attachment.getType(),
+                                            attachment.getStorageKey(),
+                                            attachment.getFileName(),
+                                            attachment.getContentType(),
+                                            attachment.getSize()
+                                    )
+                            )
+                            .toList();
+
+            OutboundMessageKafkaCommand command =
+                    new OutboundMessageKafkaCommand(
+                            messageId,
+                            channelAccount.getId(),
+                            conversation.getClientAccount()
+                                    .getExternalId(),
+                            forwarded.type(),
+                            forwarded.content(),
+                            outboundAttachments,
+                            targetMessage.getSendAttemptId(),
+                            conversation.getDialogExternalId()
+                    );
+
+            /*
+             * PROCESSING -> QUEUED
+             *
+             * Kafka publication выполняется вызывающим
+             * кодом после возврата из этого метода.
+             */
+            MessageDto queued =
+                    messageService.markQueued(
+                            messageId
+                    );
+
+            return new OutboundMessageTransactionResult(
+                    queued,
                     channelType,
                     command
             );

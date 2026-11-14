@@ -4,6 +4,19 @@ import java.util.List;
 
 public record SyncConversationHistoryResult(
         List<ConnectorInboundMessage> messages,
-        boolean historyStartReached
+        boolean historyStartReached,
+
+        /**
+         * 13.2b: why the page ended — "HISTORY_START_REACHED", "PAGE_COMPLETE" or a
+         * connector-specific reason; nullable for legacy connectors that predate the field.
+         */
+        String endReason
 ) {
+
+    public SyncConversationHistoryResult(
+            List<ConnectorInboundMessage> messages,
+            boolean historyStartReached
+    ) {
+        this(messages, historyStartReached, null);
+    }
 }

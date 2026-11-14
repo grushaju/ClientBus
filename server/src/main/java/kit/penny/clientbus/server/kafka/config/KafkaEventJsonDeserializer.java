@@ -1,5 +1,6 @@
 package kit.penny.clientbus.server.kafka.config;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
@@ -22,6 +23,9 @@ public class KafkaEventJsonDeserializer
         this.objectMapper =
                 JsonMapper.builder()
                         .addModule(new JavaTimeModule())
+                        // 13.2b: additive payload fields must not fail consumers during rollout;
+                        // unknown properties are ignored, missing nullable fields stay null.
+                        .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
                         .build();
     }
 

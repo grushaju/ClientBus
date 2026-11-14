@@ -9,6 +9,7 @@ import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
 import kit.penny.clientbus.connector.api.model.ConnectorSendResult;
 import kit.penny.clientbus.connector.api.IChannelConnector;
 import kit.penny.clientbus.connector.api.command.SendMessageCommand;
+import kit.penny.clientbus.connector.api.error.ConnectorSendRejectedException;
 import kit.penny.clientbus.server.exception.ChannelUnavailableException;
 import kit.penny.clientbus.server.mapper.OutboundMessageKafkaCommandMapper;
 import kit.penny.clientbus.server.service.ChannelAvailabilityService;
@@ -22,6 +23,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
 
 class KafkaOutboundMessageConsumerTest {
@@ -77,10 +79,11 @@ class KafkaOutboundMessageConsumerTest {
         when(commandMapper.toCommand(kafkaCommand)).thenReturn(command);
         when(connector.handle(command)).thenReturn(new ConnectorSendResult("accepted", UUID.randomUUID()));
 
-        assertThatThrownBy(() -> consumer.consume(outboundEvent(kafkaCommand), "clientbus.outbound.telegram"))
-                .isInstanceOf(IllegalStateException.class).hasMessage("Connector result send attempt mismatch");
+        org.assertj.core.api.Assertions.assertThatCode(
+                () -> consumer.consume(outboundEvent(kafkaCommand), "clientbus.outbound.telegram"))
+                .doesNotThrowAnyException();
 
-        verify(messageService, never()).registerExternalAttempt(any(), any(), any(), anyString(), anyString());
+        verify(messageService, never()).registerExternalAttempt(any(), any(), any(), anyString(), isNull(),  anyString());
         verify(messageService, never()).releaseOutboundDeliveryClaim(any(), any());
     }
 
@@ -138,13 +141,56 @@ class KafkaOutboundMessageConsumerTest {
                 .handle(command);
 
         verify(messageService)
-                .registerExternalAttempt(kafkaCommand.messageId(), ATTEMPT_ID, kafkaCommand.channelAccountId(), kafkaCommand.recipientExternalId(), "telegram-message-123");
+                .registerExternalAttempt(kafkaCommand.messageId(), ATTEMPT_ID, kafkaCommand.channelAccountId(), kafkaCommand.recipientExternalId(),null,  "telegram-message-123");
 
         verify(
                 messageService,
                 never()
         )
                 .releaseOutboundDeliveryClaim(any(), any());
+    }
+
+    @Test
+    void shouldPassDialogReferenceToRegistration() {
+
+        OutboundMessageKafkaCommand kafkaCommand =
+                new OutboundMessageKafkaCommand(
+                        java.util.UUID.randomUUID(),
+                        java.util.UUID.randomUUID(),
+                        "telegram-user-123",
+                        kit.penny.clientbus.common.enums.MessageType.TEXT,
+                        "Hello",
+                        java.util.List.of(),
+                        ATTEMPT_ID,
+                        "chat-42"
+                );
+
+        SendMessageCommand command =
+                new SendMessageCommand(kafkaCommand.messageId(), kafkaCommand.channelAccountId(), kafkaCommand.recipientExternalId(), kafkaCommand.type(), kafkaCommand.content(), List.of(), ATTEMPT_ID, "chat-42");
+
+        when(messageService.claimOutboundDelivery(kafkaCommand.messageId(), ATTEMPT_ID))
+                .thenReturn(true);
+
+        when(channelConnectorRegistry.getConnector(
+                ChannelType.TELEGRAM
+        ))
+                .thenReturn(connector);
+
+        when(commandMapper.toCommand(kafkaCommand))
+                .thenReturn(command);
+
+        when(connector.handle(command))
+                .thenReturn(
+                        new ConnectorSendResult("telegram-message-777", ATTEMPT_ID)
+                );
+
+        consumer.consume(
+                outboundEvent(kafkaCommand),
+                "clientbus.outbound.telegram"
+        );
+
+        verify(messageService)
+                .registerExternalAttempt(kafkaCommand.messageId(), ATTEMPT_ID, kafkaCommand.channelAccountId(), kafkaCommand.recipientExternalId(), "chat-42", "telegram-message-777");
     }
 
     @Test
@@ -179,7 +225,7 @@ class KafkaOutboundMessageConsumerTest {
                 messageService,
                 never()
         )
-                .registerExternalAttempt(any(), any(), any(), anyString(), anyString());
+                .registerExternalAttempt(any(), any(), any(), anyString(), isNull(),  anyString());
 
         verify(
                 messageService,
@@ -240,7 +286,7 @@ class KafkaOutboundMessageConsumerTest {
                 messageService,
                 never()
         )
-                .registerExternalAttempt(any(), any(), any(), anyString(), anyString());
+                .registerExternalAttempt(any(), any(), any(), anyString(), isNull(),  anyString());
     }
 
     @Test
@@ -334,7 +380,7 @@ class KafkaOutboundMessageConsumerTest {
     }
 
     @Test
-    void shouldReleaseClaimWhenConnectorThrows() {
+    void shouldHoldClaimWhenConnectorThrowsUnclassified() {
 
         OutboundMessageKafkaCommand kafkaCommand =
                 validCommand();
@@ -368,19 +414,74 @@ class KafkaOutboundMessageConsumerTest {
         when(connector.handle(command))
                 .thenThrow(exception);
 
-        assertThatThrownBy(() ->
+        /*
+         * 13.2b: an unclassified connector exception cannot prove the absence of the
+         * external effect — the claim is held and no redelivery is scheduled.
+         */
+        org.assertj.core.api.Assertions.assertThatCode(() ->
                 consumer.consume(
                         event,
                         "clientbus.outbound.telegram"
                 )
         )
-                .isSameAs(exception);
+                .doesNotThrowAnyException();
 
         verify(messageService)
                 .claimOutboundDelivery(kafkaCommand.messageId(), ATTEMPT_ID);
 
         verify(connector)
                 .handle(command);
+
+        verify(
+                messageService,
+                never()
+        )
+                .releaseOutboundDeliveryClaim(kafkaCommand.messageId(), ATTEMPT_ID);
+
+        verify(
+                messageService,
+                never()
+        )
+                .registerExternalAttempt(any(), any(), any(), anyString(), isNull(),  anyString());
+    }
+
+    @Test
+    void shouldReleaseClaimWhenConnectorProvesAbsenceOfExternalEffect() {
+
+        OutboundMessageKafkaCommand kafkaCommand =
+                validCommand();
+
+        SendMessageCommand command =
+                new SendMessageCommand(kafkaCommand.messageId(), kafkaCommand.channelAccountId(), kafkaCommand.recipientExternalId(), kafkaCommand.type(), kafkaCommand.content(), List.of(), ATTEMPT_ID);
+
+        ConnectorSendRejectedException rejection =
+                new ConnectorSendRejectedException(
+                        "Proven: platform did not accept the message"
+                );
+
+        when(messageService.claimOutboundDelivery(kafkaCommand.messageId(), ATTEMPT_ID))
+                .thenReturn(true);
+
+        when(channelConnectorRegistry.getConnector(
+                ChannelType.TELEGRAM
+        ))
+                .thenReturn(connector);
+
+        when(commandMapper.toCommand(
+                kafkaCommand
+        ))
+                .thenReturn(command);
+
+        when(connector.handle(command))
+                .thenThrow(rejection);
+
+        assertThatThrownBy(() ->
+                consumer.consume(
+                        outboundEvent(kafkaCommand),
+                        "clientbus.outbound.telegram"
+                )
+        )
+                .isSameAs(rejection);
 
         verify(messageService)
                 .releaseOutboundDeliveryClaim(kafkaCommand.messageId(), ATTEMPT_ID);
@@ -389,7 +490,7 @@ class KafkaOutboundMessageConsumerTest {
                 messageService,
                 never()
         )
-                .registerExternalAttempt(any(), any(), any(), anyString(), anyString());
+                .registerExternalAttempt(any(), any(), any(), anyString(), isNull(),  anyString());
     }
 
     @Test
@@ -431,21 +532,25 @@ class KafkaOutboundMessageConsumerTest {
 
         doThrow(exception)
                 .when(messageService)
-                .registerExternalAttempt(kafkaCommand.messageId(), ATTEMPT_ID, kafkaCommand.channelAccountId(), kafkaCommand.recipientExternalId(), "telegram-message-456");
+                .registerExternalAttempt(kafkaCommand.messageId(), ATTEMPT_ID, kafkaCommand.channelAccountId(), kafkaCommand.recipientExternalId(),null,  "telegram-message-456");
 
-        assertThatThrownBy(() ->
+        /*
+         * 13.2b: the platform already accepted the send; re-raising would schedule a
+         * Kafka redelivery and a second external send. The claim is held instead.
+         */
+        org.assertj.core.api.Assertions.assertThatCode(() ->
                 consumer.consume(
                         event,
                         "clientbus.outbound.telegram"
                 )
         )
-                .isSameAs(exception);
+                .doesNotThrowAnyException();
 
         verify(connector)
                 .handle(command);
 
         verify(messageService)
-                .registerExternalAttempt(kafkaCommand.messageId(), ATTEMPT_ID, kafkaCommand.channelAccountId(), kafkaCommand.recipientExternalId(), "telegram-message-456");
+                .registerExternalAttempt(kafkaCommand.messageId(), ATTEMPT_ID, kafkaCommand.channelAccountId(), kafkaCommand.recipientExternalId(),null,  "telegram-message-456");
 
         /*
          * External platform may already have accepted the message.
@@ -461,7 +566,7 @@ class KafkaOutboundMessageConsumerTest {
     }
 
     @Test
-    void shouldFailWhenConnectorReturnsNull() {
+    void shouldHoldClaimWhenConnectorReturnsNull() {
 
         OutboundMessageKafkaCommand kafkaCommand =
                 validCommand();
@@ -490,19 +595,13 @@ class KafkaOutboundMessageConsumerTest {
         when(connector.handle(command))
                 .thenReturn(null);
 
-        assertThatThrownBy(() ->
+        org.assertj.core.api.Assertions.assertThatCode(() ->
                 consumer.consume(
                         event,
                         "clientbus.outbound.telegram"
                 )
         )
-                .isInstanceOf(
-                        IllegalStateException.class
-                )
-                .hasMessage(
-                        "Connector returned null send result: messageId="
-                                + kafkaCommand.messageId()
-                );
+                .doesNotThrowAnyException();
 
         verify(connector)
                 .handle(command);
@@ -511,7 +610,7 @@ class KafkaOutboundMessageConsumerTest {
                 messageService,
                 never()
         )
-                .registerExternalAttempt(any(), any(), any(), anyString(), anyString());
+                .registerExternalAttempt(any(), any(), any(), anyString(), isNull(),  anyString());
 
         verify(
                 messageService,
@@ -521,7 +620,7 @@ class KafkaOutboundMessageConsumerTest {
     }
 
     @Test
-    void shouldFailWhenConnectorReturnsBlankExternalId() {
+    void shouldHoldClaimWhenConnectorReturnsBlankExternalId() {
 
         OutboundMessageKafkaCommand kafkaCommand =
                 validCommand();
@@ -552,19 +651,13 @@ class KafkaOutboundMessageConsumerTest {
                         new ConnectorSendResult("   ", ATTEMPT_ID)
                 );
 
-        assertThatThrownBy(() ->
+        org.assertj.core.api.Assertions.assertThatCode(() ->
                 consumer.consume(
                         event,
                         "clientbus.outbound.telegram"
                 )
         )
-                .isInstanceOf(
-                        IllegalStateException.class
-                )
-                .hasMessage(
-                        "Connector returned blank externalId: messageId="
-                                + kafkaCommand.messageId()
-                );
+                .doesNotThrowAnyException();
 
         verify(connector)
                 .handle(command);
@@ -573,7 +666,7 @@ class KafkaOutboundMessageConsumerTest {
                 messageService,
                 never()
         )
-                .registerExternalAttempt(any(), any(), any(), anyString(), anyString());
+                .registerExternalAttempt(any(), any(), any(), anyString(), isNull(),  anyString());
 
         verify(
                 messageService,

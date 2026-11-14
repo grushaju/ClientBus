@@ -77,6 +77,41 @@ class OutboundMessageKafkaCommandMapperTest {
     }
 
     @Test
+    void shouldMapDialogReferenceAndKeepLegacyPayloadCompatible() {
+        UUID messageId = UUID.randomUUID();
+        UUID channelAccountId = UUID.randomUUID();
+
+        OutboundMessageKafkaCommand legacy =
+                new OutboundMessageKafkaCommand(
+                        messageId,
+                        channelAccountId,
+                        "recipient-123",
+                        MessageType.TEXT,
+                        "Hello",
+                        List.of()
+                );
+
+        assertNull(mapper.toCommand(legacy).dialogExternalId());
+
+        OutboundMessageKafkaCommand withDialog =
+                new OutboundMessageKafkaCommand(
+                        messageId,
+                        channelAccountId,
+                        "recipient-123",
+                        MessageType.TEXT,
+                        "Hello",
+                        List.of(),
+                        null,
+                        "chat-42"
+                );
+
+        assertEquals(
+                "chat-42",
+                mapper.toCommand(withDialog).dialogExternalId()
+        );
+    }
+
+    @Test
     void shouldMapNullAttachmentsToEmptyList() {
         OutboundMessageKafkaCommand command =
                 new OutboundMessageKafkaCommand(

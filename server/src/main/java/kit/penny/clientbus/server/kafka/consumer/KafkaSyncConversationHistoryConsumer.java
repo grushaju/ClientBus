@@ -121,7 +121,8 @@ public class KafkaSyncConversationHistoryConsumer {
                         payload.channelAccountId(),
                         payload.conversationExternalId(),
                         payload.beforeExternalId(),
-                        payload.limit()
+                        payload.limit(),
+                        payload.dialogExternalId()
                 );
 
         channelAvailabilityService.requireConnected(
@@ -210,7 +211,8 @@ public class KafkaSyncConversationHistoryConsumer {
         SyncConversationHistoryKafkaCommand.Result response =
                 new SyncConversationHistoryKafkaCommand.Result(
                         List.copyOf(messages),
-                        result.historyStartReached()
+                        result.historyStartReached(),
+                        result.endReason()
                 );
 
         KafkaEvent<

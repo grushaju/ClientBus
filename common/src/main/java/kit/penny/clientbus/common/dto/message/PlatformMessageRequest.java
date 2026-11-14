@@ -39,7 +39,14 @@ public record PlatformMessageRequest(
 
         List<PlatformMessageAttachment> attachments,
 
-        kit.penny.clientbus.common.notification.EventOrigin origin
+        kit.penny.clientbus.common.notification.EventOrigin origin,
+
+        /**
+         * 13.2b: внешняя ссылка ДИАЛОГА платформы (например chatId Telegram), когда она
+         * отличается от идентификатора участника. Nullable: старые payload резолвятся
+         * по паре (аккаунт канала, участник) только при однозначном контексте.
+         */
+        String dialogExternalId
 
 ) {
     public PlatformMessageRequest {
@@ -51,11 +58,19 @@ public record PlatformMessageRequest(
             String clientPhone, String clientDisplayName, String senderExternalId, String externalId,
             MessageType type, String content, String metadata, Instant sentAt, List<PlatformMessageAttachment> attachments) {
         this(channelAccountId,clientExternalId,clientUsername,clientPhone,clientDisplayName,senderExternalId,
-                externalId,type,content,metadata,sentAt,attachments,kit.penny.clientbus.common.notification.EventOrigin.SYNC);
+                externalId,type,content,metadata,sentAt,attachments,kit.penny.clientbus.common.notification.EventOrigin.SYNC,null);
+    }
+
+    public PlatformMessageRequest(UUID channelAccountId, String clientExternalId, String clientUsername,
+            String clientPhone, String clientDisplayName, String senderExternalId, String externalId,
+            MessageType type, String content, String metadata, Instant sentAt,
+            List<PlatformMessageAttachment> attachments, kit.penny.clientbus.common.notification.EventOrigin origin) {
+        this(channelAccountId,clientExternalId,clientUsername,clientPhone,clientDisplayName,senderExternalId,
+                externalId,type,content,metadata,sentAt,attachments,origin,null);
     }
 
     public PlatformMessageRequest withOrigin(kit.penny.clientbus.common.notification.EventOrigin value) {
         return new PlatformMessageRequest(channelAccountId,clientExternalId,clientUsername,clientPhone,clientDisplayName,
-                senderExternalId,externalId,type,content,metadata,sentAt,attachments,value);
+                senderExternalId,externalId,type,content,metadata,sentAt,attachments,value,dialogExternalId);
     }
 }

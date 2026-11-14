@@ -185,11 +185,11 @@ class MessageProcessingServiceIntegrationTest
 
         ConversationEntity conversation =
                 conversationRepository
-                        .findByChannelAccountIdAndClientAccountId(
+                        .findAllByChannelAccountIdAndClientAccountId(
                                 channelAccountId,
                                 clientAccount.getId()
                         )
-                        .orElseThrow();
+                        .getFirst();
 
         assertNotNull(conversation.getId());
 
@@ -338,11 +338,11 @@ class MessageProcessingServiceIntegrationTest
 
         ConversationEntity conversation =
                 conversationRepository
-                        .findByChannelAccountIdAndClientAccountId(
+                        .findAllByChannelAccountIdAndClientAccountId(
                                 channelAccount.getId(),
                                 existingClientAccountId
                         )
-                        .orElseThrow();
+                        .getFirst();
 
         assertNotNull(conversation.getId());
 
@@ -442,11 +442,11 @@ class MessageProcessingServiceIntegrationTest
 
         ConversationEntity conversation =
                 conversationRepository
-                        .findByChannelAccountIdAndClientAccountId(
+                        .findAllByChannelAccountIdAndClientAccountId(
                                 channelAccount.getId(),
                                 clientAccount.getId()
                         )
-                        .orElseThrow();
+                        .getFirst();
 
         assertNotNull(conversation.getId());
 

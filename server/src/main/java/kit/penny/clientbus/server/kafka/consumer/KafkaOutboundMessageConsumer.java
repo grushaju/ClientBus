@@ -8,6 +8,7 @@ import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
 import kit.penny.clientbus.connector.api.model.ConnectorSendResult;
 import kit.penny.clientbus.connector.api.IChannelConnector;
 import kit.penny.clientbus.connector.api.command.SendMessageCommand;
+import kit.penny.clientbus.connector.api.error.ConnectorSendRejectedException;
 import kit.penny.clientbus.server.exception.ChannelUnavailableException;
 import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
 import kit.penny.clientbus.server.mapper.OutboundMessageKafkaCommandMapper;
@@ -221,13 +222,17 @@ public class KafkaOutboundMessageConsumer {
             result =
                     connector.handle(command);
 
-        } catch (Exception e) {
+        } catch (ConnectorSendRejectedException e) {
 
+            /*
+             * 13.2b: the connector proved the absence of any external effect.
+             * Only here releasing the claim and letting Kafka retry is safe.
+             */
             messageService.releaseOutboundDeliveryClaim(messageId, kafkaCommand.sendAttemptId());
 
             log.error(
-                    "Connector threw exception while sending outbound message: " +
-                            "messageId={}, channelType={}, connector={}",
+                    "Connector rejected outbound send with proven absence of external " +
+                            "effect: messageId={}, channelType={}, connector={}",
                     messageId,
                     channelType,
                     connector.getClass().getSimpleName(),
@@ -235,27 +240,75 @@ public class KafkaOutboundMessageConsumer {
             );
 
             throw e;
+
+        } catch (Exception e) {
+
+            /*
+             * 13.2b send-outcome protocol: from connector.handle() onwards the platform may
+             * have accepted the message, and an unclassified exception cannot prove the
+             * opposite. The claim is held (PROCESSING + PENDING, no externalId): the attempt
+             * is resolved by the platform callback or by an operator, never by an automatic
+             * retry that could duplicate the external effect.
+             */
+            log.error(
+                    "Outbound send outcome unknown: delivery claim is held, no automatic " +
+                            "retry will run: messageId={}, sendAttemptId={}, channelType={}, connector={}",
+                    messageId,
+                    kafkaCommand.sendAttemptId(),
+                    channelType,
+                    connector.getClass().getSimpleName(),
+                    e
+            );
+
+            return;
         }
 
         if (result == null) {
 
-            throw new IllegalStateException(
-                    "Connector returned null send result: messageId="
-                            + messageId
+            /*
+             * The connector was called: the platform may have accepted the message even
+             * though no result came back. Hold the claim instead of retrying (13.2b).
+             */
+            log.error(
+                    "Outbound send outcome unknown: connector returned null send result, " +
+                            "delivery claim is held: messageId={}, sendAttemptId={}, channelType={}",
+                    messageId,
+                    kafkaCommand.sendAttemptId(),
+                    channelType
             );
+
+            return;
         }
 
         if (result.externalId() == null
                 || result.externalId().isBlank()) {
 
-            throw new IllegalStateException(
-                    "Connector returned blank externalId: messageId="
-                            + messageId
+            log.error(
+                    "Outbound send outcome unknown: connector returned blank externalId, " +
+                            "delivery claim is held: messageId={}, sendAttemptId={}, channelType={}",
+                    messageId,
+                    kafkaCommand.sendAttemptId(),
+                    channelType
             );
+
+            return;
         }
 
-        if (!java.util.Objects.equals(kafkaCommand.sendAttemptId(), result.sendAttemptId()))
-            throw new IllegalStateException("Connector result send attempt mismatch");
+        if (!java.util.Objects.equals(kafkaCommand.sendAttemptId(), result.sendAttemptId())) {
+            /*
+             * The result belongs to another attempt; whatever this attempt sent externally
+             * is not correlated. Hold instead of failing over to a retry (13.2b).
+             */
+            log.error(
+                    "Outbound send outcome unknown: connector result send attempt mismatch, " +
+                            "delivery claim is held: messageId={}, sendAttemptId={}, channelType={}",
+                    messageId,
+                    kafkaCommand.sendAttemptId(),
+                    channelType
+            );
+
+            return;
+        }
 
         /*
          * At this point the external platform has accepted
@@ -270,19 +323,27 @@ public class KafkaOutboundMessageConsumer {
         try {
 
             messageService.registerExternalAttempt(messageId, kafkaCommand.sendAttemptId(),
-                    command.channelAccountId(), command.recipientExternalId(), result.externalId());
+                    command.channelAccountId(), command.recipientExternalId(),
+                    kafkaCommand.dialogExternalId(), result.externalId());
 
         } catch (Exception e) {
 
+            /*
+             * The external send happened and its temporary id cannot be persisted.
+             * Re-raising would let Kafka redeliver and send a second time, so the
+             * claim is held for external outcome or manual resolution (13.2b).
+             */
             log.error(
-                    "Message service threw exception while registering " +
-                            "externalId: messageId={}, externalId={}",
+                    "Outbound send outcome unknown: registering externalId failed after the " +
+                            "platform accepted the send, delivery claim is held: " +
+                            "messageId={}, sendAttemptId={}, externalId={}",
                     messageId,
+                    kafkaCommand.sendAttemptId(),
                     result.externalId(),
                     e
             );
 
-            throw e;
+            return;
         }
 
         log.info(

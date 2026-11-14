@@ -13,12 +13,23 @@ public record SendMessageCommand(
         MessageType type,
         String content,
         List<ConnectorAttachment> attachments,
-        UUID sendAttemptId
+        UUID sendAttemptId,
+
+        /**
+         * 13.2b: external dialog reference when the platform addresses dialogs separately
+         * from their counterpart; nullable — legacy payloads address the counterpart only.
+         */
+        String dialogExternalId
 ) implements ChannelConnectorCommand {
 
     public SendMessageCommand(UUID messageId, UUID channelAccountId, String recipientExternalId,
             MessageType type, String content, List<ConnectorAttachment> attachments) {
-        this(messageId, channelAccountId, recipientExternalId, type, content, attachments, null);
+        this(messageId, channelAccountId, recipientExternalId, type, content, attachments, null, null);
+    }
+
+    public SendMessageCommand(UUID messageId, UUID channelAccountId, String recipientExternalId,
+            MessageType type, String content, List<ConnectorAttachment> attachments, UUID sendAttemptId) {
+        this(messageId, channelAccountId, recipientExternalId, type, content, attachments, sendAttemptId, null);
     }
 
     public SendMessageCommand {

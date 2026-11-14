@@ -111,18 +111,11 @@ public class MessageProcessingService
                 );
 
         ConversationEntity conversation =
-                conversationService.findEntityByAccounts(
-                        channelAccount.getId(),
-                        clientAccount.getId()
+                conversationService.createConversationInternal(
+                        channelAccount,
+                        clientAccount,
+                        request.dialogExternalId()
                 );
-
-        if (conversation == null) {
-            conversation =
-                    conversationService.createConversationInternal(
-                            channelAccount,
-                            clientAccount
-                    );
-        }
 
         MessageCreationResult result =
                 messageService.createPlatformMessage(
@@ -218,9 +211,10 @@ public class MessageProcessingService
                 );
 
         ConversationEntity conversation =
-                conversationService.findEntityByAccounts(
+                conversationService.findEntityForDialog(
                         channelAccount.getId(),
-                        clientAccount.getId()
+                        clientAccount.getId(),
+                        request.dialogExternalId()
                 );
 
         boolean created = false;
@@ -230,7 +224,8 @@ public class MessageProcessingService
             conversation =
                     conversationService.createConversationInternal(
                             channelAccount,
-                            clientAccount
+                            clientAccount,
+                            request.dialogExternalId()
                     );
 
             created = true;
@@ -323,29 +318,24 @@ public class MessageProcessingService
         }
     }
 
+    /*
+     * 13.2b: forward acceptance locks the target conversation FOR UPDATE and re-runs the
+     * forward-target authorization under that lock (OutboundMessageTransactionService.
+     * prepareForward), then publishes the queued send exactly like sendMessage does.
+     * Previously the forwarded message was persisted as OUTBOUND but never published,
+     * so it stayed in the queue forever.
+     */
     @Override
-    @Transactional
     public MessageDto forwardMessage(
             ForwardMessageRequest request
     ) {
 
-        MessageEntity sourceMessage =
-                messageService.getMessageEntity(
-                        request.messageId()
-                );
-
-        ConversationEntity targetConversation;
+        UUID targetConversationId;
 
         if (request.targetConversationId() != null) {
 
-            targetConversation =
-                    conversationService.findEntityForProcessing(
-                            request.targetConversationId()
-                    );
-
-            conversationService.requireForwardTargetAccess(
-                    targetConversation
-            );
+            targetConversationId =
+                    request.targetConversationId();
 
         } else {
 
@@ -371,40 +361,39 @@ public class MessageProcessingService
                                     )
                             );
 
-            targetConversation =
+            targetConversationId =
                     conversationService.findOrCreateForForward(
                             channelAccount,
                             clientAccount
-                    );
+                    ).getId();
         }
 
-        MessageDto forwarded =
-                messageService.createForwardedMessage(
-                        targetConversation,
-                        sourceMessage
+        OutboundMessageTransactionService.OutboundMessageTransactionResult result =
+                outboundMessageTransactionService.prepareForward(
+                        request.messageId(),
+                        targetConversationId
                 );
 
-        MessageEntity targetMessage =
-                messageService.getMessageEntityForProcessing(
-                        forwarded.id()
-                );
+        try {
 
-        List<MessageAttachmentEntity> sourceAttachments =
-                messageAttachmentService
-                        .getAttachmentsForProcessing(
-                                sourceMessage.getId()
-                        );
-
-        for (MessageAttachmentEntity sourceAttachment :
-                sourceAttachments) {
-
-            messageAttachmentService.createForwardedAttachment(
-                    targetMessage,
-                    sourceAttachment
+            outboundMessagePublisher.publish(
+                    result.channelType(),
+                    result.command()
             );
-        }
 
-        return forwarded;
+            return result.message();
+
+        } catch (RuntimeException e) {
+
+            try {
+                messageService.markDeliveryFailed(
+                        result.messageId(), result.command().sendAttemptId());
+            } catch (RuntimeException ignored) {
+                // Preserve original exception.
+            }
+
+            throw e;
+        }
     }
 
     @Override

@@ -7,13 +7,14 @@ import java.util.UUID;
 /** Correlates an early connector result with its later persisted send attempt. */
 @Entity
 @Table(name="outboundsendcallback",schema="dbo",uniqueConstraints={
-        @UniqueConstraint(name="outboundsendcallbackpk",columnNames={"id"}),
-        @UniqueConstraint(name="outboundcallbackkeyuq",columnNames={"channelaccountid","recipientexternalid","pendingexternalid"})},
+        @UniqueConstraint(name="outboundsendcallbackpk",columnNames={"id"})},
         indexes={@Index(name="outboundcallbackretentionidx",columnList="retainuntil")})
 public class OutboundCallbackEntity {
     @Id @Column(nullable=false) private UUID id;
     @Column(name="channelaccountid",nullable=false,updatable=false) private UUID channelAccountId;
     @Column(name="recipientexternalid",nullable=false,updatable=false,length=256) private String recipientExternalId;
+    /** 13.2b: dialog the platform addressed; stored attribute, not the correlation key. */
+    @Column(name="dialogexternalid",length=256) private String dialogExternalId;
     @Column(name="pendingexternalid",nullable=false,updatable=false,length=256) private String pendingExternalId;
     @Column(name="messageid") private UUID messageId;
     @Column(name="sendattemptid") private UUID sendAttemptId;

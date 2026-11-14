@@ -84,7 +84,8 @@ public class KafkaChannelReadConsumer {
                 new MarkMessagesReadCommand(
                         kafkaCommand.channelAccountId(),
                         kafkaCommand.recipientExternalId(),
-                        kafkaCommand.lastReadExternalId()
+                        kafkaCommand.lastReadExternalId(),
+                        kafkaCommand.dialogExternalId()
                 )
         );
     }

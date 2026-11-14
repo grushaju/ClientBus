@@ -78,7 +78,7 @@ class TelegramMessageReadListenerTest {
     @Test
     void unknownConversation_isIgnored() {
         when(conversationRepository
-                .findByChannelAccountIdAndClientAccountExternalId(
+                .findByChannelAccountIdAndDialogExternalId(
                         CHANNEL_ACCOUNT_ID,
                         "123"
                 ))
@@ -90,7 +90,7 @@ class TelegramMessageReadListenerTest {
         listener.handleNotification(notification);
 
         verify(conversationRepository)
-                .findByChannelAccountIdAndClientAccountExternalId(
+                .findByChannelAccountIdAndDialogExternalId(
                         CHANNEL_ACCOUNT_ID,
                         "123"
                 );
@@ -111,11 +111,11 @@ class TelegramMessageReadListenerTest {
         conversation.setId(conversationId);
 
         when(conversationRepository
-                .findByChannelAccountIdAndClientAccountExternalId(
+                .findByChannelAccountIdAndDialogExternalId(
                         CHANNEL_ACCOUNT_ID,
                         "123"
                 ))
-                .thenReturn(Optional.of(conversation));
+                .thenReturn(java.util.Optional.of(conversation));
 
         TdApi.UpdateChatReadOutbox notification =
                 new TdApi.UpdateChatReadOutbox(123, 105);
@@ -123,7 +123,7 @@ class TelegramMessageReadListenerTest {
         listener.handleNotification(notification);
 
         verify(conversationRepository)
-                .findByChannelAccountIdAndClientAccountExternalId(
+                .findByChannelAccountIdAndDialogExternalId(
                         CHANNEL_ACCOUNT_ID,
                         "123"
                 );

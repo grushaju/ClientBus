@@ -3,16 +3,23 @@ package kit.penny.clientbus.server.connector.telegram;
 import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.common.enums.MessageAttachmentType;
 import kit.penny.clientbus.common.enums.MessageType;
+import kit.penny.clientbus.connector.api.error.ConnectorSendOutcomeUnknownException;
 import kit.penny.clientbus.connector.api.model.ConnectorInboundMessage;
+import kit.penny.clientbus.connector.api.error.ConnectorSendOutcomeUnknownException;
 import kit.penny.clientbus.connector.api.model.ConnectorSendResult;
+import kit.penny.clientbus.connector.api.error.ConnectorSendOutcomeUnknownException;
 import kit.penny.clientbus.connector.api.command.SendMessageCommand;
 import kit.penny.clientbus.server.connector.telegram.account.TelegramAccountProfileSynchronizer;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientContext;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientManager;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramInboundMessageProcessor;
+import kit.penny.clientbus.connector.api.error.ConnectorSendOutcomeUnknownException;
 import kit.penny.clientbus.connector.api.model.ConnectorAttachment;
+import kit.penny.clientbus.connector.api.error.ConnectorSendOutcomeUnknownException;
 import kit.penny.clientbus.connector.api.model.SyncConversationHistoryResult;
+import kit.penny.clientbus.connector.api.error.ConnectorSendOutcomeUnknownException;
 import kit.penny.clientbus.connector.api.command.SyncConversationHistoryCommand;
+import kit.penny.clientbus.connector.api.error.ConnectorSendOutcomeUnknownException;
 import kit.penny.clientbus.connector.api.host.HostAttachmentStorage;
 import org.springframework.context.ConfigurableApplicationContext;
 
@@ -312,7 +319,7 @@ class TelegramChannelConnectorTest {
                 );
 
         assertThrows(
-                IllegalStateException.class,
+                ConnectorSendOutcomeUnknownException.class,
                 () -> connector.handle(request)
         );
 
@@ -678,7 +685,7 @@ class TelegramChannelConnectorTest {
                 textRequest("Hello");
 
         assertThrows(
-                RuntimeException.class,
+                ConnectorSendOutcomeUnknownException.class,
                 () -> connector.handle(request)
         );
 

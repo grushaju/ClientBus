@@ -51,7 +51,7 @@ class ConversationServiceAccessTest {
     void bothDirectLookupPathsRequireFullConversationAccess(boolean byAccounts) {
         ConversationEntity conversation = conversation(UUID.randomUUID());
         UUID channelId = UUID.randomUUID(), accountId = UUID.randomUUID();
-        if (byAccounts) when(conversationRepository.findByChannelAccountIdAndClientAccountId(channelId, accountId)).thenReturn(Optional.of(conversation));
+        if (byAccounts) when(conversationRepository.findAllByChannelAccountIdAndClientAccountId(channelId, accountId)).thenReturn(java.util.List.of(conversation));
         else when(conversationRepository.findById(conversation.getId())).thenReturn(Optional.of(conversation));
         doThrow(new AccessDeniedException("Assigned to another employee")).when(currentUserService).requireConversationAccess(conversation);
         assertThrows(AccessDeniedException.class, () -> {

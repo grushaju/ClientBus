@@ -196,4 +196,83 @@ class OutboundMessageTransactionServiceTest {
         verify(messageService).markQueued(messageId);
         verify(messageService, never()).markProcessingFailed(messageId);
     }
+
+    @Test
+    void prepareForward_locksTargetAuthorizesUnderLockAndQueuesCommand() {
+
+        UUID sourceMessageId = UUID.randomUUID();
+        MessageEntity sourceMessage = mock(MessageEntity.class);
+        MessageDto forwardedDto = mock(MessageDto.class);
+
+        when(conversationService.findEntityForUpdate(conversationId))
+                .thenReturn(conversation);
+
+        when(messageService.getMessageEntity(sourceMessageId))
+                .thenReturn(sourceMessage);
+
+        when(messageService.createForwardedMessage(conversation, sourceMessage))
+                .thenReturn(forwardedDto);
+
+        when(forwardedDto.id()).thenReturn(messageId);
+
+        when(messageService.startProcessing(messageId))
+                .thenReturn(messageDto);
+
+        when(conversation.getChannelAccount()).thenReturn(channelAccount);
+        when(channelAccount.getChannel()).thenReturn(channel);
+        when(channel.getType()).thenReturn(ChannelType.TELEGRAM);
+
+        when(messageService.getMessageEntityForProcessing(messageId))
+                .thenReturn(messageEntity);
+
+        when(messageAttachmentService.getAttachmentsForProcessing(sourceMessageId))
+                .thenReturn(List.of());
+
+        when(messageAttachmentService.getAttachmentsForProcessing(messageId))
+                .thenReturn(List.of());
+
+        when(conversation.getClientAccount()).thenReturn(clientAccount);
+        when(clientAccount.getExternalId()).thenReturn("client-123");
+        when(conversation.getDialogExternalId()).thenReturn("chat-42");
+        when(messageEntity.getSendAttemptId()).thenReturn(sendAttemptId);
+
+        when(messageService.markQueued(messageId)).thenReturn(messageDto);
+
+        OutboundMessageTransactionService.OutboundMessageTransactionResult result =
+                service.prepareForward(sourceMessageId, conversationId);
+
+        org.mockito.InOrder inOrder =
+                org.mockito.Mockito.inOrder(conversationService);
+
+        inOrder.verify(conversationService).findEntityForUpdate(conversationId);
+        inOrder.verify(conversationService).requireForwardTargetAccess(conversation);
+
+        assertEquals(ChannelType.TELEGRAM, result.channelType());
+        assertEquals("chat-42", result.command().dialogExternalId());
+        assertEquals("client-123", result.command().recipientExternalId());
+        assertEquals(sendAttemptId, result.command().sendAttemptId());
+
+        org.mockito.Mockito.verify(messageService).markQueued(messageId);
+    }
+
+    @Test
+    void prepareForward_accessDenied_throwsBeforeCreatingForward() {
+
+        when(conversationService.findEntityForUpdate(conversationId))
+                .thenReturn(conversation);
+
+        org.mockito.Mockito.doThrow(
+                new IllegalStateException("Forward target access denied")
+        ).when(conversationService).requireForwardTargetAccess(conversation);
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> service.prepareForward(UUID.randomUUID(), conversationId)
+        );
+
+        org.mockito.Mockito.verifyNoInteractions(messageAttachmentService);
+
+        org.mockito.Mockito.verify(messageService, org.mockito.Mockito.never())
+                .createForwardedMessage(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
 }
