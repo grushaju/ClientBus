@@ -10,7 +10,7 @@ import kit.penny.clientbus.common.enums.MessageDirection;
 import kit.penny.clientbus.common.enums.MessageProcessingStatus;
 import kit.penny.clientbus.common.enums.MessageSenderType;
 import kit.penny.clientbus.common.kafka.SyncConversationHistoryKafkaCommand;
-import kit.penny.clientbus.server.connector.command.SyncConversationHistoryCommand;
+import kit.penny.clientbus.connector.api.command.SyncConversationHistoryCommand;
 import kit.penny.clientbus.server.kafka.producer.ISyncConversationHistoryCommandPublisher;
 import kit.penny.clientbus.server.mapper.MessageMapper;
 import kit.penny.clientbus.server.persistence.entity.ConversationEntity;
@@ -152,7 +152,7 @@ public class MessageService {
             markSent(message.getId(),result.finalExternalId());
         }
         if (applicationEvents != null) applicationEvents.publishEvent(
-                new kit.penny.clientbus.server.connector.OutboundSendCompleted(
+                new kit.penny.clientbus.connector.api.event.OutboundSendCompleted(
                         message.getConversation().getChannelAccount().getChannel().getType(),
                         message.getConversation().getChannelAccount().getId(), message.getId(), message.getSendAttemptId()));
         return true;

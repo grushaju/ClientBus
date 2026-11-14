@@ -7,8 +7,13 @@ import kit.penny.clientbus.common.dto.message.PlatformMessageRequest;
 import kit.penny.clientbus.common.enums.*;
 import kit.penny.clientbus.common.notification.EventOrigin;
 import kit.penny.clientbus.server.ServerApplication;
+import kit.penny.clientbus.connector.api.*;
+import kit.penny.clientbus.connector.api.command.*;
+import kit.penny.clientbus.connector.api.model.*;
+import kit.penny.clientbus.connector.api.event.*;
+import kit.penny.clientbus.connector.api.listener.*;
 import kit.penny.clientbus.server.connector.*;
-import kit.penny.clientbus.server.connector.command.*;
+import kit.penny.clientbus.connector.api.command.*;
 import kit.penny.clientbus.server.connector.telegram.config.TelegramClientConfiguration;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.integration.AbstractIntegrationTest;
@@ -296,11 +301,10 @@ public final class NotificationAcceptanceEnvironment extends AbstractIntegration
             var message = new PlatformMessageRequest(source.account(), source.external(), null, null, "Acceptance contact", source.external(),
                     "history-" + source.name(), MessageType.TEXT, "Acceptance imported " + source.name(), null,
                     Instant.parse("2026-10-01T10:00:00Z"), List.of(), EventOrigin.HISTORY_IMPORT);
-            return new SyncConversationHistoryResult(List.of(message), true);
+            return new SyncConversationHistoryResult(List.of(kit.penny.clientbus.server.connector.ConnectorPayloadMapper.toConnector(message)), true);
         }
         public ConnectorSendResult handle(SendMessageCommand command) { throw new UnsupportedOperationException("No external send in acceptance"); }
         public void handle(MarkMessagesReadCommand command) { }
-        public List<PlatformConversationRequest> handle(SyncRecentChatsCommand command) { return List.of(); }
-        public ClientAccountProfile handle(SyncClientAccountCommand command) { throw new UnsupportedOperationException(); }
+        public List<kit.penny.clientbus.connector.api.model.ConnectorConversation> handle(SyncRecentChatsCommand command) { return List.of(); }
     }
 }

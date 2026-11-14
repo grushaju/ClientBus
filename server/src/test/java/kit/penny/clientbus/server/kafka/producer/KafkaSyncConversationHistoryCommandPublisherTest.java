@@ -1,7 +1,7 @@
 package kit.penny.clientbus.server.kafka.producer;
 
 import kit.penny.clientbus.common.enums.ChannelType;
-import kit.penny.clientbus.server.connector.command.SyncConversationHistoryCommand;
+import kit.penny.clientbus.connector.api.command.SyncConversationHistoryCommand;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.kafka.core.KafkaTemplate;

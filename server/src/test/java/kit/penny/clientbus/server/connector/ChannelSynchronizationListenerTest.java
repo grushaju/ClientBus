@@ -1,6 +1,7 @@
 package kit.penny.clientbus.server.connector;
 
 import kit.penny.clientbus.common.enums.ChannelConnectionStatus;
+import kit.penny.clientbus.connector.api.event.ChannelEvent;
 import kit.penny.clientbus.server.service.RecentChatsSyncCoordinator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

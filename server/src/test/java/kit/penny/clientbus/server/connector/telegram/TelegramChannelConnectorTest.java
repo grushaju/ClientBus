@@ -3,17 +3,17 @@ package kit.penny.clientbus.server.connector.telegram;
 import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.common.enums.MessageAttachmentType;
 import kit.penny.clientbus.common.enums.MessageType;
-import kit.penny.clientbus.common.dto.message.PlatformMessageRequest;
-import kit.penny.clientbus.server.connector.ConnectorSendResult;
-import kit.penny.clientbus.server.connector.command.SendMessageCommand;
+import kit.penny.clientbus.connector.api.model.ConnectorInboundMessage;
+import kit.penny.clientbus.connector.api.model.ConnectorSendResult;
+import kit.penny.clientbus.connector.api.command.SendMessageCommand;
 import kit.penny.clientbus.server.connector.telegram.account.TelegramAccountProfileSynchronizer;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientContext;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientManager;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramInboundMessageProcessor;
-import kit.penny.clientbus.server.service.ChannelAttachment;
-import kit.penny.clientbus.server.connector.SyncConversationHistoryResult;
-import kit.penny.clientbus.server.connector.command.SyncConversationHistoryCommand;
-import kit.penny.clientbus.server.storage.IAttachmentStorage;
+import kit.penny.clientbus.connector.api.model.ConnectorAttachment;
+import kit.penny.clientbus.connector.api.model.SyncConversationHistoryResult;
+import kit.penny.clientbus.connector.api.command.SyncConversationHistoryCommand;
+import kit.penny.clientbus.connector.api.host.HostAttachmentStorage;
 import org.springframework.context.ConfigurableApplicationContext;
 
 import java.util.concurrent.CompletableFuture;
@@ -69,7 +69,7 @@ class TelegramChannelConnectorTest {
     private TelegramAccountProfileSynchronizer profileSynchronizer;
 
     @Mock
-    private IAttachmentStorage attachmentStorage;
+    private HostAttachmentStorage attachmentStorage;
 
     private TelegramChannelConnector connector;
 
@@ -293,7 +293,7 @@ class TelegramChannelConnectorTest {
                     );
                 });
 
-        ChannelAttachment attachment =
+        ConnectorAttachment attachment =
                 attachment(
                         MessageAttachmentType.IMAGE,
                         "photo.jpg",
@@ -450,7 +450,7 @@ class TelegramChannelConnectorTest {
 
     @Test
     void shouldRejectTextWithAttachments() {
-        ChannelAttachment attachment =
+        ConnectorAttachment attachment =
                 attachment(
                         MessageAttachmentType.IMAGE,
                         "photo.jpg",
@@ -498,7 +498,7 @@ class TelegramChannelConnectorTest {
 
     @Test
     void shouldRejectImageWithMultipleAttachments() {
-        ChannelAttachment first =
+        ConnectorAttachment first =
                 attachment(
                         MessageAttachmentType.IMAGE,
                         "first.jpg",
@@ -506,7 +506,7 @@ class TelegramChannelConnectorTest {
                         "first"
                 );
 
-        ChannelAttachment second =
+        ConnectorAttachment second =
                 attachment(
                         MessageAttachmentType.IMAGE,
                         "second.jpg",
@@ -534,7 +534,7 @@ class TelegramChannelConnectorTest {
 
     @Test
     void shouldRejectWrongAttachmentType() {
-        ChannelAttachment attachment =
+        ConnectorAttachment attachment =
                 attachment(
                         MessageAttachmentType.AUDIO,
                         "audio.mp3",
@@ -568,8 +568,8 @@ class TelegramChannelConnectorTest {
 
     @Test
     void shouldRejectNullAttachmentContent() {
-        ChannelAttachment attachment =
-                new ChannelAttachment(
+        ConnectorAttachment attachment =
+                new ConnectorAttachment(
                         MessageAttachmentType.IMAGE,
                         "photo.jpg",
                         "image/jpeg",
@@ -698,8 +698,8 @@ class TelegramChannelConnectorTest {
                     }
                 };
 
-        ChannelAttachment attachment =
-                new ChannelAttachment(
+        ConnectorAttachment attachment =
+                new ConnectorAttachment(
                         MessageAttachmentType.IMAGE,
                         "photo.jpg",
                         "image/jpeg",
@@ -749,7 +749,7 @@ class TelegramChannelConnectorTest {
         );
     }
 
-    private ChannelAttachment attachment(
+    private ConnectorAttachment attachment(
             MessageAttachmentType type,
             String fileName,
             String contentType,
@@ -758,7 +758,7 @@ class TelegramChannelConnectorTest {
         byte[] bytes =
                 content.getBytes(StandardCharsets.UTF_8);
 
-        return new ChannelAttachment(
+        return new ConnectorAttachment(
                 type,
                 fileName,
                 contentType,
@@ -824,7 +824,7 @@ class TelegramChannelConnectorTest {
                     );
                 });
 
-        ChannelAttachment attachment =
+        ConnectorAttachment attachment =
                 attachment(
                         attachmentType,
                         fileName,
@@ -925,7 +925,7 @@ class TelegramChannelConnectorTest {
         var applicationContext = mock(ConfigurableApplicationContext.class);
         when(telegramClientContext.applicationContext()).thenReturn(applicationContext);
         when(applicationContext.getBean(TelegramInboundMessageProcessor.class)).thenReturn(telegramInboundMessageProcessor);
-        var mapped = new PlatformMessageRequest(CHANNEL_ACCOUNT_ID, String.valueOf(CHAT_ID), null, null, null,
+        var mapped = new ConnectorInboundMessage(CHANNEL_ACCOUNT_ID, String.valueOf(CHAT_ID), null, null, null,
                 String.valueOf(CHAT_ID), "99", MessageType.TEXT, "Cached first message", null, Instant.EPOCH, List.of());
         var cause = new IllegalStateException("Attachment download failed");
         when(telegramInboundMessageProcessor.process(CHANNEL_ACCOUNT_ID, newest)).thenReturn(CompletableFuture.completedFuture(mapped));
@@ -1062,8 +1062,8 @@ class TelegramChannelConnectorTest {
         when(application.getBean(TelegramInboundMessageProcessor.class)).thenReturn(telegramInboundMessageProcessor);
     }
 
-    private PlatformMessageRequest historyMessage(String id) {
-        return new PlatformMessageRequest(CHANNEL_ACCOUNT_ID, String.valueOf(CHAT_ID), null, null, null,
+    private ConnectorInboundMessage historyMessage(String id) {
+        return new ConnectorInboundMessage(CHANNEL_ACCOUNT_ID, String.valueOf(CHAT_ID), null, null, null,
                 String.valueOf(CHAT_ID), id, MessageType.TEXT, "History", null, Instant.EPOCH, List.of());
     }
 

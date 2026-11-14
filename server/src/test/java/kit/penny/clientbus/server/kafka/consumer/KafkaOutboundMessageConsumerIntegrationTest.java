@@ -7,9 +7,9 @@ import kit.penny.clientbus.common.kafka.KafkaEventType;
 import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
 import kit.penny.clientbus.common.kafka.PlatformOutboundAttachment;
 import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
-import kit.penny.clientbus.server.connector.ConnectorSendResult;
-import kit.penny.clientbus.server.connector.IChannelConnector;
-import kit.penny.clientbus.server.connector.command.SendMessageCommand;
+import kit.penny.clientbus.connector.api.model.ConnectorSendResult;
+import kit.penny.clientbus.connector.api.IChannelConnector;
+import kit.penny.clientbus.connector.api.command.SendMessageCommand;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.integration.AbstractIntegrationTest;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
@@ -26,7 +26,7 @@ import kit.penny.clientbus.server.persistence.repository.ConversationRepository;
 import kit.penny.clientbus.server.persistence.repository.MessageRepository;
 import kit.penny.clientbus.server.persistence.repository.OrganizationRepository;
 import kit.penny.clientbus.server.persistence.repository.WorkspaceRepository;
-import kit.penny.clientbus.server.service.ChannelAttachment;
+import kit.penny.clientbus.connector.api.model.ConnectorAttachment;
 import kit.penny.clientbus.server.service.MessageService;
 import kit.penny.clientbus.server.storage.IAttachmentStorage;
 import org.apache.kafka.clients.admin.AdminClient;
@@ -371,7 +371,7 @@ class KafkaOutboundMessageConsumerIntegrationTest
                 request.attachments().size()
         );
 
-        ChannelAttachment channelAttachment =
+        ConnectorAttachment channelAttachment =
                 request.attachments().getFirst();
 
         assertEquals(

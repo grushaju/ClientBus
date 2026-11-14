@@ -1,6 +1,8 @@
 package kit.penny.clientbus.server.connector;
 
 import kit.penny.clientbus.common.enums.ChannelType;
+import kit.penny.clientbus.connector.api.IChannelConnector;
+import kit.penny.clientbus.connector.api.IChannelConnectorRegistry;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -14,7 +16,17 @@ public class ChannelConnectorRegistry
     public ChannelConnectorRegistry(
             List<IChannelConnector> connectors
     ) {
-        this.connectors = connectors;
+        this.connectors = List.copyOf(connectors);
+        for (ChannelType channelType : ChannelType.values()) {
+            long matches = this.connectors.stream()
+                    .filter(connector -> connector.supports(channelType))
+                    .count();
+            if (matches > 1) {
+                throw new IllegalStateException(
+                        "Multiple connectors registered for channel type: " + channelType
+                );
+            }
+        }
     }
 
     @Override

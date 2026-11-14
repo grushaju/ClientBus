@@ -210,7 +210,7 @@ CRM client ID, chat user ID, dialog ID и ID технического досту
 
 ПОДЭТАПЫ
 
-13.1 — Зафиксировать границы и проверить протокол чатов
+13.1 — Зафиксировать границы и проверить протокол чатов [завершён 13.11.2026, кроме намеренно отложенных изменяющих live-проверок (13.6); артефакты — CRM_CONNECTORS.md, CRM_CONNECTOR_INVENTORY.md, CRM_DIKIDI_PROTOCOL.md]
     — Дополнить инвентаризацию выше полным перечнем callers, настроек, Kafka DTO, тестов, storage paths и lifecycle-сценариев; зафиксировать baseline существующего Telegram.
     — Проверить актуальность C01–C05 на тестовом проекте: доступ к chat-host, сессионный контекст, пагинацию списка и нескольких непустых страниц истории, временные метки, область ID, состав участников.
     — Определить, бывают ли несколько диалогов с одним клиентом; как отличить клиентскую переписку от службы поддержки/системного диалога. role=support сам по себе классификацией не служит.
@@ -219,7 +219,7 @@ CRM client ID, chat user ID, dialog ID и ID технического досту
     — В тот же контракт включить модель бюджетов и приоритетов общего клиента (интерактивная отправка > оперативная синхронизация > массовый импорт истории), перенос существующих лимитов менеджера сессий (ёмкость реестра, eviction по времени жизни) с тестом вытеснения активной CRM-сессии чатовой и consumer-бюджет синхронных коннекторных вызовов. Starvation-сценарии входят в приёмку 13.5, а не откладываются в 13.8.
     Результат: спецификация контрактов и матрица доказательств; минимальный клиентский сценарий DIKIDI отделён от дополнительных возможностей.
 
-13.2a — Выделить connector/api и host-порты без изменения поведения
+13.2a — Выделить connector/api и host-порты без изменения поведения [завершён 14.11.2026: модуль, capability-интерфейсы, зеркала payload, все host-порты (данные + аккаунты/статус/авторизация), регрессия 1345/1345]
     — Создать Maven-модуль с нейтральными контрактами и регистрацией; существующий Telegram временно работает через адаптер совместимости. Адаптер держать тонким, интервал между 13.2a и 13.3 — минимальным, чтобы двойная маршрутизация не жила долго.
     — Реализовать host-порты вместо доступа реализации к Repository/MessageService/CurrentUserService/IAttachmentStorage; сохранить транзакционные обновления и события UI в сервере.
     — Добавить capability descriptor и контролируемые ошибки; возможности описывать небольшими интерфейсами (чтение диалогов и истории, текстовая отправка, отметка прочтения, поиск контактов, вложения) вместо обязательной реализации всех методов единого контракта. Миграций схемы, изменений Kafka-семантик и модели идентичности в 13.2a не выполняется.
@@ -293,6 +293,16 @@ CRM client ID, chat user ID, dialog ID и ID технического досту
 
 Последовательность: 13.1 → 13.2a → 13.2b → 13.3 → 13.4 → 13.5 → 13.6; UI-контракты 13.7 уточняются вместе с 13.2, окончательная приёмка — 13.8. Рабочий Telegram после выноса принимается до включения нового канала. Изменения чатов не являются условием завершения оставшихся CRM-команд этапа 12.
 
+БЭКЛОГ ПО ИТОГАМ БАЗЛАЙНА 13.1 (найдено в CRM_CONNECTOR_INVENTORY.md; пункт — вне объёма текущего подэтапа, срок исполнения указан явно):
+    — Явный владелец закрытия TelegramClientManager: closeAll() сейчас не вызывается из main, TDLib-контексты переживают graceful shutdown. Закрытие через владельца сборки приложения при 13.3; проверка остановки — приёмка 13.8.
+    — Аватары платформы, сохранённые в хранилище вложений, не удаляются при disconnect/удалении канала. Владелец очистки закрепляется контрактом вложений (пункт 7) и реализуется при 13.3.
+    — Мёртвые места SPI: handle(SyncClientAccountCommand), IChannelEventHandler/ChannelEventHandler, IPlatformEventPublisher, TelegramChannelAccountService.restart, неиспользуемый параметр MessageRepository в send-listener. Решение «удалить или обосновать» принимается в 13.2a; бессмысленный перенос в новый модуль запрещён.
+    — Telegram api-id/api-hash/encryption-key — константы application.yml (env-переменных нет); TDLib-сессии в ./data/telegram относительно CWD процесса. Ключи — в настройки до релиза коннектора; пути сессий сохраняются при 13.3.
+    — clientbus.kafka.outbound.enabled-channels перечисляет WHATSAPP/VK без коннекторов; springdoc packages-to-scan знает пакет telegram. Чистка при 13.3: server собирается и описывается без Telegram.
+    — Дублирующийся блок proxy.socks5 в TelegramContextFactory.addProxyProperties. Устранить при переносе (13.3).
+    — UI-условности TELEGRAM: NewConversationDialog жёстко фильтрует канал, ChannelsPage дёргает telegram-маршруты для любого типа. Объём 13.7.
+    — Открытые вопросы чатового протокола (форма users[], классификация служебных диалогов, множественность диалогов на клиента, область chat user ID, time-курсор C02, таймзона epoch) — CRM_CONNECTORS.md раздел 6; закрытие по мере появления данных в 13.2b/13.5/13.6.
+
 ОБЯЗАТЕЛЬНАЯ ПРОВЕРКА
 
 Архитектура:
@@ -341,3 +351,25 @@ DIKIDI и общая модель:
 VK и другие каналы, групповые/служебные чаты, массовые рассылки, presence/typing, полноценный plugin marketplace и отдельный connector microservice в базовый объём не входят. Для них остаётся расширяемый SPI без заранее написанных пустых реализаций.
 
 После будущей реализации обновить README/index и эксплуатационные инструкции: состав модулей, настройки, native requirements Telegram, DIKIDI binding, поддержанные возможности, совместимость БД/Kafka, запуск и восстановление. В текущем поручении эти файлы не меняются.
+
+13.11.2026, 13.1 — границы зафиксированы, протокол чатов проверен повторно:
+    — Инвентаризация Telegram-базлайна выполнена полностью (22 класса реализации, 6 внешних callers реестра, lifecycle-пара ChannelService, конфигурация/Maven/native, Kafka-топики и DTO, хранилища сессий и вложений, 17 специализированных тестовых классов, 9 REST-ручек авторизации, ~12 UI-точек) — CRM_CONNECTOR_INVENTORY.md. Найдены дополнительные требования переноса: незакрытый shutdown TDLib-менеджера, неудаляемые аватары, мёртвые методы SPI, константы Telegram-ключей в yml и сессии в ./data/telegram от CWD.
+    — Живая повторная проверка C01–C05 выполнена read-only постоянным opt-in пробником CrmDikidiChatReadAcceptance (allowlist, бюджет 40, вывод без PII) на согласованном проекте: протокол жив, три диалога, C05 с стабильным набором полей и epoch-датами. Вскрылись дрейф против 27.10.2026 (users[] неоднороден, role/concept исчезли, сообщения C04 переехали в dialog.msg) и новое предусловие: chat API отвечает 400 без предварительной загрузки страницы owner/chat — контроль без shell-визита воспроизвёл 400. Таблица и логи — CRM_DIKIDI_PROTOCOL.md («Повторная проверка чатов 13.11.2026»), capability-матрица — CRM_CONNECTORS.md.
+    — Вопросы 13.1 закрыты честно: множественность диалогов на клиента и область chat user ID — НЕИЗВЕСТНО (малая выборка одного проекта); классификация служебных диалогов — ОТКРЫТО (структурных маркеров в текущих ответах нет). Изменяющие операции не выполнялись: отправка/отметки/обновления/вложения остаются за 13.6 на выделенных согласованных данных.
+    — Контракт integration/dikidi v0.1 зафиксирован в CRM_CONNECTORS.md: публичные типы, политика безопасных повторов (изменяющие не повторяются никогда), поадресные allowlist-профили с редиректной проверкой, bootstrap-последовательности адаптеров (включая доказанное chat-предусловие), классы бюджетов INTERACTIVE/SYNC/BULK с переносом текущих лимитов, consumer-бюджет, monotonic deadline, коалесцирующаяся инвалидация сессий, guard единственного runtime, совместимость старых ключей.
+    — Изменения репозитория: добавлены CRM_CONNECTORS.md и CRM_CONNECTOR_INVENTORY.md, дополнены CRM_DIKIDI_PROTOCOL.md и Stage 13.txt, добавлен opt-in тест CrmDikidiChatReadAcceptance (в=default-выборку surefire не входит). Production-код не изменялся; миграций, коммитов и push в этом прогоне нет.
+
+13.11.2026, 13.2a (часть) — модуль connector/api и host-порты данных:
+    — Созван Maven-модуль connector/api (29+5 типов, зависимость только от common): команды (sealed, шесть), capability-интерфейсы MessageSender/ReadMarker/DialogReader/HistoryReader/ContactFinder/AvatarReader (неподдержанные — default с контролируемой ошибкой), события, lifecycle, нейтральные payload-типы ConnectorInboundMessage/ConnectorMessageAttachment/ConnectorConversation (поле-в-поле зеркала транспортных DTO, границы переводит серверный ConnectorPayloadMapper 1:1 — формат Kafka и обработка не изменились), ConnectorAttachment вместо server.service.ChannelAttachment, порты хоста HostInboundPublisher/HostMessageReadMarks/HostSendOutcomes/HostAttachmentStorage.
+    — server.connector оставил реализациям интерфейсы и реестры: ChannelConnectorRegistry теперь detects конфликт двух коннекторов одного типа при старте и получает capabilities через getCapability; IChannelConnector агрегирует capability-интерфейсы, старые вызовы сохранены.
+    — Мёртвые места SPI удалены по бэклогу: handle(SyncClientAccountCommand)+SyncClientAccountCommand+ClientAccountProfile, IChannelEventHandler+ChannelEventHandler (+тест), неиспользуемый параметр MessageRepository в send-listener, их тесты удалены/переведены.
+    — Host-порты внедрены в data-path: TelegramMessageReadListener/TelegramMessageSendListener больше не знают ConversationRepository/MessageService/MessageRepository; входящие публикуются через HostInboundPublisher (KafkaHostInboundPublisher); вложения processor'а и аватары коннектора идут через HostAttachmentStorage (AttachmentStorageHostAdapter); транзакционность и UI-события остались в MessageService. Конфигурация TelegramContextFactory собирает дочерние контексты из портов.
+    — Архитектурный тест ConnectorApiArchitectureTest запрещает connector/api импорт server/crm/Spring/JPA/Kafka/validation/Jackson/TDLib и разрешает из common только enums и EventOrigin; нарушение = падение сборки.
+    — Регрессии: две полные прогонки server (после переноса SPI и после host-портов) — 1345 тестов, 0 падений, 0 ошибок, 0 пропусков (server/target/crm-13-2a-server-full.log, crm-13-2a-hostports-full.log). wire-Kafka не менялся, миграций нет. Docker Desktop для Testcontainers-тестов теперь требуется запущенным (замечено на первой прогонке).
+
+14.11.2026, 13.2a (завершение) — host-порты аккаунтов, статуса и авторизации:
+    — Добавлены HostChannelAccounts (require/find со снимком HostChannelAccountSnapshot вместо ChannelAccountEntity, поиск id для startup-восстановления, updateProfile, requireWorkspaceAccessForAccount, findExistingClientAccountId) и HostChannelStatus (expectDisconnect/beginConnecting/transition); серверные адаптеры ChannelAccountsHostAdapter и ChannelStatusHostAdapter инкапсулируют ChannelAccountRepository/ClientAccountRepository/CurrentUserService/ChannelStatusService.
+    — TelegramAccountProfileSynchronizer, TelegramChannelAccountService, TelegramClientStartupService, TelegramAuthorizationStateListener, TelegramAuthorizationService, TelegramContextFactory и TelegramConnectorConfiguration переведены на порты; тексты исключений (IllegalStateException «Telegram channel account not found: », EntityNotFoundException, SecurityException) и порядок проверок (workspace до и после поиска контакта) сохранены.
+    — Прямые импорты server.persistence/service/security/storage/kafka из telegram-реализации остались только в TelegramAuthorizationController (веб-контроллер, переедет в 13.3) и в самих серверных адаптерах; проверено grep'ом 14.11.2026.
+    — Тесты переведены на снапшоты/порты без ослабления проверок (порядок beginConnecting→create, инцидент-записи, двойная проверка доступа, изоляция двух аккаунтов сохранены тестами).
+    — Полная регрессия server: 1345 тестов, 0 падений, 0 ошибок, 0 пропусков (server/target/crm-13-2a-b2-full.log). Миграций и изменений Kafka-семантик нет; коммиты — по решению пользователя.

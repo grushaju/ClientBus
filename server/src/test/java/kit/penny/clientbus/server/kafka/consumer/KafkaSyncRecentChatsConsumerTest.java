@@ -6,8 +6,8 @@ import kit.penny.clientbus.common.kafka.KafkaEvent;
 import kit.penny.clientbus.common.kafka.KafkaEventType;
 import kit.penny.clientbus.common.kafka.SyncRecentChatsKafkaCommand;
 import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
-import kit.penny.clientbus.server.connector.IChannelConnector;
-import kit.penny.clientbus.server.connector.command.SyncRecentChatsCommand;
+import kit.penny.clientbus.connector.api.IChannelConnector;
+import kit.penny.clientbus.connector.api.command.SyncRecentChatsCommand;
 import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
 import kit.penny.clientbus.server.service.RecentChatsSynchronizationService;
 import kit.penny.clientbus.server.service.RecentChatsSyncCoordinator;
@@ -87,7 +87,8 @@ class KafkaSyncRecentChatsConsumerTest {
 
         when(connector.handle(
                 any(SyncRecentChatsCommand.class)
-        )).thenReturn(conversations);
+        )).thenReturn(List.of(first, second).stream()
+                .map(kit.penny.clientbus.server.connector.ConnectorPayloadMapper::toConnector).toList());
 
         consumer.consume(
                 event(),

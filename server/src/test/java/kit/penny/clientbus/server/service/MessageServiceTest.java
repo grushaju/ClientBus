@@ -5,7 +5,7 @@ import kit.penny.clientbus.common.dto.message.CreatePlatformMessageRequest;
 import kit.penny.clientbus.common.dto.message.MessageDto;
 import kit.penny.clientbus.common.enums.*;
 import kit.penny.clientbus.common.kafka.SyncConversationHistoryKafkaCommand;
-import kit.penny.clientbus.server.connector.command.SyncConversationHistoryCommand;
+import kit.penny.clientbus.connector.api.command.SyncConversationHistoryCommand;
 import kit.penny.clientbus.server.kafka.producer.ISyncConversationHistoryCommandPublisher;
 import kit.penny.clientbus.server.mapper.MessageMapper;
 import kit.penny.clientbus.server.persistence.entity.*;

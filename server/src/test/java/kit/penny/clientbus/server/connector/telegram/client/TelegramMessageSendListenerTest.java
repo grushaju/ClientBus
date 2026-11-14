@@ -13,7 +13,7 @@ class TelegramMessageSendListenerTest {
     private final MessageRepository repository=mock(MessageRepository.class);
 
     @Test void successJournalsChatAndPendingIdentityWithoutARegisteredMessage() {
-        var listener=new TelegramMessageSendListener.Succeeded(account,repository,messages);
+        var listener=new TelegramMessageSendListener.Succeeded(account,new kit.penny.clientbus.server.connector.host.MessageServiceHostSendOutcomes(messages));
         var update=new TdApi.UpdateMessageSendSucceeded();
         update.oldMessageId=-10; update.message=new TdApi.Message(); update.message.id=20; update.message.chatId=-30;
         listener.handleNotification(update);
@@ -22,7 +22,7 @@ class TelegramMessageSendListenerTest {
     }
 
     @Test void failureUsesTheSameCorrelationAndDoesNotLookUpTheLatestMessage() {
-        var listener=new TelegramMessageSendListener.Failed(account,repository,messages);
+        var listener=new TelegramMessageSendListener.Failed(account,new kit.penny.clientbus.server.connector.host.MessageServiceHostSendOutcomes(messages));
         var update=new TdApi.UpdateMessageSendFailed();
         update.oldMessageId=10; update.message=new TdApi.Message(); update.message.id=20; update.message.chatId=30;
         update.error=new TdApi.Error(500,"private provider details");
@@ -32,8 +32,8 @@ class TelegramMessageSendListenerTest {
     }
 
     @Test void incompleteUpdatesCannotCreateUnscopedCorrelations() {
-        var success=new TelegramMessageSendListener.Succeeded(account,repository,messages);
-        var failed=new TelegramMessageSendListener.Failed(account,repository,messages);
+        var success=new TelegramMessageSendListener.Succeeded(account,new kit.penny.clientbus.server.connector.host.MessageServiceHostSendOutcomes(messages));
+        var failed=new TelegramMessageSendListener.Failed(account,new kit.penny.clientbus.server.connector.host.MessageServiceHostSendOutcomes(messages));
         success.handleNotification(null); failed.handleNotification(null);
         success.handleNotification(new TdApi.UpdateMessageSendSucceeded());
         var update=new TdApi.UpdateMessageSendFailed(); update.oldMessageId=10;

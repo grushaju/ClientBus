@@ -7,9 +7,9 @@ import kit.penny.clientbus.common.kafka.KafkaEvent;
 import kit.penny.clientbus.common.kafka.KafkaEventType;
 import kit.penny.clientbus.common.kafka.SyncConversationHistoryKafkaCommand;
 import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
-import kit.penny.clientbus.server.connector.IChannelConnector;
-import kit.penny.clientbus.server.connector.SyncConversationHistoryResult;
-import kit.penny.clientbus.server.connector.command.SyncConversationHistoryCommand;
+import kit.penny.clientbus.connector.api.IChannelConnector;
+import kit.penny.clientbus.connector.api.model.SyncConversationHistoryResult;
+import kit.penny.clientbus.connector.api.command.SyncConversationHistoryCommand;
 import kit.penny.clientbus.server.kafka.producer.IPlatformMessagePublisher;
 import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
 import kit.penny.clientbus.server.service.ChannelAvailabilityService;
@@ -151,7 +151,7 @@ public class KafkaSyncConversationHistoryConsumer {
 
         if (result.messages() != null) {
 
-            for (PlatformMessageRequest message :
+            for (var message :
                     result.messages()) {
 
                 if (message == null) {
@@ -159,7 +159,8 @@ public class KafkaSyncConversationHistoryConsumer {
                 }
 
                 platformMessagePublisher.publish(
-                        message.withOrigin(kit.penny.clientbus.common.notification.EventOrigin.HISTORY_IMPORT)
+                        kit.penny.clientbus.server.connector.ConnectorPayloadMapper.toPlatform(message)
+                                .withOrigin(kit.penny.clientbus.common.notification.EventOrigin.HISTORY_IMPORT)
                 );
             }
         }
@@ -183,7 +184,7 @@ public class KafkaSyncConversationHistoryConsumer {
 
         if (result.messages() != null) {
 
-            for (PlatformMessageRequest message :
+            for (var message :
                     result.messages()) {
 
                 if (message == null) {
@@ -192,7 +193,8 @@ public class KafkaSyncConversationHistoryConsumer {
 
                 messages.add(
                         messageProcessingService
-                                .processPlatformMessage(message.withOrigin(kit.penny.clientbus.common.notification.EventOrigin.HISTORY_IMPORT))
+                                .processPlatformMessage(kit.penny.clientbus.server.connector.ConnectorPayloadMapper
+                                        .toPlatform(message).withOrigin(kit.penny.clientbus.common.notification.EventOrigin.HISTORY_IMPORT))
                 );
             }
         }

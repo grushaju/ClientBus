@@ -3,15 +3,14 @@ package kit.penny.clientbus.server.connector.telegram.startup;
 import kit.penny.clientbus.common.enums.ChannelConnectionStatus;
 import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.server.connector.telegram.account.TelegramChannelAccountService;
-import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
-import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
+import kit.penny.clientbus.connector.api.host.HostChannelAccounts;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationStartedEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
-import kit.penny.clientbus.server.service.ChannelStatusService;
+import kit.penny.clientbus.connector.api.host.HostChannelStatus;
 import java.util.List;
 
 @Service
@@ -20,26 +19,22 @@ public class TelegramClientStartupService {
     private static final Logger log =
             LoggerFactory.getLogger(TelegramClientStartupService.class);
 
-    private final ChannelAccountRepository channelAccountRepository;
+    private final HostChannelAccounts hostChannelAccounts;
     private final TelegramChannelAccountService channelAccountService;
-    private final ChannelStatusService channelStatus;
+    private final HostChannelStatus hostChannelStatus;
 
     public TelegramClientStartupService(
-            ChannelAccountRepository channelAccountRepository,
-            TelegramChannelAccountService channelAccountService,
-            ChannelStatusService channelStatus
+            HostChannelAccounts hostChannelAccounts, TelegramChannelAccountService channelAccountService, HostChannelStatus hostChannelStatus
     ) {
-        this.channelAccountRepository = channelAccountRepository;
+        this.hostChannelAccounts = hostChannelAccounts;
         this.channelAccountService = channelAccountService;
-        this.channelStatus = channelStatus;
+        this.hostChannelStatus = hostChannelStatus;
     }
 
     @EventListener(ApplicationStartedEvent.class)
     public void restoreTelegramClients() {
 
-        List<ChannelAccountEntity> accounts =
-                channelAccountRepository
-                        .findAllByChannelTypeAndChannelStatusIn(
+        List<java.util.UUID> accountIds = hostChannelAccounts.findIdsByChannelTypeAndChannelStatuses(
                                 ChannelType.TELEGRAM,
                                 List.of(
                                         ChannelConnectionStatus.CONNECTED,
@@ -47,35 +42,27 @@ public class TelegramClientStartupService {
                                 )
                         );
 
-        log.info(
-                "Restoring {} Telegram client(s)",
-                accounts.size()
-        );
+        log.info( "Restoring {} Telegram client(s)",  accountIds.size() );
 
-        for (ChannelAccountEntity account : accounts) {
-            restore(account);
-        }
+        for (java.util.UUID accountId : accountIds) {  restore(accountId); }
     }
 
-    private void restore(ChannelAccountEntity account) {
+    private void restore(java.util.UUID accountId) {
 
         try {
-            channelAccountService.create(account.getId());
+            channelAccountService.create(accountId);
 
             log.info(
-                    "Telegram client restored: channelAccountId={}",
-                    account.getId()
+                    "Telegram client restored: channelAccountId={}",  accountId
             );
 
         } catch (Exception e) {
 
             log.error(
-                    "Failed to restore Telegram client: channelAccountId={}",
-                    account.getId(),
-                    e
+                    "Failed to restore Telegram client: channelAccountId={}",  accountId,  e
             );
 
-            channelStatus.transition(account.getId(), ChannelConnectionStatus.ERROR, "CONNECTOR_RESTORE_FAILED");
+            hostChannelStatus.transition(accountId, ChannelConnectionStatus.ERROR, "CONNECTOR_RESTORE_FAILED");
         }
     }
 }

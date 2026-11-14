@@ -1,16 +1,13 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
-import kit.penny.clientbus.server.connector.IChannelListener;
+import kit.penny.clientbus.connector.api.listener.IChannelListener;
 import kit.penny.clientbus.server.connector.telegram.account.TelegramAccountProfileSynchronizer;
 import kit.penny.clientbus.server.connector.telegram.config.TelegramClientConfiguration;
-import kit.penny.clientbus.server.kafka.producer.IPlatformMessagePublisher;
-import kit.penny.clientbus.server.kafka.producer.KafkaPlatformMessagePublisher;
-import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
-import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
-import kit.penny.clientbus.server.persistence.repository.ConversationRepository;
-import kit.penny.clientbus.server.persistence.repository.MessageRepository;
-import kit.penny.clientbus.server.service.MessageService;
-import kit.penny.clientbus.server.storage.IAttachmentStorage;
+import kit.penny.clientbus.connector.api.host.HostAttachmentStorage;
+import kit.penny.clientbus.connector.api.host.HostInboundPublisher;
+import kit.penny.clientbus.connector.api.host.HostMessageReadMarks;
+import kit.penny.clientbus.connector.api.host.HostSendOutcomes;
+import kit.penny.clientbus.connector.api.host.HostChannelAccounts;
 import kit.penny.tdlib.properties.TelegramProperties;
 import kit.penny.tdlib.service.TelegramUserService;
 import kit.penny.tdlib.updates.ITdlibUpdateListener;
@@ -22,7 +19,7 @@ import org.springframework.beans.factory.support.RootBeanDefinition;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.core.env.MapPropertySource;
 
-import kit.penny.clientbus.server.service.ChannelStatusService;
+import kit.penny.clientbus.connector.api.host.HostChannelStatus;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
@@ -54,19 +51,17 @@ public class TelegramContextFactory {
 
     private final TelegramProperties globalProperties;
 
-    private final ChannelStatusService channelStatus;
+    private final HostChannelStatus channelStatus;
 
-    private final ChannelAccountRepository channelAccountRepository;
+    private final HostChannelAccounts hostChannelAccounts;
 
-    private final ConversationRepository conversationRepository;
+    private final HostMessageReadMarks hostMessageReadMarks;
 
-    private final MessageRepository messageRepository;
+    private final HostSendOutcomes hostSendOutcomes;
 
-    private final MessageService messageService;
+    private final HostAttachmentStorage hostAttachmentStorage;
 
-    private final IAttachmentStorage attachmentStorage;
-
-    private final IPlatformMessagePublisher platformMessagePublisher;
+    private final HostInboundPublisher hostInboundPublisher;
 
     private final List<IChannelListener> channelListeners;
 
@@ -74,13 +69,12 @@ public class TelegramContextFactory {
 
     public TelegramContextFactory(
             TelegramProperties globalProperties,
-            ChannelAccountRepository channelAccountRepository,
-            ChannelStatusService channelStatus,
-            ConversationRepository conversationRepository,
-            MessageService messageService,
-            MessageRepository messageRepository,
-            IAttachmentStorage attachmentStorage,
-            IPlatformMessagePublisher platformMessagePublisher,
+            HostChannelAccounts hostChannelAccounts,
+            HostChannelStatus channelStatus,
+            HostMessageReadMarks hostMessageReadMarks,
+            HostSendOutcomes hostSendOutcomes,
+            HostAttachmentStorage hostAttachmentStorage,
+            HostInboundPublisher hostInboundPublisher,
             TelegramAccountProfileSynchronizer profileSynchronizer,
             List<IChannelListener> channelListeners
 
@@ -88,26 +82,22 @@ public class TelegramContextFactory {
         this.globalProperties =
                 globalProperties;
 
-        this.channelAccountRepository =
-                channelAccountRepository;
+        this.hostChannelAccounts =  hostChannelAccounts;
 
         this.channelStatus =
                 channelStatus;
 
-        this.conversationRepository =
-                conversationRepository;
+        this.hostMessageReadMarks =
+                hostMessageReadMarks;
 
-        this.messageService =
-                messageService;
+        this.hostSendOutcomes =
+                hostSendOutcomes;
 
-        this.messageRepository =
-                messageRepository;
+        this.hostAttachmentStorage =
+                hostAttachmentStorage;
 
-        this.attachmentStorage =
-                attachmentStorage;
-
-        this.platformMessagePublisher =
-                platformMessagePublisher;
+        this.hostInboundPublisher =
+                hostInboundPublisher;
 
         this.profileSynchronizer =
                 profileSynchronizer;
@@ -310,7 +300,7 @@ public class TelegramContextFactory {
                 context.getBean(
                         TelegramUserService.class
                 ),
-                attachmentStorage
+                hostAttachmentStorage
         );
     }
 
@@ -329,7 +319,7 @@ public class TelegramContextFactory {
         return new TelegramInboundMessageListener(
                 channelAccountId,
                 messageProcessor,
-                platformMessagePublisher
+                hostInboundPublisher
         );
     }
 
@@ -353,19 +343,7 @@ public class TelegramContextFactory {
                         kit.penny.tdlib.client.TelegramClient.class
                 );
 
-        ChannelAccountEntity account =
-                channelAccountRepository.findById(
-                                channelAccountId
-                        )
-                        .orElseThrow(() ->
-                                new IllegalStateException(
-                                        "Telegram channel account not found: "
-                                                + channelAccountId
-                                )
-                        );
-
-        UUID channelId =
-                account.getChannel().getId();
+        UUID channelId =  hostChannelAccounts.require(channelAccountId).channelId();
 
         return new TelegramAuthorizationStateListener(
                 channelId,
@@ -385,8 +363,7 @@ public class TelegramContextFactory {
     ) {
         return new TelegramMessageReadListener(
                 channelAccountId,
-                conversationRepository,
-                messageService
+                hostMessageReadMarks
         );
     }
 
@@ -396,8 +373,7 @@ public class TelegramContextFactory {
     ) {
         return new TelegramMessageSendListener.Succeeded(
                 channelAccountId,
-                messageRepository,
-                messageService
+                hostSendOutcomes
         );
     }
 
@@ -407,8 +383,7 @@ public class TelegramContextFactory {
     ) {
         return new TelegramMessageSendListener.Failed(
                 channelAccountId,
-                messageRepository,
-                messageService
+                hostSendOutcomes
         );
     }
 

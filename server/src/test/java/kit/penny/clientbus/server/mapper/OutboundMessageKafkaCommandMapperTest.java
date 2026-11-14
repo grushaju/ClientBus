@@ -4,9 +4,9 @@ import kit.penny.clientbus.common.enums.MessageAttachmentType;
 import kit.penny.clientbus.common.enums.MessageType;
 import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
 import kit.penny.clientbus.common.kafka.PlatformOutboundAttachment;
-import kit.penny.clientbus.server.service.ChannelAttachment;
+import kit.penny.clientbus.connector.api.model.ConnectorAttachment;
 import kit.penny.clientbus.server.storage.IAttachmentStorage;
-import kit.penny.clientbus.server.connector.command.SendMessageCommand;
+import kit.penny.clientbus.connector.api.command.SendMessageCommand;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -135,7 +135,7 @@ class OutboundMessageKafkaCommandMapperTest {
 
         assertEquals(1, result.attachments().size());
 
-        ChannelAttachment mapped =
+        ConnectorAttachment mapped =
                 result.attachments().get(0);
 
         assertEquals(

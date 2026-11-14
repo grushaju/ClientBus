@@ -1,7 +1,6 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
-import kit.penny.clientbus.server.persistence.repository.MessageRepository;
-import kit.penny.clientbus.server.service.MessageService;
+import kit.penny.clientbus.connector.api.host.HostSendOutcomes;
 import kit.penny.tdlib.updates.ITdlibUpdateListener;
 import org.drinkless.tdlib.TdApi;
 import org.slf4j.Logger;
@@ -19,18 +18,18 @@ public final class TelegramMessageSendListener {
 
     public static final class Succeeded implements ITdlibUpdateListener<TdApi.UpdateMessageSendSucceeded> {
         private final UUID channelAccountId;
-        private final MessageService messageService;
+        private final HostSendOutcomes hostSendOutcomes;
 
-        public Succeeded(UUID channelAccountId, MessageRepository messageRepository, MessageService messageService) {
+        public Succeeded(UUID channelAccountId, HostSendOutcomes hostSendOutcomes) {
             this.channelAccountId = channelAccountId;
-            this.messageService = messageService;
+            this.hostSendOutcomes = hostSendOutcomes;
         }
 
         @Override
         public void handleNotification(TdApi.UpdateMessageSendSucceeded notification) {
             if (notification == null || notification.message == null || notification.message.id == 0
                     || notification.oldMessageId == 0 || notification.message.chatId == 0) return;
-            messageService.recordExternalOutcome(channelAccountId, Long.toString(notification.message.chatId),
+            hostSendOutcomes.recordExternalOutcome(channelAccountId, Long.toString(notification.message.chatId),
                     Long.toString(notification.oldMessageId), Long.toString(notification.message.id), false);
         }
 
@@ -41,18 +40,18 @@ public final class TelegramMessageSendListener {
 
     public static final class Failed implements ITdlibUpdateListener<TdApi.UpdateMessageSendFailed> {
         private final UUID channelAccountId;
-        private final MessageService messageService;
+        private final HostSendOutcomes hostSendOutcomes;
 
-        public Failed(UUID channelAccountId, MessageRepository messageRepository, MessageService messageService) {
+        public Failed(UUID channelAccountId, HostSendOutcomes hostSendOutcomes) {
             this.channelAccountId = channelAccountId;
-            this.messageService = messageService;
+            this.hostSendOutcomes = hostSendOutcomes;
         }
 
         @Override
         public void handleNotification(TdApi.UpdateMessageSendFailed notification) {
             if (notification == null || notification.message == null || notification.message.id == 0
                     || notification.oldMessageId == 0 || notification.message.chatId == 0) return;
-            messageService.recordExternalOutcome(channelAccountId, Long.toString(notification.message.chatId),
+            hostSendOutcomes.recordExternalOutcome(channelAccountId, Long.toString(notification.message.chatId),
                     Long.toString(notification.oldMessageId), Long.toString(notification.message.id), true);
             log.warn("Telegram send failed: channelAccountId={}, errorCode={}", channelAccountId,
                     notification.error == null ? null : notification.error.code);

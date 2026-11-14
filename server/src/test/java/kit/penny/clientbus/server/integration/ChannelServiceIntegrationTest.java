@@ -4,7 +4,7 @@ import jakarta.persistence.EntityManager;
 import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.common.enums.UserRole;
 import kit.penny.clientbus.server.connector.ChannelAccountLifecycleRegistry;
-import kit.penny.clientbus.server.connector.IChannelAccountLifecycle;
+import kit.penny.clientbus.connector.api.IChannelAccountLifecycle;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ChannelEntity;

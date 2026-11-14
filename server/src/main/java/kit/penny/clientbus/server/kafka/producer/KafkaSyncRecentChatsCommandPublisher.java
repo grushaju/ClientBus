@@ -4,7 +4,7 @@ import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.common.kafka.KafkaEvent;
 import kit.penny.clientbus.common.kafka.KafkaEventType;
 import kit.penny.clientbus.common.kafka.SyncRecentChatsKafkaCommand;
-import kit.penny.clientbus.server.connector.command.SyncRecentChatsCommand;
+import kit.penny.clientbus.connector.api.command.SyncRecentChatsCommand;
 import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;

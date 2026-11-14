@@ -7,6 +7,11 @@ import kit.penny.clientbus.common.dto.notification.*;
 import kit.penny.clientbus.common.enums.*;
 import kit.penny.clientbus.common.notification.*;
 import kit.penny.clientbus.server.config.properties.NotificationProperties;
+import kit.penny.clientbus.connector.api.*;
+import kit.penny.clientbus.connector.api.command.*;
+import kit.penny.clientbus.connector.api.model.*;
+import kit.penny.clientbus.connector.api.event.*;
+import kit.penny.clientbus.connector.api.listener.*;
 import kit.penny.clientbus.server.connector.*;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.integration.AbstractIntegrationTest;
@@ -249,8 +254,8 @@ class HistorySyncIntegrationTest extends AbstractIntegrationTest {
         jdbc.update("update dbo.historysyncoperation set leaseuntil=clock_timestamp()-interval '1 second' where id=?", first.id());
         var connector = mock(IChannelConnector.class);
         when(registry.getConnector(any())).thenReturn(connector);
-        when(connector.handle(any(kit.penny.clientbus.server.connector.command.SyncConversationHistoryCommand.class)))
-                .thenReturn(new SyncConversationHistoryResult(List.of(message("recovered")), true));
+        when(connector.handle(any(kit.penny.clientbus.connector.api.command.SyncConversationHistoryCommand.class)))
+                .thenReturn(new SyncConversationHistoryResult(kit.penny.clientbus.server.connector.ConnectorPayloadMapper.toConnectorMessages(List.of(message("recovered"))), true));
         try (var recovered = new WorkerLifetime(new HistoryOperationWorker(history, registry, limits, meters))) {
             recovered.worker.tick();
             await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertEquals(HistoryOperationStatus.SUCCEEDED, history.get(subject(), accepted.id()).status()));
@@ -346,8 +351,8 @@ class HistorySyncIntegrationTest extends AbstractIntegrationTest {
         var connector = mock(IChannelConnector.class); when(registry.getConnector(any())).thenReturn(connector);
         var invalid = new PlatformMessageRequest(account, external, null, null, "History contact", external, "invalid-attachment",
                 MessageType.TEXT, "Invalid attachment", null, Instant.now(), Collections.singletonList(null), EventOrigin.HISTORY_IMPORT);
-        when(connector.handle(any(kit.penny.clientbus.server.connector.command.SyncConversationHistoryCommand.class)))
-                .thenReturn(new SyncConversationHistoryResult(List.of(message("would-skip"), invalid), true));
+        when(connector.handle(any(kit.penny.clientbus.connector.api.command.SyncConversationHistoryCommand.class)))
+                .thenReturn(new SyncConversationHistoryResult(kit.penny.clientbus.server.connector.ConnectorPayloadMapper.toConnectorMessages(List.of(message("would-skip"), invalid)), true));
         worker.offer(accepted.id());
         await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertEquals("IMPORT_FAILED", history.get(subject(), accepted.id()).errorCode()));
         assertEquals(0, jdbc.queryForObject("select count(*) from dbo.message where conversationid=?", Integer.class, conversation));

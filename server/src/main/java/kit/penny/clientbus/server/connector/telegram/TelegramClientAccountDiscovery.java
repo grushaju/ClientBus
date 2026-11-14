@@ -1,10 +1,10 @@
 package kit.penny.clientbus.server.connector.telegram;
 
 import jakarta.persistence.EntityNotFoundException;
-import kit.penny.clientbus.server.connector.ClientAccountAvatar;
-import kit.penny.clientbus.server.connector.ClientAccountAvatarPreview;
-import kit.penny.clientbus.server.connector.DiscoveredClientAccount;
-import kit.penny.clientbus.server.connector.command.DiscoverClientAccountCommand;
+import kit.penny.clientbus.connector.api.model.ClientAccountAvatar;
+import kit.penny.clientbus.connector.api.model.ClientAccountAvatarPreview;
+import kit.penny.clientbus.connector.api.model.DiscoveredClientAccount;
+import kit.penny.clientbus.connector.api.command.DiscoverClientAccountCommand;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientContext;
 import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.query.TdlibResponse;

@@ -159,10 +159,8 @@ class TelegramMessageReadListenerIntegrationTest
 
         TelegramMessageReadListener listener =
                 new TelegramMessageReadListener(
-                        channelAccount.getId(),
-                        conversationRepository,
-                        messageService
-                );
+                channelAccount.getId(),
+                new kit.penny.clientbus.server.connector.host.MessageServiceHostReadMarks(conversationRepository, messageService));
 
         TdApi.UpdateChatReadOutbox update =
                 new TdApi.UpdateChatReadOutbox(
@@ -309,10 +307,8 @@ class TelegramMessageReadListenerIntegrationTest
 
         TelegramMessageReadListener listener =
                 new TelegramMessageReadListener(
-                        channelAccount.getId(),
-                        conversationRepository,
-                        messageService
-                );
+                channelAccount.getId(),
+                new kit.penny.clientbus.server.connector.host.MessageServiceHostReadMarks(conversationRepository, messageService));
 
         TdApi.UpdateChatReadOutbox update =
                 new TdApi.UpdateChatReadOutbox(
@@ -409,10 +405,8 @@ class TelegramMessageReadListenerIntegrationTest
 
         TelegramMessageReadListener listener =
                 new TelegramMessageReadListener(
-                        channelAccount.getId(),
-                        conversationRepository,
-                        messageService
-                );
+                channelAccount.getId(),
+                new kit.penny.clientbus.server.connector.host.MessageServiceHostReadMarks(conversationRepository, messageService));
 
         TdApi.UpdateChatReadOutbox update =
                 new TdApi.UpdateChatReadOutbox(

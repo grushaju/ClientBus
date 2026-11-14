@@ -2,7 +2,7 @@ package kit.penny.clientbus.server.service;
 
 import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.server.config.properties.RecentChatsSyncProperties;
-import kit.penny.clientbus.server.connector.command.SyncRecentChatsCommand;
+import kit.penny.clientbus.connector.api.command.SyncRecentChatsCommand;
 import kit.penny.clientbus.server.kafka.producer.ISyncRecentChatsCommandPublisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

@@ -7,7 +7,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import kit.penny.clientbus.common.dto.conversation.PlatformConversationRequest;
 import kit.penny.clientbus.common.kafka.*;
 import kit.penny.clientbus.common.dto.message.PlatformMessageRequest;
-import kit.penny.clientbus.server.connector.command.SyncConversationHistoryCommand;
+import kit.penny.clientbus.connector.api.command.SyncConversationHistoryCommand;
 import org.apache.kafka.common.errors.SerializationException;
 import org.apache.kafka.common.serialization.Deserializer;
 

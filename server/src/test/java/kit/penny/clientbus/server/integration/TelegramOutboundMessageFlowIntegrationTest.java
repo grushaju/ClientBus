@@ -480,9 +480,7 @@ class TelegramOutboundMessageFlowIntegrationTest
         TelegramMessageSendListener.Succeeded listener =
                 new TelegramMessageSendListener.Succeeded(
                         channelAccount.getId(),
-                        messageRepository,
-                        messageService
-                );
+                        new kit.penny.clientbus.server.connector.host.MessageServiceHostSendOutcomes(messageService));
 
         listener.handleNotification(
                 new TdApi.UpdateMessageSendSucceeded(
@@ -718,9 +716,7 @@ class TelegramOutboundMessageFlowIntegrationTest
         TelegramMessageSendListener.Failed listener =
                 new TelegramMessageSendListener.Failed(
                         channelAccount.getId(),
-                        messageRepository,
-                        messageService
-                );
+                        new kit.penny.clientbus.server.connector.host.MessageServiceHostSendOutcomes(messageService));
 
         TdApi.Error telegramError =
                 new TdApi.Error(
@@ -1011,9 +1007,7 @@ class TelegramOutboundMessageFlowIntegrationTest
         TelegramMessageSendListener.Succeeded listener =
                 new TelegramMessageSendListener.Succeeded(
                         channelAccount.getId(),
-                        messageRepository,
-                        messageService
-                );
+                        new kit.penny.clientbus.server.connector.host.MessageServiceHostSendOutcomes(messageService));
 
         listener.handleNotification(
                 new TdApi.UpdateMessageSendSucceeded(
@@ -1308,9 +1302,7 @@ class TelegramOutboundMessageFlowIntegrationTest
         TelegramMessageSendListener.Failed listener =
                 new TelegramMessageSendListener.Failed(
                         channelAccount.getId(),
-                        messageRepository,
-                        messageService
-                );
+                        new kit.penny.clientbus.server.connector.host.MessageServiceHostSendOutcomes(messageService));
 
         TdApi.Error telegramError =
                 new TdApi.Error(
@@ -1629,9 +1621,7 @@ class TelegramOutboundMessageFlowIntegrationTest
         TelegramMessageSendListener.Failed failedListener =
                 new TelegramMessageSendListener.Failed(
                         channelAccount.getId(),
-                        messageRepository,
-                        messageService
-                );
+                        new kit.penny.clientbus.server.connector.host.MessageServiceHostSendOutcomes(messageService));
 
         failedListener.handleNotification(
                 new TdApi.UpdateMessageSendFailed(
@@ -1816,9 +1806,7 @@ class TelegramOutboundMessageFlowIntegrationTest
         TelegramMessageSendListener.Succeeded succeededListener =
                 new TelegramMessageSendListener.Succeeded(
                         channelAccount.getId(),
-                        messageRepository,
-                        messageService
-                );
+                        new kit.penny.clientbus.server.connector.host.MessageServiceHostSendOutcomes(messageService));
 
         succeededListener.handleNotification(
                 new TdApi.UpdateMessageSendSucceeded(

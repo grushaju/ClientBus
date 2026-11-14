@@ -6,7 +6,7 @@ import jakarta.annotation.PreDestroy;
 import kit.penny.clientbus.common.dto.message.PlatformMessageRequest;
 import kit.penny.clientbus.common.kafka.KafkaEvent;
 import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
-import kit.penny.clientbus.server.connector.command.SyncConversationHistoryCommand;
+import kit.penny.clientbus.connector.api.command.SyncConversationHistoryCommand;
 import kit.penny.clientbus.server.notification.center.NotificationApiException;
 import kit.penny.clientbus.server.notification.contract.HistorySyncCommand;
 import kit.penny.clientbus.server.notification.diagnostics.NotificationDiagnostics;
@@ -87,7 +87,7 @@ public class HistoryOperationWorker implements AutoCloseable {
                     NotificationDiagnostics.Code.NONE,null,id,id);
             if (stopped.get()) return;
             var execution = history.execution(claim);
-            kit.penny.clientbus.server.connector.SyncConversationHistoryResult result;
+            kit.penny.clientbus.connector.api.model.SyncConversationHistoryResult result;
             try {
                 var connector = registry.getConnector(execution.type());
                 if (stopped.get()) return;
@@ -109,7 +109,8 @@ public class HistoryOperationWorker implements AutoCloseable {
             for (var message : result.messages()) {
                 if (message == null || message.externalId() == null || !claim.account().equals(message.channelAccountId())
                         || !execution.externalId().equals(message.clientExternalId())) throw new IllegalArgumentException("History result scope mismatch");
-                distinct.putIfAbsent(message.externalId(), message);
+                distinct.putIfAbsent(message.externalId(),
+                        kit.penny.clientbus.server.connector.ConnectorPayloadMapper.toPlatform(message));
             }
             var items = List.copyOf(distinct.values());
             // One bounded page commits with its terminal result. A failed partial page must not

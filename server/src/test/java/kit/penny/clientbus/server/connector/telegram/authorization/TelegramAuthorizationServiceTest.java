@@ -3,21 +3,16 @@ package kit.penny.clientbus.server.connector.telegram.authorization;
 import kit.penny.clientbus.common.dto.channel.ClientAccountDiscoveryDto;
 import kit.penny.clientbus.common.enums.ChannelConnectionStatus;
 import kit.penny.clientbus.common.enums.ChannelType;
-import kit.penny.clientbus.server.connector.ClientAccountAvatarPreview;
-import kit.penny.clientbus.server.connector.DiscoveredClientAccount;
-import kit.penny.clientbus.server.connector.IChannelConnector;
-import kit.penny.clientbus.server.connector.IChannelConnectorRegistry;
-import kit.penny.clientbus.server.connector.command.DiscoverClientAccountCommand;
+import kit.penny.clientbus.connector.api.model.ClientAccountAvatarPreview;
+import kit.penny.clientbus.connector.api.model.DiscoveredClientAccount;
+import kit.penny.clientbus.connector.api.IChannelConnector;
+import kit.penny.clientbus.connector.api.IChannelConnectorRegistry;
+import kit.penny.clientbus.connector.api.command.DiscoverClientAccountCommand;
+import kit.penny.clientbus.connector.api.host.HostChannelAccountSnapshot;
+import kit.penny.clientbus.connector.api.host.HostChannelAccounts;
 import kit.penny.clientbus.server.connector.telegram.account.TelegramChannelAccountService;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientContext;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientLifecycleService;
-import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
-import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
-import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
-import kit.penny.clientbus.server.persistence.entity.WorkspaceEntity;
-import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
-import kit.penny.clientbus.server.persistence.repository.ClientAccountRepository;
-import kit.penny.clientbus.server.security.service.CurrentUserService;
 import kit.penny.tdlib.updates.TelegramAuthorizationManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -50,28 +45,13 @@ class TelegramAuthorizationServiceTest {
     private TelegramAuthorizationManager authorizationManager;
 
     @Mock
-    private ChannelAccountRepository channelAccountRepository;
-
-    @Mock
-    private ClientAccountRepository clientAccountRepository;
-
-    @Mock
-    private CurrentUserService currentUserService;
+    private HostChannelAccounts hostChannelAccounts;
 
     @Mock
     private IChannelConnectorRegistry connectors;
 
     @Mock
     private IChannelConnector connector;
-
-    @Mock
-    private ChannelAccountEntity channelAccount;
-
-    @Mock
-    private ChannelEntity channel;
-
-    @Mock
-    private WorkspaceEntity workspace;
 
     private TelegramAuthorizationService service;
 
@@ -82,13 +62,25 @@ class TelegramAuthorizationServiceTest {
         service = new TelegramAuthorizationService(
                 lifecycleService,
                 channelAccountService,
-                channelAccountRepository,
-                clientAccountRepository,
-                currentUserService,
+                hostChannelAccounts,
                 connectors
         );
 
         channelAccountId = UUID.randomUUID();
+    }
+
+    private static HostChannelAccountSnapshot snapshot(
+            ChannelConnectionStatus channelStatus
+    ) {
+        return new HostChannelAccountSnapshot(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                ChannelType.TELEGRAM,
+                channelStatus,
+                "+79990000000",
+                "external"
+        );
     }
 
     private void stubAuthorizationManager() {
@@ -100,25 +92,10 @@ class TelegramAuthorizationServiceTest {
     }
 
     private void stubConnectedTelegramChannel() {
-        UUID workspaceId = UUID.randomUUID();
-
-        when(channelAccountRepository.findById(channelAccountId))
-                .thenReturn(Optional.of(channelAccount));
-
-        when(channelAccount.getChannel())
-                .thenReturn(channel);
-
-        when(channel.getType())
-                .thenReturn(ChannelType.TELEGRAM);
-
-        when(channel.getStatus())
-                .thenReturn(ChannelConnectionStatus.CONNECTED);
-
-        when(channel.getWorkspace())
-                .thenReturn(workspace);
-
-        when(workspace.getId())
-                .thenReturn(workspaceId);
+        when(hostChannelAccounts.find(channelAccountId))
+                .thenReturn(Optional.of(
+                        snapshot(ChannelConnectionStatus.CONNECTED)
+                ));
 
         when(connectors.getConnector(ChannelType.TELEGRAM))
                 .thenReturn(connector);
@@ -219,10 +196,10 @@ class TelegramAuthorizationServiceTest {
                 "123456789", "pavel", "+491234567890", "Pavel Grushin",
                 new ClientAccountAvatarPreview("image/jpeg", "AQID")));
 
-        when(clientAccountRepository.findByChannelTypeAndExternalId(
+        when(hostChannelAccounts.findExistingClientAccountId(
                 ChannelType.TELEGRAM,
                 "123456789"
-        )).thenReturn(Optional.empty());
+        )).thenReturn(null);
 
         ClientAccountDiscoveryDto result =
                 service.find(
@@ -257,13 +234,13 @@ class TelegramAuthorizationServiceTest {
         assertEquals("image/jpeg", result.avatarPreview().contentType());
         assertEquals("AQID", result.avatarPreview().base64());
 
-        verify(currentUserService, times(2))
-                .requireWorkspaceAccess(workspace.getId());
+        verify(hostChannelAccounts, times(2))
+                .requireWorkspaceAccessForAccount(channelAccountId);
 
         verify(connectors).getConnector(ChannelType.TELEGRAM);
         verify(connector).handle(command);
-        verify(clientAccountRepository).findByChannelTypeAndExternalId(ChannelType.TELEGRAM, "123456789");
-        verifyNoMoreInteractions(connector, clientAccountRepository);
+        verify(hostChannelAccounts).findExistingClientAccountId(ChannelType.TELEGRAM, "123456789");
+        verifyNoMoreInteractions(connector);
         verifyNoInteractions(lifecycleService, clientContext, channelAccountService);
     }
 
@@ -277,16 +254,10 @@ class TelegramAuthorizationServiceTest {
         when(connector.handle(command)).thenReturn(new DiscoveredClientAccount(
                 "123456789", "pavel", null, "Pavel Grushin", null));
 
-        ClientAccountEntity existingAccount =
-                mock(ClientAccountEntity.class);
-
-        when(existingAccount.getId())
-                .thenReturn(existingAccountId);
-
-        when(clientAccountRepository.findByChannelTypeAndExternalId(
+        when(hostChannelAccounts.findExistingClientAccountId(
                 ChannelType.TELEGRAM,
                 "123456789"
-        )).thenReturn(Optional.of(existingAccount));
+        )).thenReturn(existingAccountId);
 
         ClientAccountDiscoveryDto result =
                 service.find(
@@ -300,10 +271,10 @@ class TelegramAuthorizationServiceTest {
                 result.existingClientAccountId()
         );
         assertNull(result.avatarPreview());
-        verify(currentUserService, times(2)).requireWorkspaceAccess(workspace.getId());
+        verify(hostChannelAccounts, times(2)).requireWorkspaceAccessForAccount(channelAccountId);
         verify(connector).handle(command);
-        verify(clientAccountRepository).findByChannelTypeAndExternalId(ChannelType.TELEGRAM, "123456789");
-        verifyNoMoreInteractions(connector, clientAccountRepository);
+        verify(hostChannelAccounts).findExistingClientAccountId(ChannelType.TELEGRAM, "123456789");
+        verifyNoMoreInteractions(connector);
         verifyNoInteractions(lifecycleService, clientContext, channelAccountService);
     }
 
@@ -313,18 +284,18 @@ class TelegramAuthorizationServiceTest {
         DiscoverClientAccountCommand command = new DiscoverClientAccountCommand(channelAccountId, "+491234567890", null);
         when(connector.handle(command)).thenReturn(new DiscoveredClientAccount(
                 "123456789", null, "+491234567890", "Pavel", new ClientAccountAvatarPreview("image/png", "BAUG")));
-        when(clientAccountRepository.findByChannelTypeAndExternalId(ChannelType.TELEGRAM, "123456789"))
-                .thenReturn(Optional.empty());
+        when(hostChannelAccounts.findExistingClientAccountId(ChannelType.TELEGRAM, "123456789"))
+                .thenReturn(null);
 
         var result = service.find(channelAccountId, "  +491234567890  ", null);
 
         assertEquals("123456789", result.externalId());
         assertEquals("image/png", result.avatarPreview().contentType());
         assertEquals("BAUG", result.avatarPreview().base64());
-        verify(currentUserService, times(2)).requireWorkspaceAccess(workspace.getId());
+        verify(hostChannelAccounts, times(2)).requireWorkspaceAccessForAccount(channelAccountId);
         verify(connector).handle(command);
-        verify(clientAccountRepository).findByChannelTypeAndExternalId(ChannelType.TELEGRAM, "123456789");
-        verifyNoMoreInteractions(connector, clientAccountRepository);
+        verify(hostChannelAccounts).findExistingClientAccountId(ChannelType.TELEGRAM, "123456789");
+        verifyNoMoreInteractions(connector);
         verifyNoInteractions(lifecycleService, clientContext, channelAccountService);
     }
 
@@ -338,7 +309,7 @@ class TelegramAuthorizationServiceTest {
                         "pavel"
                 )
         );
-        verifyNoInteractions(connectors, connector, clientAccountRepository, lifecycleService);
+        verifyNoInteractions(connectors, connector, hostChannelAccounts, lifecycleService);
     }
 
     @Test
@@ -351,28 +322,15 @@ class TelegramAuthorizationServiceTest {
                         null
                 )
         );
-        verifyNoInteractions(connectors, connector, clientAccountRepository, lifecycleService);
+        verifyNoInteractions(connectors, connector, hostChannelAccounts, lifecycleService);
     }
 
     @Test
     void find_shouldRejectDisconnectedChannel() {
-        when(channelAccountRepository.findById(channelAccountId))
-                .thenReturn(Optional.of(channelAccount));
-
-        when(channelAccount.getChannel())
-                .thenReturn(channel);
-
-        when(channel.getType())
-                .thenReturn(ChannelType.TELEGRAM);
-
-        when(channel.getStatus())
-                .thenReturn(ChannelConnectionStatus.DISCONNECTED);
-
-        when(channel.getWorkspace())
-                .thenReturn(workspace);
-
-        when(workspace.getId())
-                .thenReturn(UUID.randomUUID());
+        when(hostChannelAccounts.find(channelAccountId))
+                .thenReturn(Optional.of(
+                        snapshot(ChannelConnectionStatus.DISCONNECTED)
+                ));
 
         assertThrows(
                 IllegalStateException.class,
@@ -382,23 +340,21 @@ class TelegramAuthorizationServiceTest {
                         "pavel"
                 )
         );
-        verifyNoInteractions(connectors, connector, clientAccountRepository, lifecycleService);
+        verifyNoInteractions(connectors, connector, lifecycleService);
     }
 
     @Test
     void find_shouldRejectInaccessibleWorkspaceBeforeContactDiscovery() {
-        UUID workspaceId = UUID.randomUUID();
-        when(channelAccountRepository.findById(channelAccountId)).thenReturn(Optional.of(channelAccount));
-        when(channelAccount.getChannel()).thenReturn(channel);
-        when(channel.getType()).thenReturn(ChannelType.TELEGRAM);
-        when(channel.getWorkspace()).thenReturn(workspace);
-        when(workspace.getId()).thenReturn(workspaceId);
+        when(hostChannelAccounts.find(channelAccountId))
+                .thenReturn(Optional.of(
+                        snapshot(ChannelConnectionStatus.CONNECTED)
+                ));
         doThrow(new SecurityException("Workspace denied"))
-                .when(currentUserService).requireWorkspaceAccess(workspaceId);
+                .when(hostChannelAccounts).requireWorkspaceAccessForAccount(channelAccountId);
 
         assertThrows(SecurityException.class, () -> service.find(channelAccountId, null, "pavel"));
 
-        verifyNoInteractions(connectors, connector, clientAccountRepository, lifecycleService);
+        verifyNoInteractions(connectors, connector, lifecycleService);
     }
 
     @Test
@@ -411,26 +367,25 @@ class TelegramAuthorizationServiceTest {
 
         verify(connector).handle(command);
         verifyNoMoreInteractions(connector);
-        verifyNoInteractions(clientAccountRepository, lifecycleService, clientContext, channelAccountService);
+        verifyNoInteractions(lifecycleService, clientContext, channelAccountService);
     }
 
     @Test
     void find_shouldDiscardPreviewWhenWorkspaceAccessIsRevokedDuringLookup() {
         stubConnectedTelegramChannel();
-        UUID workspaceId = workspace.getId();
         DiscoverClientAccountCommand command = new DiscoverClientAccountCommand(channelAccountId, null, "pavel");
         when(connector.handle(command)).thenAnswer(invocation -> {
             doThrow(new SecurityException("Workspace revoked"))
-                    .when(currentUserService).requireWorkspaceAccess(workspaceId);
+                    .when(hostChannelAccounts).requireWorkspaceAccessForAccount(channelAccountId);
             return new DiscoveredClientAccount("123456789", "pavel", null, "Pavel",
                     new ClientAccountAvatarPreview("image/jpeg", "AQID"));
         });
 
         assertThrows(SecurityException.class, () -> service.find(channelAccountId, null, "pavel"));
 
-        verify(currentUserService, times(2)).requireWorkspaceAccess(workspaceId);
+        verify(hostChannelAccounts, times(2)).requireWorkspaceAccessForAccount(channelAccountId);
         verify(connector).handle(command);
         verifyNoMoreInteractions(connector);
-        verifyNoInteractions(clientAccountRepository, lifecycleService, clientContext, channelAccountService);
+        verifyNoInteractions(lifecycleService, clientContext, channelAccountService);
     }
 }

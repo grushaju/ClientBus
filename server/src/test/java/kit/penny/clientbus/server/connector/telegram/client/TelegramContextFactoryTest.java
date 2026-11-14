@@ -2,15 +2,14 @@ package kit.penny.clientbus.server.connector.telegram.client;
 
 import kit.penny.clientbus.server.connector.telegram.account.TelegramAccountProfileSynchronizer;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
-import kit.penny.clientbus.server.kafka.producer.IPlatformMessagePublisher;
+
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
-import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
 import kit.penny.clientbus.server.persistence.repository.ChannelRepository;
 import kit.penny.clientbus.server.persistence.repository.ConversationRepository;
 import kit.penny.clientbus.server.persistence.repository.MessageRepository;
 import kit.penny.clientbus.server.service.MessageService;
-import kit.penny.clientbus.server.storage.IAttachmentStorage;
+
 import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.properties.TelegramProperties;
 import kit.penny.tdlib.updates.TelegramAuthorizationManager;
@@ -76,8 +75,8 @@ class TelegramContextFactoryTest {
                         null
                 );
 
-        ChannelAccountRepository channelAccountRepository =
-                Mockito.mock(ChannelAccountRepository.class);
+        kit.penny.clientbus.connector.api.host.HostChannelAccounts channelAccountRepository =
+                Mockito.mock(kit.penny.clientbus.connector.api.host.HostChannelAccounts.class);
         ChannelRepository channelRepository =
                 Mockito.mock(ChannelRepository.class);
         ConversationRepository conversationRepository =
@@ -86,10 +85,10 @@ class TelegramContextFactoryTest {
                 Mockito.mock(MessageService.class);
         MessageRepository messageRepository =
                 Mockito.mock(MessageRepository.class);
-        IAttachmentStorage attachmentStorage =
-                Mockito.mock(IAttachmentStorage.class);
-        IPlatformMessagePublisher platformMessagePublisher =
-                Mockito.mock(IPlatformMessagePublisher.class);
+        kit.penny.clientbus.connector.api.host.HostAttachmentStorage attachmentStorage =
+                Mockito.mock(kit.penny.clientbus.connector.api.host.HostAttachmentStorage.class);
+        kit.penny.clientbus.connector.api.host.HostInboundPublisher platformMessagePublisher =
+                Mockito.mock(kit.penny.clientbus.connector.api.host.HostInboundPublisher.class);
         TelegramAccountProfileSynchronizer profileSynchronizer =
                 Mockito.mock(TelegramAccountProfileSynchronizer.class);
 
@@ -97,10 +96,9 @@ class TelegramContextFactoryTest {
                 new TelegramContextFactory(
                         globalProperties,
                         channelAccountRepository,
-                        Mockito.mock(kit.penny.clientbus.server.service.ChannelStatusService.class),
-                        conversationRepository,
-                        messageService,
-                        messageRepository,
+                        Mockito.mock(kit.penny.clientbus.connector.api.host.HostChannelStatus.class),
+                        new kit.penny.clientbus.server.connector.host.MessageServiceHostReadMarks(conversationRepository, messageService),
+                        new kit.penny.clientbus.server.connector.host.MessageServiceHostSendOutcomes(messageService),
                         attachmentStorage,
                         platformMessagePublisher,
                         profileSynchronizer,
@@ -125,11 +123,27 @@ class TelegramContextFactoryTest {
         channelAccountA.setId(accountA);
         channelAccountB.setId(accountB);
 
-        Mockito.when(channelAccountRepository.findById(accountA))
-                .thenReturn(Optional.of(channelAccountA));
+        Mockito.when(channelAccountRepository.require(accountA))
+                .thenReturn(new kit.penny.clientbus.connector.api.host.HostChannelAccountSnapshot(
+                        accountA,
+                        java.util.UUID.randomUUID(),
+                        java.util.UUID.randomUUID(),
+                        kit.penny.clientbus.common.enums.ChannelType.TELEGRAM,
+                        kit.penny.clientbus.common.enums.ChannelConnectionStatus.CONNECTED,
+                        "+79990000000",
+                        null
+                ));
 
-        Mockito.when(channelAccountRepository.findById(accountB))
-                .thenReturn(Optional.of(channelAccountB));
+        Mockito.when(channelAccountRepository.require(accountB))
+                .thenReturn(new kit.penny.clientbus.connector.api.host.HostChannelAccountSnapshot(
+                        accountB,
+                        java.util.UUID.randomUUID(),
+                        java.util.UUID.randomUUID(),
+                        kit.penny.clientbus.common.enums.ChannelType.TELEGRAM,
+                        kit.penny.clientbus.common.enums.ChannelConnectionStatus.CONNECTED,
+                        "+79990000000",
+                        null
+                ));
 
         TelegramClientContext contextA = null;
         TelegramClientContext contextB = null;
@@ -239,8 +253,8 @@ class TelegramContextFactoryTest {
                         null
                 );
 
-        ChannelAccountRepository channelAccountRepository =
-                Mockito.mock(ChannelAccountRepository.class);
+        kit.penny.clientbus.connector.api.host.HostChannelAccounts channelAccountRepository =
+                Mockito.mock(kit.penny.clientbus.connector.api.host.HostChannelAccounts.class);
         ChannelRepository channelRepository =
                 Mockito.mock(ChannelRepository.class);
         ConversationRepository conversationRepository =
@@ -249,10 +263,10 @@ class TelegramContextFactoryTest {
                 Mockito.mock(MessageService.class);
         MessageRepository messageRepository =
                 Mockito.mock(MessageRepository.class);
-        IAttachmentStorage attachmentStorage =
-                Mockito.mock(IAttachmentStorage.class);
-        IPlatformMessagePublisher platformMessagePublisher =
-                Mockito.mock(IPlatformMessagePublisher.class);
+        kit.penny.clientbus.connector.api.host.HostAttachmentStorage attachmentStorage =
+                Mockito.mock(kit.penny.clientbus.connector.api.host.HostAttachmentStorage.class);
+        kit.penny.clientbus.connector.api.host.HostInboundPublisher platformMessagePublisher =
+                Mockito.mock(kit.penny.clientbus.connector.api.host.HostInboundPublisher.class);
         TelegramAccountProfileSynchronizer profileSynchronizer =
                 Mockito.mock(TelegramAccountProfileSynchronizer.class);
 
@@ -260,10 +274,9 @@ class TelegramContextFactoryTest {
                 new TelegramContextFactory(
                         globalProperties,
                         channelAccountRepository,
-                        Mockito.mock(kit.penny.clientbus.server.service.ChannelStatusService.class),
-                        conversationRepository,
-                        messageService,
-                        messageRepository,
+                        Mockito.mock(kit.penny.clientbus.connector.api.host.HostChannelStatus.class),
+                        new kit.penny.clientbus.server.connector.host.MessageServiceHostReadMarks(conversationRepository, messageService),
+                        new kit.penny.clientbus.server.connector.host.MessageServiceHostSendOutcomes(messageService),
                         attachmentStorage,
                         platformMessagePublisher,
                         profileSynchronizer,
@@ -288,11 +301,27 @@ class TelegramContextFactoryTest {
         channelAccountA.setId(accountA);
         channelAccountB.setId(accountB);
 
-        Mockito.when(channelAccountRepository.findById(accountA))
-                .thenReturn(Optional.of(channelAccountA));
+        Mockito.when(channelAccountRepository.require(accountA))
+                .thenReturn(new kit.penny.clientbus.connector.api.host.HostChannelAccountSnapshot(
+                        accountA,
+                        java.util.UUID.randomUUID(),
+                        java.util.UUID.randomUUID(),
+                        kit.penny.clientbus.common.enums.ChannelType.TELEGRAM,
+                        kit.penny.clientbus.common.enums.ChannelConnectionStatus.CONNECTED,
+                        "+79990000000",
+                        null
+                ));
 
-        Mockito.when(channelAccountRepository.findById(accountB))
-                .thenReturn(Optional.of(channelAccountB));
+        Mockito.when(channelAccountRepository.require(accountB))
+                .thenReturn(new kit.penny.clientbus.connector.api.host.HostChannelAccountSnapshot(
+                        accountB,
+                        java.util.UUID.randomUUID(),
+                        java.util.UUID.randomUUID(),
+                        kit.penny.clientbus.common.enums.ChannelType.TELEGRAM,
+                        kit.penny.clientbus.common.enums.ChannelConnectionStatus.CONNECTED,
+                        "+79990000000",
+                        null
+                ));
 
         TelegramClientContext contextA = null;
         TelegramClientContext contextB = null;

@@ -3,17 +3,15 @@ package kit.penny.clientbus.server.connector.telegram.authorization;
 import jakarta.persistence.EntityNotFoundException;
 import kit.penny.clientbus.common.dto.channel.ClientAccountDiscoveryDto;
 import kit.penny.clientbus.common.dto.channel.ClientAccountAvatarPreviewDto;
-import kit.penny.clientbus.server.connector.IChannelConnectorRegistry;
-import kit.penny.clientbus.server.connector.command.DiscoverClientAccountCommand;
+import kit.penny.clientbus.connector.api.IChannelConnectorRegistry;
+import kit.penny.clientbus.connector.api.command.DiscoverClientAccountCommand;
 import kit.penny.clientbus.common.enums.ChannelConnectionStatus;
 import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.server.connector.telegram.account.TelegramChannelAccountService;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientContext;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientLifecycleService;
-import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
-import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
-import kit.penny.clientbus.server.persistence.repository.ClientAccountRepository;
-import kit.penny.clientbus.server.security.service.CurrentUserService;
+import kit.penny.clientbus.connector.api.host.HostChannelAccountSnapshot;
+import kit.penny.clientbus.connector.api.host.HostChannelAccounts;
 import org.springframework.stereotype.Service;
 
 import java.util.UUID;
@@ -35,24 +33,18 @@ public class TelegramAuthorizationService {
     private final TelegramClientLifecycleService lifecycleService;
     private final TelegramChannelAccountService channelAccountService;
 
-    private final ChannelAccountRepository channelAccountRepository;
-    private final ClientAccountRepository clientAccountRepository;
-    private final CurrentUserService currentUserService;
+    private final HostChannelAccounts hostChannelAccounts;
     private final IChannelConnectorRegistry connectors;
 
     public TelegramAuthorizationService(
             TelegramClientLifecycleService lifecycleService,
             TelegramChannelAccountService channelAccountService,
-            ChannelAccountRepository channelAccountRepository,
-            ClientAccountRepository clientAccountRepository,
-            CurrentUserService currentUserService,
+            HostChannelAccounts hostChannelAccounts,
             IChannelConnectorRegistry connectors
     ) {
         this.lifecycleService = lifecycleService;
         this.channelAccountService = channelAccountService;
-        this.channelAccountRepository = channelAccountRepository;
-        this.clientAccountRepository = clientAccountRepository;
-        this.currentUserService = currentUserService;
+        this.hostChannelAccounts = hostChannelAccounts;
         this.connectors = connectors;
     }
 
@@ -134,33 +126,18 @@ public class TelegramAuthorizationService {
             );
         }
 
-        ChannelAccountEntity channelAccount =
-                channelAccountRepository
-                        .findById(channelAccountId)
-                        .orElseThrow(() ->
-                                new EntityNotFoundException(
-                                        "ChannelAccount not found: "
-                                                + channelAccountId
-                                )
-                        );
+        HostChannelAccountSnapshot channelAccount = hostChannelAccounts.find(channelAccountId) .orElseThrow(() ->  new EntityNotFoundException( "ChannelAccount not found: " + channelAccountId ));
 
-        if (channelAccount.getChannel().getType()
-                != ChannelType.TELEGRAM) {
+        if (channelAccount.channelType() != ChannelType.TELEGRAM) {
 
             throw new IllegalArgumentException(
                     "ChannelAccount is not a Telegram account"
             );
         }
 
-        currentUserService.requireWorkspaceAccess(
-                channelAccount
-                        .getChannel()
-                        .getWorkspace()
-                        .getId()
-        );
+        hostChannelAccounts.requireWorkspaceAccessForAccount(  channelAccountId );
 
-        if (channelAccount.getChannel().getStatus()
-                != ChannelConnectionStatus.CONNECTED) {
+        if (channelAccount.channelStatus() != ChannelConnectionStatus.CONNECTED) {
 
             throw new IllegalStateException(
                     "Telegram channel is not connected"
@@ -172,17 +149,10 @@ public class TelegramAuthorizationService {
                         hasPhone ? phone.trim() : null,
                         hasUsername ? normalizeUsername(username) : null));
         // A lookup may outlive membership or account revocation while waiting on the platform.
-        currentUserService.requireWorkspaceAccess(channelAccount.getChannel().getWorkspace().getId());
+        hostChannelAccounts.requireWorkspaceAccessForAccount(  channelAccountId );
         String externalId = found.externalId();
 
-        UUID existingClientAccountId =
-                clientAccountRepository
-                        .findByChannelTypeAndExternalId(
-                                ChannelType.TELEGRAM,
-                                externalId
-                        )
-                        .map(account -> account.getId())
-                        .orElse(null);
+        UUID existingClientAccountId =  hostChannelAccounts.findExistingClientAccountId(  ChannelType.TELEGRAM,  externalId );
 
         return new ClientAccountDiscoveryDto(
                 externalId,

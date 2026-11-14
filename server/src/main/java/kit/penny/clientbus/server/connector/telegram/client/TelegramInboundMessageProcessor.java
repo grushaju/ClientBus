@@ -1,11 +1,11 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
-import kit.penny.clientbus.common.dto.message.PlatformMessageAttachment;
-import kit.penny.clientbus.common.dto.message.PlatformMessageRequest;
+import kit.penny.clientbus.connector.api.model.ConnectorMessageAttachment;
+import kit.penny.clientbus.connector.api.model.ConnectorInboundMessage;
 import kit.penny.clientbus.common.enums.MessageAttachmentType;
 import kit.penny.clientbus.common.enums.MessageType;
-import kit.penny.clientbus.server.storage.IAttachmentStorage;
-import kit.penny.clientbus.server.storage.StoredAttachmentMetadata;
+import kit.penny.clientbus.connector.api.host.HostAttachmentStorage;
+import kit.penny.clientbus.connector.api.host.HostStoredAttachment;
 import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.service.TelegramUserService;
 import org.drinkless.tdlib.TdApi;
@@ -37,12 +37,12 @@ public class TelegramInboundMessageProcessor {
 
     private final TelegramUserService telegramUserService;
 
-    private final IAttachmentStorage attachmentStorage;
+    private final HostAttachmentStorage attachmentStorage;
 
     public TelegramInboundMessageProcessor(
             ObjectProvider<TelegramClient> telegramClientProvider,
             TelegramUserService telegramUserService,
-            IAttachmentStorage attachmentStorage
+            HostAttachmentStorage attachmentStorage
     ) {
         this.telegramClientProvider =
                 telegramClientProvider;
@@ -54,7 +54,7 @@ public class TelegramInboundMessageProcessor {
                 attachmentStorage;
     }
 
-    public CompletableFuture<PlatformMessageRequest> process(
+    public CompletableFuture<ConnectorInboundMessage> process(
             UUID channelAccountId,
             TdApi.Message message
     ) {
@@ -314,14 +314,14 @@ public class TelegramInboundMessageProcessor {
         return null;
     }
 
-    private PlatformMessageRequest createPlatformMessage(
+    private ConnectorInboundMessage createPlatformMessage(
             UUID channelAccountId,
             TdApi.Message message,
             TdApi.MessageSenderUser sender,
             TdApi.User user,
             InboundContent content
     ) {
-        return new PlatformMessageRequest(
+        return new ConnectorInboundMessage(
                 channelAccountId,
 
                 /*
@@ -368,7 +368,7 @@ public class TelegramInboundMessageProcessor {
         );
     }
 
-    private CompletableFuture<PlatformMessageAttachment>
+    private CompletableFuture<ConnectorMessageAttachment>
     downloadPhoto(
             long messageId,
             TdApi.MessagePhoto messagePhoto
@@ -390,7 +390,7 @@ public class TelegramInboundMessageProcessor {
         );
     }
 
-    private CompletableFuture<PlatformMessageAttachment>
+    private CompletableFuture<ConnectorMessageAttachment>
     downloadAudio(
             long messageId,
             TdApi.MessageAudio messageAudio
@@ -503,7 +503,7 @@ public class TelegramInboundMessageProcessor {
                 });
     }
 
-    private PlatformMessageAttachment storeDownloadedFile(
+    private ConnectorMessageAttachment storeDownloadedFile(
             TdApi.File file,
             MessageAttachmentType type,
             String fileName,
@@ -516,7 +516,7 @@ public class TelegramInboundMessageProcessor {
             long size =
                     Files.size(path);
 
-            StoredAttachmentMetadata stored;
+            HostStoredAttachment stored;
 
             try (InputStream inputStream =
                          Files.newInputStream(path)) {
@@ -530,7 +530,7 @@ public class TelegramInboundMessageProcessor {
                         );
             }
 
-            return new PlatformMessageAttachment(
+            return new ConnectorMessageAttachment(
                     type,
                     stored.storageKey(),
                     stored.fileName(),
@@ -548,13 +548,13 @@ public class TelegramInboundMessageProcessor {
     }
 
     public void cleanupAttachments(
-            List<PlatformMessageAttachment> attachments
+            List<ConnectorMessageAttachment> attachments
     ) {
         if (attachments == null) {
             return;
         }
 
-        for (PlatformMessageAttachment attachment :
+        for (ConnectorMessageAttachment attachment :
                 attachments) {
 
             if (attachment == null) {
@@ -629,7 +629,7 @@ public class TelegramInboundMessageProcessor {
             MessageType messageType,
             String text,
             String metadata,
-            List<PlatformMessageAttachment> attachments
+            List<ConnectorMessageAttachment> attachments
     ) {
     }
 }

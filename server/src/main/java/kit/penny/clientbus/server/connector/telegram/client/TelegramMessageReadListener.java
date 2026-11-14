@@ -1,35 +1,23 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
-import kit.penny.clientbus.server.persistence.entity.ConversationEntity;
-import kit.penny.clientbus.server.persistence.repository.ConversationRepository;
-import kit.penny.clientbus.server.service.MessageService;
+import kit.penny.clientbus.connector.api.host.HostMessageReadMarks;
 import kit.penny.tdlib.updates.ITdlibUpdateListener;
 import org.drinkless.tdlib.TdApi;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.UUID;
 
 public class TelegramMessageReadListener
         implements ITdlibUpdateListener<TdApi.UpdateChatReadOutbox> {
 
-    private static final Logger log =
-            LoggerFactory.getLogger(
-                    TelegramMessageReadListener.class
-            );
-
     private final UUID channelAccountId;
-    private final ConversationRepository conversationRepository;
-    private final MessageService messageService;
+    private final HostMessageReadMarks hostMessageReadMarks;
 
     public TelegramMessageReadListener(
             UUID channelAccountId,
-            ConversationRepository conversationRepository,
-            MessageService messageService
+            HostMessageReadMarks hostMessageReadMarks
     ) {
         this.channelAccountId = channelAccountId;
-        this.conversationRepository = conversationRepository;
-        this.messageService = messageService;
+        this.hostMessageReadMarks = hostMessageReadMarks;
     }
 
     @Override
@@ -52,31 +40,9 @@ public class TelegramMessageReadListener
             return;
         }
 
-        String clientExternalId =
-                Long.toString(chatId);
-
-        ConversationEntity conversation =
-                conversationRepository
-                        .findByChannelAccountIdAndClientAccountExternalId(
-                                channelAccountId,
-                                clientExternalId
-                        )
-                        .orElse(null);
-
-        if (conversation == null) {
-            log.debug(
-                    "Ignoring Telegram read update: "
-                            + "conversation not found, "
-                            + "channelAccountId={}, chatId={}",
-                    channelAccountId,
-                    chatId
-            );
-
-            return;
-        }
-
-        messageService.markReadUpTo(
-                conversation.getId(),
+        hostMessageReadMarks.markReadUpTo(
+                channelAccountId,
+                Long.toString(chatId),
                 lastReadOutboxMessageId
         );
     }

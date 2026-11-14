@@ -1,8 +1,6 @@
-
 package kit.penny.clientbus.server.connector.telegram.account;
 
-import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
-import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
+import kit.penny.clientbus.connector.api.host.HostChannelAccounts;
 import org.drinkless.tdlib.TdApi;
 import org.springframework.stereotype.Service;
 
@@ -11,12 +9,12 @@ import java.util.UUID;
 @Service
 public class TelegramAccountProfileSynchronizer {
 
-    private final ChannelAccountRepository channelAccountRepository;
+    private final HostChannelAccounts hostChannelAccounts;
 
     public TelegramAccountProfileSynchronizer(
-            ChannelAccountRepository channelAccountRepository
+            HostChannelAccounts hostChannelAccounts
     ) {
-        this.channelAccountRepository = channelAccountRepository;
+        this.hostChannelAccounts = hostChannelAccounts;
     }
 
     public void updateProfile(
@@ -36,32 +34,21 @@ public class TelegramAccountProfileSynchronizer {
             );
         }
 
-        ChannelAccountEntity account =
-                channelAccountRepository.findById(channelAccountId)
-                        .orElseThrow(() -> new IllegalStateException(
-                                "Telegram channel account not found: "
-                                        + channelAccountId
-                        ));
-
-        account.setExternalId(Long.toString(user.id));
-
-        account.setUsername(
+        hostChannelAccounts.updateProfile(
+                channelAccountId,
+                Long.toString(user.id),
                 user.usernames != null
                         && user.usernames.activeUsernames != null
                         && user.usernames.activeUsernames.length > 0
                         ? user.usernames.activeUsernames[0]
-                        : null
+                        : null,
+                user.phoneNumber,
+                buildDisplayName(
+                        user.firstName,
+                        user.lastName
+                ),
+                avatarUrl
         );
-
-        account.setPhone(user.phoneNumber);
-        account.setDisplayName(
-                buildDisplayName(user.firstName, user.lastName)
-        );
-        if (avatarUrl != null && !avatarUrl.isBlank()) {
-            account.setAvatarUrl(avatarUrl);
-        }
-
-        channelAccountRepository.save(account);
     }
 
     private String buildDisplayName(

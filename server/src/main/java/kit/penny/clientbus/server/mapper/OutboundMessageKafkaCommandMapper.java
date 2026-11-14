@@ -1,8 +1,8 @@
 package kit.penny.clientbus.server.mapper;
 
 import kit.penny.clientbus.common.kafka.OutboundMessageKafkaCommand;
-import kit.penny.clientbus.server.connector.command.SendMessageCommand;
-import kit.penny.clientbus.server.service.ChannelAttachment;
+import kit.penny.clientbus.connector.api.command.SendMessageCommand;
+import kit.penny.clientbus.connector.api.model.ConnectorAttachment;
 import kit.penny.clientbus.server.storage.IAttachmentStorage;
 import org.springframework.stereotype.Component;
 
@@ -33,7 +33,7 @@ public class OutboundMessageKafkaCommandMapper {
         );
     }
 
-    private List<ChannelAttachment> mapAttachments(
+    private List<ConnectorAttachment> mapAttachments(
             OutboundMessageKafkaCommand command
     ) {
         if (command.attachments() == null
@@ -44,7 +44,7 @@ public class OutboundMessageKafkaCommandMapper {
         return command.attachments()
                 .stream()
                 .map(attachment ->
-                        new ChannelAttachment(
+                        new ConnectorAttachment(
                                 attachment.type(),
                                 attachment.fileName(),
                                 attachment.contentType(),

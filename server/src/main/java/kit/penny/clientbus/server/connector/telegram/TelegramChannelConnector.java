@@ -1,24 +1,25 @@
 package kit.penny.clientbus.server.connector.telegram;
 
 import kit.penny.clientbus.common.dto.conversation.PlatformConversationRequest;
-import kit.penny.clientbus.common.dto.message.PlatformMessageRequest;
+import kit.penny.clientbus.connector.api.model.ConnectorInboundMessage;
 import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.common.enums.MessageAttachmentType;
 import kit.penny.clientbus.common.enums.MessageType;
-import kit.penny.clientbus.server.connector.ClientAccountProfile;
-import kit.penny.clientbus.server.connector.ClientAccountAvatar;
-import kit.penny.clientbus.server.connector.DiscoveredClientAccount;
-import kit.penny.clientbus.server.connector.ConnectorSendResult;
-import kit.penny.clientbus.server.connector.IChannelConnector;
-import kit.penny.clientbus.server.connector.SyncConversationHistoryResult;
-import kit.penny.clientbus.server.connector.command.*;
+import kit.penny.clientbus.connector.api.model.ClientAccountAvatar;
+import kit.penny.clientbus.connector.api.model.ConnectorConversation;
+import kit.penny.clientbus.server.connector.ConnectorPayloadMapper;
+import kit.penny.clientbus.connector.api.model.DiscoveredClientAccount;
+import kit.penny.clientbus.connector.api.model.ConnectorSendResult;
+import kit.penny.clientbus.connector.api.IChannelConnector;
+import kit.penny.clientbus.connector.api.model.SyncConversationHistoryResult;
+import kit.penny.clientbus.connector.api.command.*;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientContext;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientManager;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramInboundMessageProcessor;
 import kit.penny.clientbus.server.connector.telegram.account.TelegramAccountProfileSynchronizer;
-import kit.penny.clientbus.server.service.ChannelAttachment;
-import kit.penny.clientbus.server.storage.IAttachmentStorage;
-import kit.penny.clientbus.server.storage.StoredAttachmentMetadata;
+import kit.penny.clientbus.connector.api.model.ConnectorAttachment;
+import kit.penny.clientbus.connector.api.host.HostAttachmentStorage;
+import kit.penny.clientbus.connector.api.host.HostStoredAttachment;
 import kit.penny.tdlib.client.TelegramClient;
 import org.drinkless.tdlib.TdApi;
 import org.slf4j.Logger;
@@ -56,13 +57,13 @@ public class TelegramChannelConnector
 
     private final TelegramAccountProfileSynchronizer profileSynchronizer;
 
-    private final IAttachmentStorage attachmentStorage;
+    private final HostAttachmentStorage attachmentStorage;
 
     public TelegramChannelConnector(
             TelegramClientManager telegramClientManager,
             TelegramConversationMapper telegramConversationMapper,
             TelegramAccountProfileSynchronizer profileSynchronizer,
-            IAttachmentStorage attachmentStorage
+            HostAttachmentStorage attachmentStorage
     ) {
         this.telegramClientManager =
                 telegramClientManager;
@@ -183,7 +184,7 @@ public class TelegramChannelConnector
     }
 
     @Override
-    public List<PlatformConversationRequest> handle(
+    public List<ConnectorConversation> handle(
             SyncRecentChatsCommand command
     ) {
         validateSyncRecentChatsCommand(command);
@@ -261,7 +262,7 @@ public class TelegramChannelConnector
                 conversations.size()
         );
 
-        return List.copyOf(conversations);
+        return conversations.stream().map(ConnectorPayloadMapper::toConnector).toList();
     }
 
     public SyncConversationHistoryResult handle(
@@ -332,7 +333,7 @@ public class TelegramChannelConnector
         // A non-empty short page does not prove the beginning of history.
         boolean historyStartReached = false;
 
-        List<PlatformMessageRequest> result =
+        List<ConnectorInboundMessage> result =
                 new ArrayList<>(
                         messages.messages.length
                 );
@@ -361,7 +362,7 @@ public class TelegramChannelConnector
             }
 
             try {
-                PlatformMessageRequest request =
+                ConnectorInboundMessage request =
                         telegramInboundMessageProcessor
                                 .process(
                                         command.channelAccountId(),
@@ -396,7 +397,7 @@ public class TelegramChannelConnector
          */
         result.sort(
                 java.util.Comparator.comparing(
-                        PlatformMessageRequest::sentAt,
+                        ConnectorInboundMessage::sentAt,
                         java.util.Comparator.nullsLast(
                                 java.util.Comparator.naturalOrder()
                         )
@@ -549,77 +550,6 @@ public class TelegramChannelConnector
         );
     }
 
-    @Override
-    public ClientAccountProfile handle(SyncClientAccountCommand command) {
-        if (command == null) {
-            throw new IllegalArgumentException(
-                    "SyncClientAccountCommand must not be null"
-            );
-        }
-
-        if (command.channelAccountId() == null) {
-            throw new IllegalArgumentException(
-                    "channelAccountId must not be null"
-            );
-        }
-
-        if (command.clientAccountId() == null) {
-            throw new IllegalArgumentException(
-                    "clientAccountId must not be null"
-            );
-        }
-
-        if (command.externalId() == null
-                || command.externalId().isBlank()) {
-            throw new IllegalArgumentException(
-                    "externalId must not be blank"
-            );
-        }
-
-        long userId;
-        try {
-            userId = Long.parseLong(command.externalId());
-        } catch (NumberFormatException e) {
-            throw new IllegalArgumentException(
-                    "Invalid Telegram user id: " + command.externalId(),
-                    e
-            );
-        }
-
-        TelegramClientContext context =
-                telegramClientManager.require(command.channelAccountId());
-
-        TelegramClient telegramClient = context.telegramClient();
-
-        TdApi.User user =
-                telegramClient
-                        .send(new TdApi.GetUser(userId))
-                        .getObjectOrThrow();
-
-        if (user == null) {
-            throw new IllegalStateException(
-                    "Telegram user not found: " + command.externalId()
-            );
-        }
-
-        String avatarUrl = tryDownloadAvatar(telegramClient, user);
-
-        String username =
-                user.usernames != null
-                        && user.usernames.activeUsernames != null
-                        && user.usernames.activeUsernames.length > 0
-                        ? user.usernames.activeUsernames[0]
-                        : null;
-
-        return new ClientAccountProfile(
-                username,
-                user.phoneNumber,
-                buildDisplayName(user.firstName, user.lastName),
-                avatarUrl
-        );
-    }
-
-
     /* PRIVATE HANDLERS */
 
     private void synchronizeChannelAccountProfile(
@@ -713,7 +643,7 @@ public class TelegramChannelConnector
             long size = Files.size(path);
 
             try (var inputStream = Files.newInputStream(path)) {
-                StoredAttachmentMetadata stored =
+                HostStoredAttachment stored =
                         attachmentStorage.store(
                                 inputStream,
                                 "telegram-avatar-" + user.id + ".jpg",
@@ -877,7 +807,7 @@ public class TelegramChannelConnector
             long chatId,
             SendMessageCommand command
     ) {
-        ChannelAttachment attachment =
+        ConnectorAttachment attachment =
                 getSingleAttachment(
                         command,
                         MessageAttachmentType.IMAGE
@@ -897,7 +827,7 @@ public class TelegramChannelConnector
             long chatId,
             SendMessageCommand command
     ) {
-        ChannelAttachment attachment =
+        ConnectorAttachment attachment =
                 getSingleAttachment(
                         command,
                         MessageAttachmentType.AUDIO
@@ -916,7 +846,7 @@ public class TelegramChannelConnector
             TelegramClient telegramClient,
             long chatId,
             SendMessageCommand command,
-            ChannelAttachment attachment,
+            ConnectorAttachment attachment,
             TelegramContentFactory contentFactory
     ) {
         Path temporaryFile = null;
@@ -997,7 +927,7 @@ public class TelegramChannelConnector
 
     @org.springframework.transaction.event.TransactionalEventListener(
             phase = org.springframework.transaction.event.TransactionPhase.AFTER_COMMIT)
-    public void releaseCompletedAttempt(kit.penny.clientbus.server.connector.OutboundSendCompleted event) {
+    public void releaseCompletedAttempt(kit.penny.clientbus.connector.api.event.OutboundSendCompleted event) {
         if (event.channelType() == ChannelType.TELEGRAM) {
             kit.penny.clientbus.server.connector.telegram.client.TelegramMessageSendListener.deleteTemporaryFiles(
                     event.channelAccountId(), event.messageId(), event.sendAttemptId());
@@ -1078,7 +1008,7 @@ public class TelegramChannelConnector
         );
     }
 
-    private ChannelAttachment getSingleAttachment(
+    private ConnectorAttachment getSingleAttachment(
             SendMessageCommand command,
             MessageAttachmentType expectedType
     ) {
@@ -1243,7 +1173,7 @@ public class TelegramChannelConnector
             SendMessageCommand command,
             MessageAttachmentType expectedType
     ) {
-        List<ChannelAttachment> attachments =
+        List<ConnectorAttachment> attachments =
                 command.attachments();
 
         if (attachments.size() != 1) {
@@ -1253,7 +1183,7 @@ public class TelegramChannelConnector
             );
         }
 
-        ChannelAttachment attachment =
+        ConnectorAttachment attachment =
                 attachments.getFirst();
 
         if (attachment == null) {

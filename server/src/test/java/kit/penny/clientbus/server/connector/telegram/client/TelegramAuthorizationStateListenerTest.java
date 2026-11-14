@@ -1,8 +1,13 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 import kit.penny.clientbus.common.enums.ChannelConnectionStatus;
+import kit.penny.clientbus.connector.api.*;
+import kit.penny.clientbus.connector.api.command.*;
+import kit.penny.clientbus.connector.api.model.*;
+import kit.penny.clientbus.connector.api.event.*;
+import kit.penny.clientbus.connector.api.listener.*;
 import kit.penny.clientbus.server.connector.*;
 import kit.penny.clientbus.server.connector.telegram.account.TelegramAccountProfileSynchronizer;
-import kit.penny.clientbus.server.service.ChannelStatusService;
+import kit.penny.clientbus.connector.api.host.HostChannelStatus;
 import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.properties.TelegramProperties;
 import kit.penny.tdlib.updates.TelegramAuthorizationManager;
@@ -13,8 +18,8 @@ import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 class TelegramAuthorizationStateListenerTest {
-    UUID account;ChannelStatusService status;IChannelListener events;TelegramAuthorizationStateListener listener;ObjectProvider<TelegramClient> clients;
-    @BeforeEach void setup(){account=UUID.randomUUID();status=mock(ChannelStatusService.class);events=mock(IChannelListener.class);
+    UUID account;HostChannelStatus status;IChannelListener events;TelegramAuthorizationStateListener listener;ObjectProvider<TelegramClient> clients;
+    @BeforeEach void setup(){account=UUID.randomUUID();status=mock(HostChannelStatus.class);events=mock(IChannelListener.class);
         clients=mock(ObjectProvider.class);when(clients.getObject()).thenReturn(mock(TelegramClient.class));
         listener=new TelegramAuthorizationStateListener(UUID.randomUUID(),account,status,mock(TelegramAccountProfileSynchronizer.class),
             mock(TelegramProperties.class),mock(TelegramAuthorizationManager.class),clients,List.of(events));}

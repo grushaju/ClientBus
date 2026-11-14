@@ -1,8 +1,8 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
-import kit.penny.clientbus.common.dto.message.PlatformMessageRequest;
+import kit.penny.clientbus.connector.api.model.ConnectorInboundMessage;
 import kit.penny.clientbus.common.enums.MessageType;
-import kit.penny.clientbus.server.storage.IAttachmentStorage;
+import kit.penny.clientbus.connector.api.host.HostAttachmentStorage;
 import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.query.TdlibResponse;
 import kit.penny.tdlib.service.TelegramUserService;
@@ -43,7 +43,7 @@ class TelegramInboundMessageProcessorTest {
     private TelegramUserService telegramUserService;
 
     @Mock
-    private IAttachmentStorage attachmentStorage;
+    private HostAttachmentStorage attachmentStorage;
 
     private TelegramInboundMessageProcessor processor;
 
@@ -74,7 +74,7 @@ class TelegramInboundMessageProcessorTest {
                         new TdlibResponse<>(user(USER_ID), null)
                 ));
 
-        PlatformMessageRequest result =
+        ConnectorInboundMessage result =
                 processor.process(ACCOUNT_ID, message).join();
 
         assertNotNull(result);
@@ -111,7 +111,7 @@ class TelegramInboundMessageProcessorTest {
                 ));
 
 
-        PlatformMessageRequest result =
+        ConnectorInboundMessage result =
                 processor.process(ACCOUNT_ID, textMessage("Group message"))
                         .join();
 
@@ -140,7 +140,7 @@ class TelegramInboundMessageProcessorTest {
                         new TdlibResponse<>(user(USER_ID), null)
                 ));
 
-        PlatformMessageRequest result =
+        ConnectorInboundMessage result =
                 processor.process(ACCOUNT_ID, message).join();
 
         assertNotNull(result);

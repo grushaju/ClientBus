@@ -2,14 +2,14 @@ package kit.penny.clientbus.server.connector.telegram.account;
 
 import kit.penny.clientbus.common.enums.ChannelConnectionStatus;
 import kit.penny.clientbus.common.enums.ChannelType;
-import kit.penny.clientbus.server.connector.IChannelAccountLifecycle;
+import kit.penny.clientbus.connector.api.IChannelAccountLifecycle;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientContext;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientLifecycleService;
 import kit.penny.clientbus.server.connector.telegram.storage.TelegramDataStorage;
-import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
-import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
+import kit.penny.clientbus.connector.api.host.HostChannelAccountSnapshot;
+import kit.penny.clientbus.connector.api.host.HostChannelAccounts;
 import org.springframework.stereotype.Service;
-import kit.penny.clientbus.server.service.ChannelStatusService;
+import kit.penny.clientbus.connector.api.host.HostChannelStatus;
 
 import java.util.UUID;
 
@@ -17,20 +17,19 @@ import java.util.UUID;
 public class TelegramChannelAccountService
         implements IChannelAccountLifecycle {
 
-    private final ChannelAccountRepository channelAccountRepository;
-    private final ChannelStatusService channelStatus;
+    private final HostChannelAccounts hostChannelAccounts;
+    private final HostChannelStatus hostChannelStatus;
     private final TelegramClientLifecycleService lifecycleService;
     private final TelegramDataStorage dataStorage;
 
     public TelegramChannelAccountService(
-            ChannelAccountRepository channelAccountRepository,
-            ChannelStatusService channelStatus,
+            HostChannelAccounts hostChannelAccounts, HostChannelStatus hostChannelStatus,
             TelegramClientLifecycleService lifecycleService,
             TelegramDataStorage dataStorage
     ) {
-        this.channelAccountRepository = channelAccountRepository;
+        this.hostChannelAccounts = hostChannelAccounts;
         this.lifecycleService = lifecycleService;
-        this.channelStatus = channelStatus;
+        this.hostChannelStatus = hostChannelStatus;
         this.dataStorage = dataStorage;
     }
 
@@ -42,39 +41,32 @@ public class TelegramChannelAccountService
     @Override
     public void disconnect(UUID channelAccountId) {
 
-        channelStatus.expectDisconnect(channelAccountId, ChannelConnectionStatus.DISCONNECTED);
+        hostChannelStatus.expectDisconnect(channelAccountId, ChannelConnectionStatus.DISCONNECTED);
         lifecycleService.disconnect(channelAccountId);
         dataStorage.delete(channelAccountId);
     }
 
     public TelegramClientContext create(UUID channelAccountId) {
 
-        ChannelAccountEntity account =
-                channelAccountRepository.findById(channelAccountId)
-                        .orElseThrow(() ->
-                                new IllegalStateException(
-                                        "Telegram channel account not found: "
-                                                + channelAccountId
-                                )
-                        );
+        HostChannelAccountSnapshot account = hostChannelAccounts.require(channelAccountId);
 
-        if (account.getPhone() == null
-                || account.getPhone().isBlank()) {
+        if (account.phone() == null
+                || account.phone().isBlank()) {
             throw new IllegalStateException(
                     "Telegram channel account has no phone: "
                             + channelAccountId
             );
         }
 
-        channelStatus.beginConnecting(channelAccountId);
+        hostChannelStatus.beginConnecting(channelAccountId);
 
         try {
             return lifecycleService.create(
-                    account.getId(),
-                    account.getPhone()
+                    account.id(),
+                    account.phone()
             );
         } catch (RuntimeException e) {
-            channelStatus.transition(channelAccountId, ChannelConnectionStatus.ERROR, "CONNECTOR_START_FAILED");
+            hostChannelStatus.transition(channelAccountId, ChannelConnectionStatus.ERROR, "CONNECTOR_START_FAILED");
 
             throw e;
         }
@@ -90,7 +82,7 @@ public class TelegramChannelAccountService
 
     public void disable(UUID channelAccountId) {
 
-        channelStatus.expectDisconnect(channelAccountId, ChannelConnectionStatus.DISABLED);
+        hostChannelStatus.expectDisconnect(channelAccountId, ChannelConnectionStatus.DISABLED);
         lifecycleService.stop(channelAccountId);
     }
 
@@ -100,32 +92,25 @@ public class TelegramChannelAccountService
 
 
     public void restart(UUID channelAccountId) {
-        ChannelAccountEntity account =
-                channelAccountRepository.findById(channelAccountId)
-                        .orElseThrow(() ->
-                                new IllegalStateException(
-                                        "Telegram channel account not found: "
-                                                + channelAccountId
-                                )
-                        );
+        HostChannelAccountSnapshot account = hostChannelAccounts.require(channelAccountId);
 
-        if (account.getPhone() == null
-                || account.getPhone().isBlank()) {
+        if (account.phone() == null
+                || account.phone().isBlank()) {
             throw new IllegalStateException(
                     "Telegram channel account has no phone: "
                             + channelAccountId
             );
         }
 
-        channelStatus.beginConnecting(channelAccountId);
+        hostChannelStatus.beginConnecting(channelAccountId);
 
         try {
             lifecycleService.restart(
-                    account.getId(),
-                    account.getPhone()
+                    account.id(),
+                    account.phone()
             );
         } catch (RuntimeException e) {
-            channelStatus.transition(channelAccountId, ChannelConnectionStatus.ERROR, "CONNECTOR_START_FAILED");
+            hostChannelStatus.transition(channelAccountId, ChannelConnectionStatus.ERROR, "CONNECTOR_START_FAILED");
 
             throw e;
         }

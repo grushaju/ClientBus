@@ -3,7 +3,7 @@ package kit.penny.clientbus.server.service;
 import kit.penny.clientbus.common.dto.conversation.PlatformConversationRequest;
 import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.common.enums.ClientAccountState;
-import kit.penny.clientbus.server.connector.command.SyncConversationHistoryCommand;
+import kit.penny.clientbus.connector.api.command.SyncConversationHistoryCommand;
 import kit.penny.clientbus.server.kafka.producer.IPlatformConversationPublisher;
 import kit.penny.clientbus.server.kafka.producer.ISyncConversationHistoryCommandPublisher;
 import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;

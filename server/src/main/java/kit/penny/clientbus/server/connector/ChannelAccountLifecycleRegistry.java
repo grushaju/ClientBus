@@ -1,6 +1,7 @@
 package kit.penny.clientbus.server.connector;
 
 import kit.penny.clientbus.common.enums.ChannelType;
+import kit.penny.clientbus.connector.api.IChannelAccountLifecycle;
 import org.springframework.stereotype.Component;
 
 import java.util.List;

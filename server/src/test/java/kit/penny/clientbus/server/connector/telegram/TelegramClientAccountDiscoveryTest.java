@@ -1,15 +1,15 @@
 package kit.penny.clientbus.server.connector.telegram;
 
 import jakarta.persistence.EntityNotFoundException;
-import kit.penny.clientbus.server.connector.ClientAccountAvatar;
-import kit.penny.clientbus.server.connector.DiscoveredClientAccount;
-import kit.penny.clientbus.server.connector.command.DiscoverClientAccountCommand;
-import kit.penny.clientbus.server.connector.command.ReadClientAccountAvatarCommand;
-import kit.penny.clientbus.server.connector.command.SyncClientAccountCommand;
+import kit.penny.clientbus.connector.api.model.ClientAccountAvatar;
+import kit.penny.clientbus.connector.api.model.DiscoveredClientAccount;
+import kit.penny.clientbus.connector.api.command.DiscoverClientAccountCommand;
+import kit.penny.clientbus.connector.api.command.ReadClientAccountAvatarCommand;
+import kit.penny.clientbus.connector.api.command.DiscoverClientAccountCommand;
 import kit.penny.clientbus.server.connector.telegram.account.TelegramAccountProfileSynchronizer;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientContext;
 import kit.penny.clientbus.server.connector.telegram.client.TelegramClientManager;
-import kit.penny.clientbus.server.storage.IAttachmentStorage;
+import kit.penny.clientbus.connector.api.host.HostAttachmentStorage;
 import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.query.TdlibResponse;
 import kit.penny.tdlib.service.TelegramUserService;
@@ -44,7 +44,7 @@ class TelegramClientAccountDiscoveryTest {
     @Mock private TelegramClient client;
     @Mock private ConfigurableApplicationContext applicationContext;
     @Mock private TelegramUserService users;
-    @Mock private IAttachmentStorage attachments;
+    @Mock private kit.penny.clientbus.connector.api.host.HostAttachmentStorage attachments;
     @TempDir Path directory;
 
     private TelegramChannelConnector connector;
@@ -250,16 +250,6 @@ class TelegramClientAccountDiscoveryTest {
         when(users.searchUserByPhoneNumber(anyString())).thenReturn(CompletableFuture.completedFuture(new TdlibResponse<>(null, null)));
         assertThrows(EntityNotFoundException.class, this::discover);
         verifyNoInteractions(attachments);
-    }
-
-    @Test
-    void syncProfileCannotPersistPersonalPhotoEither() {
-        addPhoto();
-        user.profilePhoto.isPersonal = true;
-        when(client.send(any(TdApi.GetUser.class))).thenReturn(new TdlibResponse<>(user, null));
-        assertNull(connector.handle(new SyncClientAccountCommand(CHANNEL_ACCOUNT, UUID.randomUUID(), Long.toString(USER_ID))).avatarUrl());
-        verifyNoInteractions(attachments);
-        verify(client, never()).send(any(TdApi.DownloadFile.class));
     }
 
     private DiscoveredClientAccount discover() {

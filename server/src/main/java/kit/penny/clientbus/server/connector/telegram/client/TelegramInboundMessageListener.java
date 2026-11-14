@@ -1,6 +1,6 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
-import kit.penny.clientbus.server.kafka.producer.IPlatformMessagePublisher;
+import kit.penny.clientbus.connector.api.host.HostInboundPublisher;
 import kit.penny.tdlib.updates.ITdlibUpdateListener;
 import org.drinkless.tdlib.TdApi;
 import org.slf4j.Logger;
@@ -21,16 +21,16 @@ public class TelegramInboundMessageListener
     private final TelegramInboundMessageProcessor
             messageProcessor;
 
-    private final IPlatformMessagePublisher platformMessagePublisher;
+    private final HostInboundPublisher hostInboundPublisher;
 
     public TelegramInboundMessageListener(
             UUID channelAccountId,
             TelegramInboundMessageProcessor messageProcessor,
-            IPlatformMessagePublisher platformMessagePublisher
+            HostInboundPublisher hostInboundPublisher
     ) {
         this.channelAccountId = channelAccountId;
         this.messageProcessor = messageProcessor;
-        this.platformMessagePublisher = platformMessagePublisher;
+        this.hostInboundPublisher = hostInboundPublisher;
     }
 
     @Override
@@ -108,7 +108,7 @@ public class TelegramInboundMessageListener
                         return;
                     }
 
-                    platformMessagePublisher.publish(platformMessage.withOrigin(
+                    hostInboundPublisher.publish(platformMessage.withOrigin(
                             kit.penny.clientbus.common.notification.EventOrigin.LIVE));
                 })
                 .exceptionally(error -> {

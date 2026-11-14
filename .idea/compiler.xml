@@ -10,6 +10,7 @@
         <module name="server" />
         <module name="common" />
         <module name="Server" />
+        <module name="connector-api" />
         <module name="crm-api" />
         <module name="Common" />
       </profile>

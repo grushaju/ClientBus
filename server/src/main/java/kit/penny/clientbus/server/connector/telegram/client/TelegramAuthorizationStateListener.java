@@ -1,11 +1,10 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
 import kit.penny.clientbus.common.enums.ChannelConnectionStatus;
-import kit.penny.clientbus.server.connector.AbstractEventDispatcher;
-import kit.penny.clientbus.server.connector.ChannelEvent;
-import kit.penny.clientbus.server.connector.IChannelListener;
+import kit.penny.clientbus.connector.api.listener.AbstractEventDispatcher;
+import kit.penny.clientbus.connector.api.event.ChannelEvent;
+import kit.penny.clientbus.connector.api.listener.IChannelListener;
 import kit.penny.clientbus.server.connector.telegram.account.TelegramAccountProfileSynchronizer;
-import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.properties.TelegramProperties;
 import kit.penny.tdlib.updates.ITdlibUpdateListener;
@@ -16,7 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 
-import kit.penny.clientbus.server.service.ChannelStatusService;
+import kit.penny.clientbus.connector.api.host.HostChannelStatus;
 import java.util.List;
 import java.util.UUID;
 
@@ -31,7 +30,7 @@ public class TelegramAuthorizationStateListener
 
     private final UUID channelId;
     private final UUID channelAccountId;
-    private final ChannelStatusService channelStatus;
+    private final HostChannelStatus channelStatus;
     private final TelegramProperties properties;
     private final TelegramAuthorizationManager authorizationManager;
     private final ObjectProvider<TelegramClient> telegramClientProvider;
@@ -42,7 +41,7 @@ public class TelegramAuthorizationStateListener
     public TelegramAuthorizationStateListener(
             UUID channelId,
             UUID channelAccountId,
-            ChannelStatusService channelStatus,
+            HostChannelStatus channelStatus,
             TelegramAccountProfileSynchronizer profileSynchronizer,
             TelegramProperties properties,
             TelegramAuthorizationManager authorizationManager,

@@ -1,7 +1,7 @@
 package kit.penny.clientbus.server.service;
 
 import kit.penny.clientbus.common.enums.ChannelType;
-import kit.penny.clientbus.server.connector.IChannelAccountLifecycle;
+import kit.penny.clientbus.connector.api.IChannelAccountLifecycle;
 import kit.penny.clientbus.server.connector.ChannelAccountLifecycleRegistry;
 import kit.penny.clientbus.server.mapper.ChannelMapper;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;

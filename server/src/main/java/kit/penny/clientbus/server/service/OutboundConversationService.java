@@ -2,8 +2,8 @@ package kit.penny.clientbus.server.service;
 
 import kit.penny.clientbus.common.dto.conversation.ConversationDto;
 import kit.penny.clientbus.common.dto.conversation.CreateOutboundConversationRequest;
-import kit.penny.clientbus.server.connector.IChannelConnectorRegistry;
-import kit.penny.clientbus.server.connector.command.ReadClientAccountAvatarCommand;
+import kit.penny.clientbus.connector.api.IChannelConnectorRegistry;
+import kit.penny.clientbus.connector.api.command.ReadClientAccountAvatarCommand;
 import kit.penny.clientbus.server.persistence.repository.ClientAccountRepository;
 import kit.penny.clientbus.server.storage.IAttachmentStorage;
 import org.slf4j.Logger;

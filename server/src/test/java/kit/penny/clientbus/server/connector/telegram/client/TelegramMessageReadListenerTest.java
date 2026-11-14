@@ -30,9 +30,7 @@ class TelegramMessageReadListenerTest {
 
         listener = new TelegramMessageReadListener(
                 CHANNEL_ACCOUNT_ID,
-                conversationRepository,
-                messageService
-        );
+                new kit.penny.clientbus.server.connector.host.MessageServiceHostReadMarks(conversationRepository, messageService));
     }
 
     @Test

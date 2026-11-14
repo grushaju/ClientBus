@@ -7,9 +7,9 @@ import kit.penny.clientbus.common.kafka.KafkaEvent;
 import kit.penny.clientbus.common.kafka.KafkaEventType;
 import kit.penny.clientbus.common.kafka.SyncConversationHistoryKafkaCommand;
 import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
-import kit.penny.clientbus.server.connector.IChannelConnector;
-import kit.penny.clientbus.server.connector.SyncConversationHistoryResult;
-import kit.penny.clientbus.server.connector.command.SyncConversationHistoryCommand;
+import kit.penny.clientbus.connector.api.IChannelConnector;
+import kit.penny.clientbus.connector.api.model.SyncConversationHistoryResult;
+import kit.penny.clientbus.connector.api.command.SyncConversationHistoryCommand;
 import kit.penny.clientbus.server.kafka.producer.IPlatformMessagePublisher;
 import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
 import kit.penny.clientbus.server.service.*;
@@ -110,7 +110,7 @@ class KafkaSyncConversationHistoryConsumerTest {
                 any(SyncConversationHistoryCommand.class)
         )).thenReturn(
                 new SyncConversationHistoryResult(
-                        List.of(first, second),
+                        kit.penny.clientbus.server.connector.ConnectorPayloadMapper.toConnectorMessages(List.of(first, second)),
                         false
                 )
         );
@@ -149,7 +149,8 @@ class KafkaSyncConversationHistoryConsumerTest {
                 any(SyncConversationHistoryCommand.class)
         )).thenReturn(
                 new SyncConversationHistoryResult(
-                        Arrays.asList(message, null),
+                        kit.penny.clientbus.server.connector.ConnectorPayloadMapper
+                                .toConnectorMessages(Arrays.asList(message, null)),
                         false
                 )
         );
@@ -233,7 +234,7 @@ class KafkaSyncConversationHistoryConsumerTest {
                 any(SyncConversationHistoryCommand.class)
         )).thenReturn(
                 new SyncConversationHistoryResult(
-                        List.of(message),
+                        kit.penny.clientbus.server.connector.ConnectorPayloadMapper.toConnectorMessages(List.of(message)),
                         true
                 )
         );
@@ -348,7 +349,7 @@ class KafkaSyncConversationHistoryConsumerTest {
                 any(SyncConversationHistoryCommand.class)
         )).thenReturn(
                 new SyncConversationHistoryResult(
-                        List.of(first, second),
+                        kit.penny.clientbus.server.connector.ConnectorPayloadMapper.toConnectorMessages(List.of(first, second)),
                         false
                 )
         );
@@ -392,7 +393,7 @@ class KafkaSyncConversationHistoryConsumerTest {
                 any(SyncConversationHistoryCommand.class)
         )).thenReturn(
                 new SyncConversationHistoryResult(
-                        List.of(message),
+                        kit.penny.clientbus.server.connector.ConnectorPayloadMapper.toConnectorMessages(List.of(message)),
                         true
                 )
         );

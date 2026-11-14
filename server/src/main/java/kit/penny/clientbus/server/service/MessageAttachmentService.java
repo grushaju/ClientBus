@@ -4,6 +4,7 @@ import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
 import kit.penny.clientbus.common.dto.message.MessageAttachmentDto;
 import kit.penny.clientbus.common.enums.MessageAttachmentType;
+import kit.penny.clientbus.connector.api.model.ConnectorAttachment;
 import kit.penny.clientbus.server.mapper.MessageAttachmentMapper;
 import kit.penny.clientbus.server.persistence.entity.MessageAttachmentEntity;
 import kit.penny.clientbus.server.persistence.entity.MessageEntity;
@@ -348,7 +349,7 @@ public class MessageAttachmentService {
      * - IAttachmentStorage
      */
     @Transactional
-    public List<ChannelAttachment>
+    public List<ConnectorAttachment>
     getChannelAttachments(
             UUID messageId
     ) {
@@ -358,7 +359,7 @@ public class MessageAttachmentService {
                 .toList();
     }
 
-    private ChannelAttachment toChannelAttachment(
+    private ConnectorAttachment toChannelAttachment(
             MessageAttachmentEntity attachment
     ) {
         InputStream inputStream =
@@ -366,7 +367,7 @@ public class MessageAttachmentService {
                         attachment.getStorageKey()
                 );
 
-        return new ChannelAttachment(
+        return new ConnectorAttachment(
                 attachment.getType(),
                 attachment.getFileName(),
                 attachment.getContentType(),
