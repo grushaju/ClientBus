@@ -14,7 +14,7 @@ import kit.penny.clientbus.connector.api.listener.*;
 import kit.penny.clientbus.server.connector.*;
 import kit.penny.clientbus.connector.api.command.DiscoverClientAccountCommand;
 import kit.penny.clientbus.connector.api.command.ReadClientAccountAvatarCommand;
-import kit.penny.clientbus.server.connector.telegram.authorization.TelegramAuthorizationService;
+import kit.penny.clientbus.connector.telegram.authorization.TelegramAuthorizationService;
 import kit.penny.clientbus.server.exception.ChannelUnavailableException;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.integration.AbstractIntegrationTest;

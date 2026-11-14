@@ -1,0 +1,550 @@
+package kit.penny.clientbus.connector.telegram.client;
+
+import kit.penny.clientbus.connector.api.listener.IChannelListener;
+import kit.penny.clientbus.connector.telegram.account.TelegramAccountProfileSynchronizer;
+import kit.penny.clientbus.connector.telegram.config.TelegramClientConfiguration;
+import kit.penny.clientbus.connector.api.host.HostAttachmentStorage;
+import kit.penny.clientbus.connector.api.host.HostInboundPublisher;
+import kit.penny.clientbus.connector.api.host.HostMessageReadMarks;
+import kit.penny.clientbus.connector.api.host.HostSendOutcomes;
+import kit.penny.clientbus.connector.api.host.HostChannelAccounts;
+import kit.penny.tdlib.properties.TelegramProperties;
+import kit.penny.tdlib.service.TelegramUserService;
+import kit.penny.tdlib.updates.ITdlibUpdateListener;
+import kit.penny.tdlib.updates.TelegramAuthorizationManager;
+import org.drinkless.tdlib.TdApi;
+import org.springframework.beans.factory.support.BeanDefinitionRegistry;
+import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
+import org.springframework.beans.factory.support.RootBeanDefinition;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.core.env.MapPropertySource;
+
+import kit.penny.clientbus.connector.api.host.HostChannelStatus;
+import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+public class TelegramContextFactory {
+
+    private static final String PROPERTY_PREFIX =
+            "spring.telegram.client.";
+
+    private static final String AUTHORIZATION_STATE_BEAN_NAME =
+            "updateAuthorizationState";
+
+    private static final String INBOUND_MESSAGE_BEAN_NAME =
+            "telegramInboundMessageListener";
+
+    private static final String MESSAGE_READ_BEAN_NAME =
+            "telegramMessageReadListener";
+
+    private static final String MESSAGE_SEND_SUCCEEDED_BEAN_NAME =
+            "telegramMessageSendSucceededListener";
+
+    private static final String MESSAGE_SEND_FAILED_BEAN_NAME =
+            "telegramMessageSendFailedListener";
+
+    private static final String INBOUND_MESSAGE_PROCESSOR_BEAN_NAME =
+            "telegramInboundMessageProcessor";
+
+    private final TelegramProperties globalProperties;
+
+    private final HostChannelStatus channelStatus;
+
+    private final HostChannelAccounts hostChannelAccounts;
+
+    private final HostMessageReadMarks hostMessageReadMarks;
+
+    private final HostSendOutcomes hostSendOutcomes;
+
+    private final HostAttachmentStorage hostAttachmentStorage;
+
+    private final HostInboundPublisher hostInboundPublisher;
+
+    private final List<IChannelListener> channelListeners;
+
+    private final TelegramAccountProfileSynchronizer profileSynchronizer;
+
+    public TelegramContextFactory(
+            TelegramProperties globalProperties,
+            HostChannelAccounts hostChannelAccounts,
+            HostChannelStatus channelStatus,
+            HostMessageReadMarks hostMessageReadMarks,
+            HostSendOutcomes hostSendOutcomes,
+            HostAttachmentStorage hostAttachmentStorage,
+            HostInboundPublisher hostInboundPublisher,
+            TelegramAccountProfileSynchronizer profileSynchronizer,
+            List<IChannelListener> channelListeners
+
+    ) {
+        this.globalProperties =
+                globalProperties;
+
+        this.hostChannelAccounts =  hostChannelAccounts;
+
+        this.channelStatus =
+                channelStatus;
+
+        this.hostMessageReadMarks =
+                hostMessageReadMarks;
+
+        this.hostSendOutcomes =
+                hostSendOutcomes;
+
+        this.hostAttachmentStorage =
+                hostAttachmentStorage;
+
+        this.hostInboundPublisher =
+                hostInboundPublisher;
+
+        this.profileSynchronizer =
+                profileSynchronizer;
+
+        this.channelListeners =
+                channelListeners;
+
+    }
+
+    public TelegramClientContext create(
+            UUID channelAccountId,
+            String phone
+    ) {
+        Map<String, Object> properties =
+                createAccountProperties(
+                        channelAccountId,
+                        phone
+                );
+
+        AnnotationConfigApplicationContext context =
+                new AnnotationConfigApplicationContext();
+
+        context.getEnvironment()
+                .getPropertySources()
+                .addFirst(
+                        new MapPropertySource(
+                                "telegramAccountProperties",
+                                properties
+                        )
+                );
+
+        context.addBeanFactoryPostProcessor(
+                updateListenerReplacer(
+                        context,
+                        channelAccountId
+                )
+        );
+
+        context.register(
+                TelegramClientConfiguration.class
+        );
+
+        context.refresh();
+
+        return new TelegramClientContext(
+                channelAccountId,
+                context,
+                context.getBean(
+                        kit.penny.tdlib.client.TelegramClient.class
+                ),
+                context.getBean(
+                        TelegramAuthorizationManager.class
+                )
+        );
+    }
+
+    private BeanDefinitionRegistryPostProcessor updateListenerReplacer(
+            AnnotationConfigApplicationContext context,
+            UUID channelAccountId
+    ) {
+        return new BeanDefinitionRegistryPostProcessor() {
+
+            @Override
+            public void postProcessBeanDefinitionRegistry(
+                    BeanDefinitionRegistry registry
+            ) {
+                if (registry.containsBeanDefinition(
+                        AUTHORIZATION_STATE_BEAN_NAME
+                )) {
+                    registry.removeBeanDefinition(
+                            AUTHORIZATION_STATE_BEAN_NAME
+                    );
+                }
+
+                RootBeanDefinition authorizationDefinition =
+                        new RootBeanDefinition(
+                                ITdlibUpdateListener.class
+                        );
+
+                authorizationDefinition.setInstanceSupplier(
+                        () -> createAuthorizationStateListener(
+                                context,
+                                channelAccountId
+                        )
+                );
+
+                registry.registerBeanDefinition(
+                        AUTHORIZATION_STATE_BEAN_NAME,
+                        authorizationDefinition
+                );
+
+                if (registry.containsBeanDefinition(
+                        INBOUND_MESSAGE_BEAN_NAME
+                )) {
+                    registry.removeBeanDefinition(
+                            INBOUND_MESSAGE_BEAN_NAME
+                    );
+                }
+
+                RootBeanDefinition inboundMessageProcessorDefinition =
+                        new RootBeanDefinition(
+                                TelegramInboundMessageProcessor.class
+                        );
+
+                inboundMessageProcessorDefinition.setInstanceSupplier(
+                        () -> createInboundMessageProcessor(
+                                context
+                        )
+                );
+
+                registry.registerBeanDefinition(
+                        INBOUND_MESSAGE_PROCESSOR_BEAN_NAME,
+                        inboundMessageProcessorDefinition
+                );
+
+
+                RootBeanDefinition inboundMessageDefinition =
+                        new RootBeanDefinition(
+                                ITdlibUpdateListener.class
+                        );
+
+                inboundMessageDefinition.setInstanceSupplier(
+                        () -> createInboundMessageListener(
+                                context,
+                                channelAccountId
+                        )
+                );
+
+                registry.registerBeanDefinition(
+                        INBOUND_MESSAGE_BEAN_NAME,
+                        inboundMessageDefinition
+                );
+
+                RootBeanDefinition messageReadDefinition =
+                        new RootBeanDefinition(
+                                ITdlibUpdateListener.class
+                        );
+
+                messageReadDefinition.setInstanceSupplier(
+                        () -> createMessageReadListener(
+                                channelAccountId
+                        )
+                );
+
+                registry.registerBeanDefinition(
+                        MESSAGE_READ_BEAN_NAME,
+                        messageReadDefinition
+                );
+
+                RootBeanDefinition messageSendSucceededDefinition =
+                        new RootBeanDefinition(
+                                ITdlibUpdateListener.class
+                        );
+
+                messageSendSucceededDefinition.setInstanceSupplier(
+                        () -> createMessageSendSucceededListener(
+                                channelAccountId
+                        )
+                );
+
+                registry.registerBeanDefinition(
+                        MESSAGE_SEND_SUCCEEDED_BEAN_NAME,
+                        messageSendSucceededDefinition
+                );
+
+                RootBeanDefinition messageSendFailedDefinition =
+                        new RootBeanDefinition(
+                                ITdlibUpdateListener.class
+                        );
+
+                messageSendFailedDefinition.setInstanceSupplier(
+                        () -> createMessageSendFailedListener(
+                                channelAccountId
+                        )
+                );
+
+                registry.registerBeanDefinition(
+                        MESSAGE_SEND_FAILED_BEAN_NAME,
+                        messageSendFailedDefinition
+                );
+            }
+
+            @Override
+            public void postProcessBeanFactory(
+                    org.springframework.beans.factory.config.ConfigurableListableBeanFactory beanFactory
+            ) {
+                // Nothing to process.
+            }
+        };
+    }
+
+    private TelegramInboundMessageProcessor
+    createInboundMessageProcessor(
+            AnnotationConfigApplicationContext context
+    ) {
+        return new TelegramInboundMessageProcessor(
+                context.getBeanProvider(
+                        kit.penny.tdlib.client.TelegramClient.class
+                ),
+                context.getBean(
+                        TelegramUserService.class
+                ),
+                hostAttachmentStorage
+        );
+    }
+
+    private ITdlibUpdateListener<TdApi.UpdateNewMessage>
+    createInboundMessageListener(
+            AnnotationConfigApplicationContext context,
+            UUID channelAccountId
+    ) {
+        TelegramInboundMessageProcessor messageProcessor =
+                context.getBean(
+                        TelegramInboundMessageProcessor.class
+                );
+
+
+
+        return new TelegramInboundMessageListener(
+                channelAccountId,
+                messageProcessor,
+                hostInboundPublisher
+        );
+    }
+
+    private ITdlibUpdateListener<TdApi.UpdateAuthorizationState>
+    createAuthorizationStateListener(
+            AnnotationConfigApplicationContext context,
+            UUID channelAccountId
+    ) {
+        TelegramProperties properties =
+                context.getBean(
+                        TelegramProperties.class
+                );
+
+        TelegramAuthorizationManager authorizationManager =
+                context.getBean(
+                        TelegramAuthorizationManager.class
+                );
+
+        var telegramClientProvider =
+                context.getBeanProvider(
+                        kit.penny.tdlib.client.TelegramClient.class
+                );
+
+        UUID channelId =  hostChannelAccounts.require(channelAccountId).channelId();
+
+        return new TelegramAuthorizationStateListener(
+                channelId,
+                channelAccountId,
+                channelStatus,
+                profileSynchronizer,
+                properties,
+                authorizationManager,
+                telegramClientProvider,
+                channelListeners
+        );
+    }
+
+    private ITdlibUpdateListener<TdApi.UpdateChatReadOutbox>
+    createMessageReadListener(
+            UUID channelAccountId
+    ) {
+        return new TelegramMessageReadListener(
+                channelAccountId,
+                hostMessageReadMarks
+        );
+    }
+
+    private ITdlibUpdateListener<TdApi.UpdateMessageSendSucceeded>
+    createMessageSendSucceededListener(
+            UUID channelAccountId
+    ) {
+        return new TelegramMessageSendListener.Succeeded(
+                channelAccountId,
+                hostSendOutcomes
+        );
+    }
+
+    private ITdlibUpdateListener<TdApi.UpdateMessageSendFailed>
+    createMessageSendFailedListener(
+            UUID channelAccountId
+    ) {
+        return new TelegramMessageSendListener.Failed(
+                channelAccountId,
+                hostSendOutcomes
+        );
+    }
+
+    private Map<String, Object> createAccountProperties(
+            UUID channelAccountId,
+            String phone
+    ) {
+        Path accountDirectory =
+                Path.of(
+                        globalProperties.databaseDirectory(),
+                        channelAccountId.toString()
+                );
+
+        Map<String, Object> properties =
+                new HashMap<>();
+
+        properties.put(
+                PROPERTY_PREFIX + "use-test-dc",
+                globalProperties.useTestDc()
+        );
+
+        properties.put(
+                PROPERTY_PREFIX + "database-directory",
+                accountDirectory
+                        .resolve("database")
+                        .toString()
+        );
+
+        properties.put(
+                PROPERTY_PREFIX + "files-directory",
+                accountDirectory
+                        .resolve("files")
+                        .toString()
+        );
+
+        properties.put(
+                PROPERTY_PREFIX + "database-encryption-key",
+                globalProperties.databaseEncryptionKey()
+        );
+
+        properties.put(
+                PROPERTY_PREFIX + "use-file-database",
+                globalProperties.useFileDatabase()
+        );
+
+        properties.put(
+                PROPERTY_PREFIX + "use-chat-info-database",
+                globalProperties.useChatInfoDatabase()
+        );
+
+        properties.put(
+                PROPERTY_PREFIX + "use-message-database",
+                globalProperties.useMessageDatabase()
+        );
+
+        properties.put(
+                PROPERTY_PREFIX + "use-secret-chats",
+                globalProperties.useSecretChats()
+        );
+
+        properties.put(
+                PROPERTY_PREFIX + "api-id",
+                globalProperties.apiId()
+        );
+
+        properties.put(
+                PROPERTY_PREFIX + "api-hash",
+                globalProperties.apiHash()
+        );
+
+        properties.put(
+                PROPERTY_PREFIX + "phone",
+                phone
+        );
+
+        properties.put(
+                PROPERTY_PREFIX + "system-language-code",
+                globalProperties.systemLanguageCode()
+        );
+
+        properties.put(
+                PROPERTY_PREFIX + "device-model",
+                globalProperties.deviceModel()
+        );
+
+        properties.put(
+                PROPERTY_PREFIX + "system-version",
+                globalProperties.systemVersion()
+        );
+
+        properties.put(
+                PROPERTY_PREFIX + "application-version",
+                globalProperties.applicationVersion()
+        );
+
+        properties.put(
+                PROPERTY_PREFIX + "log-verbosity-level",
+                globalProperties.logVerbosityLevel()
+        );
+
+        addProxyProperties(
+                properties,
+                globalProperties.proxy()
+        );
+
+        return properties;
+    }
+
+    private void addProxyProperties(
+            Map<String, Object> properties,
+            TelegramProperties.Proxy proxy
+    ) {
+        if (proxy == null) {
+            return;
+        }
+
+        properties.put(
+                PROPERTY_PREFIX + "proxy.server",
+                proxy.server()
+        );
+
+        properties.put(
+                PROPERTY_PREFIX + "proxy.port",
+                proxy.port()
+        );
+
+        if (proxy.http() != null) {
+            properties.put(
+                    PROPERTY_PREFIX + "proxy.http.username",
+                    proxy.http().username()
+            );
+
+            properties.put(
+                    PROPERTY_PREFIX + "proxy.http.password",
+                    proxy.http().password()
+            );
+
+            properties.put(
+                    PROPERTY_PREFIX + "proxy.http.http-only",
+                    proxy.http().httpOnly()
+            );
+        }
+
+        if (proxy.socks5() != null) {
+            properties.put(
+                    PROPERTY_PREFIX + "proxy.socks5.username",
+                    proxy.socks5().username()
+            );
+
+            properties.put(
+                    PROPERTY_PREFIX + "proxy.socks5.password",
+                    proxy.socks5().password()
+            );
+
+        }
+
+        if (proxy.mtproto() != null) {
+            properties.put(
+                    PROPERTY_PREFIX + "proxy.mtproto.secret",
+                    proxy.mtproto().secret()
+            );
+        }
+    }
+}

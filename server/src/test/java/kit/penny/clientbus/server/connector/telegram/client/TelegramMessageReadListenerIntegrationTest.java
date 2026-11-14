@@ -1,5 +1,7 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
+import kit.penny.clientbus.connector.telegram.client.*;
+
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import kit.penny.clientbus.common.enums.ChannelType;

@@ -14,7 +14,7 @@ import kit.penny.clientbus.connector.api.event.*;
 import kit.penny.clientbus.connector.api.listener.*;
 import kit.penny.clientbus.server.connector.*;
 import kit.penny.clientbus.connector.api.command.*;
-import kit.penny.clientbus.server.connector.telegram.config.TelegramClientConfiguration;
+import kit.penny.clientbus.connector.telegram.config.TelegramClientConfiguration;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.integration.AbstractIntegrationTest;
 import kit.penny.clientbus.server.kafka.producer.IPlatformMessagePublisher;

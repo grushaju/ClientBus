@@ -2,9 +2,9 @@ package kit.penny.clientbus.server.integration;
 
 import kit.penny.clientbus.common.dto.message.OutboundMessageRequest;
 import kit.penny.clientbus.common.enums.*;
-import kit.penny.clientbus.server.connector.telegram.client.TelegramClientContext;
-import kit.penny.clientbus.server.connector.telegram.client.TelegramClientManager;
-import kit.penny.clientbus.server.connector.telegram.client.TelegramMessageSendListener;
+import kit.penny.clientbus.connector.telegram.client.TelegramClientContext;
+import kit.penny.clientbus.connector.telegram.client.TelegramClientManager;
+import kit.penny.clientbus.connector.telegram.client.TelegramMessageSendListener;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
 import kit.penny.clientbus.server.persistence.entity.*;

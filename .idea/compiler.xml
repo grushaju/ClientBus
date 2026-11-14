@@ -12,6 +12,7 @@
         <module name="Server" />
         <module name="connector-api" />
         <module name="crm-api" />
+        <module name="connector-telegram" />
         <module name="Common" />
       </profile>
     </annotationProcessing>
@@ -25,6 +26,7 @@
     <option name="ADDITIONAL_OPTIONS_OVERRIDE">
       <module name="Server" options="-parameters" />
       <module name="UI" options="-parameters" />
+      <module name="connector-telegram" options="-parameters" />
       <module name="server" options="-parameters" />
       <module name="ui" options="-parameters" />
     </option>

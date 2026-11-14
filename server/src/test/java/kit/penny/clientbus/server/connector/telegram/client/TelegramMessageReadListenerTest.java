@@ -1,5 +1,7 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
+import kit.penny.clientbus.connector.telegram.client.*;
+
 import kit.penny.clientbus.server.persistence.entity.ConversationEntity;
 import kit.penny.clientbus.server.persistence.repository.ConversationRepository;
 import kit.penny.clientbus.server.service.MessageService;

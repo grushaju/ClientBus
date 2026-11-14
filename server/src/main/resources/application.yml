@@ -65,8 +65,10 @@ clientbus:
     outbound:
       enabled-channels:
         - TELEGRAM
-        - WHATSAPP
-        - VK
+        # 13.3: WHATSAPP/VK убраны — коннекторов нет. Канал добавляется в список
+        # вместе с его коннектор-модулем. ВНИМАНИЕ (ревю 14.11.2026): сами топики
+        # этой группы приложением сейчас не создаются — см. бэклог (KafkaAdmin не
+        # видит бины List<NewTopic>).
 
 
 
@@ -116,7 +118,9 @@ springdoc:
   # Пакеты для сканирования
   packages-to-scan:
     - kit.penny.clientbus.server.controller
-    - kit.penny.clientbus.server.connector.telegram.authorization
+    # 13.3: коннекторы регистрируют свои тонкие web-адаптеры сами (пакет коннектора
+    # называет модуль, а не server: сборка без коннектора ничего не сканирует).
+    - kit.penny.clientbus.connector
 
   # Пути для сканирования (если нужно)
   paths-to-match:
@@ -197,6 +201,9 @@ spring:
     validate-on-migrate: true
     table: flyway_schema_history
 
+  # 13.3: платформенные свойства Telegram принадлежат модулю connector/telegram
+  # (связаны со стартером spring-boot-starter-tdlib). Живут здесь как конфигурация
+  # развёртывания сервера и удаляются вместе с зависимостью от модуля.
   telegram:
     client:
       # Example

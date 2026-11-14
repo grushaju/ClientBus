@@ -1,6 +1,8 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
-import kit.penny.clientbus.server.connector.telegram.account.TelegramAccountProfileSynchronizer;
+import kit.penny.clientbus.connector.telegram.client.*;
+
+import kit.penny.clientbus.connector.telegram.account.TelegramAccountProfileSynchronizer;
 import kit.penny.clientbus.server.fixture.TestDataFactory;
 
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;

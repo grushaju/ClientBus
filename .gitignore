@@ -1,12 +1,8 @@
-/common/target/
-/server/target/
-/crm/api/target/
-/crm/dikidi/target/
+target/
 /ui/dist/
 /ui/node_modules/
-/server/data/
-/data/
-/data/telegram/
 /ui/debug.log
+/data/
+/server/data/
 /.agents/
 /.dsh-acl-reports/

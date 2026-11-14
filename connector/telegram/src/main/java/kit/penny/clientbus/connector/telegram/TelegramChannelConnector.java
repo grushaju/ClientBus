@@ -1,0 +1,1254 @@
+package kit.penny.clientbus.connector.telegram;
+
+import kit.penny.clientbus.common.dto.conversation.PlatformConversationRequest;
+import kit.penny.clientbus.connector.api.model.ConnectorInboundMessage;
+import kit.penny.clientbus.common.enums.ChannelType;
+import kit.penny.clientbus.common.enums.MessageAttachmentType;
+import kit.penny.clientbus.common.enums.MessageType;
+import kit.penny.clientbus.connector.api.model.ClientAccountAvatar;
+import kit.penny.clientbus.connector.api.model.ConnectorConversation;
+import kit.penny.clientbus.connector.api.model.DiscoveredClientAccount;
+import kit.penny.clientbus.connector.api.model.ConnectorSendResult;
+import kit.penny.clientbus.connector.api.IChannelConnector;
+import kit.penny.clientbus.connector.api.model.SyncConversationHistoryResult;
+import kit.penny.clientbus.connector.api.error.ConnectorSendOutcomeUnknownException;
+import kit.penny.clientbus.connector.api.command.*;
+import kit.penny.clientbus.connector.telegram.client.TelegramClientContext;
+import kit.penny.clientbus.connector.telegram.client.TelegramClientManager;
+import kit.penny.clientbus.connector.telegram.client.TelegramInboundMessageProcessor;
+import kit.penny.clientbus.connector.telegram.account.TelegramAccountProfileSynchronizer;
+import kit.penny.clientbus.connector.api.model.ConnectorAttachment;
+import kit.penny.clientbus.connector.api.host.HostAttachmentStorage;
+import kit.penny.clientbus.connector.api.host.HostStoredAttachment;
+import kit.penny.tdlib.client.TelegramClient;
+import org.drinkless.tdlib.TdApi;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+@Component
+public class TelegramChannelConnector
+        implements IChannelConnector {
+
+    private static final Logger log =
+            LoggerFactory.getLogger(
+                    TelegramChannelConnector.class
+            );
+
+    private static final int RECENT_CHATS_LIMIT = 100;
+
+    private static final int HISTORY_DEFAULT_LIMIT = 50;
+
+    private static final int HISTORY_MAX_LIMIT = 100;
+
+    private final TelegramClientManager telegramClientManager;
+
+    private final TelegramConversationMapper telegramConversationMapper;
+
+    private final TelegramAccountProfileSynchronizer profileSynchronizer;
+
+    private final HostAttachmentStorage attachmentStorage;
+
+    public TelegramChannelConnector(
+            TelegramClientManager telegramClientManager,
+            TelegramConversationMapper telegramConversationMapper,
+            TelegramAccountProfileSynchronizer profileSynchronizer,
+            HostAttachmentStorage attachmentStorage
+    ) {
+        this.telegramClientManager =
+                telegramClientManager;
+
+        this.telegramConversationMapper =
+                telegramConversationMapper;
+
+        this.profileSynchronizer =
+                profileSynchronizer;
+
+        this.attachmentStorage =
+                attachmentStorage;
+    }
+
+    @Override
+    public boolean supports(
+            ChannelType channelType
+    ) {
+        return channelType == ChannelType.TELEGRAM;
+    }
+
+    @Override
+    public DiscoveredClientAccount handle(DiscoverClientAccountCommand command) {
+        if (command == null || command.channelAccountId() == null) {
+            throw new IllegalArgumentException("channelAccountId must not be null");
+        }
+        return TelegramClientAccountDiscovery.discover(telegramClientManager.require(command.channelAccountId()), command);
+    }
+
+    @Override
+    public Optional<ClientAccountAvatar> handle(ReadClientAccountAvatarCommand command) {
+        if (command == null || command.channelAccountId() == null) {
+            throw new IllegalArgumentException("channelAccountId must not be null");
+        }
+        long userId = parseChatId(command.externalId());
+        if (userId <= 0) throw new IllegalArgumentException("Telegram avatar requires a positive user ID");
+        return TelegramClientAccountDiscovery.readAvatar(
+                telegramClientManager.require(command.channelAccountId()).telegramClient(), userId);
+    }
+
+    @Override
+    public ConnectorSendResult handle(
+            SendMessageCommand command
+    ) {
+        validateCommand(command);
+
+        long chatId =
+                parseChatId(
+                        command.dialogExternalId() != null
+                                && !command.dialogExternalId().isBlank()
+                                ? command.dialogExternalId()
+                                : command.recipientExternalId()
+                );
+
+        TelegramClientContext context =
+                telegramClientManager.require(
+                        command.channelAccountId()
+                );
+
+        TelegramClient telegramClient =
+                context.telegramClient();
+
+        return switch (command.type()) {
+
+            case TEXT -> sendText(
+                    telegramClient,
+                    chatId,
+                    command
+            );
+
+            case IMAGE -> sendImage(
+                    telegramClient,
+                    chatId,
+                    command
+            );
+
+            case AUDIO -> sendAudio(
+                    telegramClient,
+                    chatId,
+                    command
+            );
+
+            default -> throw new IllegalArgumentException(
+                    "Unsupported Telegram outbound message type: "
+                            + command.type()
+            );
+        };
+    }
+
+    @Override
+    public void handle(
+            MarkMessagesReadCommand command
+    ) {
+        validateReadCommand(command);
+
+        long chatId =
+                parseChatId(
+                        command.dialogExternalId() != null
+                                && !command.dialogExternalId().isBlank()
+                                ? command.dialogExternalId()
+                                : command.recipientExternalId()
+                );
+
+        long messageId =
+                parseMessageId(
+                        command.lastReadExternalId()
+                );
+
+        TelegramClientContext context =
+                telegramClientManager.require(
+                        command.channelAccountId()
+                );
+
+        context.telegramClient()
+                .send(
+                        new TdApi.ViewMessages(
+                                chatId,
+                                new long[]{messageId},
+                                null,
+                                true
+                        )
+                )
+                .getObjectOrThrow();
+    }
+
+    @Override
+    public List<ConnectorConversation> handle(
+            SyncRecentChatsCommand command
+    ) {
+        validateSyncRecentChatsCommand(command);
+
+        TelegramClientContext context =
+                telegramClientManager.require(
+                        command.channelAccountId()
+                );
+
+        TelegramClient telegramClient =
+                context.telegramClient();
+
+        synchronizeChannelAccountProfile(
+                telegramClient,
+                command.channelAccountId()
+        );
+
+        TdApi.Chats chats =
+                telegramClient
+                        .send(
+                                new TdApi.GetChats(
+                                        new TdApi.ChatListMain(),
+                                        RECENT_CHATS_LIMIT
+                                )
+                        )
+                        .getObjectOrThrow();
+
+        if (chats == null
+                || chats.chatIds == null
+                || chats.chatIds.length == 0) {
+
+            log.debug(
+                    "Telegram recent chats sync returned no chats: " +
+                            "channelAccountId={}",
+                    command.channelAccountId()
+            );
+
+            return List.of();
+        }
+
+        List<PlatformConversationRequest> conversations =
+                new ArrayList<>();
+
+        for (long chatId : chats.chatIds) {
+
+            try {
+                PlatformConversationRequest conversation =
+                        syncChat(
+                                telegramClient,
+                                command.channelAccountId(),
+                                chatId
+                        );
+
+                if (conversation != null) {
+                    conversations.add(conversation);
+                }
+
+            } catch (RuntimeException e) {
+                log.warn(
+                        "Failed to synchronize Telegram chat: " +
+                                "channelAccountId={}, chatId={}",
+                        command.channelAccountId(),
+                        chatId,
+                        e
+                );
+            }
+        }
+
+        log.info(
+                "Telegram recent chats synchronization completed: " +
+                        "channelAccountId={}, fetchedChatCount={}, " +
+                        "conversationCount={}",
+                command.channelAccountId(),
+                chats.chatIds.length,
+                conversations.size()
+        );
+
+        return conversations.stream().map(TelegramConversationPayloadMapper::toConnectorConversation).toList();
+    }
+
+    public SyncConversationHistoryResult handle(
+            SyncConversationHistoryCommand command
+    ) {
+        validateSyncConversationHistoryCommand(command);
+
+        TelegramClientContext context =
+                telegramClientManager.require(
+                        command.channelAccountId()
+                );
+
+        TelegramClient telegramClient =
+                context.telegramClient();
+
+        long userId =
+                parseChatId(
+                        command.conversationExternalId()
+                );
+
+        int limit =
+                normalizeHistoryLimit(
+                        command.limit()
+                );
+
+        long beforeMessageId =
+                command.beforeExternalId() == null
+                        || command.beforeExternalId().isBlank()
+                        ? 0
+                        : parseMessageId(
+                        command.beforeExternalId()
+                );
+
+        // ClientBus stores the private peer's user ID. Its chat may not yet be
+        // known to this TDLib client, for example after reconnecting the account.
+        long chatId = resolvePrivateChatId(telegramClient, userId);
+
+        TdApi.Messages messages = readHistoryPage(telegramClient, chatId, beforeMessageId, limit);
+        // Initial pages can be incomplete while TDLib preloads history. A non-empty
+        // cursor page without older IDs is also inconclusive; retry it once.
+        if ((beforeMessageId == 0 && messages.messages.length < limit)
+                || (beforeMessageId != 0 && messages.messages.length > 0 && !hasOlderMessage(messages, beforeMessageId))) {
+            TdApi.Messages repeated = readHistoryPage(telegramClient, chatId, beforeMessageId, limit);
+            // A transient empty retry must not discard a page already returned.
+            if (beforeMessageId != 0 || repeated.messages.length > 0 || messages.messages.length == 0) messages = repeated;
+        }
+
+        if (messages.messages.length == 0) {
+
+            log.debug(
+                    "Telegram conversation history reached its start: " +
+                            "channelAccountId={}, chatId={}, " +
+                            "beforeMessageId={}, limit={}",
+                    command.channelAccountId(),
+                    chatId,
+                    beforeMessageId,
+                    limit
+            );
+
+            return new SyncConversationHistoryResult(
+                    List.of(),
+                    true
+            );
+        }
+
+        if (beforeMessageId != 0 && !hasOlderMessage(messages, beforeMessageId))
+            throw new IllegalStateException("TDLib history response did not advance the cursor");
+        // A non-empty short page does not prove the beginning of history.
+        boolean historyStartReached = false;
+
+        List<ConnectorInboundMessage> result =
+                new ArrayList<>(
+                        messages.messages.length
+                );
+
+        TelegramInboundMessageProcessor
+                telegramInboundMessageProcessor =
+                context.applicationContext()
+                        .getBean(
+                                TelegramInboundMessageProcessor.class
+                        );
+
+        for (TdApi.Message message : messages.messages) {
+
+            if (message == null) {
+                continue;
+            }
+
+            /*
+             * TDLib may include the cursor message itself when
+             * fromMessageId is specified. It is a cursor, not part
+             * of the requested "before" page.
+             */
+            if (beforeMessageId != 0
+                    && message.id >= beforeMessageId) {
+                continue;
+            }
+
+            try {
+                ConnectorInboundMessage request =
+                        telegramInboundMessageProcessor
+                                .process(
+                                        command.channelAccountId(),
+                                        message
+                                )
+                                .join();
+
+                if (request != null) {
+                    result.add(request);
+                }
+
+            } catch (RuntimeException e) {
+                log.warn(
+                        "Failed to process Telegram history message: " +
+                                "channelAccountId={}, chatId={}, messageId={}",
+                        command.channelAccountId(),
+                        chatId,
+                        message.id,
+                        e
+                );
+                // A successful partial page would move the caller's cursor past
+                // this message and make a later retry unable to recover it.
+                throw e;
+            }
+        }
+
+        /*
+         * TDLib returns chat history newest -> oldest.
+         *
+         * ClientBus history consumers must receive the page
+         * in chronological order.
+         */
+        result.sort(
+                java.util.Comparator.comparing(
+                        ConnectorInboundMessage::sentAt,
+                        java.util.Comparator.nullsLast(
+                                java.util.Comparator.naturalOrder()
+                        )
+                )
+        );
+
+        log.info(
+                "Telegram conversation history synchronization completed: " +
+                        "channelAccountId={}, chatId={}, beforeMessageId={}, " +
+                        "requestedLimit={}, fetchedMessages={}, " +
+                        "processedMessages={}, historyStartReached={}",
+                command.channelAccountId(),
+                chatId,
+                beforeMessageId,
+                limit,
+                messages.messages.length,
+                result.size(),
+                historyStartReached
+        );
+
+        return new SyncConversationHistoryResult(
+                List.copyOf(result),
+                historyStartReached
+        );
+    }
+
+    private TdApi.Messages readHistoryPage(TelegramClient client, long chatId, long before, int limit) {
+        TdApi.Messages messages = client.send(new TdApi.GetChatHistory(chatId, before, 0, limit, false)).getObjectOrThrow();
+        if (messages == null || messages.messages == null)
+            throw new IllegalStateException("TDLib returned an invalid history page");
+        return messages;
+    }
+
+    private boolean hasOlderMessage(TdApi.Messages messages, long before) {
+        for (TdApi.Message message : messages.messages) if (message != null && message.id < before) return true;
+        return false;
+    }
+
+    private long resolvePrivateChatId(TelegramClient telegramClient, long userId) {
+        if (userId <= 0) {
+            throw new IllegalArgumentException("Telegram history requires a positive user ID");
+        }
+        TdApi.Chat chat = telegramClient
+                .send(new TdApi.CreatePrivateChat(userId, false))
+                .getObjectOrThrow();
+        if (chat.id == 0 || !(chat.type instanceof TdApi.ChatTypePrivate privateChat)
+                || privateChat.userId != userId) {
+            throw new IllegalStateException("TDLib returned an unexpected private chat");
+        }
+        return chat.id;
+    }
+
+    private PlatformConversationRequest syncChat(
+            TelegramClient telegramClient,
+            UUID channelAccountId,
+            long chatId
+    ) {
+        TdApi.Chat chat =
+                telegramClient
+                        .send(
+                                new TdApi.GetChat(chatId)
+                        )
+                        .getObjectOrThrow();
+
+        if (chat == null) {
+            log.warn(
+                    "Telegram chat response is empty: " +
+                            "channelAccountId={}, chatId={}",
+                    channelAccountId,
+                    chatId
+            );
+
+            return null;
+        }
+
+        if (!(chat.type
+                instanceof TdApi.ChatTypePrivate privateChat)) {
+
+            log.debug(
+                    "Skipping non-private Telegram chat: " +
+                            "channelAccountId={}, chatId={}, type={}",
+                    channelAccountId,
+                    chatId,
+                    chat.type == null
+                            ? "null"
+                            : chat.type
+                            .getClass()
+                            .getSimpleName()
+            );
+
+            return null;
+        }
+
+        TdApi.User user =
+                telegramClient
+                        .send(
+                                new TdApi.GetUser(
+                                        privateChat.userId
+                                )
+                        )
+                        .getObjectOrThrow();
+
+        if (user == null) {
+            log.warn(
+                    "Telegram user response is empty: " +
+                            "channelAccountId={}, userId={}, chatId={}",
+                    channelAccountId,
+                    privateChat.userId,
+                    chatId
+            );
+
+            return null;
+        }
+
+        if (user.type instanceof TdApi.UserTypeBot) {
+
+            log.debug(
+                    "Skipping Telegram bot chat: " +
+                            "channelAccountId={}, userId={}, chatId={}",
+                    channelAccountId,
+                    user.id,
+                    chatId
+            );
+
+            return null;
+        }
+
+        if (user.type instanceof TdApi.UserTypeDeleted
+                || user.type instanceof TdApi.UserTypeUnknown) {
+
+            log.debug(
+                    "Skipping Telegram deleted or unknown chat: " +
+                            "channelAccountId={}, userId={}, chatId={}",
+                    channelAccountId,
+                    user.id,
+                    chatId
+            );
+
+            return null;
+        }
+
+        String avatarUrl =
+                tryDownloadAvatar(telegramClient, user);
+
+        return telegramConversationMapper.map(
+                channelAccountId,
+                chat,
+                user,
+                avatarUrl
+        );
+    }
+
+    /* PRIVATE HANDLERS */
+
+    private void synchronizeChannelAccountProfile(
+            TelegramClient telegramClient,
+            UUID channelAccountId
+    ) {
+        try {
+            TdApi.User user =
+                    telegramClient
+                            .send(new TdApi.GetMe())
+                            .getObjectOrThrow();
+
+            if (user == null) {
+                log.warn(
+                        "Telegram GetMe returned no user: channelAccountId={}",
+                        channelAccountId
+                );
+                return;
+            }
+
+            String avatarUrl =
+                    downloadAvatar(telegramClient, user);
+
+            profileSynchronizer.updateProfile(
+                    channelAccountId,
+                    user,
+                    avatarUrl
+            );
+
+        } catch (RuntimeException e) {
+            // Ошибка обновления профиля не должна блокировать загрузку чатов.
+            log.warn(
+                    "Failed to synchronize Telegram account profile: " +
+                            "channelAccountId={}",
+                    channelAccountId,
+                    e
+            );
+        }
+    }
+
+    private String tryDownloadAvatar(
+            TelegramClient telegramClient,
+            TdApi.User user
+    ) {
+        try {
+            return downloadAvatar(telegramClient, user);
+        } catch (RuntimeException e) {
+            log.warn(
+                    "Failed to download Telegram avatar: userId={}",
+                    user.id,
+                    e
+            );
+            return null;
+        }
+    }
+
+    private String downloadAvatar(
+            TelegramClient telegramClient,
+            TdApi.User user
+    ) {
+        if (user.profilePhoto == null || user.profilePhoto.isPersonal || user.profilePhoto.big == null) {
+            return null;
+        }
+
+        TdApi.File downloaded =
+                telegramClient
+                        .send(
+                                new TdApi.DownloadFile(
+                                        user.profilePhoto.big.id,
+                                        32,
+                                        0,
+                                        0,
+                                        true
+                                )
+                        )
+                        .getObjectOrThrow();
+
+        if (downloaded == null
+                || downloaded.local == null
+                || downloaded.local.path == null
+                || downloaded.local.path.isBlank()) {
+            throw new IllegalStateException(
+                    "Telegram avatar was downloaded without local path: "
+                            + user.id
+            );
+        }
+
+        Path path = Path.of(downloaded.local.path);
+
+        try {
+            long size = Files.size(path);
+
+            try (var inputStream = Files.newInputStream(path)) {
+                HostStoredAttachment stored =
+                        attachmentStorage.store(
+                                inputStream,
+                                "telegram-avatar-" + user.id + ".jpg",
+                                size,
+                                "image/jpeg"
+                        );
+
+                return stored.storageKey();
+            }
+        } catch (IOException e) {
+            throw new IllegalStateException(
+                    "Failed to read downloaded Telegram avatar: " + path,
+                    e
+            );
+        }
+    }
+
+    private String buildDisplayName(
+            String firstName,
+            String lastName
+    ) {
+        String first = firstName == null ? "" : firstName.trim();
+        String last = lastName == null ? "" : lastName.trim();
+
+        if (first.isEmpty()) {
+            return last.isEmpty() ? null : last;
+        }
+
+        if (last.isEmpty()) {
+            return first;
+        }
+
+        return first + " " + last;
+    }
+
+    private int normalizeHistoryLimit(
+            int limit
+    ) {
+        if (limit <= 0) {
+            return HISTORY_DEFAULT_LIMIT;
+        }
+
+        return Math.min(
+                limit,
+                HISTORY_MAX_LIMIT
+        );
+    }
+
+    private void validateSyncRecentChatsCommand(
+            SyncRecentChatsCommand command
+    ) {
+        if (command == null) {
+            throw new IllegalArgumentException(
+                    "SyncRecentChatsCommand must not be null"
+            );
+        }
+
+        if (command.channelAccountId() == null) {
+            throw new IllegalArgumentException(
+                    "channelAccountId must not be null"
+            );
+        }
+    }
+
+    private void validateSyncConversationHistoryCommand(
+            SyncConversationHistoryCommand command
+    ) {
+        if (command == null) {
+            throw new IllegalArgumentException(
+                    "SyncConversationHistoryCommand must not be null"
+            );
+        }
+
+        if (command.channelAccountId() == null) {
+            throw new IllegalArgumentException(
+                    "channelAccountId must not be null"
+            );
+        }
+
+        if (command.conversationExternalId() == null
+                || command.conversationExternalId().isBlank()) {
+            throw new IllegalArgumentException(
+                    "conversationExternalId must not be blank"
+            );
+        }
+
+        if (command.beforeExternalId() != null
+                && command.beforeExternalId().isBlank()) {
+            throw new IllegalArgumentException(
+                    "beforeExternalId must not be blank"
+            );
+        }
+    }
+
+    private void validateReadCommand(
+            MarkMessagesReadCommand command
+    ) {
+        if (command == null) {
+            throw new IllegalArgumentException(
+                    "MarkMessagesReadCommand must not be null"
+            );
+        }
+
+        if (command.channelAccountId() == null) {
+            throw new IllegalArgumentException(
+                    "channelAccountId must not be null"
+            );
+        }
+
+        if (command.recipientExternalId() == null
+                || command.recipientExternalId().isBlank()) {
+            throw new IllegalArgumentException(
+                    "recipientExternalId must not be blank"
+            );
+        }
+
+        if (command.lastReadExternalId() == null
+                || command.lastReadExternalId().isBlank()) {
+            throw new IllegalArgumentException(
+                    "lastReadExternalId must not be blank"
+            );
+        }
+    }
+
+    private ConnectorSendResult sendText(
+            TelegramClient telegramClient,
+            long chatId,
+            SendMessageCommand command
+    ) {
+        TdApi.InputMessageText content =
+                new TdApi.InputMessageText(
+                        new TdApi.FormattedText(
+                                command.content(),
+                                new TdApi.TextEntity[0]
+                        ),
+                        null,
+                        false
+                );
+
+        TdApi.Message message;
+
+        try {
+
+            message =
+                    telegramClient
+                            .send(
+                                    new TdApi.SendMessage(
+                                            chatId,
+                                            null,
+                                            null,
+                                            null,
+                                            null,
+                                            content
+                                    )
+                            )
+                            .getObjectOrThrow();
+
+        } catch (RuntimeException e) {
+
+            /*
+             * 13.2b: the request reached TDLib; whether Telegram accepted the message
+             * cannot be proven from this failure. Never classify it as a safe retry.
+             */
+            throw new ConnectorSendOutcomeUnknownException(
+                    "Telegram send request failed with unknown outcome: chatId=" + chatId,
+                    e
+            );
+        }
+
+        return new ConnectorSendResult(
+                String.valueOf(message.id), command.sendAttemptId()
+        );
+    }
+
+    private ConnectorSendResult sendImage(
+            TelegramClient telegramClient,
+            long chatId,
+            SendMessageCommand command
+    ) {
+        ConnectorAttachment attachment =
+                getSingleAttachment(
+                        command,
+                        MessageAttachmentType.IMAGE
+                );
+
+        return sendWithTemporaryFile(
+                telegramClient,
+                chatId,
+                command,
+                attachment,
+                this::createImageContent
+        );
+    }
+
+    private ConnectorSendResult sendAudio(
+            TelegramClient telegramClient,
+            long chatId,
+            SendMessageCommand command
+    ) {
+        ConnectorAttachment attachment =
+                getSingleAttachment(
+                        command,
+                        MessageAttachmentType.AUDIO
+                );
+
+        return sendWithTemporaryFile(
+                telegramClient,
+                chatId,
+                command,
+                attachment,
+                this::createAudioContent
+        );
+    }
+
+    private ConnectorSendResult sendWithTemporaryFile(
+            TelegramClient telegramClient,
+            long chatId,
+            SendMessageCommand command,
+            ConnectorAttachment attachment,
+            TelegramContentFactory contentFactory
+    ) {
+        Path temporaryFile = null;
+
+        try (InputStream inputStream =
+                     attachment.content()) {
+
+            if (inputStream == null) {
+                throw new IllegalArgumentException(
+                        "Telegram attachment content must not be null"
+                );
+            }
+
+            temporaryFile =
+                    createTemporaryFile(
+                            command.channelAccountId(),
+                            command.messageId(),
+                            command.sendAttemptId(),
+                            attachment.fileName()
+                    );
+
+            Files.copy(
+                    inputStream,
+                    temporaryFile,
+                    StandardCopyOption.REPLACE_EXISTING
+            );
+
+            TdApi.InputFileLocal inputFile =
+                    new TdApi.InputFileLocal(
+                            temporaryFile.toString()
+                    );
+
+            TdApi.InputMessageContent content =
+                    contentFactory.create(
+                            inputFile,
+                            command,
+                            attachment.fileName()
+                    );
+
+            TdApi.Message message;
+
+            try {
+
+                message =
+                        telegramClient
+                                .send(
+                                        new TdApi.SendMessage(
+                                                chatId,
+                                                null,
+                                                null,
+                                                null,
+                                                null,
+                                                content
+                                        )
+                                )
+                                .getObjectOrThrow();
+
+            } catch (RuntimeException e) {
+
+                throw new ConnectorSendOutcomeUnknownException(
+                        "Telegram send request failed with unknown outcome: chatId=" + chatId,
+                        e
+                );
+            }
+
+            return new ConnectorSendResult(
+                    String.valueOf(message.id), command.sendAttemptId()
+            );
+
+        } catch (IOException e) {
+
+            deleteTemporaryFile(
+                    temporaryFile
+            );
+
+            throw new IllegalStateException(
+                    "Failed to prepare Telegram attachment",
+                    e
+            );
+
+        } catch (RuntimeException e) {
+
+            deleteTemporaryFile(
+                    temporaryFile
+            );
+
+            throw e;
+        }
+    }
+
+    @org.springframework.transaction.event.TransactionalEventListener(
+            phase = org.springframework.transaction.event.TransactionPhase.AFTER_COMMIT)
+    public void releaseCompletedAttempt(kit.penny.clientbus.connector.api.event.OutboundSendCompleted event) {
+        if (event.channelType() == ChannelType.TELEGRAM) {
+            kit.penny.clientbus.connector.telegram.client.TelegramMessageSendListener.deleteTemporaryFiles(
+                    event.channelAccountId(), event.messageId(), event.sendAttemptId());
+        }
+    }
+
+    private Path createTemporaryFile(
+            UUID channelAccountId,
+            UUID messageId,
+            UUID sendAttemptId,
+            String fileName
+    ) throws IOException {
+        String suffix =
+                getFileSuffix(fileName);
+
+        return Files.createTempFile(
+                "clientbus-telegram-"
+                        + channelAccountId
+                        + "-"
+                        + messageId
+                        + "-"
+                        + sendAttemptId
+                        + "-",
+                suffix
+        );
+    }
+
+    private TdApi.InputMessageContent createImageContent(
+            TdApi.InputFileLocal inputFile,
+            SendMessageCommand command,
+            String fileName
+    ) {
+        TdApi.InputPhoto inputPhoto =
+                new TdApi.InputPhoto(
+                        inputFile,
+                        null,
+                        null,
+                        new int[0],
+                        0,
+                        0
+                );
+
+        return new TdApi.InputMessagePhoto(
+                inputPhoto,
+                toFormattedText(command.content()),
+                false,
+                null,
+                false
+        );
+    }
+
+    private TdApi.InputMessageContent createAudioContent(
+            TdApi.InputFileLocal inputFile,
+            SendMessageCommand command,
+            String fileName
+    ) {
+        TdApi.InputAudio inputAudio =
+                new TdApi.InputAudio(
+                        inputFile,
+                        null,
+                        0,
+                        fileName,
+                        ""
+                );
+
+        return new TdApi.InputMessageAudio(
+                inputAudio,
+                toFormattedText(command.content())
+        );
+    }
+
+    private TdApi.FormattedText toFormattedText(
+            String text
+    ) {
+        return new TdApi.FormattedText(
+                text == null ? "" : text,
+                new TdApi.TextEntity[0]
+        );
+    }
+
+    private ConnectorAttachment getSingleAttachment(
+            SendMessageCommand command,
+            MessageAttachmentType expectedType
+    ) {
+        return command.attachments().getFirst();
+    }
+
+    private long parseChatId(
+            String recipientExternalId
+    ) {
+        try {
+            return Long.parseLong(
+                    recipientExternalId
+            );
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                    "Telegram recipientExternalId must be a numeric chat ID: "
+                            + recipientExternalId,
+                    e
+            );
+        }
+    }
+
+    private long parseMessageId(
+            String externalId
+    ) {
+        try {
+            return Long.parseLong(
+                    externalId
+            );
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                    "Telegram message externalId must be numeric: "
+                            + externalId,
+                    e
+            );
+        }
+    }
+
+    private String getFileSuffix(
+            String fileName
+    ) {
+        if (fileName == null || fileName.isBlank()) {
+            return ".tmp";
+        }
+
+        int dotIndex =
+                fileName.lastIndexOf('.');
+
+        if (dotIndex < 0
+                || dotIndex == fileName.length() - 1) {
+            return ".tmp";
+        }
+
+        String suffix =
+                fileName.substring(dotIndex);
+
+        if (suffix.length() > 16
+                || !suffix.matches(
+                "\\.[A-Za-z0-9]+"
+        )) {
+            return ".tmp";
+        }
+
+        return suffix;
+    }
+
+    private void deleteTemporaryFile(
+            Path temporaryFile
+    ) {
+        if (temporaryFile == null) {
+            return;
+        }
+
+        try {
+            Files.deleteIfExists(
+                    temporaryFile
+            );
+        } catch (IOException ignored) {
+            // Cleanup failure must not trigger another send attempt.
+        }
+    }
+
+    private void validateCommand(
+            SendMessageCommand command
+    ) {
+        if (command == null) {
+            throw new IllegalArgumentException(
+                    "SendMessageCommand must not be null"
+            );
+        }
+
+        if (command.channelAccountId() == null) {
+            throw new IllegalArgumentException(
+                    "channelAccountId must not be null"
+            );
+        }
+
+        if (command.messageId() == null) {
+            throw new IllegalArgumentException(
+                    "messageId must not be null"
+            );
+        }
+
+        if (command.recipientExternalId() == null
+                || command.recipientExternalId().isBlank()) {
+            throw new IllegalArgumentException(
+                    "recipientExternalId must not be blank"
+            );
+        }
+
+        if (command.type() == null) {
+            throw new IllegalArgumentException(
+                    "message type must not be null"
+            );
+        }
+
+        if (command.type() == MessageType.TEXT) {
+
+            if (!command.attachments().isEmpty()) {
+                throw new IllegalArgumentException(
+                        "Telegram TEXT message must not contain attachments"
+                );
+            }
+
+            if (command.content() == null
+                    || command.content().isBlank()) {
+                throw new IllegalArgumentException(
+                        "Telegram text message content must not be blank"
+                );
+            }
+
+            return;
+        }
+
+        if (command.type() == MessageType.IMAGE) {
+
+            validateSingleAttachment(
+                    command,
+                    MessageAttachmentType.IMAGE
+            );
+
+            return;
+        }
+
+        if (command.type() == MessageType.AUDIO) {
+
+            validateSingleAttachment(
+                    command,
+                    MessageAttachmentType.AUDIO
+            );
+
+            return;
+        }
+
+        throw new IllegalArgumentException(
+                "Unsupported Telegram outbound message type: "
+                        + command.type()
+        );
+    }
+
+    private void validateSingleAttachment(
+            SendMessageCommand command,
+            MessageAttachmentType expectedType
+    ) {
+        List<ConnectorAttachment> attachments =
+                command.attachments();
+
+        if (attachments.size() != 1) {
+            throw new IllegalArgumentException(
+                    "Telegram " + command.type()
+                            + " message must contain exactly one attachment"
+            );
+        }
+
+        ConnectorAttachment attachment =
+                attachments.getFirst();
+
+        if (attachment == null) {
+            throw new IllegalArgumentException(
+                    "Telegram attachment must not be null"
+            );
+        }
+
+        if (attachment.type() != expectedType) {
+            throw new IllegalArgumentException(
+                    "Expected Telegram attachment type "
+                            + expectedType
+                            + ", but got "
+                            + attachment.type()
+            );
+        }
+
+        if (attachment.content() == null) {
+            throw new IllegalArgumentException(
+                    "Telegram attachment content must not be null"
+            );
+        }
+    }
+
+    @FunctionalInterface
+    private interface TelegramContentFactory {
+
+        TdApi.InputMessageContent create(
+                TdApi.InputFileLocal inputFile,
+                SendMessageCommand command,
+                String fileName
+        );
+    }
+}

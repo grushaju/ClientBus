@@ -1,5 +1,7 @@
 package kit.penny.clientbus.server.connector.telegram.client;
 
+import kit.penny.clientbus.connector.telegram.client.*;
+
 import kit.penny.clientbus.server.persistence.repository.MessageRepository;
 import kit.penny.clientbus.server.service.MessageService;
 import org.drinkless.tdlib.TdApi;

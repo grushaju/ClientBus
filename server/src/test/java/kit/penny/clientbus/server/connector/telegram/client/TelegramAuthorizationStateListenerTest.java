@@ -1,4 +1,6 @@
 package kit.penny.clientbus.server.connector.telegram.client;
+
+import kit.penny.clientbus.connector.telegram.client.*;
 import kit.penny.clientbus.common.enums.ChannelConnectionStatus;
 import kit.penny.clientbus.connector.api.*;
 import kit.penny.clientbus.connector.api.command.*;
@@ -6,7 +8,7 @@ import kit.penny.clientbus.connector.api.model.*;
 import kit.penny.clientbus.connector.api.event.*;
 import kit.penny.clientbus.connector.api.listener.*;
 import kit.penny.clientbus.server.connector.*;
-import kit.penny.clientbus.server.connector.telegram.account.TelegramAccountProfileSynchronizer;
+import kit.penny.clientbus.connector.telegram.account.TelegramAccountProfileSynchronizer;
 import kit.penny.clientbus.connector.api.host.HostChannelStatus;
 import kit.penny.tdlib.client.TelegramClient;
 import kit.penny.tdlib.properties.TelegramProperties;
