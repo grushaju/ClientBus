@@ -113,7 +113,8 @@ class OutboundMessageAsyncFlowIntegrationTest
     @MockitoBean
     private ChannelConnectorRegistry channelConnectorRegistry;
 
-    @MockitoBean
+    // 13.5: коннекторов в контексте два (telegram + dikidi) — подмена по имени telegram-бина.
+    @MockitoBean(name = "telegramChannelConnector")
     private IChannelConnector channelConnector;
 
     @Autowired

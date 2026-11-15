@@ -36,6 +36,8 @@ public class CrmStorage implements ApplicationRunner {
         jdbc.execute("alter table crm.connection add column if not exists requestbackoff integer not null default 0");
         jdbc.execute("alter table crm.project add column if not exists journalepoch bigint not null default 0");
         jdbc.execute("alter table crm.project add column if not exists journalreadsequence bigint not null default 0");
+        // 13.4: lease/heartbeat единственного активного runtime технического подключения.
+        jdbc.execute(DikidiRuntimeGuard.TABLE_DDL);
         new TransactionTemplate(new DataSourceTransactionManager(java.util.Objects.requireNonNull(jdbc.getDataSource())))
                 .executeWithoutResult(status->{jdbc.execute("select pg_advisory_xact_lock(12661)");initializeDataRevision();});
         ready = true;

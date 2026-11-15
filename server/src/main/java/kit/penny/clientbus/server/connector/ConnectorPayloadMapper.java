@@ -80,7 +80,9 @@ public final class ConnectorPayloadMapper {
                         ? null
                         : request.attachments().stream().map(ConnectorPayloadMapper::toConnector).toList(),
                 request.origin(),
-                request.dialogExternalId());
+                request.dialogExternalId(),
+                request.authorExternalId(),
+                request.recipientRead());
     }
 
     public static List<ConnectorInboundMessage> toConnectorMessages(List<PlatformMessageRequest> requests) {
@@ -110,7 +112,9 @@ public final class ConnectorPayloadMapper {
                         ? null
                         : message.attachments().stream().map(ConnectorPayloadMapper::toPlatform).toList(),
                 message.origin(),
-                message.dialogExternalId());
+                message.dialogExternalId(),
+                message.authorExternalId(),
+                message.recipientRead());
     }
 
     public static List<PlatformMessageRequest> toPlatformMessages(List<ConnectorInboundMessage> messages) {

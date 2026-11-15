@@ -6,6 +6,7 @@ import org.apache.kafka.clients.admin.NewTopic;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.kafka.core.KafkaAdmin;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -86,204 +87,73 @@ public class KafkaTopicConfiguration {
         );
     }
 
+    /**
+     * Дефект приёмки 15.11.2026: KafkaAdmin собирает только бины типа NewTopic — бины
+     * List&lt;NewTopic&gt; им не читаются, поэтому per-channel топики приложением никогда
+     * не создавались (живое следствие: clientbus.outbound.dikidi появился лишь авто-созданием
+     * на первой публикации, topicPattern-listener его не забрал, исходящее сообщение
+     * зависло QUEUED; DLQ-топики писались в несуществующие топика авто-созданием recoverer'а).
+     * KafkaAdmin.NewTopics — штатная агрегирующая поставка множества NewTopic.
+     */
     @Bean
-    public List<NewTopic> outboundTopics() {
-
-        List<NewTopic> topics =
-                new ArrayList<>();
-
-        for (ChannelType channelType :
-                enabledOutboundChannels) {
-
-            topics.add(
-                    new NewTopic(
-                            KafkaTopicNames.outbound(
-                                    channelType
-                            ),
-                            PARTITIONS,
-                            REPLICATION_FACTOR
-                    )
-            );
-        }
-
-        return topics;
+    public KafkaAdmin.NewTopics outboundTopics() {
+        return aggregate(enabledOutboundChannels,
+                channelType -> KafkaTopicNames.outbound(channelType), PARTITIONS);
     }
 
     @Bean
-    public List<NewTopic> outboundDlqTopics() {
-
-        List<NewTopic> topics =
-                new ArrayList<>();
-
-        for (ChannelType channelType :
-                enabledOutboundChannels) {
-
-            String outboundTopic =
-                    KafkaTopicNames.outbound(
-                            channelType
-                    );
-
-            topics.add(
-                    new NewTopic(
-                            KafkaTopicNames.dlq(
-                                    outboundTopic
-                            ),
-                            1,
-                            REPLICATION_FACTOR
-                    )
-            );
-        }
-
-        return topics;
+    public KafkaAdmin.NewTopics outboundDlqTopics() {
+        return dlqAggregate(enabledOutboundChannels,
+                channelType -> KafkaTopicNames.outbound(channelType));
     }
 
     @Bean
-    public List<NewTopic> channelReadTopics() {
-
-        List<NewTopic> topics =
-                new ArrayList<>();
-
-        for (ChannelType channelType :
-                enabledOutboundChannels) {
-
-            topics.add(
-                    new NewTopic(
-                            KafkaTopicNames.channelRead(
-                                    channelType
-                            ),
-                            PARTITIONS,
-                            REPLICATION_FACTOR
-                    )
-            );
-        }
-
-        return topics;
+    public KafkaAdmin.NewTopics channelReadTopics() {
+        return aggregate(enabledOutboundChannels,
+                channelType -> KafkaTopicNames.channelRead(channelType), PARTITIONS);
     }
 
     @Bean
-    public List<NewTopic> channelReadDlqTopics() {
-
-        List<NewTopic> topics =
-                new ArrayList<>();
-
-        for (ChannelType channelType :
-                enabledOutboundChannels) {
-
-            String channelReadTopic =
-                    KafkaTopicNames.channelRead(
-                            channelType
-                    );
-
-            topics.add(
-                    new NewTopic(
-                            KafkaTopicNames.dlq(
-                                    channelReadTopic
-                            ),
-                            1,
-                            REPLICATION_FACTOR
-                    )
-            );
-        }
-
-        return topics;
+    public KafkaAdmin.NewTopics channelReadDlqTopics() {
+        return dlqAggregate(enabledOutboundChannels,
+                channelType -> KafkaTopicNames.channelRead(channelType));
     }
 
     @Bean
-    public List<NewTopic> recentChatsCommandTopics() {
-
-        List<NewTopic> topics =
-                new ArrayList<>();
-
-        for (ChannelType channelType :
-                enabledOutboundChannels) {
-
-            topics.add(
-                    new NewTopic(
-                            KafkaTopicNames.recentChatsCommand(
-                                    channelType
-                            ),
-                            PARTITIONS,
-                            REPLICATION_FACTOR
-                    )
-            );
-        }
-
-        return topics;
+    public KafkaAdmin.NewTopics recentChatsCommandTopics() {
+        return aggregate(enabledOutboundChannels,
+                channelType -> KafkaTopicNames.recentChatsCommand(channelType), PARTITIONS);
     }
 
     @Bean
-    public List<NewTopic> recentChatsCommandDlqTopics() {
-
-        List<NewTopic> topics =
-                new ArrayList<>();
-
-        for (ChannelType channelType :
-                enabledOutboundChannels) {
-
-            String topic =
-                    KafkaTopicNames.recentChatsCommand(
-                            channelType
-                    );
-
-            topics.add(
-                    new NewTopic(
-                            KafkaTopicNames.dlq(topic),
-                            1,
-                            REPLICATION_FACTOR
-                    )
-            );
-        }
-
-        return topics;
+    public KafkaAdmin.NewTopics recentChatsCommandDlqTopics() {
+        return dlqAggregate(enabledOutboundChannels,
+                channelType -> KafkaTopicNames.recentChatsCommand(channelType));
     }
 
     @Bean
-    public List<NewTopic> conversationHistoryCommandTopics() {
-
-        List<NewTopic> topics =
-                new ArrayList<>();
-
-        for (ChannelType channelType :
-                enabledOutboundChannels) {
-
-            topics.add(
-                    new NewTopic(
-                            KafkaTopicNames.conversationHistoryCommand(
-                                    channelType
-                            ),
-                            PARTITIONS,
-                            REPLICATION_FACTOR
-                    )
-            );
-        }
-
-        return topics;
+    public KafkaAdmin.NewTopics conversationHistoryCommandTopics() {
+        return aggregate(enabledOutboundChannels,
+                channelType -> KafkaTopicNames.conversationHistoryCommand(channelType), PARTITIONS);
     }
 
     @Bean
-    public List<NewTopic> conversationHistoryCommandDlqTopics() {
+    public KafkaAdmin.NewTopics conversationHistoryCommandDlqTopics() {
+        return dlqAggregate(enabledOutboundChannels,
+                channelType -> KafkaTopicNames.conversationHistoryCommand(channelType));
+    }
 
-        List<NewTopic> topics =
-                new ArrayList<>();
+    private static KafkaAdmin.NewTopics aggregate(List<ChannelType> channels,
+            java.util.function.Function<ChannelType, String> name, int partitions) {
+        var topics = new ArrayList<NewTopic>();
+        for (ChannelType channelType : channels)
+            topics.add(new NewTopic(name.apply(channelType), partitions, REPLICATION_FACTOR));
+        return new KafkaAdmin.NewTopics(topics.toArray(NewTopic[]::new));
+    }
 
-        for (ChannelType channelType :
-                enabledOutboundChannels) {
-
-            String topic =
-                    KafkaTopicNames.conversationHistoryCommand(
-                            channelType
-                    );
-
-            topics.add(
-                    new NewTopic(
-                            KafkaTopicNames.dlq(topic),
-                            1,
-                            REPLICATION_FACTOR
-                    )
-            );
-        }
-
-        return topics;
+    private static KafkaAdmin.NewTopics dlqAggregate(List<ChannelType> channels,
+            java.util.function.Function<ChannelType, String> baseName) {
+        return aggregate(channels, channelType -> KafkaTopicNames.dlq(baseName.apply(channelType)), 1);
     }
 
     @Bean

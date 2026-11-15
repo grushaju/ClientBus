@@ -10,6 +10,8 @@
         <module name="server" />
         <module name="common" />
         <module name="Server" />
+        <module name="integration-dikidi" />
+        <module name="connector-dikidi" />
         <module name="connector-api" />
         <module name="crm-api" />
         <module name="connector-telegram" />
@@ -26,7 +28,9 @@
     <option name="ADDITIONAL_OPTIONS_OVERRIDE">
       <module name="Server" options="-parameters" />
       <module name="UI" options="-parameters" />
+      <module name="connector-dikidi" options="-parameters" />
       <module name="connector-telegram" options="-parameters" />
+      <module name="integration-dikidi" options="-parameters" />
       <module name="server" options="-parameters" />
       <module name="ui" options="-parameters" />
     </option>

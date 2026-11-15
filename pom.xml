@@ -14,8 +14,10 @@
         <module>common</module>
         <module>connector/api</module>
         <module>connector/telegram</module>
+        <module>connector/dikidi</module>
         <module>crm/api</module>
         <module>crm/dikidi</module>
+        <module>integration/dikidi</module>
         <module>server</module>
     </modules>
 

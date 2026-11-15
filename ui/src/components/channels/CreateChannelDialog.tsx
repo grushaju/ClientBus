@@ -50,10 +50,8 @@ const channelTypes: {
         value: 'AVITO',
         label: 'Avito',
     },
-    {
-        value: 'DIKIDI',
-        label: 'Dikidi',
-    },
+    // 13.5: DIKIDI отсутствует намеренно — канал создаётся автоматически
+    // назначением DIKIDI-CRM-проекта на workspace и вручную не управляют.
     {
         value: 'WHATSAPP_BUSINESS',
         label: 'WhatsApp Business',

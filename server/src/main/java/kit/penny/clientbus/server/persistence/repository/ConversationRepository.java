@@ -59,6 +59,11 @@ public interface ConversationRepository
             UUID clientAccountId
     );
 
+    /** 13.5: провизионизация DIKIDI — канал удаляется с проектом только без переписки. */
+    boolean existsByChannelAccountId(
+            UUID channelAccountId
+    );
+
     /*
      * ---------------------------------------------------------
      * Workspace

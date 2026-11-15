@@ -1418,6 +1418,80 @@ class MessageServiceTest {
                 .save(any(MessageEntity.class));
     }
 
+    /** 13.6 (отчёт о доставке): платформенный receipt продвигает собственным attempt сообщения. */
+    @Test
+    void markReadFromPlatformReceipt_sentMessage_promotesToRead() {
+
+        message.setDirection(
+                MessageDirection.OUTBOUND
+        );
+
+        message.setProcessingStatus(
+                MessageProcessingStatus.PROCESSED
+        );
+
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.SENT
+        );
+
+        message.setSendAttemptId(
+                UUID.randomUUID()
+        );
+
+        stubMessageFound();
+        when(messageRepository.findByIdForUpdate(messageId)).thenReturn(Optional.of(message));
+
+        when(messageRepository.save(message))
+                .thenReturn(message);
+
+        when(messageMapper.toDto(message))
+                .thenReturn(expectedDto);
+
+        messageService.markReadFromPlatformReceipt(
+                message.getId()
+        );
+
+        assertEquals(
+                MessageDeliveryStatus.READ,
+                message.getDeliveryStatus()
+        );
+
+        assertNotNull(
+                message.getReadAt()
+        );
+    }
+
+    /** Receipt не воскрешает FAILED и вообще не трогает чужие состояния (молчаливый no-op). */
+    @Test
+    void markReadFromPlatformReceipt_failedMessage_staysFailed() {
+
+        message.setDirection(
+                MessageDirection.OUTBOUND
+        );
+
+        message.setDeliveryStatus(
+                MessageDeliveryStatus.FAILED
+        );
+
+        // findById не плодит: FAILED-no-op обязан остановиться до чтения из getMessageEntityForProcessing.
+        when(messageRepository.findByIdForUpdate(messageId)).thenReturn(Optional.of(message));
+
+        when(messageMapper.toDto(message))
+                .thenReturn(expectedDto);
+
+        messageService.markReadFromPlatformReceipt(
+                message.getId()
+        );
+
+        assertEquals(
+                MessageDeliveryStatus.FAILED,
+                message.getDeliveryStatus()
+        );
+
+        verify(messageRepository, never())
+                .save(any(MessageEntity.class));
+    }
+
     @Test
     void markDeliveryFailed_pendingMessage_changesDeliveryToFailed() {
 

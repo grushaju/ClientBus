@@ -196,6 +196,96 @@ class KafkaEventJsonDeserializerTest {
                 .isEqualTo("metadata");
     }
 
+    /**
+     * 13.6 (отчёт о доставке): recipientRead — единственныйreceipt-перевозчик из
+     * DIKIDI-эха в хост; путь идёт через kafka-сериализатор, значит wire-совместимость
+     * поля обязана быть закреплена, а не «на честном слове про generic-сериализатор».
+     */
+    @Test
+    void shouldRoundTripPlatformMessageRecipientRead() {
+
+        UUID channelAccountId = UUID.randomUUID();
+
+        kit.penny.clientbus.common.dto.message.PlatformMessageRequest payload =
+                new kit.penny.clientbus.common.dto.message.PlatformMessageRequest(
+                        channelAccountId,
+                        "client-1", null, null, null,
+                        "company-1",
+                        "echo-1",
+                        MessageType.TEXT,
+                        "hello",
+                        null,
+                        Instant.parse("2026-11-15T10:00:00Z"),
+                        List.of(),
+                        kit.penny.clientbus.common.notification.EventOrigin.SYNC,
+                        "dialog-1",
+                        "author-1",
+                        Boolean.TRUE
+                );
+
+        KafkaEvent<kit.penny.clientbus.common.dto.message.PlatformMessageRequest> event =
+                new KafkaEvent<>(
+                        UUID.randomUUID(),
+                        KafkaEventType.PLATFORM_MESSAGE,
+                        1,
+                        Instant.now(),
+                        UUID.randomUUID(),
+                        payload
+                );
+
+        KafkaEvent<?> result =
+                deserializer.deserialize(
+                        "clientbus.platform-messages",
+                        serializer.serialize("clientbus.platform-messages", event)
+                );
+
+        assertThat(result.payload())
+                .isInstanceOf(kit.penny.clientbus.common.dto.message.PlatformMessageRequest.class);
+
+        kit.penny.clientbus.common.dto.message.PlatformMessageRequest resultPayload =
+                (kit.penny.clientbus.common.dto.message.PlatformMessageRequest) result.payload();
+
+        assertThat(resultPayload.recipientRead()).isEqualTo(Boolean.TRUE);
+        assertThat(resultPayload.authorExternalId()).isEqualTo("author-1");
+        assertThat(resultPayload.dialogExternalId()).isEqualTo("dialog-1");
+    }
+
+    /** Старый payload без recipientRead/authorExternalId обязан читаться ( recipientRead=null). */
+    @Test
+    void shouldDeserializeLegacyPlatformMessageWithoutRecipientRead() {
+
+        String json = """
+                {
+                  "eventId": "%s",
+                  "eventType": "PLATFORM_MESSAGE",
+                  "schemaVersion": 1,
+                  "occurredAt": "2026-09-01T10:00:00Z",
+                  "correlationId": "%s",
+                  "payload": {
+                    "channelAccountId": "%s",
+                    "clientExternalId": "client-1",
+                    "externalId": "msg-legacy-1",
+                    "type": "TEXT",
+                    "content": "старое сообщение",
+                    "sentAt": "2026-09-01T10:00:00Z"
+                  }
+                }
+                """.formatted(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
+
+        KafkaEvent<?> result =
+                deserializer.deserialize(
+                        "clientbus.platform-messages",
+                        json.getBytes(StandardCharsets.UTF_8)
+                );
+
+        kit.penny.clientbus.common.dto.message.PlatformMessageRequest payload =
+                (kit.penny.clientbus.common.dto.message.PlatformMessageRequest) result.payload();
+
+        assertThat(payload.externalId()).isEqualTo("msg-legacy-1");
+        assertThat(payload.recipientRead()).isNull();
+        assertThat(payload.authorExternalId()).isNull();
+    }
+
     @Test
     void shouldReturnNullForNullData() {
 

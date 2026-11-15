@@ -12,23 +12,26 @@
 2. Аватары Telegram, сохранённые в attachment storage, не удаляются при disconnect/удалении канала — в контракт вложений (п.7 Stage 13) входит очистка «сохранённых платформенных ресурсов» с владельцем.
 3. Мёртвые места SPI не переносить без решения: `handle(SyncClientAccountCommand)`, `IChannelEventHandler/ChannelEventHandler`, `IPlatformEventPublisher`, `TelegramChannelAccountService.restart` — в 13.2a либо удалить, либо обосновать.
 4. Фактические маршруты авторизации — `/api/channels/{channelAccountId}/telegram/*` (9 ручек), отдельных `/telegram/*` нет; web-адаптер 13.3 сохраняет именно их.
-5. `spring.telegram.client.*` (api-id/api-hash/encryption-key) — константы в `application.yml`, env-переменных нет; сессии TDLib лежат в `./data/telegram` относительно CWD. Перенос не меняет пути (п.13.3 Stage 13) и требует вынести ключи в настройки до релиза коннектора.
+5. `spring.telegram.client.*` (api-id/api-hash/encryption-key) — константы в `application.yml`, env-переменных нет. С 15.11 сессии TDLib лежат в абсолютном `database-directory` (по умолчанию `D:/Projects/Java/ClientBus/connector/telegram/data`, переопределение `TELEGRAM_DATA_DIRECTORY`; прежний `./data/telegram` зависел от CWD процесса), layout `<uuid>/{database,files}` не менялся. Штатный останов более не читается как разлогин: Closing/Closed штампуют `CONNECTOR_SHUTDOWN`, а аккаунты `DISCONNECTED` с сохранённой на диске сессией автоматически поднимаются на старте (`TelegramClientStartupService` + `TelegramDataStorage.hasPersistedSession`) — «Отключить» удаляет сессию и не воскрешается, `DISABLED` вне выборки. Ключи (api-hash/encryption-key) по-прежнему требуют выноса в настройки до релиза коннектора.
 6. `clientbus.kafka.outbound.enabled-channels` перечисляет WHATSAPP/VK без коннекторов; `springdoc` сканирует telegram-пакет в общих ресурсах — убирается по 13.3 (server без Telegram собирается и описывается без него).
 7. UI-жёсткость: `NewConversationDialog` фильтрует TELEGRAM, `ChannelsPage` дёргает telegram-маршруты для любого канала — объём 13.7.
 
-## 2. Контракт integration/dikidi (v0.1, к уточнению имён в 13.4)
+## 2. Контракт integration/dikidi (v1.0, закреплён реализацией в 13.4)
 
-Модуль не зависит ни от чего в репозитории (ни server, ни common, ни crm/api, ни connector/api). Публичные типы — собственные, предлагаемые имена:
+Модуль не зависит ни от чего в репозитории (ни server, ни common, ни crm/api, ни connector/api) — технический ящик DIKIDI. Публичные типы (итоговые имена):
 
-| Тип | Назначение |
+| Тип | Назначение (по факту реализации) |
 |---|---|
-| `DikidiAccess` | connectionId, credentialVersion, login, ссылка на секрет, открываемый серверным портом на время операции; cookie/CSRF наружу не отдаются |
-| `DikidiRequest` | method, URI, form, ajax-признак, `DikidiProfile` (Origin/Referer/bootstrap-контекст), monotonic deadline |
-| `DikidiResponse` | status, body, retryAfter |
-| `DikidiFailure` | AUTH_REQUIRED, ACCESS_DENIED, RATE_LIMITED(+retryAfter), TEMPORARY, INVALID_RESPONSE, CONTEXT_MISMATCH, CONNECTION_BUSY, DESTINATION_FORBIDDEN |
-| `DikidiClient` | `execute(access, request)`; один экземпляр на сборку, создаётся app assembly; `close()` вызывает только владелец-сборка |
-| `DikidiSessionPool` | ключ `connectionId + credentialVersion`; одиночный вход на ключ; ёмкость и eviction по времени жизни (перенос текущих 128/20мин) с тестом вытеснения активной CRM-сессии чатовой |
-| `DikidiCallClass` | INTERACTIVE, SYNC, BULK — класс бюджета (п.3) |
+| `DikidiCredential` | connectionId, credentialVersion, login, char[] секрет; AutoCloseable, обнуляется по закрытию (зеркало CrmAccess). cookie/CSRF наружу не отдаются |
+| `RequestProfile` | CRM / OWNER_CHAT: собственные allow-list хостов + корректный Referer (CRM — журнал/проекты, OWNER_CHAT — страница владелец-чата) |
+| `DikidiTransport` | транспорт: `exchange(method,uri,form,ajax,projectId,timeout)` + перегрузки с Observer (beforeSend/dispatched/response) и RequestProfile; `Response(status,body,retryAfter)` |
+| `DikidiFailure` | AUTH_REQUIRED, ACCESS_DENIED, RATE_LIMITED(+retryAt), COOLDOWN, CONNECTION_BUSY, TEMPORARY_FAILURE, INVALID_RESPONSE; флаг notDispatched |
+| `DikidiClient` | `execute(credential, until, work)` — single-attempt recovery для доказанных чтений; `executeOnce` — никогда не повторяет (изменяющие операции); один экземпляр на сборку, `close()` — только владелец-сборка |
+| (внутри) пул сессий | ключ `connectionId + credentialVersion`; одиночный вход на ключ (tryLock 2s → CONNECTION_BUSY); ёмкость 128, eviction 20 мин; `invalidate(connectionId)` гасит все версии |
+| `DikidiRequests` | перенесённый технический regulator (token bucket локальный+глобальный, Retry-After/экспоненциальный fallback) поверх `DikidiTrafficPort` |
+| `DikidiSessionGate` | порт guard'а единственного активного runtime (реализация — lease/heartbeat-строка сборки, §7) |
+
+`DikidiCallClass` (INTERACTIVE/SYNC/BULK) в v1.0 не введён: действуют общий caller deadline (ограничение ожидания сессии/очереди/входа/redirects, не возобновляется после reauth) и профили запросов; классы бюджета — вместе с чатовым трафиком 13.5. Обновление 13.5: чатовое чтение введено и приоритет держится конструкцией — чтение берёт session-lock на каждый hop с ожиданием 2 с и уступает интерактиву (CONNECTION_BUSY), бакеты per-connection и global общие, операция чтения = shell + ограниченные страницы; явные классы бюджета вводятся в 13.6 вместе с отправкой (первым реальным конкурентом интерактива).
 
 Политики, обязательные с первой реализации:
 
@@ -57,7 +60,9 @@
 | Несколько диалогов на клиента | НЕИЗВЕСТНО | 3 диалога — 3 разных входящих `user_id`; контрпример не найден, ограничение не выводится |
 | Область chat user ID | НЕИЗВЕСТНО | один проект; кросс-проектных доказательств нет → namespace подключения остаётся планом по умолчанию |
 | Таймзона epoch | НЕИЗВЕСТНО | UTC vs локальное время не различены |
-| Отправка / отметка прочтения / обновления / вложения | НЕ ПРОВЕРЕНО | изменяющие запросы намеренно не выполнялись (13.6, выделенные данные, согласованный адресат) |
+| Отправка (текст+файлы) | ПОДТВЕРЖДАЕТСЯ ЖИВО | C06 `POST chat.dikidi.ru/api/dialog/message/`: response-захват 15.11.2026, форма (`tabHash/dialog/text/files[]`) — публичный код клиента; `error.code=0` + сохранённое сообщение. Файлы — C07-upload + один C06 (живой захват 302530210). Форма files[] живьём не проверялась — при неверной форме `error.code≠0`, фантомной отправки нет |
+| Отметка прочтения | ПОДТВЕРЖДАЕТСЯ КОДОМ КЛИЕНТА | C08 `POST chat.dikidi.ru/api/dialog/read/` `{tabHash, dialog, msg[]}` — форма из публичного backend.js (захвата запроса не было); ответ живьём не проверялся; операция идемпотентна |
+| Отчёт о доставке | РЕАЛИЗОВАН ОСТОРОЖНО | Единственный доказанный receipt: исходящее `read>0` → READ (через ingest-эхо, `recipientRead`; продвижение только SENT/DELIVERED). DELIVERED в DIKIDI доказанного представления нет — не синтезируется. Обновления/стриминг, создание диалога, поиск контакта — не проверялись (вне объёма) |
 
 ## 4. Прогоны-доказательства 13.1
 
@@ -72,7 +77,7 @@
 
 ## 5. Минимальный клиентский сценарий против дополнений
 
-База этапа (после 13.4–13.5): bootstrap (вход+shell), список диалогов, непрочитанное как invalidation-сигнал, история C05 с `last`-курсором и epoch-датами, направление по `out`, автор внешних исходящих без Employee. Всё остальное — отправка, отметки прочтения, обновления/стриминг, вложения, поиск контакта, создание диалога — включается только после отдельных подтверждений (13.6) и не входит в минимальный контракт.
+База этапа (после 13.4–13.5): bootstrap (вход+shell), список диалогов, непрочитанное как invalidation-сигнал, история C05 с `last`-курсором и epoch-датами, направление по `out`, автор внешних исходящих без Employee. Обновление 13.6: отправка текста/файлов, отметка прочтения и receipt прочтения введены по подтверждениям таблицы выше; всё остальное — обновления/стриминг, поиск контакта, создание диалога — включается только после отдельных подтверждений и не входит в минимальный контракт.
 
 ## 6. Открытые вопросы к 13.2
 
@@ -81,3 +86,77 @@
 3. Множественность диалогов на клиента и область chat user ID — требуют второго тестового проекта или многостраничных данных.
 4. Семантика `time`-курсора C02 и таймзон epoch — уточнить при появлении больших выборок.
 5. Изменяющие операции (send/read-mark): семантика ответа, echo-подавление, UNKNOWN-сверка — только 13.6 на согласованных данных.
+
+## 7. Жизненный цикл канала DIKIDI и единственный активный runtime (13.4)
+
+Общая сессия: CRM-адаптер (crm/dikidi) и чатовый канал (connector/dikidi) пользуются одним
+`DikidiClient` (bean сборки). Вход — один на версию учётных данных; одновременные повторные
+входы CRM и чата исключены блокировкой сессии. Секрет не копируется: каждый потребитель
+получает свой `DikidiCredential` из расшифровки хостом, версий ключа шифрования не меняется
+(тот же AAD: organizationId+connectionId+keyId).
+
+- **close-владелец.** Транспорт сессий закрывает только сборка (`DikidiClient.close()` при
+  остановке контекста). `DikidiProvider.close()` (локальная остановка CRM-адаптера) НЕ закрывает
+  клиент, и наоборот — локальное выключение одного потребителя не влияет на другого (тест
+  `adapterCloseDoesNotDisturbTheSharedClient`).
+- **enable/disable подключения (CRM).** Смена секрета/логина или флага enabled поднимает
+  `credentialVersion` и инвалидирует сессию ПОСЛЕ commit (rollback не рушит живые сессии;
+  commit не оставляет сессий старой версии). Старые handles с старой версией ключа не работают:
+  новая операция входит заново либо падает AUTH_REQUIRED по прежным правилам.
+- **disconnect аккаунта канала.** Ожидаемое отключение через `HostChannelStatus.expectDisconnect`
+  (13.5 для DIKIDI-аккаунтов); сессия клиента при этом не рвётся — она переиспользуется CRM.
+- **Удаление аккаунта канала / CRM-подключения.** Хост инвалидирует сессию (`registry.invalidate`
+  тоже после commit). Удаление подключения отвергается, пока живая lease-строка runtime
+  свидетельствует, что доступ активно обслуживается (channel binding в проверке удаления), а
+  также при привязанных проектах/операциях (прежние проверки).
+- **Провизионизация канала (решение 15.11.2026, реализовано в 13.5).** Канал DIKIDI в
+  workspace создаётся автоматически при назначении DIKIDI-CRM-проекта на workspace;
+  удалить его напрямую нельзя — только вместе с DIKIDI-проектом; управление —
+  подключить/отключить/изменить (эндпоинты `POST /api/channels/{accountId}/dikidi/connect|disconnect`,
+  общая ручка удаления канала для DIKIDI отвергает запрос). Поля channelaccount берутся только
+  из БД, без обращений к DIKIDI: externalId = crm.project.externalid (company id), name =
+  crm.project.displayname, phone = crm.connection.login (DIKIDI-логин и есть телефон), username =
+  crm.connection.displayname (имя подключения). Повторное назначение refreshed профиль по тем же
+  правилам и реактивирует канал (DISABLED → CONNECTING); смена подключения DIKIDI-проекта
+  (changeConnection) обновляет профиль канала по тем же правилам. Конфиг-привязка
+  `clientbus.dikidi.chat.connection-id/company` удалена вместе с AutoConfiguration 13.4;
+  сборка бинов — `DikidiChatConfiguration` на общем `DikidiClient`.
+- **Отвязка/архивирование проекта (реализовано в 13.5).** Снимает CRM-привязку workspace
+  (прежняя семантика 12.x) и решает судьбу канала: без переписки канал удаляется вместе с
+  чекпойнтами диалогов; при наличии переписки канал отключается и остаётся `DISABLED` —
+  архивная история сохраняется (FK диалогов и политика 12.x; записанное отклонение от
+  «удалить вместе с проектом» для этого случая). Физического удаления проектов в модели нет.
+- **Входящие и история (13.5).** Классификация диалогов без догадок: ровно два участника и
+  разрешимый владелец по пробнику сообщений (автор `out=1`, иначе единственный автор входящих);
+  поддержка DIKIDI и неизвестная форма пропускаются с логом. Источник событий: начальный импорт —
+  History-путь (хост форсит HISTORY_IMPORT — персональных уведомлений нет); сообщения после
+  завершённого initial sync публикуются коннектором как LIVE (`HostInboundPublisher`). Курсоры —
+  `dbo.chatcheckpoint` на диалог (newest/oldest, initialSyncDone, lastDialogEpoch); продвигается
+  после передачи страницы, повторы гасятся дедупом сообщений по внешнему id. Направление:
+  `out=1` → sender = externalId канала (эхо, Employee=NULL по CRM_SEMANTICS §6). Начальная
+  история не объявляется полной, пока не доказана пустой страницей C05; бюджет страниц на тик —
+  `clientbus.dikidi.chat.initial-pages`, недогруженное продолжается с чекпойнт-курсора.
+  Опрос — ограниченный polling общим `RecentChatsSyncScheduler` (PT15M) + периодическая доводка
+  доступа `clientbus.dikidi.chat.recheck-ms`.
+- **Перезапуск процесса.** На ApplicationReady канал повторно проверяет доступ к чатам
+  (bootstrap C01→C02 через общий клиент); сессия DIKIDI не переживает рестарт (транспорт
+  закрыт), повторный вход дешёв. Lease-строка переживает рестарт в пределах TTL 90 с; после
+  неё тот же экземпляр возвращает lease себе.
+- **Проверка доступа до CONNECTED.** `DikidiChatChannel.refresh()`: успех = shell 200 +
+  dialogs/list 200 с `data.list` (C01/C02, профиль OWNER_CHAT). Отказ = канал не входит в
+  CONNECTED (аккаунты DIKIDI → ERROR с причиной `DIKIDI_CHAT_ACCESS_...`). Успешный CRM-health
+  проверкой чатов не считается.
+- **Единственный активный runtime.** `crm.connectionruntime(connectionid, owner, heartbeatat)`:
+  заявка upsert-ом, heartbeat каждые 30 с, TTL 90 с. Второй экземпляр с тем же connectionId
+  получает явную деградацию (`TEMPORARY_FAILURE`, notDispatched, retryAt +30 с) и
+  ERROR-алерт `DIKIDI_RUNTIME_LEASE_TAKEN`, а не молчаливую двойную работу. Guard дешёвый
+  (две PK-операции на операцию клиента, до транспорта); полноценный claim/lease
+  многоэкземплярной топологии — 13.8. До готовности хранилища guard не может ни подтвердить,
+  ни опровергнуть — пропускает без деградации. Перехват протухшего lease работает только потому,
+  что проигравший standby чужую живую строку не греет (heartbeat сдвигает только владеющая или
+  перехватываемая по TTL строка; ревю 13.4): после нештатной гибели владельца её строка стареет
+  за TTL и достётся следующему. Lease-строка удалённого подключения снимается вместе с удалением.
+- **Retry-границы (не регрессировали).** Чтения: ровно один повтор после AUTH_REQUIRED через
+  восстановление сессии (`execute`). Изменяющие: `executeOnce` — никакого повтора после потери
+  сессии; evidence notDispatched/may-have-dispatched сохраняется через Observer-хуки; 429
+  реавторизацию не вызывает. Восстановление сессии никогда не повторяет отправку.

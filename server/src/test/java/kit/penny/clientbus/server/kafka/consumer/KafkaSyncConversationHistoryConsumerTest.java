@@ -219,7 +219,8 @@ class KafkaSyncConversationHistoryConsumerTest {
 
         verify(conversationService).markHistoryStartReached(
                 ACCOUNT_ID,
-                CONVERSATION_EXTERNAL_ID
+                CONVERSATION_EXTERNAL_ID,
+                null
         );
 
         verifyNoInteractions(publisher);
@@ -252,7 +253,8 @@ class KafkaSyncConversationHistoryConsumerTest {
 
         verify(conversationService).markHistoryStartReached(
                 ACCOUNT_ID,
-                CONVERSATION_EXTERNAL_ID
+                CONVERSATION_EXTERNAL_ID,
+                null
         );
     }
 
@@ -445,7 +447,8 @@ class KafkaSyncConversationHistoryConsumerTest {
         verify(conversationService)
                 .markHistoryStartReached(
                         ACCOUNT_ID,
-                        CONVERSATION_EXTERNAL_ID
+                        CONVERSATION_EXTERNAL_ID,
+                        null
                 );
 
         verifyNoInteractions(publisher);

@@ -27,6 +27,16 @@ import java.util.stream.Collectors;
 @Transactional
 public class ConversationService {
 
+    /**
+     * Ограничение preview совпадает с ConversationEntity.lastmessagepreview (500).
+     * Preview — отображаемый кэш списка Inbox, поэтому длинное внешнее сообщение
+     * ограничивается здесь: иначе весь снимок диалога отбрасывается по SQLState 22001
+     * (value too long) и запись уходит в DLQ platform-conversations на каждой синхронизации.
+     * Владеть лимитом должен хост, а не коннектор: внешний текст лимитом не ограничен
+     * (DIKIDI C02, текст Telegram до 4096).
+     */
+    private static final int LAST_MESSAGE_PREVIEW_LIMIT = 500;
+
     @org.springframework.beans.factory.annotation.Autowired
     private kit.penny.clientbus.server.notification.outbox.UiDomainEvents uiEvents;
 
@@ -371,6 +381,15 @@ public class ConversationService {
                                 )
                                 .orElse(null);
 
+        // Бэклог 13.5 (ревю 13.x): ссылка диалога без сверки клиента притянула бы входящее
+        // на чужую карточку (на канале с chat≠user это реально). Расхождение — явный отказ,
+        // молчаливой переатрибуции нет.
+        requireDialogCounterpart(
+                existing,
+                clientAccount,
+                dialog
+        );
+
         boolean healedLegacyDialog = false;
 
         if (existing == null) {
@@ -439,19 +458,54 @@ public class ConversationService {
                                 .orElse(null);
 
                 if (racedByDialog != null) {
+                    requireDialogCounterpart(
+                            racedByDialog,
+                            clientAccount,
+                            dialog
+                    );
                     return racedByDialog;
                 }
             }
 
-            return conversationRepository
-                    .findAllByChannelAccountIdAndClientAccountId(
-                            channelAccount.getId(),
-                            clientAccount.getId()
-                    )
-                    .stream()
-                    .findFirst()
-                    .orElseThrow(() -> e);
+            // Бэклог 13.5: детерминированный fallback — только легаси-слот без ссылки диалога;
+            // при неоднозначности — отказ вместо findFirst() без порядка.
+            ConversationEntity legacySlot = uniqueCounterpartCandidate(
+                    conversationRepository
+                            .findAllByChannelAccountIdAndClientAccountId(
+                                    channelAccount.getId(),
+                                    clientAccount.getId()
+                            )
+                            .stream()
+                            .filter(item -> item.getDialogExternalId() == null)
+                            .toList(),
+                    channelAccount.getId(),
+                    clientAccount.getId()
+            );
+            if (legacySlot != null) {
+                return legacySlot;
+            }
+            throw e;
         }
+    }
+
+    private static void requireDialogCounterpart(
+            ConversationEntity found,
+            ClientAccountEntity clientAccount,
+            String dialog
+    ) {
+        if (found == null
+                || found.getClientAccount() == null
+                || found.getClientAccount().getId().equals(clientAccount.getId())) {
+            return;
+        }
+        throw new IllegalStateException(
+                "Dialog reference belongs to another counterpart: dialog="
+                        + dialog
+                        + ", conversationId="
+                        + found.getId()
+                        + ", expectedClientAccountId="
+                        + clientAccount.getId()
+        );
     }
 
     /*
@@ -1514,8 +1568,24 @@ public class ConversationService {
             UUID channelAccountId,
             String clientAccountExternalId
     ) {
-        ConversationEntity conversation =
-                uniqueCounterpartCandidate(
+        markHistoryStartReached(channelAccountId, clientAccountExternalId, null);
+    }
+
+    /**
+     * 13.5 (ревю 13.4, реестр 13-2b): у каналов с несколькими диалогами на клиента
+     * (DIKIDI) флаг начала истории относится к диалогу — разрешение по ссылке диалога
+     * первично, поиск по единственному собеседнику остаётся legacy-ветвью.
+     */
+    @Transactional
+    public void markHistoryStartReached(
+            UUID channelAccountId,
+            String clientAccountExternalId,
+            String dialogExternalId
+    ) {
+        String dialog = dialogExternalId == null || dialogExternalId.isBlank() ? null : dialogExternalId;
+        ConversationEntity conversation = dialog != null
+                ? conversationRepository.findByChannelAccountIdAndDialogExternalId(channelAccountId, dialog).orElse(null)
+                : uniqueCounterpartCandidate(
                         conversationRepository
                                 .findAllByChannelAccountIdAndClientAccountExternalId(
                                         channelAccountId,
@@ -1583,9 +1653,30 @@ public class ConversationService {
         }
 
         conversation.setLastMessageAt(messageTime);
-        conversation.setLastMessagePreview(preview);
+        conversation.setLastMessagePreview(limitPreview(preview));
 
         return conversation;
+    }
+
+    /**
+     * Обрезка preview под длину колонки. Многоточие занимает последний символ лимита,
+     * а ведущий суррогат на границе отбрасывается, чтобы не оставить битый символ.
+     */
+    private static String limitPreview(String preview) {
+
+        if (preview == null
+                || preview.length() <= LAST_MESSAGE_PREVIEW_LIMIT) {
+
+            return preview;
+        }
+
+        int end = Character.isHighSurrogate(
+                preview.charAt(LAST_MESSAGE_PREVIEW_LIMIT - 1)
+        )
+                ? LAST_MESSAGE_PREVIEW_LIMIT - 2
+                : LAST_MESSAGE_PREVIEW_LIMIT - 1;
+
+        return preview.substring(0, Math.max(0, end)) + "…";
     }
 
     public void requireExternalOperationsAvailable(

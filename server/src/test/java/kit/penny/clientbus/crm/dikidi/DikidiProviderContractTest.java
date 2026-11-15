@@ -1,4 +1,5 @@
 package kit.penny.clientbus.crm.dikidi;
+import kit.penny.clientbus.integration.dikidi.*;
 
 import kit.penny.clientbus.crm.api.*;
 import org.junit.jupiter.api.*;
@@ -420,7 +421,7 @@ class DikidiProviderContractTest {
     }
     @Test void invalidDestinationsAndProjectParametersNeverReachTransport() {
         for (String uri : List.of("http://dikidi.ru/", "https://example.org/", "https://user:pass@dikidi.ru/", "https://dikidi.ru:8443/"))
-            assertEquals(INVALID_RESPONSE, assertThrows(CrmFailure.class, () -> JdkDikidiTransport.destination(URI.create(uri))).code());
+            assertEquals(DikidiFailure.Code.INVALID_RESPONSE, assertThrows(DikidiFailure.class, () -> JdkDikidiTransport.destination(URI.create(uri))).code());
         try (var access = access(UUID.randomUUID(), 1)) {
             assertEquals(CONTEXT_MISMATCH, assertThrows(CrmFailure.class, () -> provider.readMasters(access, "1&company=2")).code());
         }

@@ -46,7 +46,24 @@ public record PlatformMessageRequest(
          * отличается от идентификатора участника. Nullable: старые payload резолвятся
          * по паре (аккаунт канала, участник) только при однозначном контексте.
          */
-        String dialogExternalId
+        String dialogExternalId,
+
+        /**
+         * 13.5 (живая приёмка DIKIDI): платформенный id фактического автора сообщения.
+         * У каналов с несколькими сотрудниками салона на стороне платформы исходящие
+         * различаются автором — по нему хост резолвит привязанного сотрудника ClientBus
+         * (привязки нет — employeeId остаётся NULL). Nullable для платформ без
+         * разделения авторов (telegram) и старых payload.
+         */
+        String authorExternalId,
+
+        /**
+         * 13.6 (отчёт о доставке): платформа подтвердила, что СОБЕСЕДНИК прочитал это
+         * исходящее сообщение (DIKIDI: out && read>0 — признак подтверждён кодом веб-клиента).
+         * null — платформа не сообщает/сообщение входящее (старые payload читаются как null);
+         * FALSE — на момент чтения не прочитано (понижения статуса не делает).
+         */
+        Boolean recipientRead
 
 ) {
     public PlatformMessageRequest {
@@ -58,7 +75,7 @@ public record PlatformMessageRequest(
             String clientPhone, String clientDisplayName, String senderExternalId, String externalId,
             MessageType type, String content, String metadata, Instant sentAt, List<PlatformMessageAttachment> attachments) {
         this(channelAccountId,clientExternalId,clientUsername,clientPhone,clientDisplayName,senderExternalId,
-                externalId,type,content,metadata,sentAt,attachments,kit.penny.clientbus.common.notification.EventOrigin.SYNC,null);
+                externalId,type,content,metadata,sentAt,attachments,kit.penny.clientbus.common.notification.EventOrigin.SYNC,null,null,null);
     }
 
     public PlatformMessageRequest(UUID channelAccountId, String clientExternalId, String clientUsername,
@@ -66,11 +83,30 @@ public record PlatformMessageRequest(
             MessageType type, String content, String metadata, Instant sentAt,
             List<PlatformMessageAttachment> attachments, kit.penny.clientbus.common.notification.EventOrigin origin) {
         this(channelAccountId,clientExternalId,clientUsername,clientPhone,clientDisplayName,senderExternalId,
-                externalId,type,content,metadata,sentAt,attachments,origin,null);
+                externalId,type,content,metadata,sentAt,attachments,origin,null,null,null);
+    }
+
+    public PlatformMessageRequest(UUID channelAccountId, String clientExternalId, String clientUsername,
+            String clientPhone, String clientDisplayName, String senderExternalId, String externalId,
+            MessageType type, String content, String metadata, Instant sentAt,
+            List<PlatformMessageAttachment> attachments, kit.penny.clientbus.common.notification.EventOrigin origin,
+            String dialogExternalId) {
+        this(channelAccountId,clientExternalId,clientUsername,clientPhone,clientDisplayName,senderExternalId,
+                externalId,type,content,metadata,sentAt,attachments,origin,dialogExternalId,null,null);
+    }
+
+    public PlatformMessageRequest(UUID channelAccountId, String clientExternalId, String clientUsername,
+            String clientPhone, String clientDisplayName, String senderExternalId, String externalId,
+            MessageType type, String content, String metadata, Instant sentAt,
+            List<PlatformMessageAttachment> attachments, kit.penny.clientbus.common.notification.EventOrigin origin,
+            String dialogExternalId, String authorExternalId) {
+        this(channelAccountId,clientExternalId,clientUsername,clientPhone,clientDisplayName,senderExternalId,
+                externalId,type,content,metadata,sentAt,attachments,origin,dialogExternalId,authorExternalId,null);
     }
 
     public PlatformMessageRequest withOrigin(kit.penny.clientbus.common.notification.EventOrigin value) {
         return new PlatformMessageRequest(channelAccountId,clientExternalId,clientUsername,clientPhone,clientDisplayName,
-                senderExternalId,externalId,type,content,metadata,sentAt,attachments,value,dialogExternalId);
+                senderExternalId,externalId,type,content,metadata,sentAt,attachments,value,dialogExternalId,authorExternalId,
+                recipientRead);
     }
 }

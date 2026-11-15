@@ -233,6 +233,22 @@
             <artifactId>connector-telegram</artifactId>
             <version>1.0-SNAPSHOT</version>
         </dependency>
+        <!-- 13.4: чатовый канал DIKIDI. Сервер использует только host-порты модуля
+             (DikidiTechnicalCredentials/DikidiChatBinding в DikidiCredentialsHost), не
+             коннектор; канал включается только явным clientbus.dikidi.chat.enabled=true. -->
+        <dependency>
+            <groupId>kit.penny.clientbus</groupId>
+            <artifactId>connector-dikidi</artifactId>
+            <version>1.0-SNAPSHOT</version>
+        </dependency>
+        <!-- Ревю 13.4: сервер напрямую использует классы integration/dikidi
+             (CrmConfiguration, DikidiRuntimeGuard, DikidiCredentialsHost, тесты) —
+             явная зависимость вместо транзитивной. -->
+        <dependency>
+            <groupId>kit.penny.clientbus</groupId>
+            <artifactId>integration-dikidi</artifactId>
+            <version>1.0-SNAPSHOT</version>
+        </dependency>
     </dependencies>
 
     <build>

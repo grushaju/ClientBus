@@ -220,10 +220,13 @@ public final class NotificationAcceptanceEnvironment extends AbstractIntegration
 
     // Load the production package and the same auto-configuration exclusions as ServerApplication.
     // Plain SpringApplication has no test-runner TypeExcludeFilter; exclude unrelated test fixtures explicitly.
+    // 13.4: the Control connector owns every channel type here, so the optional connector modules of
+    // 13.3+ (auto-registered while their jar is present) are switched off for this acceptance context.
     @TestConfiguration(proxyBeanMethods = false)
     @Profile("notification-stage-acceptance")
     @EnableScheduling
-    @EnableAutoConfiguration(exclude = {UserDetailsServiceAutoConfiguration.class, TdlibAutoConfiguration.class})
+    @EnableAutoConfiguration(exclude = {UserDetailsServiceAutoConfiguration.class, TdlibAutoConfiguration.class,
+            kit.penny.clientbus.connector.telegram.config.TelegramConnectorAutoConfiguration.class})
     @AutoConfigurationPackage(basePackages = "kit.penny.clientbus.server")
     @ConfigurationPropertiesScan(basePackages = "kit.penny.clientbus.server")
     @ComponentScan(basePackages = "kit.penny.clientbus.server", excludeFilters = {

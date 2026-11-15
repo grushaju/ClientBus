@@ -1,4 +1,5 @@
 package kit.penny.clientbus.crm.dikidi;
+import kit.penny.clientbus.integration.dikidi.*;
 
 import kit.penny.clientbus.crm.api.*;
 import java.net.URI;

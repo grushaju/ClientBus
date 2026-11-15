@@ -65,8 +65,9 @@ clientbus:
     outbound:
       enabled-channels:
         - TELEGRAM
-        # 13.3: WHATSAPP/VK убраны — коннекторов нет. Канал добавляется в список
-        # вместе с его коннектор-модулем. ВНИМАНИЕ (ревю 14.11.2026): сами топики
+        # 13.5: канал добавляется в список вместе с его коннектор-модулем.
+        - DIKIDI
+        # 13.3: WHATSAPP/VK убраны — коннекторов нет. ВНИМАНИЕ (ревю 14.11.2026): сами топики
         # этой группы приложением сейчас не создаются — см. бэклог (KafkaAdmin не
         # видит бины List<NewTopic>).
 
@@ -215,7 +216,9 @@ spring:
       # 31-29
 #      api-id: 31219459
 #      api-hash: b956f4f74f8c2f6510e38d9f767b5640
-      database-directory: ./data/telegram
+      # 16.11: абсолютный каталог TDLib-сессий (был ./data/telegram — относительный путь
+      # зависел от каталога запуска процесса). Переопределение — TELEGRAM_DATA_DIRECTORY.
+      database-directory: ${TELEGRAM_DATA_DIRECTORY:D:/Projects/Java/ClientBus/connector/telegram/data}
       database-encryption-key: TELEGRAM_DATABASE_SECRET
 
       use-test-dc: false
@@ -229,3 +232,21 @@ spring:
       system-version: "1.0"
       application-version: "1.0"
       log-verbosity-level: 2
+
+  # 13.4: техническое подключение DIKIDI (integration/dikidi) — общий клиент CRM и чатов.
+  # Ревю 13.4: приоритет имеют ровно эти новые ключи clientbus.dikidi.* —
+  # requests-per-second, request-burst, global-requests-per-second, global-request-burst,
+  # request-parallelism, retry-base-ms, retry-max-ms; старые clientbus.crm.dikidi.*
+  # читаются как значения по умолчанию и полностью совместимы. Таймауты и размер ответа
+  # остаются на clientbus.crm.* (CrmSettings). Кэши журнала — на старых crm-ключах,
+  # это забота crm/dikidi.
+  # dikidi:
+  #   chat:
+  #     # 13.5: канал DIKIDI провизионится автоматически назначением DIKIDI-проекта на
+  #     # workspace (решение 15.11.2026); конфигурационного binding больше нет.
+  #     # recheck-ms — период доводки CREATED/отвалившихся аккаунтов до CONNECTED
+  #     # (проверка доступа C01→C02; CRM-health такой проверкой не считается).
+  #     # initial-pages — бюджет страниц C05 на тик начального импорта одного диалога
+  #     # (по умолчанию 5; недогруженное продолжается следующим тиком с того же курсора).
+  #     recheck-ms: 60000
+  #     initial-pages: 5

@@ -64,6 +64,12 @@ clientbus:
       enabled-channels:
         - TELEGRAM
 
+  dikidi:
+    chat:
+      # 13.5: периодическую доводку чатов в тестах не запускаем — живые обращения
+      # к dikidi.ru в автоматических тестах запрещены; connect остаётся ручным verify.
+      recheck-ms: 31536000000
+
   jwt:
     secret: FnQHtz4yCzaBgma1a25xV30mShdAQZx/33msarZ57f0=
     expiration: 1800000

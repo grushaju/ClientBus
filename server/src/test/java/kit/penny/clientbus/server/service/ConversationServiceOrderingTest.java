@@ -157,4 +157,87 @@ class ConversationServiceOrderingTest {
                         "Same timestamp message"
                 );
     }
+
+    @Test
+    void oversizedPreview_shouldBeLimitedToColumnLength() {
+
+        conversationService.updateLastMessage(
+                conversation,
+                Instant.parse(
+                        "2026-09-30T11:00:00Z"
+                ),
+                "д".repeat(
+                        4_000
+                )
+        );
+
+        assertThat(
+                conversation.getLastMessagePreview()
+        )
+                .hasSize(
+                        500
+                )
+                .endsWith(
+                        "…"
+                );
+    }
+
+    @Test
+    void previewAtColumnLimit_shouldBeStoredUntouched() {
+
+        String exact = "д".repeat(
+                500
+        );
+
+        conversationService.updateLastMessage(
+                conversation,
+                Instant.parse(
+                        "2026-09-30T11:00:00Z"
+                ),
+                exact
+        );
+
+        assertThat(
+                conversation.getLastMessagePreview()
+        )
+                .isEqualTo(
+                        exact
+                );
+    }
+
+    @Test
+    void surrogatePairAtLimitBoundary_shouldNotBeSplit() {
+
+        conversationService.updateLastMessage(
+                conversation,
+                Instant.parse(
+                        "2026-09-30T11:00:00Z"
+                ),
+                "д".repeat(
+                        499
+                ) + "😀" + "хвост"
+        );
+
+        String preview =
+                conversation.getLastMessagePreview();
+
+        assertThat(
+                Character.isHighSurrogate(
+                        preview.charAt(
+                                preview.length() - 2
+                        )
+                )
+        )
+                .isFalse();
+
+        assertThat(
+                preview
+        )
+                .doesNotContain(
+                        "\uD83D"
+                )
+                .endsWith(
+                        "…"
+                );
+    }
 }

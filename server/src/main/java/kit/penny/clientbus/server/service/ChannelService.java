@@ -65,6 +65,12 @@ public class ChannelService {
     public ChannelDto createChannel(
             CreateChannelRequest request
     ) {
+        // 13.5: канал DIKIDI провизионится назначением DIKIDI-проекта на workspace;
+        // ручное создание ломает единственный источник истины по полям канала.
+        if (request.type() == kit.penny.clientbus.common.enums.ChannelType.DIKIDI)
+            throw new IllegalArgumentException(
+                    "Канал DIKIDI создаётся автоматически при назначении DIKIDI-проекта на workspace");
+
         currentUserService.requireSuperAdmin();
 
         accessPolicy.require(WORKSPACE_ADMIN, request.workspaceId());
@@ -198,6 +204,11 @@ public class ChannelService {
         ChannelAccountEntity account =
                 findChannelAccount(id);
 
+        // 13.5: DIKIDI-канал удаляется только вместе с DIKIDI-проектом (CrmService.detachProject).
+        if (channel.getType() == kit.penny.clientbus.common.enums.ChannelType.DIKIDI)
+            throw new IllegalArgumentException(
+                    "Канал DIKIDI удаляется вместе с DIKIDI-проектом: отвязайте проект от workspace");
+
         channelStatus.expectDisconnect(account.getId(), kit.penny.clientbus.common.enums.ChannelConnectionStatus.DISCONNECTED);
         channelAccountLifecycleRegistry
                 .getLifecycle(channel.getType())
@@ -266,6 +277,12 @@ public class ChannelService {
 
         ChannelAccountEntity account =
                 findChannelAccount(channelId);
+
+        // 13.5: отключение аккаунта с удалением строки для DIKIDI запрещено — канал проектный;
+        // штатное отключение: POST /api/channels/{accountId}/dikidi/disconnect.
+        if (channel.getType() == kit.penny.clientbus.common.enums.ChannelType.DIKIDI)
+            throw new IllegalArgumentException(
+                    "Аккаунт канала DIKIDI отключается управлением канала, а не удалением");
 
         channelStatus.expectDisconnect(account.getId(), kit.penny.clientbus.common.enums.ChannelConnectionStatus.DISCONNECTED);
         channelAccountLifecycleRegistry

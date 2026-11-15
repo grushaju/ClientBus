@@ -13,5 +13,9 @@ public interface CrmProjectRepository extends JpaRepository<CrmProjectEntity, UU
     boolean existsByConnectionId(UUID connectionId);
     boolean existsByWorkspaceIdAndProvider(UUID workspaceId, CrmType provider);
     boolean existsByWorkspaceIdAndProviderAndArchivedFalse(UUID workspaceId, CrmType provider);
+
+    /** Активный проект провайдера workspace (атрибуция авторов чата, 13.5). */
+    java.util.Optional<CrmProjectEntity> findFirstByWorkspaceIdAndProviderAndArchivedFalseOrderByCreatedAtAsc(
+            UUID workspaceId, CrmType provider);
     List<CrmProjectEntity> findAllByConnectionIdOrderByIdAsc(UUID connectionId);
 }

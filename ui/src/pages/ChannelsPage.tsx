@@ -17,6 +17,11 @@ import {
     enableTelegramChannel,
 } from '../api/telegramChannelApi'
 
+import {
+    connectDikidiChannel,
+    disconnectDikidiChannel,
+} from '../api/dikidiChannelApi'
+
 import type {
     ChannelDto,
 } from '../api/types/channel'
@@ -219,6 +224,47 @@ function ChannelsPageContent() {
     // Один одновременный toggle: повторный клик до ре-рендера не шлёт второй POST.
     const togglingAccountsRef = useRef<Set<string>>(new Set())
 
+    // 13.5: DIKIDI — проектный канал: без QR- flow, подключение = проверка доступа
+    // к чатам на сервере; отключение — ожидание, а не удаление аккаунта.
+    function handleDikidiConnect(
+        channel: ChannelDto,
+    ) {
+        if (!channel.account) {
+            setError(
+                'У канала отсутствует подключённый аккаунт.',
+            )
+            return
+        }
+
+        if (togglingAccountsRef.current.has(channel.account.id)) return
+        togglingAccountsRef.current.add(channel.account.id)
+
+        setError(null)
+
+        connectDikidiChannel(
+            channel.account.id,
+        )
+            .then(result => {
+                if (!result.available) {
+                    setError(
+                        `Не удалось подключить канал DIKIDI: ${result.errorCode ?? 'CHECK_FAILED'}`,
+                    )
+                }
+
+                loadChannels()
+            })
+            .catch(err => {
+                setError(
+                    err instanceof Error
+                        ? err.message
+                        : 'Не удалось подключить канал DIKIDI',
+                )
+            })
+            .finally(() => {
+                togglingAccountsRef.current.delete(channel.account!.id)
+            })
+    }
+
     function handleDisable(
         channel: ChannelDto,
     ) {
@@ -234,9 +280,11 @@ function ChannelsPageContent() {
 
         setError(null)
 
-        disableTelegramChannel(
-            channel.account.id,
-        )
+        const toggle = channel.type === 'DIKIDI'
+            ? disconnectDikidiChannel(channel.account.id)
+            : disableTelegramChannel(channel.account.id)
+
+        toggle
             .then(() => {
                 // Фактический статус берётся с сервера вместо захардкоженного
                 // оптимистичного 'DISABLED' (реальное состояние может отличаться).
@@ -509,9 +557,13 @@ function ChannelsPageContent() {
                                                 type="button"
                                                 className="ui-button ui-button-primary"
                                                 onClick={() =>
-                                                    setConnectionChannel(
-                                                        channel,
-                                                    )
+                                                    channel.type === 'DIKIDI'
+                                                        ? handleDikidiConnect(
+                                                            channel,
+                                                        )
+                                                        : setConnectionChannel(
+                                                            channel,
+                                                        )
                                                 }
                                             >
                                                 Подключить
@@ -524,9 +576,13 @@ function ChannelsPageContent() {
                                                 type="button"
                                                 className="ui-button ui-button-primary"
                                                 onClick={() =>
-                                                    setConnectionChannel(
-                                                        channel,
-                                                    )
+                                                    channel.type === 'DIKIDI'
+                                                        ? handleDikidiConnect(
+                                                            channel,
+                                                        )
+                                                        : setConnectionChannel(
+                                                            channel,
+                                                        )
                                                 }
                                             >
                                                 Подключить
@@ -539,9 +595,13 @@ function ChannelsPageContent() {
                                                 type="button"
                                                 className="ui-button ui-button-primary"
                                                 onClick={() =>
-                                                    setConnectionChannel(
-                                                        channel,
-                                                    )
+                                                    channel.type === 'DIKIDI'
+                                                        ? handleDikidiConnect(
+                                                            channel,
+                                                        )
+                                                        : setConnectionChannel(
+                                                            channel,
+                                                        )
                                                 }
                                             >
                                                 Подключить снова
@@ -554,9 +614,13 @@ function ChannelsPageContent() {
                                                 type="button"
                                                 className="ui-button ui-button-primary"
                                                 onClick={() =>
-                                                    setConnectionChannel(
-                                                        channel,
-                                                    )
+                                                    channel.type === 'DIKIDI'
+                                                        ? handleDikidiConnect(
+                                                            channel,
+                                                        )
+                                                        : setConnectionChannel(
+                                                            channel,
+                                                        )
                                                 }
                                             >
                                                 Подключение...
@@ -607,17 +671,20 @@ function ChannelsPageContent() {
                                                 Изменить
                                             </button>
 
-                                            <button
-                                                type="button"
-                                                className="ui-button ui-button-danger"
-                                                onClick={() =>
-                                                    setDeleteChannelTarget(
-                                                        channel,
-                                                    )
-                                                }
-                                            >
-                                                Удалить
-                                            </button>
+                                            {/* 13.5: канал DIKIDI удаляется вместе с DIKIDI-проектом — ручного удаления нет */}
+                                            {channel.type !== 'DIKIDI' && (
+                                                <button
+                                                    type="button"
+                                                    className="ui-button ui-button-danger"
+                                                    onClick={() =>
+                                                        setDeleteChannelTarget(
+                                                            channel,
+                                                        )
+                                                    }
+                                                >
+                                                    Удалить
+                                                </button>
+                                            )}
                                         </>
                                     )}
                                 </div>

@@ -24,7 +24,19 @@ public record CreatePlatformMessageRequest(
 
         Instant sentAt,
 
-        boolean outbound
+        boolean outbound,
+
+        /**
+         * 13.5 (живая приёмка DIKIDI): сотрудник ClientBus, привязанный к автору сообщения
+         * на стороне платформы. Только для исходящих; null — привязки нет (в т.ч.
+         * супер-админ салона) или платформа не различает авторов.
+         */
+        UUID employeeId
 
 ) {
+
+    public CreatePlatformMessageRequest(UUID conversationId, MessageType type, String externalId,
+            String content, String metadata, Instant sentAt, boolean outbound) {
+        this(conversationId, type, externalId, content, metadata, sentAt, outbound, null);
+    }
 }

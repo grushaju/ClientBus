@@ -5,6 +5,7 @@ import jakarta.transaction.Transactional;
 import kit.penny.clientbus.common.dto.conversation.PlatformConversationRequest;
 import kit.penny.clientbus.common.dto.message.*;
 import kit.penny.clientbus.common.enums.ChannelType;
+import kit.penny.clientbus.server.crm.CrmChatAuthorAttribution;
 import kit.penny.clientbus.server.kafka.producer.IOutboundMessagePublisher;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
@@ -25,6 +26,10 @@ public class MessageProcessingService
 
     @org.springframework.beans.factory.annotation.Autowired
     private kit.penny.clientbus.server.notification.center.PersonalNotificationWriter personalNotifications;
+
+    /** Атрибуция авторов исходящих через crm.master маппинг (13.5); поле — контракт конструктора стабилен. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private CrmChatAuthorAttribution authorAttribution;
 
     private final ChannelAccountRepository channelAccountRepository;
     private final ClientAccountRepository clientAccountRepository;
@@ -95,6 +100,13 @@ public class MessageProcessingService
                         && channelAccount.getExternalId()
                         .equals(request.senderExternalId());
 
+        // 13.5 (живая приёмка DIKIDI): автор исходящего на стороне салона различается
+        // платформенным id — сотрудник берётся из существующего маппинга мастеров
+        // (crm.master.externalid → employeeid); без мастера/маппинга — NULL.
+        UUID attributedEmployeeId = outbound && authorAttribution != null
+                ? authorAttribution.employeeId(channelAccount, request.authorExternalId())
+                : null;
+
         ChannelType channelType =
                 channelAccount
                         .getChannel()
@@ -126,7 +138,8 @@ public class MessageProcessingService
                                 request.content(),
                                 request.metadata(),
                                 request.sentAt(),
-                                outbound
+                                outbound,
+                                attributedEmployeeId
                         ), request.origin()
                 );
 
@@ -163,6 +176,15 @@ public class MessageProcessingService
                                 attachment.size()
                         );
             }
+        } else if (outbound && Boolean.TRUE.equals(request.recipientRead())) {
+
+            // 13.6 (отчёт о доставке): повторное чтение платформы показало, что
+            // собеседник прочитал исходящее сообщение (DIKIDI out && read>0 — признак
+            // подтверждён кодом веб-клиента). Продвижение толерантное: только
+            // SENT/DELIVERED -> READ, FAILED/PENDING не затрагивается.
+            messageService.markReadFromPlatformReceipt(
+                    result.message().id()
+            );
         }
 
         if (!outbound && source != null && personalNotifications != null) {

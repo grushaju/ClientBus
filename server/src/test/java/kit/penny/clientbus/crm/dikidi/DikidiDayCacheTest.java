@@ -9,7 +9,7 @@ import java.util.concurrent.atomic.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class DikidiDayCacheTest {
-    final DikidiRequestsTest.Time time=new DikidiRequestsTest.Time();
+    final TestClock time=new TestClock();
     final UUID project=UUID.randomUUID(),connection=UUID.randomUUID();
     final LocalDate day=LocalDate.of(2026,11,10);
     DikidiDayCache.Key key(long credentials,long epoch){return new DikidiDayCache.Key(project,connection,credentials,"100",day,0,0,epoch);}

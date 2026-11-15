@@ -25,10 +25,14 @@ public class CrmService {
     private final CrmCatalogSync sync;
     private final TransactionTemplate tx;
     private final UiDomainEvents events;
+    private final DikidiRuntimeGuard runtimeGuard; // nullable: голые тестовые сборки без БД-гардов
+    private final kit.penny.clientbus.server.service.DikidiChannelProvisioning provisioning; // nullable: те же сборки
     public CrmService(CrmStore store, CrmRegistry registry, CrmSecretCipher cipher, CrmCatalogSync sync,
-                      PlatformTransactionManager manager, UiDomainEvents events) {
+                      PlatformTransactionManager manager, UiDomainEvents events, DikidiRuntimeGuard runtimeGuard,
+                      kit.penny.clientbus.server.service.DikidiChannelProvisioning provisioning) {
         this.store = store; this.registry = registry; this.cipher = cipher; this.sync = sync;
-        this.tx = new TransactionTemplate(manager); this.events = events;
+        this.tx = new TransactionTemplate(manager); this.events = events; this.runtimeGuard = runtimeGuard;
+        this.provisioning = provisioning;
     }
     public List<CrmType> types() { store.guard.admin(); return AvailableCrmType.types(); }
     public List<CrmConnectionDto> connections() {
@@ -99,7 +103,9 @@ public class CrmService {
                     sync.invalidateProject(project.getId());
                     events.workspace(project.getWorkspace(), "crm.invalidated");
                 }
-                registry.invalidate(id);
+                // 13.4: инвалидация только после commit — откат не должен рушить живые
+                // сессии, а commit не оставляет сессии старой версии учётных данных.
+                afterCommit(() -> registry.invalidate(id));
             }
             if (changed || renamed) events.organization(row.getOrganization().getId(), "crm.invalidated");
             store.em.flush(); return CrmStore.dto(row);
@@ -119,10 +125,24 @@ public class CrmService {
                 throw new CrmException(409, "CRM_CONNECTION_IN_USE", "К аккаунту привязаны проекты или их архивы. Сначала смените аккаунт в настройках проектов; архивный проект для этого нужно восстановить.");
             if(store.em.createQuery("select count(o) from CrmOperationEntity o where o.connection.id=:id",Long.class).setParameter("id",id).getSingleResult()>0)
                 throw new CrmException(409,"CRM_RESOURCE_IN_USE","Подключение указано в журнале операций CRM. Отключите его вместо удаления.");
+            // 13.4 channel binding: живой lease = этот доступ активно обслуживает runtime (CRM или чат-канал).
+            if (runtimeGuard != null && runtimeGuard.activelyLeased(id))
+                throw new CrmException(409, "CRM_CONNECTION_IN_USE", "DIKIDI runtime сейчас обслуживает это подключение (живая heartbeat-строка). Дождитесь окончания lease или остановите потребителей.");
             store.connections.delete(row); store.em.flush();
-            registry.invalidate(id);
+            // 13.4: после commit, как и при смене секрета; lease-строки удалённого
+            // подключения — мусор (ревю 13.4: иначе гоняются heartbeat'ом вечно).
+            afterCommit(() -> { registry.invalidate(id); if (runtimeGuard != null) runtimeGuard.releaseConnection(id); });
             events.organization(organization, "crm.invalidated");
         });
+    }
+    /** 13.4: побочные эффекты над кэшами сессий провайдера — только после commit. */
+    private static void afterCommit(Runnable action) {
+        if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive())
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                    new org.springframework.transaction.support.TransactionSynchronization() {
+                        @Override public void afterCommit() { action.run(); }
+                    });
+        else action.run();
     }
     private static CrmException duplicateLogin() {
         return new CrmException(409, "CRM_CONNECTION_LOGIN_CONFLICT", "Аккаунт этой CRM с таким логином уже добавлен в организацию, возможно, он отключён. Используйте существующий аккаунт.");
@@ -265,6 +285,8 @@ public class CrmService {
                         }
                         row.setDisplayName(info.displayName()); row.setCurrency(info.currency());
                         sync.invalidateProject(row.getId()); store.em.flush(); events.workspace(workspace, "crm.invalidated");
+                        // 13.5: возврат проекта из архива возвращает и его чатовый канал.
+                        if (provisioning != null) provisioning.provisionOnBind(row);
                         return new Binding(store.projectDto(row), true);
                     }
                     if (request.expectedArchiveVersion() != null) throw CrmException.conflict("CRM_VERSION_CONFLICT");
@@ -281,6 +303,8 @@ public class CrmService {
                 row.setExternalId(externalId); row.setDisplayName(info.displayName()); row.setCurrency(info.currency());
                 row.setZoneId(zone); row.setZoneSource(zone == null ? null : "MANUAL");
                 store.em.persist(row); store.em.flush(); events.workspace(workspace, "crm.invalidated");
+                // 13.5: назначение DIKIDI-проекта на workspace автоматически провизионит канал.
+                if (provisioning != null) provisioning.provisionOnBind(row);
                 return new Binding(store.projectDto(row), true);
             });
         } catch (DataIntegrityViolationException | org.hibernate.exception.ConstraintViolationException error) {
@@ -312,6 +336,9 @@ public class CrmService {
             project.setContextVersion(project.getContextVersion()+1);
             sync.invalidateProject(projectId);
             store.em.flush(); events.workspace(project.getWorkspace(), "crm.invalidated");
+            // 13.5: канал DIKIDI живёт ровно столько, сколько проект: без переписки — удаляется,
+            // с перепиской — отключается и остаётся DISABLED (архивная история сохраняется).
+            if (provisioning != null) provisioning.retireOnDetach(project);
             return store.projectDto(project);
         });
     }
@@ -361,6 +388,9 @@ public class CrmService {
                 project.setContextVersion(project.getContextVersion()+1); project.resetHistoryContext(); sync.invalidateProject(projectId);
                 project.setDisplayName(info.displayName()); project.setCurrency(info.currency());
                 events.workspace(project.getWorkspace(), "crm.invalidated");
+                // 13.5: профиль канала (phone/username/externalId) берётся из подключения проекта —
+                // смена подключения обновляет его по тем же правилам провизионизации.
+                if (provisioning != null) provisioning.provisionOnBind(project);
             }
             store.em.flush(); return store.projectDto(project);
         });

@@ -23,8 +23,23 @@ public class TelegramDataStorage {
                 Path.of(properties.databaseDirectory());
     }
 
-    public void delete(UUID channelAccountId) {
+    /**
+     * Есть ли на диске персист TDLib (td.binlog или db.sqlite) — признак, что аккаунт когда-то
+     * входил и сессию есть смысл пробовать восстановить. «Отключение» аккаунта вызывает
+     * {@link #delete}, поэтому его отсутствующая сессия не будет воскрешена на старте;
+     * принудительно «выключенный» аккаунт и так не попадает в выборку (DISABLED).
+     */
+    public boolean hasPersistedSession(UUID channelAccountId) {
 
+        Path database = databaseDirectory
+                .resolve(channelAccountId.toString())
+                .resolve("database");
+
+        return Files.isRegularFile(database.resolve("td.binlog"))
+                || Files.isRegularFile(database.resolve("db.sqlite"));
+    }
+
+    public void delete(UUID channelAccountId) {
         Path accountDirectory =
                 databaseDirectory.resolve(
                         channelAccountId.toString()

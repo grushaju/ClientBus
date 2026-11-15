@@ -180,7 +180,7 @@ public class TelegramAuthorizationStateListener
             TdApi.AuthorizationState state
     ) {
         try {
-            if (channelStatus.transition(channelAccountId, status, "CONNECTOR_AUTH_STATE")) {
+            if (channelStatus.transition(channelAccountId, status, reason(state))) {
                 fireChannelChanged(new ChannelEvent(channelAccountId, status));
             }
 
@@ -194,6 +194,20 @@ public class TelegramAuthorizationStateListener
                     e
             );
         }
+    }
+
+    /**
+     * Closing/Closed — штатное заверение TDLib при остановке процесса: сессия при этом
+     * цела и восстановится на следующем старте. Штамповать их тем же
+     * CONNECTOR_AUTH_STATE, что и реальный разлогин, — значит рисовать пользователям
+     * «нужен перелогин» после каждого рестарта (боевое наблюдение 15.11). LoggingOut и
+     * ожидание учётных данных — настоящий внешний логин, им остаётся AUTH-причина.
+     */
+    private static String reason(TdApi.AuthorizationState state) {
+        return (state instanceof TdApi.AuthorizationStateClosing
+                || state instanceof TdApi.AuthorizationStateClosed)
+                ? "CONNECTOR_SHUTDOWN"
+                : "CONNECTOR_AUTH_STATE";
     }
 
     private void loadTelegramAccount() {

@@ -1,4 +1,5 @@
 package kit.penny.clientbus.server.crm;
+import kit.penny.clientbus.integration.dikidi.DikidiTransport;
 
 import jakarta.persistence.*;
 import kit.penny.clientbus.common.dto.crm.*;
@@ -166,7 +167,7 @@ class CrmFoundationIntegrationTest {
         finance=new CrmFinanceService(store,registry,cipher,events,manager,jdbc);
         appointmentReader=new CrmAppointmentReader(store,appointmentSync,jdbc,manager);
         appointmentTimes=new CrmAppointmentTimes(store,jdbc,manager,events);
-        service = new CrmService(store, registry, cipher, sync, manager, events);
+        service = new CrmService(store, registry, cipher, sync, manager, events, null, null);
         operations=new CrmOperationService(store,registry,cipher,events,jdbc,manager);
         deletion = new CrmDeletionGuard(store, events);
     }
@@ -2036,7 +2037,7 @@ class CrmFoundationIntegrationTest {
     @Test void hibernateUpdatePreservesExistingDboAndCrmAndNamesHaveNoUnderscores() throws Exception {
         var connection = connection(); var project = bind(connection); awaitIdle();
         var mapped = first(project.id()); service.linkEmployee(mapped.id(), target, mapped.version());
-        assertEquals(Set.of("connection","project","master","service","masterservice","syncstate","client","workinterval","appointment","appointmentservice","appointmentmaster","operation"),
+        assertEquals(Set.of("connection","project","master","service","masterservice","syncstate","client","workinterval","appointment","appointmentservice","appointmentmaster","operation","connectionruntime"),
                 new HashSet<>(jdbc.queryForList("select tablename from pg_tables where schemaname='crm'",String.class)));
         for (String sql : List.of("select column_name from information_schema.columns where table_schema='crm'",
                 "select indexname from pg_indexes where schemaname='crm'",
@@ -2052,6 +2053,7 @@ class CrmFoundationIntegrationTest {
         jdbc.execute("drop table crm.client");
         jdbc.execute("drop table crm.workinterval");
         jdbc.execute("alter table crm.master drop column lastobservedgeneration, drop column observationstate");
+        jdbc.execute("drop table crm.connectionruntime"); // 13.4: в развёрнутую форму 12.3 не входит, initialize() её вернёт
         assertEquals(4, jdbc.queryForObject("select count(*) from pg_tables where schemaname='crm'", Integer.class));
         factory = buildFactory();
         new CrmStorage(jdbc).initialize();
@@ -2061,7 +2063,7 @@ class CrmFoundationIntegrationTest {
         assertEquals(1,jdbc.queryForObject("select count(*) from dbo.workspace where workspaceid=?",Integer.class,workspace));
         assertEquals(target, jdbc.queryForObject("select employeeid from crm.master where id=?", UUID.class, mapped.id()));
         assertEquals("initial one", jdbc.queryForObject("select displayname from crm.master where id=?", String.class, mapped.id()));
-        assertEquals(12, jdbc.queryForObject("select count(*) from pg_tables where schemaname='crm'", Integer.class));
+        assertEquals(13, jdbc.queryForObject("select count(*) from pg_tables where schemaname='crm'", Integer.class));
     }
     private static CrmClient externalClient(String id, String name) {
         return new CrmClient(id,"PROJECT",name,Map.of("phone","+7 (999) 123-45-67"),Map.of("source","R08"),Set.of("displayName","phone"));

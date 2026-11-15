@@ -1,4 +1,6 @@
 target/
+.tmp/
+/connector/telegram/data/
 /ui/dist/
 /ui/node_modules/
 /ui/debug.log

@@ -14,6 +14,7 @@ import kit.penny.clientbus.connector.api.command.SyncConversationHistoryCommand;
 import kit.penny.clientbus.server.kafka.producer.ISyncConversationHistoryCommandPublisher;
 import kit.penny.clientbus.server.mapper.MessageMapper;
 import kit.penny.clientbus.server.persistence.entity.ConversationEntity;
+import kit.penny.clientbus.server.persistence.entity.EmployeeEntity;
 import kit.penny.clientbus.server.persistence.entity.MessageEntity;
 import kit.penny.clientbus.server.persistence.repository.ConversationRepository;
 import kit.penny.clientbus.server.persistence.repository.MessageRepository;
@@ -99,6 +100,18 @@ public class MessageService {
         if (!sameAttempt(message, attempt) || (message.getDeliveryStatus() != MessageDeliveryStatus.SENT
                 && message.getDeliveryStatus() != MessageDeliveryStatus.DELIVERED)) return messageMapper.toDto(message);
         return markRead(messageId);
+    }
+
+    /**
+     * 13.6 (отчёт о доставке): платформенное эхо подтвердило прочтение исходящего
+     * сообщения (DIKIDI: out && read>0). Продвигает собственным attempt сообщения и
+     * только из SENT/DELIVERED: receipt не воскрешает FAILED, не трогает PENDING
+     * и не понижает READ (идемпотентен).
+     */
+    @Transactional
+    public MessageDto markReadFromPlatformReceipt(UUID messageId) {
+        var message = lockedMessage(messageId);
+        return markRead(messageId, message.getSendAttemptId());
     }
 
     private MessageEntity saveUiMessage(MessageEntity message) {
@@ -341,7 +354,12 @@ public class MessageService {
 
         if (request.outbound()) {
 
-            message.setEmployee(null);
+            // 15.11.2026: у каналов с несколькими сотрудниками автор исходящего может быть
+            // привязан к сотруднику ClientBus — тогда сообщение принадлежит ему;
+            // без привязки (и для супер-админа салона) employee остаётся NULL.
+            message.setEmployee(request.employeeId() == null || entityManager == null
+                    ? null
+                    : entityManager.getReference(EmployeeEntity.class, request.employeeId()));
             message.setClientAccount(null);
 
             message.setDeliveryStatus(

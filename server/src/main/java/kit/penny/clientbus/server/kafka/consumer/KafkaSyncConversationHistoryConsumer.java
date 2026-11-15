@@ -170,7 +170,8 @@ public class KafkaSyncConversationHistoryConsumer {
 
             conversationService.markHistoryStartReached(
                     command.channelAccountId(),
-                    command.conversationExternalId()
+                    command.conversationExternalId(),
+                    command.dialogExternalId()
             );
         }
     }
@@ -204,7 +205,8 @@ public class KafkaSyncConversationHistoryConsumer {
 
             conversationService.markHistoryStartReached(
                     command.channelAccountId(),
-                    command.conversationExternalId()
+                    command.conversationExternalId(),
+                    command.dialogExternalId()
             );
         }
 

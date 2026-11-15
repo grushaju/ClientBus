@@ -469,6 +469,59 @@ class MessageProcessingServiceTest {
         );
     }
 
+    /**
+     * 13.6 (отчёт о доставке): эхо исходящего с recipientRead=TRUE (DIKIDI out && read>0)
+     * продвигает локальное сообщение через markReadFromPlatformReceipt; null/FALSE — нет.
+     */
+    @Test
+    void outboundEchoWithPlatformReadReceiptPromotesReceipt() {
+        when(channelAccountRepository.findById(channelAccountId)).thenReturn(Optional.of(channelAccount));
+        when(clientAccountService.getOrCreateForInbound(
+                ChannelType.TELEGRAM, "client-123", null, null, null, null)).thenReturn(clientAccount);
+        when(conversationService.createConversationInternal(any(), any(), any())).thenReturn(conversation);
+        when(messageDto.id()).thenReturn(messageId);
+        when(messageService.createPlatformMessage(any(CreatePlatformMessageRequest.class),
+                eq(kit.penny.clientbus.common.notification.EventOrigin.SYNC)))
+                .thenReturn(new MessageCreationResult(messageDto, true));
+
+        messageProcessingService.processPlatformMessage(new PlatformMessageRequest(
+                channelAccountId, "client-123", null, null, null,
+                "company-telegram", // sender == внешний id аккаунта канала: это эхо исходящего
+                "echo-1", MessageType.TEXT, "hello", null, null, List.of(),
+                kit.penny.clientbus.common.notification.EventOrigin.SYNC, null, null, Boolean.TRUE));
+
+        verify(messageService).markReadFromPlatformReceipt(messageId);
+    }
+
+    @Test
+    void inboundOrUnconfirmedEchoNeverPromotesReceipt() {
+        when(channelAccountRepository.findById(channelAccountId)).thenReturn(Optional.of(channelAccount));
+        when(clientAccountService.getOrCreateForInbound(
+                ChannelType.TELEGRAM, "client-123", null, null, null, null)).thenReturn(clientAccount);
+        when(conversationService.createConversationInternal(any(), any(), any())).thenReturn(conversation);
+        when(messageService.createPlatformMessage(any(CreatePlatformMessageRequest.class),
+                eq(kit.penny.clientbus.common.notification.EventOrigin.SYNC)))
+                .thenReturn(new MessageCreationResult(messageDto, true));
+
+        // Входящее (sender != аккаунт) с read-флагом — receipt не про него.
+        messageProcessingService.processPlatformMessage(new PlatformMessageRequest(
+                channelAccountId, "client-123", null, null, null,
+                "client-external-id", "echo-2", MessageType.TEXT, "hi", null, null, List.of(),
+                kit.penny.clientbus.common.notification.EventOrigin.SYNC, null, null, Boolean.TRUE));
+        // Исходящее, но не прочитано (FALSE) — понижений не бывает.
+        messageProcessingService.processPlatformMessage(new PlatformMessageRequest(
+                channelAccountId, "client-123", null, null, null,
+                "company-telegram", "echo-3", MessageType.TEXT, "hi", null, null, List.of(),
+                kit.penny.clientbus.common.notification.EventOrigin.SYNC, null, null, Boolean.FALSE));
+        // Исходящее без данных (null, telegram/старые payload) — тихо.
+        messageProcessingService.processPlatformMessage(new PlatformMessageRequest(
+                channelAccountId, "client-123", null, null, null,
+                "company-telegram", "echo-4", MessageType.TEXT, "hi", null, null, List.of(),
+                kit.penny.clientbus.common.notification.EventOrigin.SYNC, null, null, null));
+
+        verify(messageService, never()).markReadFromPlatformReceipt(any());
+    }
+
 
     @Test
     void processPlatformMessage_newMessage_createsAllStoredAttachments() {
