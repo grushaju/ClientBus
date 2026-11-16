@@ -9,7 +9,7 @@ import kit.penny.clientbus.server.persistence.entity.WorkspaceEntity;
 import kit.penny.clientbus.server.persistence.entity.crm.CrmClientEntity;
 import kit.penny.clientbus.server.persistence.entity.crm.CrmProjectEntity;
 import kit.penny.clientbus.server.persistence.repository.crm.CrmConnectionRepository;
-import kit.penny.clientbus.server.persistence.repository.crm.CrmMasterRepository;
+import kit.penny.clientbus.server.persistence.repository.crm.CrmEmployeeRepository;
 import kit.penny.clientbus.server.persistence.repository.crm.CrmProjectRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -29,7 +29,7 @@ class CrmClientServiceTest {
         var manager=mock(PlatformTransactionManager.class);
         when(manager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
         var store=new CrmStore(em,mock(CrmConnectionRepository.class),mock(CrmProjectRepository.class),
-                mock(CrmMasterRepository.class),guard,mock(CrmStorage.class),mock(CrmRegistry.class));
+                mock(CrmEmployeeRepository.class),guard,mock(CrmStorage.class),mock(CrmRegistry.class));
         var service=new CrmClientService(store,mock(CrmClientSync.class),mock(UiDomainEvents.class),manager);
         UUID organizationId=UUID.randomUUID(), workspaceId=UUID.randomUUID();
         var organization=mock(OrganizationEntity.class);

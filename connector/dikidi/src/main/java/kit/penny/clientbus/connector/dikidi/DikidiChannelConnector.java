@@ -316,8 +316,29 @@ public class DikidiChannelConnector implements IChannelConnector {
                 client.clientName(), dialog.dateEpoch() > 0 ? Instant.ofEpochSecond(dialog.dateEpoch()) : null,
                 dialog.lastText().isBlank() ? null : dialog.lastText(),
                 unread.getOrDefault(dialog.id(), 0),
-                dialog.icon() != null && dialog.icon().startsWith("http") ? dialog.icon() : null,
+                storeIcon(session, company, dialog.icon()),
                 dialog.id());
+    }
+
+    /**
+     * Иконка диалога C02 (аватар клиента): сырой удалённый URL в avatarUrl не отдаётся —
+     * контракт хоста «avatarUrl = локальный storageKey» (эндпоинты /avatar/content отдают
+     * байты из хранилища; URL доходит до Paths и роняет запрос InvalidPathException).
+     * Скачивание в профиле MEDIA; любое отсутствие/сбой — null (аватар заменяется
+     * инициалами, карточку диалога не ломает; повтор дойдёт следующим тиком).
+     */
+    private String storeIcon(DikidiClient.Session session, String company, String icon) {
+        if (attachments == null || icon == null || !icon.startsWith("https://")) return null;
+        try {
+            byte[] content = reads.media(session, icon, company);
+            try (var input = new java.io.ByteArrayInputStream(content)) {
+                return attachments.store(input, attachmentFileName(icon), content.length,
+                        "image/jpeg").storageKey();
+            }
+        } catch (java.io.IOException | RuntimeException failure) {
+            log.debug("DIKIDI dialog icon not stored (avatar stays empty): {}", failure.toString());
+            return null;
+        }
     }
 
     /**

@@ -7,7 +7,7 @@ const uiScope = load('../../api/events/uiScope.ts')
 const connection = { id: 'connection', provider: 'DIKIDI', displayName: 'Main account', loginHint: '••••0000', credentialConfigured: true, status: 'CONNECTED', version: 4 }
 const project = { id: 'project', workspaceId: 'workspace', connectionId: 'connection', provider: 'DIKIDI', externalId: '100', displayName: 'Test project',
     zoneId: null, enabled: true, archived: false, contextVersion: 1, connectionState: 'CONNECTED', version: 3, capabilities: [{ code: 'READ_SERVICES', availability: 'AVAILABLE' }] }
-const master = { id: 'master', projectId: 'project', externalId: 'm1', displayName: 'Test master', employeeId: null, version: 7 }
+const master = { id: 'master', projectId: 'project', externalId: 'm1', displayName: 'Test master', isMaster: true, employeeId: null, version: 7 }
 const state = { dataset: 'CATALOG', status: 'SUCCEEDED', freshness: 'CURRENT', lastSuccessAt: '2026-10-28T10:00:00Z', completeness: 'COMPLETE', generation: 1 }
 const employee = { id: 'employee', organizationId: 'organization', firstName: 'Test', lastName: 'Employee', role: 'EMPLOYEE' }
 const candidate = { id: 'employee', displayName: 'Test Employee', username: 'test-login', enabled: true }
@@ -36,6 +36,9 @@ async function setup(t, kind, overrides = {}, props = {}, admin = true, scope = 
         changeCrmProjectConnection: async (...args) => { calls.push(['rebind', ...args]); return project },
         detachCrmProject: async (...args) => { calls.push(['detach', ...args]); return { ...project, archived: true, enabled: false, contextVersion: 2, version: 4 } },
         linkCrmMaster: async (row, id) => { calls.push(['link', row, id]); return { ...row, employeeId: id, version: row.version + 1 } },
+        getCrmStaffAccesses: async () => [],
+        linkCrmStaffAccess: async (row, id) => { calls.push(['operator', row, id]); return { ...row, operatorId: id, operatorDisplayName: id ? 'Reception Rita' : null, version: row.version + 1 } },
+        linkCrmStaffRow: async (row, id) => { calls.push(['staff-link', row, id]); return { ...row, linkedId: id, version: row.version + 1 } },
         refreshCrmCatalog: async (...args) => { calls.push(['refresh', ...args]); return state },
         crmAccountName: row => row.displayName || row.provider + ' · ' + row.loginHint,
         crmConnectionLabel: value => value, crmError: error => error.message, ...overrides,
@@ -49,7 +52,7 @@ async function setup(t, kind, overrides = {}, props = {}, admin = true, scope = 
         './InvalidationContext': { useUiInvalidation: (key, enabled, matches, read, reset) => { if (enabled) invalidations.set(key, { read, reset }) } },
         ...moduleMocks,
     }
-    const exports = load(kind === 'CrmMasters' || kind === 'CrmServices' ? '../crm/CrmCatalog.tsx' : '../crm/' + kind + '.tsx', mocks)
+    const exports = load(kind === 'CrmMasters' || kind === 'CrmStaff' || kind === 'CrmServices' ? '../crm/CrmCatalog.tsx' : '../crm/' + kind + '.tsx', mocks)
     const component = exports[kind] ?? exports.default
     const attributes = { workspaceId: 'workspace', project, mapping: false, onMaster() {}, ...props }
     const render = () => React.createElement(uiScope.UiScopeContext.Provider, { value: scope }, React.createElement(component, attributes))
@@ -334,7 +337,7 @@ test('a restoration preview keeps its reviewed archive version after a newer GET
     assert.equal(fixture.calls[0][2].expectedArchiveVersion, 4)
 })
 test('archived employee mappings are visible but cannot be edited even through an old callback', async t => {
-    const { ui, calls } = await setup(t, 'CrmMasters', { getCrmMasters: async () => page([{ ...master, employeeId: 'employee' }]) },
+    const { ui, calls } = await setup(t, 'CrmStaff', { getCrmMasters: async () => page([{ ...master, employeeId: 'employee' }]) },
         { project: { ...project, archived: true, enabled: false }, mapping: true })
     const picker = ui.root.findByProps({ 'aria-label': 'Сотрудник: Test master' })
     assert.equal(picker.props.disabled, true); assert.equal(picker.props.value, 'employee')
@@ -593,8 +596,69 @@ test('ordinary working directory has no mapping labels, filters or candidate rea
     assert.match(text(ui), /Test master/); assert.doesNotMatch(text(ui), /Без связи|Сопоставлен|Сотрудник ClientBus|Сотрудник:|employee-candidates/)
     assert.equal(ui.root.findAllByType('select').length, 0); assert.deepEqual(calls, [])
 })
+test('the staff tab lists everyone, badges masters and keeps mapping out of the masters tab', async t => {
+    const rows = [master, { ...master, id: 'staff-row', externalId: 's1', displayName: 'Reception Rita', isMaster: false }]
+    const mastersReads = []
+    await setup(t, 'CrmMasters', { getCrmMasters: async (_, signal, cursor, query) => { mastersReads.push(query); return page(rows) } })
+    assert.equal(mastersReads.at(-1).mastersOnly, true)
+    const staffReads = []
+    const staff = await setup(t, 'CrmStaff', { getCrmMasters: async (_, signal, cursor, query) => { staffReads.push(query); return page(rows) } }, { mapping: true })
+    assert.equal(staffReads.filter(Boolean).at(-1).mastersOnly, false)
+    assert.match(text(staff.ui), /Reception Rita/)
+    const badges = staff.ui.root.findAllByProps({ className: 'crm-role-master' })
+    assert.equal(badges.length, 1); assert.equal(badges[0].children.join(''), 'Мастер')
+    const plain = await setup(t, 'CrmStaff', {}, {})
+    assert.equal(plain.ui.root.findAllByType('select').length, 0)
+    assert.doesNotMatch(text(plain.ui), /Без связи|Сотрудник:/)
+})
+test('the staff tab shows DIKIDI cabinet roles and links an account row to a catalog master', async t => {
+    const account = { ...master, id: 'staff-row', externalId: 's1', displayName: 'Reception Rita', isMaster: false,
+        linkedId: null, linkedExternalId: null, linkedDisplayName: null, linkUpdatedAt: null }
+    const catalogMaster = { ...master, id: 'm-row', externalId: 'm1', displayName: 'Master One', isMaster: true }
+    const staff = await setup(t, 'CrmStaff', {
+        getCrmMasters: async (_, signal, cursor, query) => query && query.mastersOnly ? page([catalogMaster]) : page([catalogMaster, account]),
+        getCrmStaffAccesses: async () => [
+            { id: 'a1', projectId: 'project', externalId: '701', displayName: 'Rita', masterExternalId: 'm1',
+                phone: '79990000001', roleLabel: 'Administrator', mainOwner: false, observationState: 'OBSERVED', lastObservedAt: null },
+            { id: 'a2', projectId: 'project', externalId: '702', displayName: 'Owner', masterExternalId: null,
+                phone: null, roleLabel: 'Owner', mainOwner: true, observationState: 'OBSERVED', lastObservedAt: null }],
+    }, { mapping: true })
+    assert.match(text(staff.ui), /Кабинет: Rita · Administrator · 79990000001/)
+    assert.match(text(staff.ui), /Учётка кабинета/)
+    assert.match(text(staff.ui), /Не связывать/)
+    await change(staff.ui, 'Связь учётки: Reception Rita', 'm-row')
+    const linkCall = staff.calls.find(call => call[0] === 'staff-link')
+    assert.equal(linkCall[1].id, 'staff-row'); assert.equal(linkCall[2], 'm-row')
+    assert.match(text(staff.ui), /Один человек с:/)
+    assert.equal(staff.ui.root.findAllByProps({ role: 'alert' }).length, 0)
+})
+test('the staff table maps a cabinet access record to an operator account and that account to a ClientBus employee', async t => {
+    const catalogMaster = { ...master, id: 'm-row', externalId: 'm1', displayName: 'Master One', isMaster: true }
+    const access = { id: 'a1', projectId: 'project', externalId: '701', displayName: 'Irina', masterExternalId: 'm1',
+        phone: '79990000001', roleLabel: 'Administrator', mainOwner: false, observationState: 'OBSERVED',
+        lastObservedAt: null, version: 4, operatorId: null, operatorDisplayName: null, operatorMappingEmployeeId: null, operatorMappingUpdatedAt: null }
+    const staff = await setup(t, 'CrmStaff', {
+        getCrmMasters: async () => page([catalogMaster, { ...master, id: 'staff-row', externalId: 's1', displayName: 'Reception Rita', isMaster: false }]),
+        getCrmStaffAccesses: async () => [access],
+    }, { mapping: true })
+    assert.match(text(staff.ui), /Irina/)
+    assert.match(text(staff.ui), /Administrator/)
+    assert.match(text(staff.ui), /запись привязана к мастеру ID m1/)
+    // Выбор оператора: маппинг сотрудника недоступен, пока оператор не выбран.
+    const employeeSelect = () => staff.ui.root.findByProps({ 'aria-label': 'Сотрудник ClientBus: Irina · 701' })
+    assert.equal(employeeSelect().props.disabled, true)
+    await change(staff.ui, 'Оператор: Irina · 701', 'staff-row')
+    const operatorCall = staff.calls.find(call => call[0] === 'operator')
+    assert.equal(operatorCall[1].id, 'a1'); assert.equal(operatorCall[2], 'staff-row')
+    // После выбора оператора (stub вернул operatorId) цепочка размыкается: сотрудник выбирается.
+    await change(staff.ui, 'Сотрудник ClientBus: Irina · 701', 'employee')
+    const linkCall = staff.calls.filter(call => call[0] === 'link').at(-1)
+    assert.equal(linkCall[1].id, 'staff-row', 'маппинг пишется на учётку оператора')
+    assert.equal(linkCall[2], 'employee')
+    assert.equal(staff.ui.root.findAllByProps({ role: 'alert' }).length, 0)
+})
 test('supervisor saves and undoes using the returned version, and duplicate names have login labels', async t => {
-    const { ui, calls } = await setup(t, 'CrmMasters', { getCrmEmployeeCandidates: async () => [candidate, { ...candidate, id: 'e2', username: 'second-login' }] }, { mapping: true }, false)
+    const { ui, calls } = await setup(t, 'CrmStaff', { getCrmEmployeeCandidates: async () => [candidate, { ...candidate, id: 'e2', username: 'second-login' }] }, { mapping: true }, false)
     const labels = ui.root.findAllByType('option').map(row => row.children.join(''))
     assert.ok(labels.some(label => label.includes('test-login'))); assert.ok(labels.some(label => label.includes('second-login')))
     await change(ui, 'Сотрудник: Test master', 'employee')
@@ -606,7 +670,7 @@ test('supervisor saves and undoes using the returned version, and duplicate name
 })
 test('failed mapping preserves old value; a failed undo never overwrites a later edit', async t => {
     let count = 0
-    const fixture = await setup(t, 'CrmMasters', { linkCrmMaster: async (row, id) => {
+    const fixture = await setup(t, 'CrmStaff', { linkCrmMaster: async (row, id) => {
         if (++count !== 2) throw Object.assign(Error('Version conflict'), { status: 409, code: 'CRM_VERSION_CONFLICT' })
         return { ...row, employeeId: id, version: 8 }
     } }, { mapping: true })
@@ -620,7 +684,7 @@ test('failed mapping preserves old value; a failed undo never overwrites a later
 })
 test('mapping mutation is cancelled and the controls recover after a new UI scope', async t => {
     const pending = deferred(); let submittedSignal
-    const fixture = await setup(t, 'CrmMasters', {
+    const fixture = await setup(t, 'CrmStaff', {
         linkCrmMaster: async (_row, _id, signal) => { submittedSignal = signal; return pending.promise },
     }, { mapping: true }, false, workspaceScope('workspace'))
     await change(fixture.ui, 'Сотрудник: Test master', 'employee')
@@ -679,6 +743,8 @@ test('CRM API sends query filters and mapping versions explicitly', async () => 
     assert.deepEqual(JSON.parse(calls[0][1].body), { employeeId: 'employee', expectedVersion: 7 }); assert.match(calls[1][0], /expectedVersion=7$/)
     await api.getCrmMasters('project', undefined, 'scope:cursor+', { q: 'name', unlinked: true, includeNotObserved: false })
     const url = new URL(calls[2][0], 'http://local'); assert.equal(url.searchParams.get('cursor'), 'scope:cursor+'); assert.equal(url.searchParams.get('unlinked'), 'true'); assert.equal(url.searchParams.get('q'), 'name')
+    await api.getCrmMasters('project', undefined, null, { mastersOnly: true })
+    assert.equal(new URL(calls[3][0], 'http://local').searchParams.get('mastersOnly'), 'true')
 })
 test('master history is loaded on demand beyond fifty pages', async t => {
     const reads = []

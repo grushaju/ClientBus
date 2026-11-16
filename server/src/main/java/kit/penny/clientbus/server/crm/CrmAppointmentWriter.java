@@ -159,7 +159,7 @@ public class CrmAppointmentWriter {
             var item=old.stream().filter(current -> current.getExternalMasterId().equals(value.externalMasterId())).findFirst().orElse(null);
             boolean created=item==null;
             if (created) { item=new CrmAppointmentMasterEntity(); item.setAppointment(row); item.setExternalMasterId(value.externalMasterId()); item.setPosition(old.stream().mapToInt(CrmAppointmentMasterEntity::getPosition).max().orElse(-1)+1); old.add(item); }
-            item.setMaster(store.em.createQuery("from CrmMasterEntity where project.id=:project and externalId=:external",CrmMasterEntity.class)
+            item.setMaster(store.em.createQuery("from CrmEmployeeEntity where project.id=:project and externalId=:external",CrmEmployeeEntity.class)
                     .setParameter("project",row.getProject().getId()).setParameter("external",value.externalMasterId()).getResultList().stream().findFirst().orElse(null));
             if (value.presentFields().contains("displayName")) item.setDisplayName(value.displayName());
             boolean startChanged=value.presentFields().contains("localStart") && !Objects.equals(item.getStartLocal(),value.localStart());

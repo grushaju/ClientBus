@@ -174,7 +174,7 @@ public class CrmOperationService {
             var project=project(target.getProject().getId());
             configured(project,input.contextVersion(),input.zoneRevision(),CrmCommand.Type.MOVE);
             var command=changeCommand(project,UUID.randomUUID(),UUID.randomUUID(),appointmentId,input,CrmCommand.Type.MOVE);
-            var master=store.em.createQuery("from CrmMasterEntity where project.id=:project and externalId=:external",CrmMasterEntity.class)
+            var master=store.em.createQuery("from CrmEmployeeEntity where project.id=:project and externalId=:external",CrmEmployeeEntity.class)
                     .setParameter("project",project.getId()).setParameter("external",command.externalMasterId()).getResultStream().findFirst().orElseThrow(CrmStore::notFound);
             return new Read(store.context(project),store.credentials(project.getConnection()),command,master.getId(),project.getZoneId());
         });
@@ -418,9 +418,9 @@ public class CrmOperationService {
         return new CrmCommand(type,id,key,row.getExternalId(),new CrmClientReference(row.getClientIdentityKind(),row.getExternalClientId()),
                 masters.size()==1 ? masters.getFirst().getExternalMasterId() : null,offers,start,project.getZoneId(),request.reason(),snapshot);
     }
-    private CrmMasterEntity master(CrmProjectEntity project,UUID id) {
-        var row=store.em.find(CrmMasterEntity.class,id);
-        if (row==null || !row.getProject().getId().equals(project.getId())) throw CrmStore.notFound();
+    private CrmEmployeeEntity master(CrmProjectEntity project,UUID id) {
+        var row=store.em.find(CrmEmployeeEntity.class,id);
+        if (row==null || !row.getProject().getId().equals(project.getId()) || !row.isMaster()) throw CrmStore.notFound();
         if (!"OBSERVED".equals(row.getObservationState())) throw CrmException.conflict("CRM_VERSION_CONFLICT"); return row;
     }
     private List<CrmCommand.Offer> offers(CrmProjectEntity project,UUID master,List<CrmCreateAppointmentRequest.Offer> choices) {

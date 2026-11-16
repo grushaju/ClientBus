@@ -176,6 +176,12 @@ class DikidiHttpTransportTest {
                 URI.create("https://chat.dikidi.ru/c51/v/a.jpg"), RequestProfile.MEDIA));
         assertThrows(DikidiFailure.class, () -> JdkDikidiTransport.destination(
                 URI.create("https://f2.dikidi.ru/c51/../etc/passwd.jpg"), RequestProfile.MEDIA));
+        // 16.11.2026: иконки диалогов C02 — то же CDN-семейство в зоне dikidi.net.
+        JdkDikidiTransport.destination(URI.create("https://f2.dikidi.net/c99/v11111/abc123hash.jpg"), RequestProfile.MEDIA);
+        assertThrows(DikidiFailure.class, () -> JdkDikidiTransport.destination(
+                URI.create("https://f2.dikidi.net/upload/"), RequestProfile.MEDIA));
+        assertThrows(DikidiFailure.class, () -> JdkDikidiTransport.destination(
+                URI.create("https://evil.net/c51/v/a.jpg"), RequestProfile.MEDIA));
         JdkDikidiTransport.destination(URI.create("https://f2.dikidi.ru/upload/"), RequestProfile.UPLOAD);
         assertThrows(DikidiFailure.class, () -> JdkDikidiTransport.destination(
                 URI.create("https://dikidi.ru/upload/"), RequestProfile.UPLOAD));

@@ -15,8 +15,8 @@ public class CrmCatalogWriter {
     public void apply(CrmProjectEntity project, CrmCatalogSnapshot snapshot, long generation) {
         validate(snapshot);
         if (snapshot.projectDisplayName() != null) project.setDisplayName(snapshot.projectDisplayName());
-        Map<String, CrmMasterEntity> existingMasters = new HashMap<>();
-        store.em.createQuery("from CrmMasterEntity where project.id=:project", CrmMasterEntity.class)
+        Map<String, CrmEmployeeEntity> existingMasters = new HashMap<>();
+        store.em.createQuery("from CrmEmployeeEntity where project.id=:project", CrmEmployeeEntity.class)
                 .setParameter("project", project.getId()).getResultList().forEach(row -> existingMasters.put(row.getExternalId(), row));
         Map<String, CrmServiceEntity> existingServices = new HashMap<>();
         store.em.createQuery("from CrmServiceEntity where project.id=:project", CrmServiceEntity.class)
@@ -25,17 +25,51 @@ public class CrmCatalogWriter {
         store.em.createQuery("from CrmMasterServiceEntity where project.id=:project", CrmMasterServiceEntity.class)
                 .setParameter("project", project.getId()).getResultList().forEach(row -> existingOffers.put(
                         List.of(row.getMaster().getExternalId(), row.getService().getExternalId()), row));
-        Map<String, CrmMasterEntity> masterRows = new HashMap<>();
+        Map<String, CrmEmployeeEntity> masterRows = new HashMap<>();
         for (var source : snapshot.masters()) {
             var row = existingMasters.get(source.externalId());
             boolean created = row == null;
-            if (created) { row = new CrmMasterEntity(); row.setProject(project); row.setExternalId(source.externalId()); }
+            if (created) { row = new CrmEmployeeEntity(); row.setProject(project); row.setExternalId(source.externalId()); }
             row.setDisplayName(source.displayName()); row.setProfile(merge(row.getProfile(), source.attributes()));
+            // Наблюдение в каталоге мастеров — признак мастерства: строка (в т.ч. ранее
+            // заведённая как не-мастер) становится мастером; понижения каталог не делает.
+            row.setMaster(true);
             row.setLastObservedAt(snapshot.observedAt()); row.setLastObservedGeneration(generation); row.setObservationState("OBSERVED");
             if (created) store.em.persist(row);
             masterRows.put(source.externalId(), row);
         }
+        // Держатели доступа проекта (CRM_SEMANTICS §6): заводятся не-мастерами; строку
+        // мастера доступы не переписывают и не понижают — каталог мастеров сильнее.
+        for (var source : snapshot.staff()) {
+            var row = masterRows.containsKey(source.externalId()) ? masterRows.get(source.externalId())
+                    : existingMasters.get(source.externalId());
+            if (row != null && row.isMaster()) continue;
+            boolean created = row == null;
+            if (created) { row = new CrmEmployeeEntity(); row.setProject(project); row.setExternalId(source.externalId()); }
+            row.setDisplayName(source.displayName()); row.setProfile(merge(row.getProfile(), source.attributes()));
+            row.setMaster(false);
+            row.setLastObservedAt(snapshot.observedAt()); row.setLastObservedGeneration(generation); row.setObservationState("OBSERVED");
+            if (created) store.em.persist(row);
+        }
         Map<String, CrmServiceEntity> serviceRows = new HashMap<>();
+        // Записи доступа (страница правок): null — страница не читалась (ограниченная
+        // учётка/сбой), строки не обновляются и не стареют; список — наблюдение полное.
+        Map<String, CrmStaffAccessEntity> existingAccesses = new HashMap<>();
+        if (snapshot.staffAccesses() != null)
+            store.em.createQuery("from CrmStaffAccessEntity where project.id=:project", CrmStaffAccessEntity.class)
+                    .setParameter("project", project.getId()).getResultList()
+                    .forEach(row -> existingAccesses.put(row.getExternalId(), row));
+        for (var source : snapshot.staffAccesses() == null ? List.<CrmStaffAccess>of() : snapshot.staffAccesses()) {
+            var row = existingAccesses.get(source.externalId());
+            boolean created = row == null;
+            if (created) { row = new CrmStaffAccessEntity(); row.setProject(project); row.setExternalId(source.externalId()); }
+            row.setDisplayName(source.displayName()); row.setMasterExternalId(source.masterExternalId());
+            row.setPhone(source.phone()); row.setMainOwner(source.mainOwner());
+            row.setProfile(merge(row.getProfile(), source.attributes()));
+            row.setLastObservedAt(snapshot.observedAt()); row.setLastObservedGeneration(generation);
+            row.setObservationState("OBSERVED");
+            if (created) store.em.persist(row);
+        }
         for (var source : snapshot.services()) {
             var row = existingServices.get(source.externalId());
             boolean created = row == null;
@@ -69,10 +103,15 @@ public class CrmCatalogWriter {
         }
         store.em.flush();
         if (snapshot.completeness() == CrmReadResult.Completeness.COMPLETE) {
-            for (String table : List.of("master", "service", "masterservice"))
+            var tables = new ArrayList<>(List.of("employee", "service", "masterservice"));
+            // Записи доступа стареют только когда страница правок действительно читалась.
+            if (snapshot.staffAccesses() != null) tables.add("staffaccess");
+            for (String table : tables)
                 store.em.createNativeQuery("update crm."+table+" set observationstate='NOT_OBSERVED',version=version+1,updatedat=clock_timestamp() "
                         +"where projectid=:project and (lastobservedgeneration is null or lastobservedgeneration<>:generation) "
                         +"and observationstate is distinct from 'NOT_OBSERVED'")
+                        // Строки crm.employee наблюдаются снимком целиком: мастера — каталогом,
+                        // держатели доступа — company.accesses того же R01.
                         .setParameter("project", project.getId()).setParameter("generation", generation).executeUpdate();
         }
     }
@@ -83,8 +122,15 @@ public class CrmCatalogWriter {
         if (snapshot.projectDisplayName() != null && snapshot.projectError() != null) invalid();
         if (snapshot.projectDisplayName() != null
                 && (snapshot.projectDisplayName().isBlank() || snapshot.projectDisplayName().length() > 65536)) invalid();
-        Set<String> masters = new HashSet<>(), services = new HashSet<>();
+        Set<String> masters = new HashSet<>(), services = new HashSet<>(), staff = new HashSet<>();
         for (var row : snapshot.masters()) if (!masters.add(id(row.externalId())) || row.displayName() == null || row.displayName().isBlank()) invalid();
+        for (var row : snapshot.staff()) if (!staff.add(id(row.externalId())) || row.displayName() == null || row.displayName().isBlank()) invalid();
+        Set<String> accesses = new HashSet<>();
+        for (var row : snapshot.staffAccesses() == null ? List.<CrmStaffAccess>of() : snapshot.staffAccesses()) {
+            if (!accesses.add(id(row.externalId())) || row.displayName() == null || row.displayName().isBlank()) invalid();
+            if (row.masterExternalId() != null) id(row.masterExternalId());
+            if (row.phone() != null && !row.phone().matches("[0-9]{4,20}")) invalid();
+        }
         for (var row : snapshot.services()) if (!services.add(id(row.externalId())) || row.displayName() == null || row.displayName().isBlank()) invalid();
         Set<List<String>> pairs = new HashSet<>();
         for (var row : snapshot.offers()) {

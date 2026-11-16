@@ -14,7 +14,7 @@ public class CrmAppointmentMasterEntity extends CrmRecord {
     public void setAttributes(Map<String,Object> value) { attributes=value; }
     @ManyToOne(fetch=FetchType.LAZY,optional=false) @JoinColumn(name="appointmentid",nullable=false,foreignKey=@ForeignKey(name="fkappointmentmasterappointment")) private CrmAppointmentEntity appointment;
     @Column(name="position",nullable=false) private int position;
-    @ManyToOne(fetch=FetchType.LAZY) @JoinColumn(name="masterid",foreignKey=@ForeignKey(name="fkappointmentmastermaster")) private CrmMasterEntity master;
+    @ManyToOne(fetch=FetchType.LAZY) @JoinColumn(name="masterid",foreignKey=@ForeignKey(name="fkappointmentmastermaster")) private CrmEmployeeEntity master;
     @Column(name="externalmasterid",nullable=false,length=128) private String externalMasterId;
     @Column(name="displayname",columnDefinition="text") private String displayName;
     @Column(name="startlocal") private LocalDateTime startLocal;
@@ -26,8 +26,8 @@ public class CrmAppointmentMasterEntity extends CrmRecord {
     public void setAppointment(CrmAppointmentEntity value) { appointment=value; }
     public int getPosition() { return position; }
     public void setPosition(int value) { position=value; }
-    public CrmMasterEntity getMaster() { return master; }
-    public void setMaster(CrmMasterEntity value) { master=value; }
+    public CrmEmployeeEntity getMaster() { return master; }
+    public void setMaster(CrmEmployeeEntity value) { master=value; }
     public String getExternalMasterId() { return externalMasterId; }
     public void setExternalMasterId(String value) { externalMasterId=value; }
     public String getDisplayName() { return displayName; }

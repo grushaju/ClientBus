@@ -455,8 +455,47 @@ public final class DikidiProvider implements CrmProvider, AutoCloseable {
                 name = null; projectError = error.code();
             }
             return new CrmCatalogSnapshot(masters, new ArrayList<>(services.values()), offers,
-                    observedAt, CrmReadResult.Completeness.COMPLETE, externalProjectId + ":CATALOG", name, projectError);
+                    observedAt, CrmReadResult.Completeness.COMPLETE, externalProjectId + ":CATALOG", name, projectError,
+                    parseStaff(result, externalProjectId), readStaffAccesses(session, externalProjectId));
         });
+    }
+    /**
+     * Записи доступа проекта (13.6): страница /ru/owner/permissions/ + ajax-форма
+     * edit/{id} на каждую строку (живые наблюдения 16.11.2026). Ограниченная учётка
+     * интеграции может не видеть страницу — это деградация (null: записи не наблюдаются
+     * и не стареют), а не отказ снимка; потеря входа инвалидирует сессию как везде.
+     */
+    private List<CrmStaffAccess> readStaffAccesses(DikidiClient.Session session, String project) {
+        try {
+            String page = call(session, "GET", "https://dikidi.ru/ru/owner/permissions/?company=" + project,
+                    null, false, project);
+            List<CrmStaffAccess> accesses = new ArrayList<>();
+            for (String accessId : DikidiPermissions.pageAccessIds(page)) {
+                JsonNode answer = tree(call(session, "GET",
+                        "https://dikidi.ru/ru/owner/ajax/permissions/edit/" + accessId + "/?company=" + project,
+                        null, true, project));
+                if (!"item-access".equals(answer.path("dialog").asString(""))) throw new CrmFailure(CONTEXT_MISMATCH);
+                JsonNode record = answer.path("access");
+                if (!record.isObject() || !identifier(record.path("id")).equals(accessId)
+                        || !record.path("is_main_owner").isBoolean()) throw new CrmFailure(CONTEXT_MISMATCH);
+                var form = DikidiPermissions.editForm(answer.path("html").asString(""));
+                Map<String, String> attributes = new LinkedHashMap<>();
+                attributes.put("roleValue", form.roleValue()); attributes.put("roleLabel", form.roleLabel());
+                accesses.add(new CrmStaffAccess(accessId, form.name().isBlank() ? accessId : form.name(),
+                        form.masterExternalId(), form.phone(), record.path("is_main_owner").asBoolean(), attributes));
+            }
+            return accesses;
+        } catch (DikidiFailure technical) {
+            if (CrmBridges.failure(technical).code() == AUTH_REQUIRED) session.invalidateAuthentication();
+            return null;
+        } catch (CrmFailure failure) {
+            if (failure.code() == AUTH_REQUIRED) session.invalidateAuthentication();
+            return null;
+        } catch (RuntimeException unexpected) {
+            // Слой доступа — надстройка: любой неожиданный отказ его чтения
+            // деградирует снимок, но не отменяет проверенный каталог.
+            return null;
+        }
     }
     private String projectName(DikidiClient.Session session, String project, long deadline) {
         var profile = tree(call(session, "GET", "https://dikidi.ru/ru/owner/ajax/profile/index/?company=" + project,
@@ -508,6 +547,32 @@ public final class DikidiProvider implements CrmProvider, AutoCloseable {
             return minutes.multiply(BigDecimal.valueOf(60)).longValueExact();
         }
         catch (ArithmeticException error) { throw new CrmFailure(INVALID_RESPONSE); }
+    }
+    /**
+     * Держатели доступа проекта (company.accesses, живое наблюдение 16.11.2026): объект,
+     * ключённый user id платформы («<user id>»: {id, roles_id, username}) — тот же ключ,
+     * под которым автор виден в чате, поэтому импорт доступов заводит строки crm.employee
+     * без отдельного сведения по имени. Ключ-актор «actor» (служебная запись профиля
+     * доступа) не является сотрудником; любой иной нечисловой ключ — новый формат
+     * платформы, он отвергается явно, а не молча теряется.
+     */
+    private List<CrmStaff> parseStaff(JsonNode result, String project) {
+        JsonNode accesses = result.path("company").path("accesses").path(project);
+        List<CrmStaff> staff = new ArrayList<>();
+        for (var entry : accesses.properties()) {
+            if (entry.getKey().equals("actor")) continue;
+            String id = entry.getKey();
+            if (!id.matches("[0-9]{1,20}")) throw new CrmFailure(INVALID_RESPONSE);
+            JsonNode value = entry.getValue();
+            if (!value.isObject() || !identifier(value.path("id")).equals(id)) throw new CrmFailure(CONTEXT_MISMATCH);
+            String username = value.path("username").asString("");
+            Map<String, String> attributes = new LinkedHashMap<>();
+            JsonNode role = value.path("roles_id");
+            if (!role.isMissingNode() && !role.isNull()) attributes.put("rolesId", role.asString());
+            staff.add(new CrmStaff(id, username.isBlank() ? id : username, attributes));
+            if (staff.size() > 5000) throw new CrmFailure(INVALID_RESPONSE);
+        }
+        return staff;
     }
     private List<CrmMaster> parseMasters(JsonNode result) {
             JsonNode info = result.path("masters").path("info"), data = info.path("data"), ids = info.path("ids");

@@ -35,7 +35,7 @@ public class CrmAppointmentReader {
                 if (client==null || !client.getProject().getId().equals(projectId)) throw CrmStore.notFound();
             }
             if (filter.masterId()!=null) {
-                var master=store.em.find(CrmMasterEntity.class,filter.masterId());
+                var master=store.em.find(CrmEmployeeEntity.class,filter.masterId());
                 if (master==null || !master.getProject().getId().equals(projectId)) throw CrmStore.notFound();
             }
             return page(List.of(project),null,filter,cursor);
@@ -151,7 +151,7 @@ public class CrmAppointmentReader {
             parameters.put("externalClient",filter.externalClientId());
         }
         if (filter.masterId()!=null) {
-            hql+=" and exists(select 1 from CrmAppointmentMasterEntity m,CrmMasterEntity catalog where m.appointment=a and catalog.id=:master and catalog.project=a.project and catalog.externalId=m.externalMasterId)";
+            hql+=" and exists(select 1 from CrmAppointmentMasterEntity m,CrmEmployeeEntity catalog where m.appointment=a and catalog.id=:master and catalog.project=a.project and catalog.externalId=m.externalMasterId)";
             parameters.put("master",filter.masterId());
         }
         var values=new String[]{filter.kind(),filter.appointmentState(),filter.confirmationState(),filter.attendanceState(),filter.paymentState()};
@@ -197,7 +197,7 @@ public class CrmAppointmentReader {
                 }).toList();
         var masterRows=store.em.createQuery("from CrmAppointmentMasterEntity m where m.appointment.id=:id order by m.position",CrmAppointmentMasterEntity.class)
                 .setParameter("id",row.getId()).getResultList();
-        var masterIds=catalogIds("CrmMasterEntity",project.getId(),masterRows.stream().map(CrmAppointmentMasterEntity::getExternalMasterId).toList());
+        var masterIds=catalogIds("CrmEmployeeEntity",project.getId(),masterRows.stream().map(CrmAppointmentMasterEntity::getExternalMasterId).toList());
         var masters=masterRows.stream().map(item -> {
                     var master=masterIds.get(item.getExternalMasterId());
                     return new CrmAppointmentMasterDto(item.getId(),master,item.getExternalMasterId(),item.getDisplayName(),item.getStartLocal(),item.getEndLocal(),item.getDurationSeconds(),money(item.getPrice()),item.getCurrency(),fields(item.getAttributes()));

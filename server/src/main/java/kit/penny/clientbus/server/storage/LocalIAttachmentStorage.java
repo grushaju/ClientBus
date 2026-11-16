@@ -152,9 +152,14 @@ public class LocalIAttachmentStorage implements IAttachmentStorage {
             String storageKey
     ) {
 
-        Path path =
-                resolveStoragePath(storageKey);
-
+        final Path path;
+        try {
+            path = resolveStoragePath(storageKey);
+        } catch (RuntimeException invalidKey) {
+            // Ключ, не являющийся путём хранилища (например удалённый URL из чужого
+            // импорта), — «такого объекта нет», но не падение запроса.
+            return false;
+        }
         return Files.isRegularFile(path);
     }
 
@@ -218,10 +223,22 @@ public class LocalIAttachmentStorage implements IAttachmentStorage {
             String fileName
     ) {
 
-        String normalized =
-                Paths.get(fileName)
-                        .getFileName()
-                        .toString();
+        // Имя файла может прийти из данных платформы (URL к artwork и т.п.):
+        // база берётся по последнему разделителю, Path — только над ней.
+        String candidate = fileName;
+        int boundary = Math.max(candidate.lastIndexOf('/'), candidate.lastIndexOf('\\'));
+        if (boundary >= 0) candidate = candidate.substring(boundary + 1);
+        String normalized;
+        try {
+            normalized =
+                    Paths.get(candidate)
+                            .getFileName()
+                            .toString();
+        } catch (java.nio.file.InvalidPathException exotic) {
+            // Даже база неименуема (управляющие символы) — расширение просто не угадывается,
+            // бросаться здесь значит уронить импорт чужого вложения.
+            return "";
+        }
 
         int dotIndex =
                 normalized.lastIndexOf('.');
@@ -260,10 +277,19 @@ public class LocalIAttachmentStorage implements IAttachmentStorage {
             );
         }
 
-        Path resolved =
-                rootPath
-                        .resolve(storageKey)
-                        .normalize();
+        Path resolved;
+        try {
+            resolved =
+                    rootPath
+                            .resolve(storageKey)
+                            .normalize();
+        } catch (java.nio.file.InvalidPathException invalidKey) {
+            // Windows-невалидный ключ (: в URL, управляющие символы) — тот же случай,
+            // что и traversal: ключ некорректен, а не «файл не найден» ценой 500.
+            throw new IllegalArgumentException(
+                    "Invalid storage key: " + storageKey
+            );
+        }
 
         /*
          * Protect against path traversal:

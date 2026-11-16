@@ -21,6 +21,17 @@ class DikidiCatalogContractTest {
             """;
     private record Request(String address, List<Map.Entry<String, String>> form) {}
     private final List<Request> requests = new ArrayList<>();
+    private String permissionsPage = "";
+    private final Map<String, String> permissionsEdits = new HashMap<>();
+    private DikidiTransport.Response answer(ArrayDeque<DikidiTransport.Response> responses, String path) {
+        if (path.equals("/ru/owner/permissions/")) return new DikidiTransport.Response(200, permissionsPage);
+        if (path.startsWith("/ru/owner/ajax/permissions/edit/")) {
+            var matcher = java.util.regex.Pattern.compile("edit/([0-9]+)/").matcher(path);
+            return new DikidiTransport.Response(200,
+                    permissionsEdits.getOrDefault(matcher.find() ? matcher.group(1) : "", "{\"error\":1}"));
+        }
+        return responses.removeFirst();
+    }
     private CrmCatalogSnapshot read(String response) {
         return read(response, "{\"html\":\"<h2>Project &amp; title</h2>\"}");
     }
@@ -40,7 +51,7 @@ class DikidiCatalogContractTest {
                     if (uri.getPath().equals("/ru/owner/ajax/profile/index/")) {
                         assertEquals("company=100", uri.getQuery()); assertEquals("100", project);
                     }
-                    return responses.removeFirst();
+                    return answer(responses, uri.getPath());
                 }); var access = new CrmAccess(UUID.randomUUID(), 1, "70000000000", "test-secret".toCharArray())) {
             return provider.readCatalog(access, "100");
         }
@@ -69,9 +80,10 @@ class DikidiCatalogContractTest {
                 "{\"html\":\"<input name='csrf' type='hidden' value='second'>\"}",
                 "{\"callback\":[\"sw.auth.complete();\"]}", "journal", CATALOG,
                 "{\"html\":\"<h2>Old name</h2>\"}", "journal", CATALOG,
-                "{\"html\":\"<h2>Новое название</h2>\"}"));
+                "{\"html\":\"<h2>Новое название</h2>\"}")
+                .stream().map(body -> new DikidiTransport.Response(200, body)).toList());
         try (var provider = new DikidiProvider(new DikidiProvider.Settings(Duration.ofSeconds(2), Duration.ofSeconds(15), 65536),
-                () -> (method, uri, form, ajax, project, timeout) -> new DikidiTransport.Response(200, responses.removeFirst()));
+                () -> (method, uri, form, ajax, project, timeout) -> answer(responses, uri.getPath()));
              var access = new CrmAccess(UUID.randomUUID(), 1, "70000000000", "test-secret".toCharArray())) {
             assertEquals("Old name", provider.readCatalog(access, "100").projectDisplayName());
             assertEquals("Новое название", provider.readCatalog(access, "100").projectDisplayName());
@@ -104,7 +116,7 @@ class DikidiCatalogContractTest {
             responses.add(new DikidiTransport.Response(read==0 ? 401 : 200,read==0 ? "expired" : "{\"html\":\"<h2>Fresh name</h2>\"}"));
         }
         try (var provider=new DikidiProvider(new DikidiProvider.Settings(Duration.ofSeconds(2),Duration.ofSeconds(15),65536),
-                () -> (method,uri,form,ajax,project,timeout) -> responses.removeFirst());
+                () -> (method,uri,form,ajax,project,timeout) -> answer(responses, uri.getPath()));
              var access=new CrmAccess(UUID.randomUUID(),1,"70000000000","test-secret".toCharArray())) {
             assertEquals(CrmFailure.Code.AUTH_REQUIRED,provider.readCatalog(access,"100").projectError());
             var current=provider.readCatalog(access,"100");
@@ -123,6 +135,69 @@ class DikidiCatalogContractTest {
         var result = read(CATALOG.substring(0, CATALOG.indexOf("\"services\"")) + "\"services\":{\"ids\":[],\"data\":[]}}}");
         assertEquals(2, result.masters().size()); assertTrue(result.services().isEmpty()); assertTrue(result.offers().isEmpty());
         assertEquals(CrmReadResult.Completeness.COMPLETE, result.completeness());
+        assertTrue(result.staff().isEmpty(), "ключ-актор не сотрудник");
+    }
+    /** Живое наблюдение 16.11.2026: company.accesses ключён user id платформы — тем же, что автор чата. */
+    @Test void staffAccessHoldersAreParsedFromCompanyAccesses() {
+        var withStaff = CATALOG.replace("\"100\":{\"actor\":{\"id\":\"actor\"}}",
+                "\"100\":{\"actor\":{\"id\":\"actor\"},\"7701\":{\"id\":\"7701\",\"roles_id\":1,\"username\":\"owner-login\"},"
+                        + "\"7702\":{\"id\":\"7702\",\"roles_id\":\"2\"}}");
+        var result = read(withStaff);
+        assertEquals(2, result.staff().size());
+        assertEquals("7701", result.staff().getFirst().externalId());
+        assertEquals("owner-login", result.staff().getFirst().displayName());
+        assertEquals("1", result.staff().getFirst().attributes().get("rolesId"));
+        assertEquals("2", result.staff().getLast().attributes().get("rolesId"));
+        assertEquals("7702", result.staff().getLast().displayName(), "пустой username — честный fallback id, не выдумка");
+        assertThrows(CrmFailure.class, () -> read(CATALOG.replace("\"100\":{\"actor\":{\"id\":\"actor\"}}",
+                "\"100\":{\"7701\":{\"id\":\"other\",\"username\":\"x\"}}")));
+        assertThrows(CrmFailure.class, () -> read(CATALOG.replace("\"100\":{\"actor\":{\"id\":\"actor\"}}",
+                "\"100\":{\"weird\":{\"id\":\"weird\"}}")));
+    }
+    /** Живое наблюдение 16.11.2026: страница правок (id доступа) + edit-форма (привязка мастера, роль, телефон). */
+    @Test void staffAccessRecordsAreParsedFromPermissionsPageAndEditForms() {
+        permissionsPage = "<table><tbody>"
+                + "<tr id=\"item-701\" data-is-main-owner=\"false\"><td class=\"name\"><a data-href=\"/ru/owner/ajax/permissions/edit/701/?company=100\">Irina</a></td><td class=\"roles text-center\">Admin</td></tr>"
+                + "<tr id=\"item-702\" data-is-main-owner=\"true\"><td class=\"name\"><a data-href=\"/ru/owner/ajax/permissions/edit/702/?company=100\">Pavel S</a></td></tr>"
+                + "</tbody></table>";
+        permissionsEdits.put("701", "{\"dialog\":\"item-access\",\"access\":{\"id\":701,\"is_main_owner\":false},"
+                + "\"html\":\"<form><input type=\\\"hidden\\\" name=\\\"number\\\" value=\\\"79990000001\\\" />"
+                + "<select name=\\\"role\\\"><option value=\\\"1\\\">Owner</option><option value=\\\"2\\\" selected>Administrator</option></select>"
+                + "<select name=\\\"master\\\"><option value=\\\"0\\\">none</option><option value=\\\"9001\\\" selected>Irina Master</option></select>"
+                + "<input class=\\\"form-control\\\" type=\\\"text\\\" name=\\\"name\\\" value=\\\"Irina\\\" /></form>\"}");
+        permissionsEdits.put("702", "{\"dialog\":\"item-access\",\"access\":{\"id\":702,\"is_main_owner\":true},"
+                + "\"html\":\"<form><input type=\\\"hidden\\\" name=\\\"number\\\" value=\\\"79990000002\\\" />"
+                + "<select name=\\\"role\\\"><option value=\\\"1\\\" selected>Owner</option></select>"
+                + "<select name=\\\"master\\\"><option value=\\\"0\\\" selected>none</option><option value=\\\"9001\\\">Irina Master</option></select>"
+                + "<input class=\\\"form-control\\\" type=\\\"text\\\" name=\\\"name\\\" value=\\\"Pavel S\\\" /></form>\"}");
+        var result = read(CATALOG);
+        assertEquals(2, result.staffAccesses().size());
+        var irina = result.staffAccesses().getFirst();
+        assertEquals("701", irina.externalId()); assertEquals("Irina", irina.displayName());
+        assertEquals("9001", irina.masterExternalId(), "selected-опция select master — доказанная привязка");
+        assertEquals("79990000001", irina.phone());
+        assertFalse(irina.mainOwner());
+        assertEquals("2", irina.attributes().get("roleValue"));
+        assertEquals("Administrator", irina.attributes().get("roleLabel"));
+        var owner = result.staffAccesses().getLast();
+        assertTrue(owner.mainOwner()); assertNull(owner.masterExternalId(), "option 0 selected — сотрудник не выбран");
+        assertEquals(1, requests.stream().filter(r -> r.address().equals("/ru/owner/permissions/")).count());
+        assertEquals(2, requests.stream().filter(r -> r.address().startsWith("/ru/owner/ajax/permissions/edit/")).count());
+    }
+    /** Ограниченная учётка интеграции: страница правок недоступна — деградация, не отказ снимка. */
+    @Test void inaccessiblePermissionsPageDegradesAccessesButNotTheCatalog() {
+        var result = read(CATALOG); // permissionsPage="" — строк нет, страница не правок
+        assertNull(result.staffAccesses());
+        assertEquals(CrmReadResult.Completeness.COMPLETE, result.completeness());
+        assertEquals(2, result.masters().size());
+        // Битая форма одной строки теряет всё наблюдение доступов (частичный список опаснее).
+        permissionsPage = "<tr id=\"item-701\"></tr>";
+        var broken = read(CATALOG);
+        assertNull(broken.staffAccesses());
+        assertEquals(2, broken.masters().size());
+        // Несовпадение access.id в форме — тоже деградация (CONTEXT_MISMATCH внутри чтения).
+        permissionsEdits.put("701", "{\"dialog\":\"item-access\",\"access\":{\"id\":999,\"is_main_owner\":false},\"html\":\"\"}");
+        assertNull(read(CATALOG).staffAccesses());
     }
     @Test void missingServiceSectionOrConflictingReferencesNeverBecomeCompleteEmptyCatalog() {
         for (String response : List.of(

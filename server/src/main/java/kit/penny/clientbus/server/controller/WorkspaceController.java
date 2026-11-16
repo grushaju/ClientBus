@@ -110,7 +110,7 @@ public class WorkspaceController {
         WorkspaceDto workspace = workspaceService.getWorkspace(id);
         String storageKey = workspace.avatarUrl();
 
-        if (storageKey == null || storageKey.isBlank()) {
+        if (storageKey == null || storageKey.isBlank() || !attachmentStorage.exists(storageKey)) {
             return ResponseEntity.notFound().build();
         }
 

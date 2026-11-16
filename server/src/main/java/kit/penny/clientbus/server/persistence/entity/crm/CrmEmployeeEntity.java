@@ -9,14 +9,21 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * Сотрудник CRM-проекта (решение пользователя 16.11): одна таблица для всех сущностей доступа
+ * проекта — мастер (исключительно оказание услуг из перечня и график) и не-мастер (ресепшн,
+ * админ, стажёр — только ведение записи). Различие — <code>ismaster</code>; привязка сотрудника
+ * ClientBus (employeeid) не зависит от роли. Пространство externalid — платформенные id
+ * пользователей DIKIDI (masters.info и доступы проекта отдают строчки под user id авторов).
+ */
 @Entity
-@Table(name = "master", schema = "crm",
-    uniqueConstraints = {@UniqueConstraint(name = "masterpk", columnNames = "id"),
-        @UniqueConstraint(name = "uqmasterexternal", columnNames = {"projectid", "externalid"})},
-    indexes = @Index(name = "ixmasteremployee", columnList = "employeeid"))
-public class CrmMasterEntity extends CrmRecord {
+@Table(name = "employee", schema = "crm",
+    uniqueConstraints = {@UniqueConstraint(name = "employeepk", columnNames = "id"),
+        @UniqueConstraint(name = "uqemployeeexternal", columnNames = {"projectid", "externalid"})},
+    indexes = @Index(name = "ixemployeeemployee", columnList = "employeeid"))
+public class CrmEmployeeEntity extends CrmRecord {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "projectid", nullable = false, foreignKey = @ForeignKey(name = "fkmasterproject"))
+    @JoinColumn(name = "projectid", nullable = false, foreignKey = @ForeignKey(name = "fkemployeeproject"))
     private CrmProjectEntity project;
 
     @Column(name = "externalid", nullable = false, length = 128)
@@ -25,19 +32,39 @@ public class CrmMasterEntity extends CrmRecord {
     @Column(name = "displayname", nullable = false, columnDefinition = "text")
     private String displayName;
 
+    @Column(name = "ismaster", nullable = false)
+    private boolean isMaster;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "profile", nullable = false, columnDefinition = "jsonb")
     private Map<String, Object> profile = Map.of();
 
     @ManyToOne(fetch = FetchType.LAZY, optional = true)
-    @JoinColumn(name = "employeeid", nullable = true, foreignKey = @ForeignKey(name = "fkmasteremployee"))
+    @JoinColumn(name = "employeeid", nullable = true, foreignKey = @ForeignKey(name = "fkemployeeemployee"))
     private EmployeeEntity employee;
+
+    /**
+     * Связь «одна строка наблюдения — один человек» (13.6): строка учётки доступа
+     * (ismaster=false) ссылается на строку сотрудника каталога того же проекта. Мост
+     * «user id учётки ↔ id записи доступа» в ответах DIKIDI не наблюдается, поэтому
+     * связь подтверждает человек; атрибуция наследует маппинг цели (CRM_SEMANTICS §6).
+     */
+    @ManyToOne(fetch = FetchType.LAZY, optional = true)
+    @JoinColumn(name = "linkedemployeeid", nullable = true, foreignKey = @ForeignKey(name = "fkemployeelinked"))
+    private CrmEmployeeEntity linkedEmployee;
+
+    @Column(name = "linkupdatedat")
+    private Instant linkUpdatedAt;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = true)
+    @JoinColumn(name = "linkupdatedby", nullable = true, foreignKey = @ForeignKey(name = "fkemployeelinkauthor"))
+    private EmployeeEntity linkUpdatedBy;
 
     @Column(name = "mappingupdatedat")
     private Instant mappingUpdatedAt;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = true)
-    @JoinColumn(name = "mappingupdatedby", nullable = true, foreignKey = @ForeignKey(name = "fkmastermappingauthor"))
+    @JoinColumn(name = "mappingupdatedby", nullable = true, foreignKey = @ForeignKey(name = "fkemployeemappingauthor"))
     private EmployeeEntity mappingUpdatedBy;
 
     @Column(name = "mappingpreviousid")
@@ -65,10 +92,18 @@ public class CrmMasterEntity extends CrmRecord {
     public void setExternalId(String externalId) { this.externalId = externalId; }
     public String getDisplayName() { return displayName; }
     public void setDisplayName(String displayName) { this.displayName = displayName; }
+    public boolean isMaster() { return isMaster; }
+    public void setMaster(boolean value) { isMaster = value; }
     public Map<String, Object> getProfile() { return profile; }
     public void setProfile(Map<String, Object> profile) { this.profile = profile; }
     public EmployeeEntity getEmployee() { return employee; }
     public void setEmployee(EmployeeEntity employee) { this.employee = employee; }
+    public CrmEmployeeEntity getLinkedEmployee() { return linkedEmployee; }
+    public void setLinkedEmployee(CrmEmployeeEntity value) { linkedEmployee = value; }
+    public Instant getLinkUpdatedAt() { return linkUpdatedAt; }
+    public void setLinkUpdatedAt(Instant value) { linkUpdatedAt = value; }
+    public EmployeeEntity getLinkUpdatedBy() { return linkUpdatedBy; }
+    public void setLinkUpdatedBy(EmployeeEntity value) { linkUpdatedBy = value; }
     public Instant getMappingUpdatedAt() { return mappingUpdatedAt; }
     public void setMappingUpdatedAt(Instant mappingUpdatedAt) { this.mappingUpdatedAt = mappingUpdatedAt; }
     public EmployeeEntity getMappingUpdatedBy() { return mappingUpdatedBy; }

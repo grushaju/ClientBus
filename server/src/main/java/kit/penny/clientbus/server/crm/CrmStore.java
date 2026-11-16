@@ -14,12 +14,12 @@ public class CrmStore {
     final EntityManager em;
     final CrmConnectionRepository connections;
     final CrmProjectRepository projects;
-    final CrmMasterRepository masters;
+    final CrmEmployeeRepository masters;
     final CrmAccessGuard guard;
     final CrmStorage storage;
     private final CrmRegistry registry;
     public CrmStore(EntityManager em, CrmConnectionRepository connections, CrmProjectRepository projects,
-                    CrmMasterRepository masters, CrmAccessGuard guard, CrmStorage storage, CrmRegistry registry) {
+                    CrmEmployeeRepository masters, CrmAccessGuard guard, CrmStorage storage, CrmRegistry registry) {
         this.em = em; this.connections = connections; this.projects = projects; this.masters = masters;
         this.guard = guard; this.storage = storage; this.registry=registry;
     }
@@ -97,11 +97,16 @@ public class CrmStore {
                 row.getExternalId(), row.getDisplayName(), row.getCurrency(), row.getZoneId(), row.getZoneSource(),
                 row.getZoneRevision(), row.getContextVersion(), row.isEnabled(), row.getConnection().getStatus(), capabilities, row.getVersion(), row.isArchived());
     }
-    static CrmMasterDto dto(CrmMasterEntity row) {
+    static CrmMasterDto dto(CrmEmployeeEntity row) {
         return new CrmMasterDto(row.getId(), row.getProject().getId(), row.getExternalId(), row.getDisplayName(),
+                row.isMaster(),
                 row.getEmployee() == null ? null : row.getEmployee().getId(), row.getMappingUpdatedAt(),
                 row.getMappingUpdatedBy() == null ? null : row.getMappingUpdatedBy().getId(), row.getMappingPreviousId(),
-                row.getMappingReason(), row.getLastObservedAt(), row.getObservationState() == null ? "UNKNOWN" : row.getObservationState(), row.getVersion());
+                row.getMappingReason(), row.getLastObservedAt(), row.getObservationState() == null ? "UNKNOWN" : row.getObservationState(), row.getVersion(),
+                row.getLinkedEmployee() == null ? null : row.getLinkedEmployee().getId(),
+                row.getLinkedEmployee() == null ? null : row.getLinkedEmployee().getExternalId(),
+                row.getLinkedEmployee() == null ? null : row.getLinkedEmployee().getDisplayName(),
+                row.getLinkUpdatedAt());
     }
     static CrmException notFound() { return new CrmException(404, "NOT_FOUND", "Объект CRM не найден."); }
     static CrmException failure(CrmFailure error) {

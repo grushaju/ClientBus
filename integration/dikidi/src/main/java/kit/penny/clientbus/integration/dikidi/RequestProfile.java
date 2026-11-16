@@ -12,9 +12,11 @@ public enum RequestProfile {
     OWNER_CHAT,
     /**
      * CDN вложений чата (15.11.2026: joining «image» отдаёт путь c51/v50697/…,
-     * скачивается как https://f2.dikidi.ru/{путь}.jpg?size=b). Только GET картинок:
-     * хост-зеркало fN.dikidi.ru, путь — без точек и сегментных трюков, обязательное
-     * окончание .jpg (иначе профиль пустил бы и GET /upload/).
+     * скачивается как https://f2.dikidi.ru/{путь}.jpg?size=b; 16.11.2026: иконки
+     * диалогов C02 живут на том же семействе зеркал, но в зоне dikidi.net —
+     * например https://f2.dikidi.net/cNN/vNNNNN/<hash>.jpg). Только GET картинок:
+     * хост-зеркало fN.dikidi.ru / fN.dikidi.net, путь — без точек и сегментных
+     * трюков, обязательное окончание .jpg (иначе профиль пустил бы и GET /upload/).
      */
     MEDIA,
     /**
@@ -43,8 +45,9 @@ public enum RequestProfile {
             // Ревю 15.11.2026: прежний класс [A-Za-z0-9/_-] не пропускал точку живого пути
             // c51/v50697/23s40uub39.jpg (фейки guard не проходят — тесты не видели). Теперь
             // обязательно окончание .jpg и ровно одна точка перед ним.
-            case MEDIA -> host.matches("f[0-9]+\\.dikidi\\.ru") && normalized.matches(
-                    "/[A-Za-z0-9][A-Za-z0-9/_-]{2,154}\\.jpg");
+            // 16.11.2026: то же CDN-семейство в зоне dikidi.net (иконки диалогов).
+            case MEDIA -> (host.matches("f[0-9]+\\.dikidi\\.ru") || host.matches("f[0-9]+\\.dikidi\\.net"))
+                    && normalized.matches("/[A-Za-z0-9][A-Za-z0-9/_-]{2,154}\\.jpg");
             case UPLOAD -> host.matches("f[0-9]+\\.dikidi\\.ru") && normalized.equals("/upload/");
         };
     }

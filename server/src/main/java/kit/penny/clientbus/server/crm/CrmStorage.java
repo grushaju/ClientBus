@@ -16,6 +16,7 @@ public class CrmStorage implements ApplicationRunner {
     @Override public void run(ApplicationArguments args) { initialize(); }
     public void initialize() {
         ready = false;
+        renameMasterToEmployee();
         // Upgrade the legacy index atomically: no window in which two active bindings can be inserted.
         new TransactionTemplate(new DataSourceTransactionManager(java.util.Objects.requireNonNull(jdbc.getDataSource())))
                 .executeWithoutResult(status -> {
@@ -67,7 +68,7 @@ public class CrmStorage implements ApplicationRunner {
                     return null;
                 end $$
                 """);
-        for(String table:java.util.List.of("appointment","appointmentservice","appointmentmaster","client","master","service","masterservice")){
+        for(String table:java.util.List.of("appointment","appointmentservice","appointmentmaster","client","employee","service","masterservice")){
             // Names are fixed above. Never drop a live trigger, even when another instance boots.
             jdbc.execute("do $$ begin if not exists(select 1 from pg_trigger where tgrelid='crm."+table+"'::regclass and tgname='appointment_datarevision') then create trigger appointment_datarevision after insert or update or delete on crm."+table+" for each row execute function crm.bump_appointment_datarevision(); end if; end $$");
         }
@@ -126,6 +127,61 @@ public class CrmStorage implements ApplicationRunner {
                 || !"operation".equals(row.get("tablename")) || !"targetappointmentid".equals(row.get("keycolumn"))
                 || !"targetappointmentidisnotnullandstatus=anyarray['requested','in_flight','unknown']".equals(predicate))
             throw new IllegalStateException("CRM operation index does not match its contract");
+    }
+    /**
+     * 16.11 (решение пользователя): crm.master переименована в crm.employee с колонкой ismaster
+     * (одна таблица для мастеров и не-мастеров проекта). Hibernate ddl-auto к этому моменту уже
+     * создал пустую crm.employee по новой сущности; здесь легаси-строки переносятся с id 1:1
+     * (ismaster=true), дочерние FK (masterservice/appointmentmaster/workinterval) перезацепляются
+     * на crm.employee — данные ссылок не меняются, — и легаси-таблица удаляется. Идемпотентно:
+     * повторный прогон без crm.master ничего не делает; обрыв посреди транзакции откатывается; параллельный boot второго instance ждёт на
+      * pg_advisory_xact_lock и повторно проверяет наличие легаси-таблицы внутри транзакции.
+     */
+    private void renameMasterToEmployee() {
+        new TransactionTemplate(new DataSourceTransactionManager(java.util.Objects.requireNonNull(jdbc.getDataSource())))
+                .executeWithoutResult(status -> {
+                    // Общая монета с параллельным instance'ом: пере-instance гонка check-then-drop
+                    // закрыта advisory-локом (12662; 12661 занят ревизией данных) с повторной проверкой внутри.
+                    jdbc.execute("select pg_advisory_xact_lock(12662)");
+                    if (!Boolean.TRUE.equals(jdbc.queryForObject(
+                            "select exists(select 1 from information_schema.tables where table_schema='crm' and table_name='master')",
+                            Boolean.class))) return;
+                    jdbc.execute("lock table crm.master in access exclusive mode");
+                    jdbc.execute("lock table crm.employee in access exclusive mode");
+                    jdbc.update("""
+                            insert into crm.employee (id,version,createdat,updatedat,projectid,externalid,displayname,
+                                profile,employeeid,mappingupdatedat,mappingupdatedby,mappingpreviousid,mappingreason,
+                                lastobservedat,lastobservedgeneration,observationstate,ismaster)
+                            select m.id,m.version,m.createdat,m.updatedat,m.projectid,m.externalid,m.displayname,
+                                m.profile,m.employeeid,m.mappingupdatedat,m.mappingupdatedby,m.mappingpreviousid,
+                                m.mappingreason,m.lastobservedat,m.lastobservedgeneration,m.observationstate,true
+                            from crm.master m where not exists (select 1 from crm.employee e where e.id=m.id)
+                            on conflict (id) do nothing
+                            """);
+                    // information_schema отдаёт по строке на столбец FK: составные ключи собираются обратно,
+                    // иначе пересоздание ограничения потеряло бы столбцы.
+                    var targets=new java.util.LinkedHashMap<String,java.util.List<String>>();
+                    for (var child:jdbc.queryForList("""
+                            select tc.table_name childtable, tc.constraint_name constraintname,
+                                   kcu.column_name childcolumn
+                            from information_schema.table_constraints tc
+                            join information_schema.key_column_usage kcu
+                              on kcu.constraint_name=tc.constraint_name and kcu.table_schema=tc.table_schema
+                            join information_schema.constraint_column_usage ccu
+                              on ccu.constraint_name=tc.constraint_name and ccu.constraint_schema=tc.constraint_schema
+                            where tc.constraint_type='FOREIGN KEY' and tc.table_schema='crm'
+                              and ccu.table_schema='crm' and ccu.table_name='master'
+                            """))
+                        targets.computeIfAbsent(child.get("childtable")+"\u0000"+child.get("constraintname"),
+                                ignored->new java.util.ArrayList<>()).add((String)child.get("childcolumn"));
+                    for (var target:targets.entrySet()) {
+                        var name=target.getKey().split("\u0000");
+                        jdbc.execute("alter table crm."+name[0]+" drop constraint if exists "+name[1]);
+                        jdbc.execute("alter table crm."+name[0]+" add constraint "+name[1]
+                                +" foreign key ("+String.join(",",target.getValue())+") references crm.employee(id)");
+                    }
+                    jdbc.execute("drop table crm.master");
+                });
     }
     public void requireReady() {
         if (!ready) throw new CrmException(503, "CRM_STORAGE_NOT_READY", "Хранилище CRM ещё не готово.");

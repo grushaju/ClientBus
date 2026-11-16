@@ -15,7 +15,7 @@ public class CrmScheduleWriter {
     private record Key(LocalDateTime start, LocalDateTime end, String kind) {}
     private final CrmStore store;
     public CrmScheduleWriter(CrmStore store) { this.store = store; }
-    public void apply(CrmProjectEntity project, CrmMasterEntity master, CrmScheduleSnapshot result, long generation) {
+    public void apply(CrmProjectEntity project, CrmEmployeeEntity master, CrmScheduleSnapshot result, long generation) {
         if (!master.getProject().getId().equals(project.getId()) || result.items().size() > 1000)
             throw new CrmFailure(INVALID_RESPONSE);
         Map<Key, CrmWorkInterval> received = new LinkedHashMap<>();

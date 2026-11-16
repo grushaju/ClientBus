@@ -32,7 +32,7 @@ public class CrmDeletionGuard {
                 .setParameter("id",employee.getId()).getSingleResult()>0)
             throw new CrmException(409, "CRM_RESOURCE_IN_USE", "Сотрудник указан автором сопоставлений CRM. Отключите его учётную запись.");
         var linked = store.masters.findAllByEmployeeId(employee.getId()).stream()
-                .sorted(Comparator.comparing((CrmMasterEntity master) -> master.getProject().getId().toString())
+                .sorted(Comparator.comparing((CrmEmployeeEntity master) -> master.getProject().getId().toString())
                         .thenComparing(master -> master.getId().toString())).toList();
         Set<UUID> changedProjects=new HashSet<>();
         var actor = store.em.getReference(EmployeeEntity.class, store.guard.actor());

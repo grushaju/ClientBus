@@ -77,7 +77,7 @@ function DirectoryPopup({ id, project, kind, value, all, choose, period }: { id:
 
 function DirectoryOptions({ project, kind, value, all, query, choose, period }: { project: api.CrmProject; kind: Kind; value: string; all: boolean; query: string; choose: (row: Entry | null) => void; period?: api.CrmPeriod }) {
     const data = useCrmPages<Entry>('crm-filter:' + project.id + ':' + kind + ':' + query + ':' + JSON.stringify(period), project.workspaceId,
-        (signal, cursor) => kind === 'master' ? api.getCrmMasters(project.id, signal, cursor, { q: query, includeNotObserved: false }) : period
+        (signal, cursor) => kind === 'master' ? api.getCrmMasters(project.id, signal, cursor, { q: query, includeNotObserved: false, mastersOnly: true }) : period
             ? api.getCrmAppointmentClients(project.id, { ...period, q: query, cursor }, signal) : api.getCrmClients(project.id, { q: query, cursor }, signal))
     return <>
         <div role="listbox" aria-label={kind === 'master' ? 'Мастера' : 'Клиенты CRM'} className="crm-directory-options">

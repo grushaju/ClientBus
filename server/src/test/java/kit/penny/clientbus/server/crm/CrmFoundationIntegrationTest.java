@@ -67,7 +67,7 @@ class CrmFoundationIntegrationTest {
     private FakeProvider provider;
     private CrmSecretCipher cipher;
     private CrmStorage storage;
-    private CrmMasterRepository masterRepository;
+    private CrmEmployeeRepository masterRepository;
     private final AtomicReference<UUID> actor = new AtomicReference<>();
     private final AtomicLong clientNanoTime = new AtomicLong();
     private final AtomicLong appointmentNanoTime = new AtomicLong();
@@ -91,9 +91,10 @@ class CrmFoundationIntegrationTest {
         var metadata = new MetadataSources(hibernate);
         for (var type : List.of(OrganizationEntity.class, UserEntity.class, EmployeeEntity.class,
                 WorkspaceEntity.class, EmployeeWorkspaceEntity.class, CrmConnectionEntity.class,
-                CrmProjectEntity.class, CrmMasterEntity.class, CrmServiceEntity.class, CrmMasterServiceEntity.class,
+                CrmProjectEntity.class, CrmEmployeeEntity.class, CrmServiceEntity.class, CrmMasterServiceEntity.class,
                 CrmSyncStateEntity.class, ClientEntity.class, ClientAccountEntity.class, CrmClientEntity.class,CrmWorkIntervalEntity.class,
-                CrmAppointmentEntity.class,CrmAppointmentServiceEntity.class,CrmAppointmentMasterEntity.class,CrmOperationEntity.class)) metadata.addAnnotatedClass(type);
+                CrmAppointmentEntity.class,CrmAppointmentServiceEntity.class,CrmAppointmentMasterEntity.class,CrmOperationEntity.class,
+                CrmStaffAccessEntity.class)) metadata.addAnnotatedClass(type);
         return metadata.buildMetadata().buildSessionFactory();
     }
     @AfterAll static void closeDatabase() {
@@ -135,9 +136,9 @@ class CrmFoundationIntegrationTest {
         var access = new CrmAccessGuard(current, new AccessPolicy(new org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate(jdbc)), jdbc);
         storage = new CrmStorage(jdbc); storage.initialize();
         var repositories = new JpaRepositoryFactory(em);
-        var masterDelegate = repositories.getRepository(CrmMasterRepository.class);
-        masterRepository = (CrmMasterRepository)Proxy.newProxyInstance(CrmMasterRepository.class.getClassLoader(),
-                new Class<?>[]{CrmMasterRepository.class}, (proxy, method, args) -> {
+        var masterDelegate = repositories.getRepository(CrmEmployeeRepository.class);
+        masterRepository = (CrmEmployeeRepository)Proxy.newProxyInstance(CrmEmployeeRepository.class.getClassLoader(),
+                new Class<?>[]{CrmEmployeeRepository.class}, (proxy, method, args) -> {
                     try {
                         Object result = method.invoke(masterDelegate, args);
                         if (method.getName().equals("findAllByProjectId")) afterMasterPage.run();
@@ -369,7 +370,7 @@ class CrmFoundationIntegrationTest {
         provider.scheduleReader=query -> new CrmScheduleSnapshot(List.of(shift("m1",0,12)),Instant.now(),CrmReadResult.Completeness.COMPLETE,"100",query);
         scheduleSync.refresh(projectId,master.id(),SCHEDULE_DAY,SCHEDULE_DAY.plusDays(1)); awaitSchedule();
         Map<String,List<Map<String,Object>>> before=new HashMap<>();
-        for (String table : List.of("master","service","masterservice","client","workinterval","appointment","appointmentmaster","appointmentservice"))
+        for (String table : List.of("employee","service","masterservice","staffaccess","client","workinterval","appointment","appointmentmaster","appointmentservice"))
             before.put(table,jdbc.queryForList("select * from crm."+table+" order by id"));
         var project=service.projects(workspace,null).getFirst();
         var archived=service.detachProject(projectId,project.version());
@@ -572,8 +573,8 @@ class CrmFoundationIntegrationTest {
                     select ?,0,clock_timestamp(),clock_timestamp(),organizationid,connectionid,?,provider,?,?,
                         currency,zoneid,zonesource,contextversion,zonerevision,true from crm.project where id=?
                     """,projectId,additionalWorkspace.getId(),externalId,"Project "+externalId,source.id());
-            var master=new CrmMasterEntity(); master.setProject(em.getReference(CrmProjectEntity.class,projectId));
-            master.setExternalId(externalId); master.setDisplayName("Master "+externalId);
+            var master=new CrmEmployeeEntity(); master.setProject(em.getReference(CrmProjectEntity.class,projectId));
+            master.setExternalId(externalId); master.setDisplayName("Master "+externalId); master.setMaster(true);
             master.setLastObservedAt(Instant.now()); master.setObservationState("OBSERVED");
             em.persist(master); em.flush(); return CrmStore.dto(master);
         });
@@ -768,7 +769,7 @@ class CrmFoundationIntegrationTest {
         jdbc.update("update crm.connection set status='CONNECTED' where id=?",project.connectionId());
         return tx.execute(status -> {
             var parent=em.find(CrmProjectEntity.class,context.id());
-            var master=em.createQuery("from CrmMasterEntity m where m.project.id=:project order by m.externalId",CrmMasterEntity.class).setParameter("project",context.id()).getResultList().getFirst();
+            var master=em.createQuery("from CrmEmployeeEntity m where m.project.id=:project order by m.externalId",CrmEmployeeEntity.class).setParameter("project",context.id()).getResultList().getFirst();
             var client=new CrmClientEntity(); client.setProject(parent); client.setExternalId("operation-client"); client.setIdentityKind("PROJECT"); client.setDisplayName("Operation client"); client.setLastObservedAt(Instant.now()); em.persist(client);
             var service=new CrmServiceEntity(); service.setProject(parent); service.setExternalId("operation-service"); service.setDisplayName("Operation service"); service.setLastObservedAt(Instant.now()); em.persist(service);
             var offer=new CrmMasterServiceEntity(); offer.setProject(parent); offer.setMaster(master); offer.setService(service); offer.setPrice(new BigDecimal("1200.25")); offer.setCurrency("RUB"); offer.setDurationSeconds(1800L); offer.setLastObservedAt(Instant.now()); offer.setOfferState(Map.of("active",true)); em.persist(offer); em.flush();
@@ -999,7 +1000,7 @@ class CrmFoundationIntegrationTest {
     }
     private CrmAppointmentDto movableAppointment(OperationFixture fixture) throws Exception {
         var source=appointment("move-availability",0,10,"operation-client");
-        String master=tx.execute(status -> em.find(CrmMasterEntity.class,fixture.request().masterId()).getExternalId());
+        String master=tx.execute(status -> em.find(CrmEmployeeEntity.class,fixture.request().masterId()).getExternalId());
         var service=source.services().getFirst();
         var historical=new CrmAppointmentService(service.externalServiceId(),service.externalLineId(),service.displayName(),service.durationSeconds(),service.price(),null);
         var row=new CrmAppointment(source.externalId(),source.kind(),source.client(),source.clientSnapshot(),source.localStart(),source.localEnd(),source.appointmentState(),source.confirmationState(),source.attendanceState(),source.providerState(),source.comment(),
@@ -1349,6 +1350,8 @@ class CrmFoundationIntegrationTest {
                 case "/ajax/check/auth/" -> ok("{\"html\":\"<input name='csrf' type='hidden' value='next'>\"}");
                 case "/ajax/user/auth/" -> ok("{\"callback\":[\"sw.auth.complete();\"]}");
                 case "/ru/owner/journal/" -> ok("journal");
+                // Страница правок без строк — слой доступа недоступен (деградация null), каталог живёт.
+                case "/ru/owner/permissions/" -> ok("<html></html>");
                 case "/ru/owner/ajax/profile/index/" -> new Response(profileStatus,"{\"html\":\"<h2>"+name+"</h2>\"}");
                 case "/ru/owner/ajax/journal/api/" -> {
                     String dataset=form.contains(Map.entry("request[get][]","masters.schedules")) ? "WORK_INTERVALS" : "CATALOG";
@@ -1567,7 +1570,7 @@ class CrmFoundationIntegrationTest {
         assertEquals("Test project", preview.displayName());
         assertEquals(0, provider.reads.get());
         assertEquals(0, jdbc.queryForObject("select count(*) from crm.project", Integer.class));
-        assertEquals(0, jdbc.queryForObject("select count(*) from crm.master", Integer.class));
+        assertEquals(0, jdbc.queryForObject("select count(*) from crm.employee", Integer.class));
         for (var type : List.of(CrmType.AMO, CrmType.BITRIX))
             assertEquals("CRM_UNSUPPORTED", assertThrows(CrmException.class,
                     () -> service.createConnection(new CreateCrmConnectionRequest(type,"70000000000","test-only-secret"))).code());
@@ -1683,13 +1686,186 @@ class CrmFoundationIntegrationTest {
         assertEquals(before.items().stream().map(row -> row.offers().getFirst().id()).toList(),
                 after.items().stream().map(row -> row.offers().getFirst().id()).toList());
     }
+    /** 16.11: живой апгрейд crm.master→crm.employee — данные с ismaster=true, перезацепка дочерних FK, удаление старой таблицы, идемпотентность. */
+    @Test void legacyMasterTableMigratesIntoEmployeeWithFlagAndReattachedForeignKeys() throws Exception {
+        var project = bind(connection()); awaitIdle();
+        var legacyId = UUID.randomUUID();
+        jdbc.execute("""
+                create table crm.master(
+                    id uuid primary key, version bigint not null, createdat timestamptz not null, updatedat timestamptz not null,
+                    projectid uuid not null references crm.project, externalid varchar(128) not null, displayname text not null,
+                    profile jsonb not null, employeeid uuid null, mappingupdatedat timestamptz, mappingupdatedby uuid,
+                    mappingpreviousid uuid, mappingreason varchar(24), lastobservedat timestamptz not null,
+                    lastobservedgeneration bigint, observationstate varchar(24))
+                """);
+        jdbc.update("""
+                insert into crm.master(id,version,createdat,updatedat,projectid,externalid,displayname,profile,lastobservedat)
+                values (?,0,clock_timestamp(),clock_timestamp(),?,'legacy-1','Legacy one','{}'::jsonb,clock_timestamp())
+                """, legacyId, project.id());
+        jdbc.execute("create table crm.legacyprobe(id uuid primary key, masterid uuid not null references crm.master(id))");
+        jdbc.update("insert into crm.legacyprobe(id,masterid) values (gen_random_uuid(),?)", legacyId);
+
+        new CrmStorage(jdbc).initialize();
+
+        assertEquals(0, jdbc.queryForObject(
+                "select count(*) from information_schema.tables where table_schema='crm' and table_name='master'",
+                Integer.class).intValue(), "legacy crm.master must be gone");
+        var migrated = jdbc.queryForMap("select ismaster,displayname from crm.employee where id=?", legacyId);
+        assertEquals(true, migrated.get("ismaster"), "legacy строки — мастера");
+        assertEquals("Legacy one", migrated.get("displayname"));
+        assertEquals("employee", jdbc.queryForObject(
+                "select r.relname from pg_constraint c join pg_class r on r.oid=c.confrelid where c.conname='legacyprobe_masterid_fkey'",
+                String.class), "child FK reattached to crm.employee");
+        jdbc.execute("insert into crm.legacyprobe(id,masterid) values (gen_random_uuid(),(select id from crm.employee where externalid='legacy-1'))");
+        new CrmStorage(jdbc).initialize();
+        jdbc.execute("drop table crm.legacyprobe");
+    }
+    /** 16.11: мастераOnly — страница «Мастера» только с ismaster; без фильтра — все сотрудники проекта. */
+    @Test void mastersOnlyServesMasterRowsWhileStaffPageIncludesEveryone() throws Exception {
+        var project = bind(connection()); awaitIdle();
+        jdbc.update("""
+                insert into crm.employee(id,version,createdat,updatedat,projectid,externalid,displayname,profile,
+                    lastobservedat,observationstate,ismaster)
+                values (gen_random_uuid(),0,clock_timestamp(),clock_timestamp(),?,'staff-1','Reception Rita','{}'::jsonb,
+                    clock_timestamp(),'UNKNOWN',false)
+                """, project.id());
+        java.util.function.Function<kit.penny.clientbus.common.dto.crm.CrmMasterPageDto, java.util.List<String>> names =
+                page -> page.items().stream().map(row -> row.externalId()).toList();
+        assertTrue(names.apply(service.masters(project.id(), null)).containsAll(List.of("staff-1")));
+        assertTrue(names.apply(service.masters(project.id(), null, null, false, true, true)).stream().noneMatch("staff-1"::equals));
+        assertTrue(names.apply(service.masters(project.id(), null, null, false, true, true)).containsAll(names.apply(service.masters(project.id(), null))
+                .stream().filter(id -> !id.equals("staff-1")).toList()));
+        // Поиск и unlinked идут через criteria — фильтр мастерства должен сохраняться и там.
+        assertTrue(names.apply(service.masters(project.id(), null, "rita", false, true, true)).isEmpty());
+        assertTrue(names.apply(service.masters(project.id(), null, "rita", false, true, false)).contains("staff-1"));
+    }
+    /** 16.11.2026 импорт штата: держатели доступа заводятся строками ismaster=false. */
+    @Test void staffAccessHoldersBecomeNonMasterEmployeesAndAgeOutTogetherWithMasters() throws Exception {
+        provider.catalogReader = access -> new CrmCatalogSnapshot(FakeProvider.masters("catalog").items(),
+                List.of(), List.of(), Instant.now(), CrmReadResult.Completeness.COMPLETE, "100:CATALOG",
+                null, null, List.of(new CrmStaff("7701", "admin-login", Map.of("rolesId", "2")),
+                        new CrmStaff("m1", "access-owner-name", Map.of("rolesId", "1"))));
+        var project = bind(connection()); awaitIdle();
+        var everyone = service.masters(project.id(), null).items();
+        var staffRow = everyone.stream().filter(row -> row.externalId().equals("7701")).findFirst().orElseThrow();
+        assertFalse(staffRow.isMaster());
+        assertEquals("OBSERVED", staffRow.observationState());
+        assertEquals("admin-login", staffRow.displayName());
+        assertEquals("2", jdbc.queryForObject("select profile->>'rolesId' from crm.employee where externalid='7701'", String.class));
+        var masterRow = everyone.stream().filter(row -> row.externalId().equals("m1")).findFirst().orElseThrow();
+        assertTrue(masterRow.isMaster(), "доступы не понижают мастера и не переписывают его имя");
+        assertNotEquals("access-owner-name", masterRow.displayName());
+        assertTrue(service.masters(project.id(), null, null, false, true, true).items().stream()
+                .noneMatch(row -> row.externalId().equals("7701")));
+        // Доступ потерян (полный снимок без строки) — строка сохраняется, но честно стареет.
+        provider.catalogReader = access -> new CrmCatalogSnapshot(FakeProvider.masters("catalog").items(),
+                List.of(), List.of(), Instant.now(), CrmReadResult.Completeness.COMPLETE, "100:CATALOG");
+        sync.refresh(project.id()); awaitIdle();
+        assertEquals("NOT_OBSERVED", service.masters(project.id(), null).items().stream()
+                .filter(row -> row.externalId().equals("7701")).findFirst().orElseThrow().observationState());
+        assertEquals("OBSERVED", service.masters(project.id(), null).items().stream()
+                .filter(row -> row.externalId().equals("m1")).findFirst().orElseThrow().observationState());
+    }
+    /** 13.6: наблюдаемые записи доступа (страница правок) + ручная связь учётки + слои старения. */
+    @Test void staffAccessRecordsImportAgingAndManualStaffLink() throws Exception {
+        provider.catalogReader = access -> new CrmCatalogSnapshot(FakeProvider.masters("catalog").items(),
+                List.of(), List.of(), Instant.now(), CrmReadResult.Completeness.COMPLETE, "100:CATALOG",
+                null, null, List.of(new CrmStaff("7701", "irina-account", Map.of("rolesId", "2"))),
+                List.of(new CrmStaffAccess("301", "Irina", "m1", "79990000001", false,
+                                Map.of("roleValue", "2", "roleLabel", "Administrator")),
+                        new CrmStaffAccess("302", "Owner account", null, "79990000002", true,
+                                Map.of("roleValue", "1", "roleLabel", "Owner"))));
+        var project = bind(connection()); awaitIdle();
+        var accesses = service.staffAccesses(project.id());
+        assertEquals(2, accesses.size());
+        var irina = accesses.stream().filter(row -> row.externalId().equals("301")).findFirst().orElseThrow();
+        assertEquals("m1", irina.masterExternalId()); assertEquals("Administrator", irina.roleLabel());
+        assertEquals("79990000001", irina.phone()); assertFalse(irina.mainOwner());
+        assertEquals("OBSERVED", irina.observationState());
+        assertTrue(accesses.stream().anyMatch(row -> row.externalId().equals("302") && row.mainOwner()
+                && row.masterExternalId() == null));
+        // Связь «учётка ↔ сотрудник каталога» подтверждает человек (моста в DIKIDI нет).
+        var staff = service.masters(project.id(), null).items().stream()
+                .filter(row -> row.externalId().equals("7701")).findFirst().orElseThrow();
+        var master = service.masters(project.id(), null).items().stream()
+                .filter(row -> row.externalId().equals("m1")).findFirst().orElseThrow();
+        var linked = service.linkStaff(staff.id(), master.id(), staff.version());
+        assertEquals(master.id(), linked.linkedId()); assertEquals("m1", linked.linkedExternalId());
+        assertThrows(CrmException.class, () -> service.linkStaff(master.id(), staff.id(), master.version()),
+                "мастер не может быть источником связи");
+        var refreshedMaster = service.masters(project.id(), null).items().stream()
+                .filter(row -> row.externalId().equals("m1")).findFirst().orElseThrow();
+        assertThrows(CrmException.class, () -> service.linkStaff(staff.id(), refreshedMaster.id(), staff.version()),
+                "устаревшая версия строки");
+        // Страница правок недоступна (null) — слой доступа НЕ стареет.
+        provider.catalogReader = access -> new CrmCatalogSnapshot(FakeProvider.masters("catalog").items(),
+                List.of(), List.of(), Instant.now(), CrmReadResult.Completeness.COMPLETE, "100:CATALOG");
+        sync.refresh(project.id()); awaitIdle();
+        assertEquals("OBSERVED", jdbc.queryForObject(
+                "select observationstate from crm.staffaccess where externalid='301'", String.class));
+        // Полный снимок без записей доступа — запись честно стареет; связь человека снимок не трогает.
+        provider.catalogReader = access -> new CrmCatalogSnapshot(FakeProvider.masters("catalog").items(),
+                List.of(), List.of(), Instant.now(), CrmReadResult.Completeness.COMPLETE, "100:CATALOG",
+                null, null, List.of(new CrmStaff("7701", "irina-account", Map.of("rolesId", "2"))), List.of());
+        sync.refresh(project.id()); awaitIdle();
+        assertEquals("NOT_OBSERVED", jdbc.queryForObject(
+                "select observationstate from crm.staffaccess where externalid='301'", String.class));
+        assertEquals(master.id(), jdbc.queryForObject(
+                "select linkedemployeeid from crm.employee where externalid='7701'", UUID.class));
+    }
+    /** 13.6 (макет пользователя): выбор учётки-оператора для записи кабинета — данные человека. */
+    @Test void staffAccessRecordSelectsOperatorAccountAndSurvivesAging() throws Exception {
+        provider.catalogReader = access -> new CrmCatalogSnapshot(FakeProvider.masters("catalog").items(),
+                List.of(), List.of(), Instant.now(), CrmReadResult.Completeness.COMPLETE, "100:CATALOG",
+                null, null, List.of(new CrmStaff("7701", "irina-account", Map.of("rolesId", "2"))),
+                List.of(new CrmStaffAccess("301", "Irina", null, "79990000001", false,
+                        Map.of("roleLabel", "Administrator"))));
+        var project = bind(connection()); awaitIdle();
+        var entry = service.staffAccesses(project.id()).getFirst();
+        assertEquals("301", entry.externalId()); assertNull(entry.operatorId());
+        var account = service.masters(project.id(), null).items().stream()
+                .filter(row -> row.externalId().equals("7701")).findFirst().orElseThrow();
+        var linked = service.linkStaffAccess(entry.id(), account.id(), entry.version());
+        assertEquals(account.id(), linked.operatorId()); assertEquals("irina-account", linked.operatorDisplayName());
+        assertNull(linked.operatorMappingEmployeeId());
+        // Маппинг на учётке виден через запись: цепочка запись → оператор → сотрудник ClientBus.
+        var refreshedAccount = service.masters(project.id(), null).items().stream()
+                .filter(row -> row.externalId().equals("7701")).findFirst().orElseThrow();
+        service.linkEmployee(refreshedAccount.id(), target, refreshedAccount.version());
+        var withMapping = service.staffAccesses(project.id()).getFirst();
+        assertEquals(target, withMapping.operatorMappingEmployeeId());
+        // Перечитывание каталога не трогает выбор человека; чужая цель — notFound; устаревшая версия — конфликт.
+        provider.catalogReader = access -> new CrmCatalogSnapshot(FakeProvider.masters("catalog").items(),
+                List.of(), List.of(), Instant.now(), CrmReadResult.Completeness.COMPLETE, "100:CATALOG",
+                null, null, List.of(new CrmStaff("7701", "irina-account", Map.of("rolesId", "2"))),
+                List.of(new CrmStaffAccess("301", "Irina", null, "79990000001", false,
+                        Map.of("roleLabel", "Administrator"))));
+        sync.refresh(project.id()); awaitIdle();
+        assertEquals(account.id(), jdbc.queryForObject(
+                "select employeeid from crm.staffaccess where externalid='301'", UUID.class));
+        assertThrows(CrmException.class, () -> service.linkStaffAccess(withMapping.id(), UUID.randomUUID(),
+                withMapping.version()));
+        assertThrows(CrmException.class, () -> service.linkStaffAccess(withMapping.id(), account.id(),
+                withMapping.version() + 5));
+        // Запись честно постарела без страницы правок — оператор и маппинг на учётке остались.
+        provider.catalogReader = access -> new CrmCatalogSnapshot(FakeProvider.masters("catalog").items(),
+                List.of(), List.of(), Instant.now(), CrmReadResult.Completeness.COMPLETE, "100:CATALOG",
+                null, null, List.of(new CrmStaff("7701", "irina-account", Map.of("rolesId", "2"))), List.of());
+        sync.refresh(project.id()); awaitIdle();
+        var aged = service.staffAccesses(project.id()).getFirst();
+        assertEquals("NOT_OBSERVED", aged.observationState());
+        assertEquals(account.id(), aged.operatorId());
+        assertNull(service.linkStaffAccess(aged.id(), null, aged.version()).operatorId());
+        assertEquals(target, jdbc.queryForObject(
+                "select employeeid from crm.employee where externalid='7701'", UUID.class));
+    }
     @Test void priceStorageUpgradeAndHibernateRestartPreserveValuesObservationsAndMappings() throws Exception {
         var project=priceCatalog(); var master=first(project.id());
         service.linkEmployee(master.id(),target,master.version());
         jdbc.execute("alter table crm.masterservice alter column price type numeric(19,4)");
         assertEquals("1000.0000",storedPrices(project.id()).getFirst());
         var observations=jdbc.queryForList("select id,version,createdat,updatedat,lastobservedat,lastobservedgeneration,currency from crm.masterservice order by id");
-        var mappings=jdbc.queryForList("select id,version,employeeid,mappingupdatedat,mappingupdatedby,mappingpreviousid,mappingreason from crm.master order by id");
+        var mappings=jdbc.queryForList("select id,version,employeeid,mappingupdatedat,mappingupdatedby,mappingpreviousid,mappingreason from crm.employee order by id");
         var states=jdbc.queryForList("select * from crm.syncstate order by id");
         sync.close(); assertTrue(((ThreadPoolExecutor)ReflectionTestUtils.getField(sync,"executor")).awaitTermination(3,TimeUnit.SECONDS));
         factory.close(); StandardServiceRegistryBuilder.destroy(hibernate); factory=buildFactory();
@@ -1703,7 +1879,7 @@ class CrmFoundationIntegrationTest {
         new CrmStorage(jdbc).initialize();
         assertEquals(expected,storedPrices(project.id()));
         assertEquals(observations,jdbc.queryForList("select id,version,createdat,updatedat,lastobservedat,lastobservedgeneration,currency from crm.masterservice order by id"));
-        assertEquals(mappings,jdbc.queryForList("select id,version,employeeid,mappingupdatedat,mappingupdatedby,mappingpreviousid,mappingreason from crm.master order by id"));
+        assertEquals(mappings,jdbc.queryForList("select id,version,employeeid,mappingupdatedat,mappingupdatedby,mappingpreviousid,mappingreason from crm.employee order by id"));
         assertEquals(states,jdbc.queryForList("select * from crm.syncstate order by id"));
     }
     @Test void serviceOffersAreIdempotentMasterSpecificAndPreserveEmployeeLinks() throws Exception {
@@ -1887,10 +2063,10 @@ class CrmFoundationIntegrationTest {
     @Test void retainedMasterHistoryPaginatesPastFiveThousandWithoutDuplicatesOrGaps() throws Exception {
         var project = bind(connection()); awaitIdle();
         jdbc.update("""
-                insert into crm.master(id,version,createdat,updatedat,projectid,externalid,displayname,profile,
-                    lastobservedat,lastobservedgeneration,observationstate)
+                insert into crm.employee(id,version,createdat,updatedat,projectid,externalid,displayname,profile,
+                    lastobservedat,lastobservedgeneration,observationstate,ismaster)
                 select gen_random_uuid(),0,clock_timestamp(),clock_timestamp(),?,'history'||n,'Historical master','{}'::jsonb,
-                    clock_timestamp(),0,'NOT_OBSERVED' from generate_series(1,5000) n
+                    clock_timestamp(),0,'NOT_OBSERVED',true from generate_series(1,5000) n
                 """, project.id());
         Set<UUID> seen = new HashSet<>(); String cursor = null; int pages = 0, observed = 0;
         do {
@@ -2037,7 +2213,7 @@ class CrmFoundationIntegrationTest {
     @Test void hibernateUpdatePreservesExistingDboAndCrmAndNamesHaveNoUnderscores() throws Exception {
         var connection = connection(); var project = bind(connection); awaitIdle();
         var mapped = first(project.id()); service.linkEmployee(mapped.id(), target, mapped.version());
-        assertEquals(Set.of("connection","project","master","service","masterservice","syncstate","client","workinterval","appointment","appointmentservice","appointmentmaster","operation","connectionruntime"),
+        assertEquals(Set.of("connection","project","employee","service","masterservice","staffaccess","syncstate","client","workinterval","appointment","appointmentservice","appointmentmaster","operation","connectionruntime"),
                 new HashSet<>(jdbc.queryForList("select tablename from pg_tables where schemaname='crm'",String.class)));
         for (String sql : List.of("select column_name from information_schema.columns where table_schema='crm'",
                 "select indexname from pg_indexes where schemaname='crm'",
@@ -2052,7 +2228,8 @@ class CrmFoundationIntegrationTest {
         jdbc.execute("drop table crm.masterservice"); jdbc.execute("drop table crm.service");
         jdbc.execute("drop table crm.client");
         jdbc.execute("drop table crm.workinterval");
-        jdbc.execute("alter table crm.master drop column lastobservedgeneration, drop column observationstate");
+        jdbc.execute("drop table crm.staffaccess"); // 13.6: в развёрнутую форму не входит, initialize() вернёт
+        jdbc.execute("alter table crm.employee drop column lastobservedgeneration, drop column observationstate");
         jdbc.execute("drop table crm.connectionruntime"); // 13.4: в развёрнутую форму 12.3 не входит, initialize() её вернёт
         assertEquals(4, jdbc.queryForObject("select count(*) from pg_tables where schemaname='crm'", Integer.class));
         factory = buildFactory();
@@ -2061,9 +2238,9 @@ class CrmFoundationIntegrationTest {
         assertEquals(0L,jdbc.queryForObject("select healthappliedgeneration from crm.connection where id=?",Long.class,connection.id()));
         assertEquals(1,jdbc.queryForObject("select count(*) from crm.project where id=?",Integer.class,project.id()));
         assertEquals(1,jdbc.queryForObject("select count(*) from dbo.workspace where workspaceid=?",Integer.class,workspace));
-        assertEquals(target, jdbc.queryForObject("select employeeid from crm.master where id=?", UUID.class, mapped.id()));
-        assertEquals("initial one", jdbc.queryForObject("select displayname from crm.master where id=?", String.class, mapped.id()));
-        assertEquals(13, jdbc.queryForObject("select count(*) from pg_tables where schemaname='crm'", Integer.class));
+        assertEquals(target, jdbc.queryForObject("select employeeid from crm.employee where id=?", UUID.class, mapped.id()));
+        assertEquals("initial one", jdbc.queryForObject("select displayname from crm.employee where id=?", String.class, mapped.id()));
+        assertEquals(14, jdbc.queryForObject("select count(*) from pg_tables where schemaname='crm'", Integer.class));
     }
     private static CrmClient externalClient(String id, String name) {
         return new CrmClient(id,"PROJECT",name,Map.of("phone","+7 (999) 123-45-67"),Map.of("source","R08"),Set.of("displayName","phone"));
@@ -2435,7 +2612,7 @@ class CrmFoundationIntegrationTest {
         loadSchedule(project.id(),two,SCHEDULE_DAY,SCHEDULE_DAY,CrmReadResult.Completeness.COMPLETE,List.of(shift("m2",0,12)));
         tx.executeWithoutResult(status -> {
             var block=new CrmWorkIntervalEntity(); block.setProject(em.find(CrmProjectEntity.class,project.id()));
-            block.setMaster(em.find(CrmMasterEntity.class,one)); block.setStartLocal(SCHEDULE_DAY.atTime(9,0));
+            block.setMaster(em.find(CrmEmployeeEntity.class,one)); block.setStartLocal(SCHEDULE_DAY.atTime(9,0));
             block.setEndLocal(SCHEDULE_DAY.atTime(10,0)); block.setKind("BLOCK"); block.setLastObservedAt(Instant.now());
             em.persist(block);
         });
@@ -2549,6 +2726,24 @@ class CrmFoundationIntegrationTest {
         assertEquals(404,assertThrows(CrmException.class,() -> schedulePage(project.id(),otherMaster,SCHEDULE_DAY,SCHEDULE_DAY)).status());
         assertTrue(schedulePage(project.id(),master,SCHEDULE_DAY,SCHEDULE_DAY).items().isEmpty());
         assertEquals(0,provider.scheduleReads.get());
+    }
+    /** 16.11: график и создание записи — свойства мастера; сотрудник без ismaster для этих путей не существует. */
+    @Test void masterOnlyEndpointsRejectNonMasterEmployeesAsNotFound() throws Exception {
+        var f=operationFixture();
+        jdbc.update("""
+                insert into crm.employee(id,version,createdat,updatedat,projectid,externalid,displayname,profile,
+                    lastobservedat,observationstate,ismaster)
+                values (gen_random_uuid(),0,clock_timestamp(),clock_timestamp(),?,'staff-only','Reception Rita','{}'::jsonb,
+                    clock_timestamp(),'OBSERVED',false)
+                """,f.project().id());
+        var staff=jdbc.queryForObject("select id from crm.employee where projectid=? and externalid='staff-only'",UUID.class,f.project().id());
+        assertEquals(404,assertThrows(CrmException.class,() -> scheduleSync.refresh(f.project().id(),staff,SCHEDULE_DAY,SCHEDULE_DAY)).status());
+        assertEquals(404,assertThrows(CrmException.class,() -> schedulePage(f.project().id(),staff,SCHEDULE_DAY,SCHEDULE_DAY)).status());
+        assertEquals(0,provider.scheduleReads.get());
+        var r=f.request();
+        // master() разбирается до offers(): предложение реального мастера сюда вообще не доезжает.
+        var request=new CrmCreateAppointmentRequest(r.contextVersion(),r.zoneRevision(),r.crmClientId(),staff,r.offers(),r.localStart(),"Intent");
+        assertEquals(404,assertThrows(CrmException.class,() -> operations.create(f.project().id(),UUID.randomUUID(),request)).status());
     }
     @Test void scheduleCursorBindsMasterPeriodAndDomainRevisionAndHandlesBadDatesSafely() throws Exception {
         var project=bind(connection()); awaitIdle(); UUID master=first(project.id()).id();
@@ -2861,7 +3056,7 @@ class CrmFoundationIntegrationTest {
         jdbc.update("update crm.appointment set paymentstate='PAID' where projectid=?",second.id());
         assertEquals("CRM_CONTEXT_CHANGED",assertThrows(CrmException.class,()->appointmentReader.history(core,null,appointmentFilter(),history.nextCursor())).code());
         var current=appointmentReader.history(core,null,appointmentFilter(),null);
-        assertTrue(jdbc.update("update crm.master set employeeid=? where projectid=?",member,first.id())>0);
+        assertTrue(jdbc.update("update crm.employee set employeeid=? where projectid=?",member,first.id())>0);
         assertEquals("CRM_CONTEXT_CHANGED",assertThrows(CrmException.class,()->appointmentReader.history(core,null,appointmentFilter(),current.nextCursor())).code());
     }
     @Test void crossDayCachedMoveRereadsOnlyConflictingPairAndRetainsOneVisitOnNewDay() throws Exception {
@@ -3520,7 +3715,7 @@ class CrmFoundationIntegrationTest {
         var project = bind(connection()); assertTrue(provider.entered.await(2,TimeUnit.SECONDS));
         jdbc.update("update dbo.users set isenabled=false where userid=(select userid from dbo.employee where employeeid=?)",admin);
         provider.release.countDown(); awaitIdle();
-        assertEquals(0,jdbc.queryForObject("select count(*) from crm.master where projectid=?",Integer.class,project.id()));
+        assertEquals(0,jdbc.queryForObject("select count(*) from crm.employee where projectid=?",Integer.class,project.id()));
         jdbc.update("update dbo.users set isenabled=true where userid=(select userid from dbo.employee where employeeid=?)",admin);
         assertNotEquals("CURRENT",sync.state(project.id()).freshness());
     }
@@ -3547,10 +3742,10 @@ class CrmFoundationIntegrationTest {
             try {
                 var metadata = new MetadataSources(registry);
                 for (var type : List.of(OrganizationEntity.class,UserEntity.class,EmployeeEntity.class,WorkspaceEntity.class,
-                        CrmConnectionEntity.class,CrmProjectEntity.class,CrmMasterEntity.class,CrmServiceEntity.class,
+                        CrmConnectionEntity.class,CrmProjectEntity.class,CrmEmployeeEntity.class,CrmServiceEntity.class,
                         CrmMasterServiceEntity.class,CrmSyncStateEntity.class,EmployeeWorkspaceEntity.class,ClientEntity.class,ClientAccountEntity.class,
                         CrmClientEntity.class,CrmWorkIntervalEntity.class,CrmAppointmentEntity.class,CrmAppointmentServiceEntity.class,
-                        CrmAppointmentMasterEntity.class,CrmOperationEntity.class)) metadata.addAnnotatedClass(type);
+                        CrmAppointmentMasterEntity.class,CrmOperationEntity.class,CrmStaffAccessEntity.class)) metadata.addAnnotatedClass(type);
                 try (var orm = metadata.buildMetadata().buildSessionFactory()) { new CrmStorage(bootJdbc).initialize(); }
             } finally { StandardServiceRegistryBuilder.destroy(registry); }
             if (pass==0) {

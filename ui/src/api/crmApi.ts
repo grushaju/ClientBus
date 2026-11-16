@@ -15,9 +15,17 @@ export interface CrmProject {
 }
 export interface CrmProjectCheck { externalId: string; displayName: string; currency: string | null; zoneId: string | null }
 export interface CrmMaster {
-    id: string; projectId: string; externalId: string; displayName: string; employeeId: string | null
+    id: string; projectId: string; externalId: string; displayName: string; isMaster: boolean; employeeId: string | null
     mappingUpdatedAt: string | null; mappingUpdatedBy: string | null; mappingPreviousId: string | null
     mappingReason: string | null; lastObservedAt: string | null; observationState?: 'OBSERVED' | 'NOT_OBSERVED' | 'UNKNOWN'; version: number
+    linkedId?: string | null; linkedExternalId?: string | null; linkedDisplayName?: string | null; linkUpdatedAt?: string | null
+}
+/** 13.6: наблюдаемая запись доступа DIKIDI (externalId — id правок, не id автора чата). */
+export interface CrmStaffAccess {
+    id: string; projectId: string; externalId: string; displayName: string; masterExternalId: string | null
+    phone: string | null; roleLabel: string | null; mainOwner: boolean; observationState: string; lastObservedAt: string | null
+    version: number; operatorId: string | null; operatorDisplayName: string | null
+    operatorMappingEmployeeId: string | null; operatorMappingUpdatedAt: string | null
 }
 export interface CrmSyncState {
     retryAt?: string | null
@@ -159,12 +167,13 @@ export const changeCrmProjectConnection = (id: string, connectionId: string, exp
 export const detachCrmProject = (id: string, expectedVersion: number, signal?: AbortSignal) =>
     json<CrmProject>(`/api/crm/projects/${path(id)}/detach?expectedVersion=${expectedVersion}`, { method: 'POST', signal })
 export const getCrmMasters = (id: string, signal?: AbortSignal, cursor?: string | null,
-    query: { q?: string; unlinked?: boolean; includeNotObserved?: boolean } = {}) => {
+    query: { q?: string; unlinked?: boolean; includeNotObserved?: boolean; mastersOnly?: boolean } = {}) => {
     const params = new URLSearchParams()
     if (cursor) params.set('cursor', cursor)
     if (query.q) params.set('q', query.q)
     if (query.unlinked) params.set('unlinked', 'true')
     if (query.includeNotObserved !== undefined) params.set('includeNotObserved', String(query.includeNotObserved))
+    if (query.mastersOnly) params.set('mastersOnly', 'true')
     return json<CrmMasterPage>(`/api/crm/projects/${path(id)}/masters${params.size ? '?' + params : ''}`, { signal })
 }
 export const getCrmMaster = (id: string, signal?: AbortSignal) => json<CrmMaster>(`/api/crm/masters/${path(id)}`, { signal })
@@ -186,6 +195,16 @@ export const getCrmServices = (id: string, query: { masterId?: string; serviceId
 export const linkCrmMaster = (master: CrmMaster, employeeId: string | null, signal?: AbortSignal) =>
     employeeId ? json<CrmMaster>(`/api/crm/masters/${path(master.id)}/employee-link`, body('PUT', { employeeId, expectedVersion: master.version }, signal))
         : json<CrmMaster>(`/api/crm/masters/${path(master.id)}/employee-link?expectedVersion=${master.version}`, { method: 'DELETE', signal })
+export const getCrmStaffAccesses = (id: string, signal?: AbortSignal) =>
+    json<CrmStaffAccess[]>(`/api/crm/projects/${path(id)}/staff-accesses`, { signal })
+/** Запись кабинета → учётка-оператор (13.6): employeeId=null снимает связь. */
+export const linkCrmStaffAccess = (access: CrmStaffAccess, employeeId: string | null, signal?: AbortSignal) =>
+    employeeId ? json<CrmStaffAccess>(`/api/crm/staff-accesses/${path(access.id)}/operator`, body('PUT', { employeeId, expectedVersion: access.version }, signal))
+        : json<CrmStaffAccess>(`/api/crm/staff-accesses/${path(access.id)}/operator?expectedVersion=${access.version}`, { method: 'DELETE', signal })
+/** Связь «учётка ↔ сотрудник каталога» (13.6): linkedId=null снимает связь. */
+export const linkCrmStaffRow = (row: CrmMaster, linkedId: string | null, signal?: AbortSignal) =>
+    linkedId ? json<CrmMaster>(`/api/crm/masters/${path(row.id)}/staff-link`, body('PUT', { linkedId, expectedVersion: row.version }, signal))
+        : json<CrmMaster>(`/api/crm/masters/${path(row.id)}/staff-link?expectedVersion=${row.version}`, { method: 'DELETE', signal })
 
 export const crmConnectionLabel = (state: CrmConnection['status']) => ({
     CONFIGURED: 'Не проверено', CONNECTED: 'Подключено', REAUTH_REQUIRED: 'Требуется вход',

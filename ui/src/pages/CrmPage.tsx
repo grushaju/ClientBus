@@ -5,7 +5,7 @@ import { useWorkspace } from '../workspace/WorkspaceContext'
 import { useUiResource } from '../api/events/useUiResource'
 import { affectsWorkspace, isAccessEvent, useUiScope } from '../api/events/uiScope'
 import * as api from '../api/crmApi'
-import { CrmServices, CrmMasters, CrmMasterDrawer } from '../components/crm/CrmCatalog'
+import { CrmServices, CrmMasters, CrmStaff, CrmMasterDrawer } from '../components/crm/CrmCatalog'
 import { CrmClients } from '../components/crm/CrmClients'
 import { CrmSchedule } from '../components/crm/CrmSchedule'
 import { CrmProjectAppointments } from '../components/crm/CrmProjectAppointments'
@@ -24,7 +24,7 @@ function CrmProjectCatalog({ project, canManage, rememberedTab, remember }: {
     const mutation = useRef<AbortController>()
     const servicesSupported = project.capabilities.some(value => value.code === 'READ_SERVICES' && ['AVAILABLE', 'CONFIGURATION_REQUIRED', 'REAUTH_REQUIRED'].includes(value.availability))
     const supported = (code: string) => project.capabilities.some(value => value.code === code && ['AVAILABLE', 'CONFIGURATION_REQUIRED', 'REAUTH_REQUIRED'].includes(value.availability))
-    const tabs = ['appointments', 'masters', ...(servicesSupported ? ['services'] : []), ...(supported('READ_CLIENTS') ? ['clients'] : []), ...(supported('READ_WORK_INTERVALS') ? ['schedule'] : [])]
+    const tabs = ['appointments', 'masters', 'staff', ...(servicesSupported ? ['services'] : []), ...(supported('READ_CLIENTS') ? ['clients'] : []), ...(supported('READ_WORK_INTERVALS') ? ['schedule'] : [])]
     const tab = tabs.includes(rememberedTab) ? rememberedTab : tabs[0]
     const catalogTab = ['services', 'masters'].includes(tab)
     useEffect(() => {
@@ -73,14 +73,15 @@ function CrmProjectCatalog({ project, canManage, rememberedTab, remember }: {
         <div className="crm-tab-heading">
             <div className="crm-tabs" role="tablist" aria-label="Каталог CRM">{tabs.map(value => <button type="button" key={value} role="tab" id={'crm-tab-' + value}
                 aria-selected={tab === value} aria-controls="crm-tabpanel" tabIndex={tab === value ? 0 : -1}
-                onKeyDown={tabKeys} onClick={() => changeTab(value)}>{{ appointments: 'Записи', masters: 'Мастера', services: 'Услуги', clients: 'Клиенты', schedule: 'График' }[value]}</button>)}</div>
-            {canManage && <button type="button" className={'ui-button ui-button-secondary' + (tab === 'masters' ? '' : ' crm-action-placeholder')}
-                aria-hidden={tab !== 'masters'} disabled={tab !== 'masters'} aria-pressed={mapping} aria-label={mapping ? 'Вернуться к мастерам' : 'Связи с сотрудниками'}
-                onClick={() => setMapping(!mapping)}><span className="crm-label-desktop">{mapping ? 'Вернуться к мастерам' : 'Связи с сотрудниками'}</span><span className="crm-label-mobile" aria-hidden="true">{mapping ? 'Мастера' : 'Связи'}</span></button>}
+                onKeyDown={tabKeys} onClick={() => changeTab(value)}>{{ appointments: 'Записи', masters: 'Мастера', staff: 'Сотрудники', services: 'Услуги', clients: 'Клиенты', schedule: 'График' }[value]}</button>)}</div>
+            {canManage && <button type="button" className={'ui-button ui-button-secondary' + (tab === 'staff' ? '' : ' crm-action-placeholder')}
+                aria-hidden={tab !== 'staff'} disabled={tab !== 'staff'} aria-pressed={mapping} aria-label={mapping ? 'Вернуться к сотрудникам' : 'Связи с сотрудниками'}
+                onClick={() => setMapping(!mapping)}><span className="crm-label-desktop">{mapping ? 'Вернуться к сотрудникам' : 'Связи с сотрудниками'}</span><span className="crm-label-mobile" aria-hidden="true">{mapping ? 'Сотрудники' : 'Связи'}</span></button>}
         </div>
         <div role="tabpanel" className="crm-tabpanel" id="crm-tabpanel" aria-labelledby={'crm-tab-' + tab}>
             {tab === 'appointments' && <CrmProjectAppointments project={project} />}
-            {tab === 'masters' && <CrmMasters key={String(mapping)} project={project} mapping={canManage && mapping} onMaster={setDrawer} refresh={refresh} />}
+            {tab === 'masters' && <CrmMasters project={project} onMaster={setDrawer} refresh={refresh} />}
+            {tab === 'staff' && <CrmStaff key={String(mapping)} project={project} mapping={canManage && mapping} onMaster={setDrawer} refresh={refresh} />}
             {tab === 'services' && <CrmServices project={project} onMaster={setDrawer} refresh={refresh} />}
             {tab === 'clients' && <CrmClients project={project} canManage={canManage} />}
             {tab === 'schedule' && <CrmSchedule key={params.get('master') ?? ''} project={project} initialMaster={params.get('master') ?? ''} />}
@@ -95,10 +96,10 @@ function WorkspaceCatalog({ workspaceId }: { workspaceId: string }) {
     const canManage = isSuperAdmin || employeeWorkspaces.some(row => row.workspaceId === workspaceId && row.isSupervisor)
     const memoryKey = 'crm-tab:' + currentEmployee?.id
     const [tab, setTab] = useState(() => {
-        if (['masters', 'services', 'clients', 'schedule', 'appointments'].includes(params.get('tab') ?? '')) return params.get('tab')!
+        if (['masters', 'staff', 'services', 'clients', 'schedule', 'appointments'].includes(params.get('tab') ?? '')) return params.get('tab')!
         try { return sessionStorage.getItem(memoryKey) ?? 'appointments' } catch { return 'appointments' }
     })
-    useEffect(() => { const requested = params.get('tab'); if (requested && ['masters', 'services', 'clients', 'schedule', 'appointments'].includes(requested)) setTab(requested) }, [params.get('tab')])
+    useEffect(() => { const requested = params.get('tab'); if (requested && ['masters', 'staff', 'services', 'clients', 'schedule', 'appointments'].includes(requested)) setTab(requested) }, [params.get('tab')])
     const resource = useUiResource('crm-projects:' + workspaceId, true,
         event => affectsWorkspace(event, workspaceId) && (isAccessEvent(event) || event.type === 'crm.invalidated'),
         signal => api.getCrmProjects(workspaceId, signal), value => { setProjects(value); setError(null) },

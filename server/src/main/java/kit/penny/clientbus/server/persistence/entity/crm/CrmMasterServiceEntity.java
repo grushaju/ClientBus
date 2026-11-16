@@ -18,7 +18,7 @@ public class CrmMasterServiceEntity extends CrmRecord {
     private CrmProjectEntity project;
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "masterid", nullable = false, foreignKey = @ForeignKey(name = "fkmasterservicemaster"))
-    private CrmMasterEntity master;
+    private CrmEmployeeEntity master;
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "serviceid", nullable = false, foreignKey = @ForeignKey(name = "fkmasterserviceservice"))
     private CrmServiceEntity service;
@@ -42,8 +42,8 @@ public class CrmMasterServiceEntity extends CrmRecord {
     private String observationState = "OBSERVED";
     public CrmProjectEntity getProject() { return project; }
     public void setProject(CrmProjectEntity value) { project = value; }
-    public CrmMasterEntity getMaster() { return master; }
-    public void setMaster(CrmMasterEntity value) { master = value; }
+    public CrmEmployeeEntity getMaster() { return master; }
+    public void setMaster(CrmEmployeeEntity value) { master = value; }
     public CrmServiceEntity getService() { return service; }
     public void setService(CrmServiceEntity value) { service = value; }
     public BigDecimal getPrice() { return price; }

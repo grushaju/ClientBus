@@ -87,8 +87,8 @@ class DikidiChatReaderTest {
                         ? "{\"error\":{\"code\":0,\"message\":null},\"data\":{\"dialog\":\"7\",\"msg\":[]}}"
                         : readResponse);
             }
-            if (address.startsWith("https://f2.dikidi.ru/"))
-                return new Response(200, "", null, media.get(address)); // CDN-вложения joining
+            if (address.startsWith("https://f2.dikidi.ru/") || address.startsWith("https://f2.dikidi.net/"))
+                return new Response(200, "", null, media.get(address)); // CDN-вложения joining и иконки C02
             if (address.equals("https://dikidi.ru/ru/")) return new Response(200,
                     "<html><input type=\"hidden\" name=\"telegram_csrf\" value=\"t1\"></html>"); // каждая новая connection входит заново
             if (address.equals("https://auth.dikidi.ru/ajax/check/auth/")) return new Response(200, "{\"html\":\"<input type=\\\"hidden\\\" name=\\\"csrf\\\" value=\\\"c1\\\">\"}");
@@ -205,6 +205,21 @@ class DikidiChatReaderTest {
     }
 
     private static boolean publishedNothing(Harness harness) { return harness.published.isEmpty(); }
+
+    /** 16.11.2026: аватаром хосту отдаётся storageKey, а не сырой CDN-URL (иначе /avatar/content падает InvalidPathException). */
+    @Test void dialogIconBecomesLocalStorageKeyAndFailureLeavesAvatarEmpty() {
+        try (var harness = new Harness(5)) {
+            fleet(harness.site);
+            harness.site.dialogs = harness.site.dialogs.replace("\"name\":\"Ким\"",
+                    "\"name\":\"Ким\",\"icon\":\"https://f2.dikidi.net/c99/v11111/abc123hash.jpg\"");
+            harness.site.media.put("https://f2.dikidi.net/c99/v11111/abc123hash.jpg", new byte[]{1, 2, 3});
+            var result = harness.connector.handle(new SyncRecentChatsCommand(ACCOUNT));
+            assertEquals("stored/abc123hash.jpg", result.get(0).avatarUrl());
+            harness.site.media.clear();
+            var again = harness.connector.handle(new SyncRecentChatsCommand(ACCOUNT));
+            assertNull(again.get(0).avatarUrl(), "сбой иконки — карточка без аватара, не падение синка");
+        }
+    }
 
     @Test void liveOnlyAfterInitialSyncAndOnlyNewerThanCursor() {
         try (var harness = new Harness(5)) {

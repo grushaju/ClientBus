@@ -63,6 +63,18 @@
 .crm-masters { gap: 0; }
 .crm-master { border: 0; border-bottom: 1px solid #e2e7ee; padding: 14px 16px; grid-template-columns: minmax(140px, 1fr) minmax(160px, 1fr); min-height: 74px; box-sizing: border-box; }
 .crm-master.mapping { min-height: 82px; padding-top: 10px; padding-bottom: 10px; }
+.crm-role-master { display: inline-block !important; width: fit-content; margin-top: 4px; padding: 1px 10px; border-radius: 999px; background: #dcfce7; color: #15803d; font-weight: 600; }
+.crm-cabinet { display: inline-block !important; width: fit-content; margin-top: 4px; padding: 1px 10px; border-radius: 999px; background: #e0e7ff; color: #3730a3; }
+.crm-access-scroll { overflow-x: auto; }
+.crm-access-table { width: 100%; border-collapse: collapse; margin-bottom: 6px; min-width: 620px; }
+.crm-access-table select { max-width: 100%; min-width: 0; }
+.crm-access-table th { text-align: left; font-size: 12px; color: #64748b; padding: 6px 8px; border-bottom: 1px solid #e2e8f0; }
+.crm-access-table th small { font-weight: 400; color: #b45309; }
+.crm-access-table td { border-bottom: 1px solid #eef2f7; padding: 7px 8px; vertical-align: top; }
+.crm-access-role { display: inline-block; border-radius: 999px; padding: 1px 9px; font-size: 12px; font-weight: 600; background: #fef3c7; color: #92400e; margin-right: 6px; }
+.crm-access-owner { display: inline-block; border-radius: 999px; padding: 1px 9px; font-size: 12px; font-weight: 600; background: #fee2e2; color: #b91c1c; margin-right: 6px; }
+.crm-access-old { display: inline-block; border-radius: 999px; padding: 1px 9px; font-size: 12px; background: #f1f5f9; color: #64748b; }
+.crm-access-note { font-size: 12px; color: #64748b; margin-top: 3px; display: block; }
 .crm-row-hint { font-size: 14px; justify-self: end; }
 .crm-candidate-search { max-width: 400px; margin: 8px 0 12px; }
 .crm-candidate-search summary, .crm-mapping-help summary { cursor: pointer; color: #365379; font-size: 14px; padding: 6px 0; }
@@ -131,8 +143,10 @@
 @media (max-width: 760px) {
     .crm-label-desktop { display: none; }
     .crm-label-mobile { display: inline; }
-    .crm-tabs { gap: 4px; }
-    .crm-tabs button { padding-inline: 0; }
+    /* Табы — одна строка с мягким горизонтальным скроллом: шесть вкладок не съедают первый экран. */
+    .crm-tabs { flex: 1 1 auto; min-width: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: 14px; }
+    .crm-tabs::-webkit-scrollbar { display: none; }
+    .crm-tabs button { flex: none; white-space: nowrap; padding-inline: 0; }
     .crm-tab-heading > button { margin: 0; padding: 8px; }
     .crm-page { padding: 16px 14px 26px; }
     .crm-page .ui-button, .crm-panel .ui-button, .crm-page button, .crm-panel button, .crm-page input:not([type=checkbox]), .crm-panel input:not([type=checkbox]), .crm-page select, .crm-panel select { min-height: 44px; }
@@ -140,9 +154,15 @@
     .crm-offer { gap: 10px; }
     .crm-master { padding: 12px; grid-template-columns: 1fr; gap: 4px; }
     .crm-master.mapping { grid-template-columns: 1fr; gap: 8px; }
+    /* Режим связей: заголовок дублирует нажатую кнопку — уплотняем хром, чтобы первая строка оставалась на первом экране. */
+    .crm-mapping-heading h2 { margin: 2px 0 0; font-size: 18px; }
+    .crm-toolbar { margin: 10px 0 6px; }
+    .crm-freshness { margin: 4px 0 6px; }
+    .crm-candidate-search { margin: 4px 0 6px; }
     .crm-candidate-search summary, .crm-mapping-help summary { min-height: 44px; line-height: 44px; padding: 0; }
     .crm-row-hint { display: none; }
-    .crm-tab-heading { align-items: flex-start; flex-wrap: wrap; gap: 0; }
+    .crm-tab-heading { align-items: center; flex-wrap: nowrap; gap: 4px; }
+    .crm-tab-heading > button { flex: none; }
     .crm-catalog-heading { align-items: flex-start; padding: 10px; gap: 8px; }
     .crm-catalog-heading > div { flex: 1; min-width: 150px; }
     .crm-picker { left: 0; right: auto; }

@@ -64,7 +64,7 @@ public class EmployeeController {
         EmployeeDto employee = employeeService.getCurrentEmployee();
         String storageKey = employee.avatarUrl();
 
-        if (storageKey == null || storageKey.isBlank()) {
+        if (storageKey == null || storageKey.isBlank() || !attachmentStorage.exists(storageKey)) {
             return ResponseEntity.notFound().build();
         }
 
@@ -160,7 +160,7 @@ public class EmployeeController {
         EmployeeDto employee = employeeService.getEmployeeAvatar(id);
         String storageKey = employee.avatarUrl();
 
-        if (storageKey == null || storageKey.isBlank()) {
+        if (storageKey == null || storageKey.isBlank() || !attachmentStorage.exists(storageKey)) {
             return ResponseEntity.notFound().build();
         }
 

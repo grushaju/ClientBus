@@ -18,7 +18,7 @@ public class CrmWorkIntervalEntity extends CrmRecord {
     private CrmProjectEntity project;
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "masterid", nullable = false, foreignKey = @ForeignKey(name = "fkworkintervalmaster"))
-    private CrmMasterEntity master;
+    private CrmEmployeeEntity master;
     @Column(name = "startlocal", nullable = false) private LocalDateTime startLocal;
     @Column(name = "endlocal", nullable = false) private LocalDateTime endLocal;
     @Column(name = "kind", nullable = false, length = 24) private String kind;
@@ -29,8 +29,8 @@ public class CrmWorkIntervalEntity extends CrmRecord {
     @Column(name = "lastobservedgeneration", nullable = false) private long lastObservedGeneration;
     public CrmProjectEntity getProject() { return project; }
     public void setProject(CrmProjectEntity value) { project = value; }
-    public CrmMasterEntity getMaster() { return master; }
-    public void setMaster(CrmMasterEntity value) { master = value; }
+    public CrmEmployeeEntity getMaster() { return master; }
+    public void setMaster(CrmEmployeeEntity value) { master = value; }
     public LocalDateTime getStartLocal() { return startLocal; }
     public void setStartLocal(LocalDateTime value) { startLocal = value; }
     public LocalDateTime getEndLocal() { return endLocal; }

@@ -398,7 +398,7 @@ public class CrmService {
         return result;
     }
     public CrmMasterPageDto masters(UUID projectId, String cursor) {
-        return masters(projectId, cursor, null, false, true);
+        return masters(projectId, cursor, null, false, true, false);
     }
     public CrmMasterDto master(UUID id) {
         store.storage.requireReady();
@@ -409,9 +409,13 @@ public class CrmService {
         });
     }
     public CrmMasterPageDto masters(UUID projectId, String cursor, String query, boolean unlinked, boolean includeNotObserved) {
+        return masters(projectId, cursor, query, unlinked, includeNotObserved, false);
+    }
+    /** mastersOnly — страница только мастеров (таба «Мастера»); без него — все сотрудники проекта (таба «Сотрудники»). */
+    public CrmMasterPageDto masters(UUID projectId, String cursor, String query, boolean unlinked, boolean includeNotObserved, boolean mastersOnly) {
         store.storage.requireReady();
         String search = CrmSearch.normalize(query);
-        String scope = CrmSearch.scope(projectId + "/" + search + "/" + unlinked + "/" + includeNotObserved);
+        String scope = CrmSearch.scope(projectId + "/" + search + "/" + unlinked + "/" + includeNotObserved + (mastersOnly ? "/masters" : ""));
         return tx.execute(status -> {
             var project = store.project(projectId, store.guard.organization());
             if (unlinked) store.guard.workspace(project.getWorkspace().getId(), true);
@@ -420,15 +424,16 @@ public class CrmService {
             long revision = sync.revision(projectId);
             UUID afterId = decodeCursor(scope, cursor, revision);
             var page = PageRequest.of(0, 100, Sort.by("externalId", "id"));
-            Slice<CrmMasterEntity> rows;
+            Slice<CrmEmployeeEntity> rows;
             var after = afterId == null ? null : store.masters.findById(afterId).filter(row -> row.getProject().getId().equals(projectId))
                     .orElseThrow(() -> CrmException.conflict("CRM_CONTEXT_CHANGED"));
-            if (search.isEmpty() && !unlinked && includeNotObserved) {
+            if (search.isEmpty() && !unlinked && includeNotObserved && !mastersOnly) {
                 rows = after == null ? store.masters.findAllByProjectId(projectId, page)
                         : store.masters.findAllByProjectIdAndExternalIdGreaterThan(projectId, after.getExternalId(), page);
             } else rows = store.masters.findAll((root, criteria, cb) -> {
                 var filters = new ArrayList<jakarta.persistence.criteria.Predicate>();
                 filters.add(cb.equal(root.get("project").get("id"), projectId));
+                if (mastersOnly) filters.add(cb.isTrue(root.get("isMaster")));
                 if (after != null) filters.add(cb.greaterThan(root.get("externalId"), after.getExternalId()));
                 if (!search.isEmpty()) filters.add(cb.like(cb.lower(root.get("displayName")), CrmSearch.pattern(search), '!'));
                 if (unlinked) filters.add(cb.isNull(root.get("employee")));
@@ -470,6 +475,106 @@ public class CrmService {
                 CrmCatalogSync.bumpRevision(store,project.getId());
                 events.workspace(project.getWorkspace(), "crm.invalidated");
             }
+            store.em.flush(); return CrmStore.dto(original);
+        });
+    }
+    /** Наблюдаемые записи доступа проекта (13.6): карточка человека дополняется ролью/телефоном/владелем. */
+    public List<CrmStaffAccessDto> staffAccesses(UUID projectId) {
+        store.storage.requireReady();
+        return tx.execute(status -> {
+            var project = store.project(projectId, store.guard.organization());
+            return store.em.createQuery("from CrmStaffAccessEntity where project.id=:project order by externalId",
+                            CrmStaffAccessEntity.class).setParameter("project", projectId).getResultList().stream()
+                    .map(row -> {
+                        var operator = row.getEmployee();
+                        return new CrmStaffAccessDto(row.getId(), project.getId(), row.getExternalId(),
+                                row.getDisplayName(), row.getMasterExternalId(), row.getPhone(),
+                                Objects.toString(row.getProfile().get("roleLabel"), null), row.isMainOwner(),
+                                row.getObservationState() == null ? "UNKNOWN" : row.getObservationState(),
+                                row.getLastObservedAt(), row.getVersion(),
+                                operator == null ? null : operator.getId(),
+                                operator == null ? null : operator.getDisplayName(),
+                                operator == null || operator.getEmployee() == null ? null : operator.getEmployee().getId(),
+                                operator == null ? null : operator.getMappingUpdatedAt());
+                    })
+                    .toList();
+        });
+    }
+    /**
+     * Выбор учётки-оператора для записи доступа (13.6): человек подтверждает, какая учётка
+     * проекта (crm.employee) стоит за этой записью кабинета — моста в DIKIDI нет. Цель —
+     * строка того же проекта; маппинг на сотрудника ClientBus остаётся на учётке.
+     */
+    public CrmStaffAccessDto linkStaffAccess(UUID accessId, UUID employeeRowId, long expectedVersion) {
+        store.storage.requireReady();
+        return tx.execute(status -> {
+            UUID organization = store.guard.organization();
+            var original = store.em.find(CrmStaffAccessEntity.class, accessId);
+            if (original == null) throw CrmStore.notFound();
+            var project = original.getProject();
+            if (!organization.equals(project.getOrganization().getId())) throw CrmStore.notFound();
+            store.guard.workspace(project.getWorkspace().getId(), true);
+            store.em.refresh(project, LockModeType.PESSIMISTIC_WRITE);
+            CrmStore.requireMutable(project);
+            store.em.refresh(original, LockModeType.PESSIMISTIC_WRITE);
+            version(original, expectedVersion);
+            CrmEmployeeEntity operator = null;
+            if (employeeRowId != null) {
+                operator = store.masters.findById(employeeRowId).orElseThrow(CrmStore::notFound);
+                if (!operator.getProject().getId().equals(project.getId())) throw CrmException.invalid();
+                store.em.refresh(operator, LockModeType.PESSIMISTIC_WRITE);
+            }
+            var author = store.em.find(EmployeeEntity.class, store.guard.actor());
+            if (author == null) throw CrmStore.notFound();
+            original.setEmployee(operator); original.setLinkUpdatedAt(Instant.now());
+            original.setLinkUpdatedBy(author);
+            CrmCatalogSync.bumpRevision(store, project.getId());
+            events.workspace(project.getWorkspace(), "crm.invalidated");
+            store.em.flush();
+            return new CrmStaffAccessDto(original.getId(), project.getId(), original.getExternalId(),
+                    original.getDisplayName(), original.getMasterExternalId(), original.getPhone(),
+                    Objects.toString(original.getProfile().get("roleLabel"), null), original.isMainOwner(),
+                    original.getObservationState() == null ? "UNKNOWN" : original.getObservationState(),
+                    original.getLastObservedAt(), original.getVersion(),
+                    operator == null ? null : operator.getId(),
+                    operator == null ? null : operator.getDisplayName(),
+                    operator == null || operator.getEmployee() == null ? null : operator.getEmployee().getId(),
+                    operator == null ? null : operator.getMappingUpdatedAt());
+        });
+    }
+    /**
+     * Связь «учётка ↔ сотрудник каталога» (13.6): подтверждает человек — моста
+     * «user id ↔ запись доступа» в DIKIDI нет (CRM_DIKIDI_PROTOCOL). Разрешена только для
+     * строки не-мастера на строку мастера того же проекта; цепочки запрещены (цель сама
+     * не может быть связана). Атрибуция автора наследует маппинг цели.
+     */
+    public CrmMasterDto linkStaff(UUID rowId, UUID linkedId, long expectedVersion) {
+        store.storage.requireReady();
+        return tx.execute(status -> {
+            UUID organization = store.guard.organization();
+            var original = store.masters.findById(rowId).orElseThrow(CrmStore::notFound);
+            var project = original.getProject();
+            if (!organization.equals(project.getOrganization().getId())) throw CrmStore.notFound();
+            store.guard.workspace(project.getWorkspace().getId(), true);
+            store.em.refresh(project, LockModeType.PESSIMISTIC_WRITE);
+            CrmStore.requireMutable(project);
+            store.em.refresh(original, LockModeType.PESSIMISTIC_WRITE);
+            version(original, expectedVersion);
+            if (original.isMaster()) throw CrmException.invalid();
+            CrmEmployeeEntity target = null;
+            if (linkedId != null) {
+                if (linkedId.equals(rowId)) throw CrmException.invalid();
+                target = store.masters.findById(linkedId).orElseThrow(CrmStore::notFound);
+                if (!target.getProject().getId().equals(project.getId()) || !target.isMaster()
+                        || target.getLinkedEmployee() != null) throw CrmException.invalid();
+                store.em.refresh(target, LockModeType.PESSIMISTIC_WRITE);
+            }
+            var author = store.em.find(EmployeeEntity.class, store.guard.actor());
+            if (author == null) throw CrmStore.notFound();
+            original.setLinkedEmployee(target); original.setLinkUpdatedAt(Instant.now());
+            original.setLinkUpdatedBy(author);
+            CrmCatalogSync.bumpRevision(store, project.getId());
+            events.workspace(project.getWorkspace(), "crm.invalidated");
             store.em.flush(); return CrmStore.dto(original);
         });
     }

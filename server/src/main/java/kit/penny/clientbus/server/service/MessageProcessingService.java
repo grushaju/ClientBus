@@ -27,7 +27,7 @@ public class MessageProcessingService
     @org.springframework.beans.factory.annotation.Autowired
     private kit.penny.clientbus.server.notification.center.PersonalNotificationWriter personalNotifications;
 
-    /** Атрибуция авторов исходящих через crm.master маппинг (13.5); поле — контракт конструктора стабилен. */
+    /** Атрибуция авторов исходящих через crm.employee маппинг (13.5); поле — контракт конструктора стабилен. */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private CrmChatAuthorAttribution authorAttribution;
 
@@ -102,7 +102,7 @@ public class MessageProcessingService
 
         // 13.5 (живая приёмка DIKIDI): автор исходящего на стороне салона различается
         // платформенным id — сотрудник берётся из существующего маппинга мастеров
-        // (crm.master.externalid → employeeid); без мастера/маппинга — NULL.
+        // (crm.employee.externalid → employeeid); без мастера/маппинга — NULL.
         UUID attributedEmployeeId = outbound && authorAttribution != null
                 ? authorAttribution.employeeId(channelAccount, request.authorExternalId())
                 : null;

@@ -153,8 +153,9 @@ public class CrmScheduleSync {
         }
         return false;
     }
-    CrmMasterEntity master(UUID projectId, UUID id) {
-        return store.masters.findById(id).filter(row -> row.getProject().getId().equals(projectId)).orElseThrow(CrmStore::notFound);
+    CrmEmployeeEntity master(UUID projectId, UUID id) {
+        // График и расписание — свойство мастера: не-мастер проекта здесь не существует (404 как у чужого id).
+        return store.masters.findById(id).filter(row -> row.getProject().getId().equals(projectId) && row.isMaster()).orElseThrow(CrmStore::notFound);
     }
     private void initialize(CrmContext context,String kind,String dataset,String key,Map<String,Object> scope) {
         jdbc.update("""

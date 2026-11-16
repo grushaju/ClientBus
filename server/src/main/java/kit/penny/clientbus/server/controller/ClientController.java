@@ -330,7 +330,7 @@ public class ClientController {
         ClientDto client = clientService.getClient(id);
         String storageKey = client.avatarUrl();
 
-        if (storageKey == null || storageKey.isBlank()) {
+        if (storageKey == null || storageKey.isBlank() || !attachmentStorage.exists(storageKey)) {
             return ResponseEntity.notFound().build();
         }
 

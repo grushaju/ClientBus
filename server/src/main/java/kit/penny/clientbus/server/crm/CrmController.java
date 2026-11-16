@@ -77,8 +77,9 @@ public class CrmController {
     @GetMapping("/projects/{id}/masters")
     public CrmMasterPageDto masters(@PathVariable UUID id, @RequestParam(required = false) String cursor,
             @RequestParam(required = false) String q, @RequestParam(defaultValue = "false") boolean unlinked,
-            @RequestParam(defaultValue = "true") boolean includeNotObserved) {
-        return service.masters(id, cursor, q, unlinked, includeNotObserved);
+            @RequestParam(defaultValue = "true") boolean includeNotObserved,
+            @RequestParam(defaultValue = "false") boolean mastersOnly) {
+        return service.masters(id, cursor, q, unlinked, includeNotObserved, mastersOnly);
     }
     @GetMapping("/masters/{id}")
     public CrmMasterDto master(@PathVariable UUID id) { return service.master(id); }
@@ -91,6 +92,24 @@ public class CrmController {
     @DeleteMapping("/masters/{id}/employee-link")
     public CrmMasterDto unlink(@PathVariable UUID id, @RequestParam @Min(0) long expectedVersion) {
         return service.linkEmployee(id, null, expectedVersion);
+    }
+    @GetMapping("/projects/{id}/staff-accesses")
+    public List<CrmStaffAccessDto> staffAccesses(@PathVariable UUID id) { return service.staffAccesses(id); }
+    @PutMapping("/masters/{id}/staff-link")
+    public CrmMasterDto linkStaff(@PathVariable UUID id, @Valid @RequestBody LinkCrmStaffRequest request) {
+        return service.linkStaff(id, request.linkedId(), request.expectedVersion());
+    }
+    @DeleteMapping("/masters/{id}/staff-link")
+    public CrmMasterDto unlinkStaff(@PathVariable UUID id, @RequestParam @Min(0) long expectedVersion) {
+        return service.linkStaff(id, null, expectedVersion);
+    }
+    @PutMapping("/staff-accesses/{id}/operator")
+    public CrmStaffAccessDto linkStaffAccess(@PathVariable UUID id, @Valid @RequestBody LinkCrmStaffAccessRequest request) {
+        return service.linkStaffAccess(id, request.employeeId(), request.expectedVersion());
+    }
+    @DeleteMapping("/staff-accesses/{id}/operator")
+    public CrmStaffAccessDto unlinkStaffAccess(@PathVariable UUID id, @RequestParam @Min(0) long expectedVersion) {
+        return service.linkStaffAccess(id, null, expectedVersion);
     }
     @PostMapping("/projects/{id}/refresh")
     public ResponseEntity<CrmSyncStateDto> refresh(@PathVariable UUID id, @Valid @RequestBody RefreshCrmRequest request) {

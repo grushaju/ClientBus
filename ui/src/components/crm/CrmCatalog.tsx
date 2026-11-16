@@ -19,7 +19,7 @@ function PageStatus({ data, empty, moreLabel, archived = false }: { data: Return
 }
 function MasterOptions({ project, query, choose }: ProjectProps & { query: string; choose: (master: api.CrmMaster) => void }) {
     const data = useCrmPages('crm-master-options:' + project.id + ':' + query, project.workspaceId,
-        (signal, cursor) => api.getCrmMasters(project.id, signal, cursor, { q: query, includeNotObserved: false }))
+        (signal, cursor) => api.getCrmMasters(project.id, signal, cursor, { q: query, includeNotObserved: false, mastersOnly: true }))
     return <><ul className="crm-picker-results">{data.page?.items.map(master => <li key={master.id}>
         <button type="button" onClick={() => choose(master)}>{master.displayName} <small>ID {master.externalId}</small></button>
     </li>)}</ul><PageStatus data={data} empty="Мастера не найдены." moreLabel="Ещё мастера" /></>
@@ -63,12 +63,12 @@ export function CrmServices({ project, onMaster, refresh }: ProjectProps & { onM
     </div><ServiceRows key={query + ':' + selected?.id} project={project} query={query} masterId={selected?.id} onMaster={onMaster} refresh={refresh} /></>
 }
 
-function MasterRows({ project, query, mapping, unlinked, onMaster, refresh }: ProjectProps & {
-    query: string; mapping: boolean; unlinked: boolean; onMaster: (id: string) => void
+function MasterRows({ project, query, mapping, unlinked, onMaster, refresh, mastersOnly, staff = false }: ProjectProps & {
+    query: string; mapping: boolean; unlinked: boolean; onMaster: (id: string) => void; mastersOnly: boolean; staff?: boolean
 }) {
     const scope = useUiScope()
-    const data = useCrmPages('crm-masters:' + project.id + ':' + query + ':' + mapping + ':' + unlinked, project.workspaceId,
-        (signal, cursor) => api.getCrmMasters(project.id, signal, cursor, { q: query, unlinked, includeNotObserved: mapping }))
+    const data = useCrmPages((staff ? 'crm-staff:' : 'crm-masters:') + project.id + ':' + query + ':' + mapping + ':' + unlinked, project.workspaceId,
+        (signal, cursor) => api.getCrmMasters(project.id, signal, cursor, { q: query, unlinked, includeNotObserved: mapping, mastersOnly }))
     useEffect(() => { if (refresh) data.reload() }, [refresh])
     const [candidates, setCandidates] = useState<api.CrmEmployeeCandidate[]>([]), [candidateError, setCandidateError] = useState<string | null>(null)
     const [candidateLoading, setCandidateLoading] = useState(false), [candidateQuery, setCandidateQuery] = useState('')
@@ -99,7 +99,8 @@ function MasterRows({ project, query, mapping, unlinked, onMaster, refresh }: Pr
         try {
             const saved = await api.linkCrmMaster(master, employeeId, controller.signal)
             if (!current() || !candidateCurrent() || controller.signal.aborted) return
-            data.replace(saved); setUndo(reverting ? null : { saved, previous: master.employeeId })
+            data.replace(saved); setEmployeeRows(rows => rows.map(row => row.id === saved.id ? saved : row))
+            setUndo(reverting ? null : { saved, previous: master.employeeId })
             if (reverting) undoFocus.current = master.id
             setMessage(`${master.displayName}: ${reverting ? 'изменение отменено' : employeeId ? 'связь сохранена' : 'связь удалена'}.`)
             // Keep the changed row until the user leaves the filter; undo stays available outside it.
@@ -113,6 +114,59 @@ function MasterRows({ project, query, mapping, unlinked, onMaster, refresh }: Pr
         }
     }
     const visibleCandidates = candidates.filter(row => (row.displayName + ' ' + row.username).toLocaleLowerCase().includes(candidateQuery.toLocaleLowerCase()))
+    // 13.6 (макет пользователя): таблица «запись кабинета → оператор → сотрудник ClientBus».
+    const [accesses, setAccesses] = useState<api.CrmStaffAccess[]>([])
+    const [employeeRows, setEmployeeRows] = useState<api.CrmMaster[]>([])
+    const [staffSaving, setStaffSaving] = useState<string | null>(null)
+    const [accessTick, setAccessTick] = useState(0)
+    useEffect(() => {
+        if (!staff) return
+        const controller = new AbortController()
+        void api.getCrmStaffAccesses(project.id, controller.signal).then(rows => { if (!controller.signal.aborted) setAccesses(rows) }, () => undefined)
+        void (async () => {
+            const rows: api.CrmMaster[] = []; let cursor: string | null | undefined
+            do { const answer = await api.getCrmMasters(project.id, controller.signal, cursor)
+                rows.push(...answer.items); cursor = answer.hasMore ? answer.nextCursor : null } while (cursor)
+            if (!controller.signal.aborted) setEmployeeRows(rows)
+        })().catch(() => undefined)
+        return () => controller.abort()
+    }, [staff, project.id, refresh, accessTick])
+    async function saveStaffLink(row: api.CrmMaster, linkedId: string | null) {
+        if (project.archived || staffSaving) return
+        setStaffSaving(row.id); setSaveError(null)
+        try { const saved = await api.linkCrmStaffRow(row, linkedId); data.replace(saved) }
+        catch (error) { setSaveError(api.crmError(error)); data.reload() }
+        finally { setStaffSaving(null) }
+    }
+    async function saveOperator(access: api.CrmStaffAccess, employeeId: string | null) {
+        if (project.archived || staffSaving) return
+        setStaffSaving(access.id); setSaveError(null)
+        try { const saved = await api.linkCrmStaffAccess(access, employeeId)
+            setAccesses(current => current.map(row => row.id === saved.id ? saved : row))
+            setUndo(pending => pending && pending.saved.id === employeeId ? null : pending)
+            setMessage(`${access.displayName}: ${employeeId ? 'оператор выбран' : 'оператор снят'}.`)}
+        catch (error) { setSaveError(api.crmError(error)); setAccessTick(tick => tick + 1) }
+        finally { setStaffSaving(null) }
+    }
+    async function saveAccessMapping(access: api.CrmStaffAccess, employeeId: string | null) {
+        if (project.archived || staffSaving || !access.operatorId) return
+        setStaffSaving(access.id); setSaveError(null)
+        try {
+            const row = employeeRows.find(candidate => candidate.id === access.operatorId) ?? await api.getCrmMaster(access.operatorId)
+            const saved = await api.linkCrmMaster(row, employeeId)
+            setEmployeeRows(current => current.map(candidate => candidate.id === saved.id ? saved : candidate))
+            data.replace(saved); setUndo(pending => pending && pending.saved.id === saved.id ? null : pending)
+            setMessage(`${access.displayName}: ${employeeId ? 'связь сохранена' : 'связь удалена'}.`)
+            setAccessTick(tick => tick + 1)
+        }
+        catch (error) { setSaveError(api.crmError(error)); setAccessTick(tick => tick + 1) }
+        finally { setStaffSaving(null) }
+    }
+    const cabinetFor = (externalId: string) => accesses.filter(row => row.masterExternalId === externalId)
+    const accessTable = staff && mapping && accesses.length > 0 && data.page != null
+    const operatorIds = new Set(accesses.map(row => row.operatorId).filter(id => id !== null))
+    const listRows = accessTable ? (data.page?.items ?? []).filter(row => !operatorIds.has(row.id)) : data.page?.items
+    const projectMasterRows = employeeRows.filter(row => row.isMaster)
     return <>
         <CrmFreshness state={data.page?.dataState} archived={project.archived} />
         {mapping && <details className="crm-candidate-search"><summary>Найти сотрудника по имени или логину</summary><label>Поиск сотрудника в списках<input type="search" value={candidateQuery} maxLength={160} onChange={event => setCandidateQuery(event.target.value)} placeholder="Имя или логин" /></label></details>}
@@ -120,10 +174,49 @@ function MasterRows({ project, query, mapping, unlinked, onMaster, refresh }: Pr
         {saveError && <p role="alert" className="crm-error">{saveError}</p>}
         {(message || undo) && <div className="crm-feedback" role="status">{message} {undo && <button type="button" className="ui-button ui-button-secondary" disabled={!!saving}
             onClick={() => void save(undo.saved, undo.previous, true)}>Отменить изменение</button>}</div>}
-        <ul className="crm-masters">{data.page?.items.map(master => <li className={mapping ? 'crm-master mapping' : 'crm-master'} key={master.id}>
+        {accessTable && <><div className="crm-access-scroll"><table className="crm-access-table"><thead><tr>
+            <th>Записи кабинета</th><th>Операторы <small>выбирается вручную — связи записей с учётками в DIKIDI нет</small></th><th>Сотрудник ClientBus</th></tr></thead>
+            <tbody>{accesses.map(access => <tr key={access.id}>
+                <td><b>{access.displayName}</b>
+                    <div>{access.roleLabel && <span className="crm-access-role">{access.roleLabel}</span>}
+                        {access.mainOwner && <span className="crm-access-owner">владелец кабинета</span>}
+                        {access.observationState === 'NOT_OBSERVED' && <span className="crm-access-old">больше нет в кабинете</span>}</div>
+                    <div className="crm-access-note">{[access.phone, access.masterExternalId && `DIKIDI: запись привязана к мастеру ID ${access.masterExternalId}`]
+                        .filter(Boolean).join(' · ') || '—'}</div></td>
+                <td><select aria-label={'Оператор: ' + access.displayName + ' · ' + access.externalId} value={access.operatorId ?? ''}
+                    disabled={project.archived || staffSaving !== null}
+                    onChange={event => void saveOperator(access, event.target.value || null)}>
+                    <option value="">Оператор не выбран</option>
+                    {access.operatorId && !employeeRows.some(row => row.id === access.operatorId) && <option value={access.operatorId}>{access.operatorDisplayName ?? 'Выбранная учётка'}</option>}
+                    {employeeRows.map(row => <option key={row.id} value={row.id}>{row.displayName} · ID {row.externalId}
+                        {row.isMaster || access.masterExternalId === row.externalId || access.masterExternalId === row.linkedExternalId ? ' · (мастер)' : ''}</option>)}
+                </select>{staffSaving === access.id && <small role="status">Сохраняем…</small>}</td>
+                <td><select aria-label={'Сотрудник ClientBus: ' + access.displayName + ' · ' + access.externalId} value={access.operatorMappingEmployeeId ?? ''}
+                    disabled={!access.operatorId || project.archived || staffSaving !== null || !!saving || (candidateLoading && !candidates.length) || !!candidateError}
+                    onChange={event => void saveAccessMapping(access, event.target.value || null)}>
+                    <option value="">{access.operatorId ? 'Без связи с сотрудником' : 'Сначала выберите оператора'}</option>
+                    {access.operatorMappingEmployeeId && !visibleCandidates.some(row => row.id === access.operatorMappingEmployeeId) && <option value={access.operatorMappingEmployeeId}>
+                        {candidates.find(row => row.id === access.operatorMappingEmployeeId)?.displayName ?? 'Связанный сотрудник'}</option>}
+                    {visibleCandidates.map(row => <option key={row.id} value={row.id}>{row.displayName || row.username} · {row.username}{!row.enabled ? ' · отключён' : ''}</option>)}
+                </select>{access.operatorMappingEmployeeId && access.operatorId && <small className="crm-access-note">маппинг хранится на учётке оператора</small>}</td>
+            </tr>)}</tbody></table></div></>}
+        <ul className="crm-masters">{listRows?.map(master => <li className={mapping ? 'crm-master mapping' : 'crm-master'} key={master.id}>
             <div><button type="button" className="crm-text-button" onClick={() => onMaster(master.id)}>{master.displayName}</button>
                 <small>ID {master.externalId}</small>
+                {staff && master.isMaster && <small className="crm-role-master">Мастер</small>}
+                {staff && !master.isMaster && !master.linkedId && <small>Учётка кабинета</small>}
+                {staff && master.linkedId && <small>Один человек с: {master.linkedDisplayName}</small>}
+                {staff && master.isMaster && cabinetFor(master.externalId).map(row => <small key={row.id} className="crm-cabinet">
+                    {`Кабинет: ${row.displayName}${row.roleLabel ? ` · ${row.roleLabel}` : ''}${row.phone ? ` · ${row.phone}` : ''}${row.mainOwner ? ' · владелец кабинета' : ''}`}</small>)}
                 {master.observationState === 'NOT_OBSERVED' && <small>Отсутствует в последнем полном каталоге</small>}</div>
+            {mapping && staff && !master.isMaster && <label>Это тот же человек, что сотрудник каталога<select aria-label={'Связь учётки: ' + master.displayName}
+                value={master.linkedId ?? ''} disabled={project.archived || staffSaving !== null || staffSaving === master.id}
+                onChange={event => void saveStaffLink(master, event.target.value || null)}>
+                <option value="">Не связывать</option>
+                {master.linkedId && !projectMasterRows.some(row => row.id === master.linkedId) && <option value={master.linkedId}>{master.linkedDisplayName ?? 'Связанный сотрудник'}</option>}
+                {projectMasterRows.map(row => <option key={row.id} value={row.id}>{row.displayName} · ID {row.externalId}</option>)}
+            </select>{staffSaving === master.id && <small role="status">Сохраняем…</small>}
+            <span className="crm-notice">DIKIDI не отдаёт связь учётки с сотрудником каталога — подтвердите её вручную; сообщения автора будут резолвиться через неё.</span></label>}
             {mapping && <label>Сотрудник ClientBus<select id={'crm-link-' + master.id} aria-label={'Сотрудник: ' + master.displayName} value={master.employeeId ?? ''}
                 aria-disabled={project.archived || !!saving} disabled={project.archived || (candidateLoading && !candidates.length) || !!candidateError} onChange={event => void save(master, event.target.value || null)}>
                 <option value="">Без связи с сотрудником</option>
@@ -132,18 +225,31 @@ function MasterRows({ project, query, mapping, unlinked, onMaster, refresh }: Pr
                 </option>}
                 {visibleCandidates.map(row => <option key={row.id} value={row.id}>{row.displayName || row.username} · {row.username}{!row.enabled ? ' · отключён' : ''}</option>)}
             </select>{saving === master.id && <small role="status">Сохраняем…</small>}</label>}
-            {!mapping && <button type="button" className="crm-text-button crm-row-hint" onClick={() => onMaster(master.id)}>Услуги и условия →</button>}
+            {!mapping && (!staff || master.isMaster) && <button type="button" className="crm-text-button crm-row-hint" onClick={() => onMaster(master.id)}>Услуги и условия →</button>}
         </li>)}</ul>
-        <PageStatus data={data} archived={project.archived} empty={unlinked ? 'Мастеров без связи по этим условиям нет.' : query ? 'Мастера не найдены.' : 'В каталоге пока нет мастеров.'} moreLabel="Показать ещё мастеров" />
+        {accessTable && listRows?.length === 0 && (data.page?.items.length ?? 0) > 0 &&
+            <p className="crm-notice">Все учётки уже выбраны операторами в таблице выше.</p>}
+        <PageStatus data={data} archived={project.archived} empty={staff
+            ? unlinked ? 'Сотрудников без связи по этим условиям нет.' : query ? 'Сотрудники не найдены.' : 'В проекте пока нет сотрудников.'
+            : unlinked ? 'Мастеров без связи по этим условиям нет.' : query ? 'Мастера не найдены.' : 'В каталоге пока нет мастеров.'}
+            moreLabel={staff ? 'Показать ещё сотрудников' : 'Показать ещё мастеров'} />
     </>
 }
-export function CrmMasters({ project, mapping, onMaster, refresh }: ProjectProps & { mapping: boolean; onMaster: (id: string) => void }) {
+export function CrmMasters({ project, onMaster, refresh }: ProjectProps & { onMaster: (id: string) => void }) {
+    const [query, setQuery] = useState('')
+    return <>
+        <div className="crm-toolbar"><label className="crm-search">Найти мастера<input type="search" maxLength={160} value={query} onChange={event => setQuery(event.target.value)} /></label></div>
+        <MasterRows key={query} project={project} query={query} unlinked={false} mapping={false} mastersOnly onMaster={onMaster} refresh={refresh} />
+    </>
+}
+/** Таба «Сотрудники»: все сотрудники проекта (crm.employee), привязка Employee — здесь и не зависит от роли. */
+export function CrmStaff({ project, mapping, onMaster, refresh }: ProjectProps & { mapping: boolean; onMaster: (id: string) => void }) {
     const [query, setQuery] = useState(''), [unlinked, setUnlinked] = useState(false)
     return <>
-        {mapping && <div className="crm-mapping-heading"><h2>Связи с сотрудниками</h2><details className="crm-mapping-help"><summary>О связях</summary><p className="crm-notice">Связь означает, что мастер и сотрудник — один человек. Она не даёт доступ к пространству и не назначает диалоги. Мастер может работать без аккаунта ClientBus.</p></details></div>}
-        <div className="crm-toolbar"><label className="crm-search">Найти мастера<input type="search" maxLength={160} value={query} onChange={event => setQuery(event.target.value)} /></label>
+        {mapping && <div className="crm-mapping-heading"><h2>Связи с сотрудниками</h2><details className="crm-mapping-help"><summary>О связях</summary><p className="crm-notice">Связь означает, что сотрудник CRM и сотрудник ClientBus — один человек: мастер или тот, кто ведёт запись. Она не даёт доступ к пространству и не назначает диалоги. Сотрудник может работать без аккаунта ClientBus.</p></details></div>}
+        <div className="crm-toolbar"><label className="crm-search">Найти сотрудника<input type="search" maxLength={160} value={query} onChange={event => setQuery(event.target.value)} /></label>
             {mapping && <label className="crm-checkbox"><input type="checkbox" checked={unlinked} onChange={event => setUnlinked(event.target.checked)} />Без связи с сотрудником</label>}</div>
-        <MasterRows key={query + ':' + mapping + ':' + unlinked} project={project} query={query} unlinked={mapping && unlinked} mapping={mapping} onMaster={onMaster} refresh={refresh} />
+        <MasterRows key={query + ':' + mapping + ':' + unlinked} project={project} query={query} unlinked={mapping && unlinked} mapping={mapping} mastersOnly={false} staff onMaster={onMaster} refresh={refresh} />
     </>
 }
 export function CrmMasterDrawer({ project, id, close }: ProjectProps & { id: string; close: () => void }) {
@@ -158,10 +264,12 @@ export function CrmMasterDrawer({ project, id, close }: ProjectProps & { id: str
         return () => { if (previous?.isConnected) previous.focus() }
     }, [])
     return <dialog className="crm-drawer" ref={dialog} aria-labelledby="crm-master-title" onCancel={close} onClick={event => { if (event.target === event.currentTarget) close() }}>
-        <div className="crm-drawer-content"><div className="crm-heading"><h2 id="crm-master-title">{master?.displayName ?? 'Карточка мастера'}</h2>
+        <div className="crm-drawer-content"><div className="crm-heading"><h2 id="crm-master-title">{master?.displayName ?? 'Карточка сотрудника'}</h2>
             <button type="button" className="ui-button ui-button-secondary" autoFocus onClick={close}>Закрыть</button></div>
             {error && <p role="alert" className="crm-error">{error} <button type="button" onClick={resource.reload}>Повторить</button></p>}
-            {master && <><p>{project.displayName} · ID {master.externalId}</p><Link onClick={close} to={'/crm?' + new URLSearchParams({ workspace: project.workspaceId, project: project.id, tab: 'schedule', master: id })}>График мастера</Link><h3>Услуги мастера</h3><ServiceRows project={project} query="" masterId={id} /></>}
+            {master && <><p>{project.displayName} · ID {master.externalId}</p>{master.isMaster
+                ? <><Link onClick={close} to={'/crm?' + new URLSearchParams({ workspace: project.workspaceId, project: project.id, tab: 'schedule', master: id })}>График мастера</Link><h3>Услуги мастера</h3><ServiceRows project={project} query="" masterId={id} /></>
+                : <p>Сотрудник не оказывает услуг и не имеет графика мастера — он ведёт или сопровождает записи.</p>}</>}
         </div>
     </dialog>
 }
