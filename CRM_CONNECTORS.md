@@ -68,6 +68,8 @@
 
 Класс-пробник: `server/src/test/java/kit/penny/clientbus/crm/dikidi/CrmDikidiChatReadAcceptance.java` — opt-in (`clientbus.crm.acceptance.live=true`), только GET + два POST входа, жёсткий allowlist адресов, бюджет 40 вызовов, вывод без PII (структура, счётчики, имена полей, обезличенные извлечения). Проект `f024d60c-4d37-4f6c-8431-ff92c0411248`.
 
+Класс-зонд 13.9: `CrmDikidiClientIdentityAcceptance` там же — ищет **провайдерский ключ** «карточка клиента ↔ её чат» (R09/R08/R07/R05 против C02/C04), opt-in, бюджет 60 вызовов (фактически 27 и 15 на двух проектах), кандидатов id берёт из локальной БД только для сравнения в памяти, вывод — имена полей, форма значений, заполненность и булевы совпадения. Логи: `server/target/crm-13-9-identity-probe-0ff3a37c.log`, `server/target/crm-13-9-identity-probe-f024d60c.log`. Итог: ключа нет, телефон остаётся единственной подсказкой — `CRM_DIKIDI_PROTOCOL.md`, раздел «Поиск ключа „карточка клиента ↔ чат“».
+
 | Лог | Содержание |
 |---|---|
 | `server/target/crm-13-1-chat-probe-run2.log` | зелёный прогон после discovery (16 вызовов, writes=0) |
