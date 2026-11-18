@@ -886,23 +886,28 @@ test('CRM 12.5: история клиента загружается при ра
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
 })
 
-test('CRM 12.5: панель диалога показывает ближайшие визиты только своего Workspace', async ({ page, api }) => {
+test('CRM 13.9: секция «CRM» панели диалога показывает клиентов CRM и привязывает их руками, визиты не трогает', async ({ page, api }) => {
     api.role = 'employee'; api.account.clientId = 'client-1'
     const fixture = await installCrm(page)
-    const upcoming = new Date(Date.now() + 3600000)
-    fixture.visits[0].startAt = upcoming.toISOString()
-    fixture.visits[0].localStart = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Moscow', dateStyle: 'short', timeStyle: 'medium' }).format(upcoming).replace(' ', 'T')
+    await page.route('**/api/employees/me/workspaces', route => route.fulfill({ json: [{ employeeId: 'employee-1', workspaceId: 'workspace-1', isSupervisor: true }] }))
     await page.goto('/inbox/conversation-1')
     const panel = page.locator('.conversation-client-panel')
-    await expect(panel.getByText('CRM и визиты', { exact: true })).toBeVisible()
+    const crm = panel.locator('details.crm-client-context')
+    await expect(crm.locator('> summary')).toHaveText('CRM')
+    // Секция живёт под «Аккаунтом», а не над ним.
+    expect((await crm.boundingBox()).y).toBeGreaterThan((await panel.getByRole('heading', { name: 'Аккаунт' }).boundingBox()).y)
     expect(fixture.counters.historyReads).toBe(0)
-    const request = page.waitForRequest(request => request.url().includes('/clients/client-1/crm/appointments'))
-    await panel.getByText('CRM и визиты', { exact: true }).click()
-    expect(new URL((await request).url()).searchParams.get('workspaceId')).toBe('workspace-1')
-    await expect(panel.locator('.crm-appointment-row')).toHaveCount(1)
-    await panel.getByRole('link', { name: 'Все визиты во вкладке «Записи»' }).click()
-    await expect(page).toHaveURL(/\/crm\?tab=appointments&.*clientId=client-1/)
-    await expect(page.locator('.crm-appointment-row')).toHaveCount(1)
+    await crm.locator('> summary').click()
+    await expect(crm.getByText('Другой клиент CRM')).toBeVisible()
+    await expect(crm.getByText('Салон №17 · ID client-1')).toBeVisible()
+    // Визиты из панели убраны: ни строк, ни обращений за историей.
+    await expect(panel.locator('.crm-appointment-row')).toHaveCount(0)
+    expect(fixture.counters.historyReads).toBe(0)
+    await crm.getByRole('button', { name: 'Привязать клиента CRM' }).click()
+    await expect(crm.getByText('Иван CRM · 70000000001 · ID client-0')).toBeVisible()
+    await crm.getByRole('button', { name: 'Привязать' }).first().click()
+    await expect(crm.getByText('Иван CRM')).toBeVisible()
+    expect(fixture.counters.clientLinks).toBe(1)
     expect(fixture.counters.unknown).toEqual([])
 })
 

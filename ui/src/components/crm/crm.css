@@ -127,6 +127,11 @@
 .crm-client-context summary { cursor: pointer; font-weight: 600; min-height: 32px; }
 .crm-client-context .crm-panel { padding: 0; border: 0; }
 .crm-client-links li { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+/* Секция «CRM» панели диалога: карточки привязанных клиентов CRM и ручная привязка. */
+.crm-client-cards { display: grid; gap: 8px; margin: 0 0 10px; padding: 0; list-style: none; }
+.crm-client-cards li { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 10px; border: 1px solid #dce3ee; border-radius: 8px; }
+.crm-client-card-main { display: grid; gap: 2px; flex: 1 1 160px; min-width: 0; overflow-wrap: anywhere; }
+.crm-client-pick-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 0; overflow-wrap: anywhere; }
 .crm-prewrap { white-space: pre-wrap; overflow-wrap: anywhere; }
 .crm-operation-panel { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 12px 0; }
 .crm-operation-panel > details[open] { flex-basis: 100%; }

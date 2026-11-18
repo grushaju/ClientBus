@@ -210,6 +210,36 @@ test('hiding the inbox panel cancels automatic pagination and ignores its late r
     assert.equal(f.ui.root.findAllByProps({ className: 'crm-appointment-row' }).length, 0)
 })
 
+test('«CRM» section of the inbox panel shows linked crm clients and never reads appointments', async t => {
+    const f = await fixture(t, 'ClientCrmSection', { clientId: 'core', workspaceId: 'w', phones: ['+7 999 123-45-67'] }, { getCrmProjects: async () => [project] }, true)
+    assert.deepEqual(f.calls, [])
+    assert.doesNotMatch(text(f.ui), /Внешний клиент/)
+    await act(async () => f.ui.root.findByType('details').props.onToggle({ currentTarget: { open: true } }))
+    assert.deepEqual(f.calls[0].slice(0, 3), ['links', 'core', 'w'])
+    assert.match(text(f.ui), /Внешний клиент/); assert.match(text(f.ui), /Салон/); assert.match(text(f.ui), /· ID /)
+    assert.equal(f.calls.filter(row => row[0] === 'history').length, 0)
+    assert.equal(f.ui.root.findAllByProps({ className: 'crm-appointment-row' }).length, 0)
+    await click(f.ui, 'Карточка'); assert.match(text(f.ui), /Клиент CRM/)
+})
+
+test('a member cannot link crm clients from the inbox panel; a supervisor links a free card by hand', async t => {
+    const member = await fixture(t, 'ClientCrmSection', { clientId: 'core', workspaceId: 'w', phones: [] }, { getCrmProjects: async () => [project] })
+    await act(async () => member.ui.root.findByType('details').props.onToggle({ currentTarget: { open: true } }))
+    assert.equal(button(member.ui, 'Привязать клиента CRM'), undefined)
+    const boss = await fixture(t, 'ClientCrmSection', { clientId: 'core', workspaceId: 'w', phones: ['+7 999 123-45-67'] }, {
+        getCrmProjects: async () => [project],
+        getCrmClients: async (...args) => { boss.calls.push(['clients', ...args]); return page([{ ...client, normalizedPhone: '79991234567' }]) },
+    }, true)
+    await act(async () => boss.ui.root.findByType('details').props.onToggle({ currentTarget: { open: true } }))
+    await click(boss.ui, 'Привязать клиента CRM')
+    const requested = boss.calls.find(row => row[0] === 'clients')
+    assert.equal(requested[1], 'p'); assert.deepEqual(requested[2], { q: '', unlinked: true })
+    assert.match(text(boss.ui), /Внешний клиент/); assert.match(text(boss.ui), /79991234567/); assert.match(text(boss.ui), /телефон совпадает/)
+    assert.deepEqual(boss.calls.filter(row => row[0] === 'link'), [])
+    await click(boss.ui, 'Привязать')
+    assert.deepEqual(boss.calls.find(row => row[0] === 'link'), ['link', 7, 'core'])
+})
+
 for (const core of [false, true]) test(`changing appointment project preserves dates and states${core ? ' and core client' : ''} but clears project IDs`, async t => {
     let changed
     const params = new URLSearchParams('tab=appointments&workspace=w&project=p&dateFrom=2026-10-01&dateTo=2026-10-02&paymentState=PAID&kind=APPOINTMENT&masterId=m&crmClientId=external&externalClientId=client-1')
