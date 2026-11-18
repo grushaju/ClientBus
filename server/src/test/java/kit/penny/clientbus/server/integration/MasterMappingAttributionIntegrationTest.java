@@ -121,7 +121,7 @@ class MasterMappingAttributionIntegrationTest extends AbstractIntegrationTest {
 
         messageProcessingService.processPlatformMessage(new PlatformMessageRequest(
                 account.getId(), "700000004", null, null, "Клиент Тест", "700000004", "880000004",
-                MessageType.TEXT, "Хорошо, а что скажет ваш босс", null, Instant.now(), List.of(),
+                MessageType.TEXT, "Вопрос клиента", null, Instant.now(), List.of(),
                 kit.penny.clientbus.common.notification.EventOrigin.SYNC, "88550001", "700000004"));
         assertNull(employeeOf("880000004"), "входящее — от клиента, employee NULL");
     }
