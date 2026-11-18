@@ -34,7 +34,9 @@ import static org.junit.jupiter.api.Assertions.*;
 @EnabledIfSystemProperty(named = "clientbus.crm.acceptance.live", matches = "true")
 class CrmDikidiClientIdentityAcceptance {
     private static final JsonMapper JSON = JsonMapper.builder().build();
-    private static final int CALL_LIMIT = 60;
+    private static final int CALL_LIMIT = Integer.getInteger("clientbus.crm.acceptance.calls", 60);
+    /** Сколько карточек открываем целиком (R09): запрос дорогой, бюджет ограничиваем явно. */
+    private static final int CARDS = Math.clamp(Integer.getInteger("clientbus.crm.acceptance.cards", 12), 1, 60);
     private static final Pattern INPUT = Pattern.compile(
             "<(?:input|select|textarea)[^>]{0,600}?name\\s*=\\s*[\"']?([A-Za-z0-9_.\\[\\]-]{1,64})[\"']?[^>]{0,600}?>",
             Pattern.CASE_INSENSITIVE);
@@ -43,6 +45,11 @@ class CrmDikidiClientIdentityAcceptance {
     private static final Pattern PAIR = Pattern.compile("[\"']([A-Za-z_0-9.\\[\\]-]{1,40})[\"']\\s*[=:]\\s*[\"']?([0-9]{4,18})[\"']?");
     private static final Pattern DATA_ATTRIBUTE = Pattern.compile("\\s(data-[a-z-]{1,30})\\s*=", Pattern.CASE_INSENSITIVE);
     private static final Pattern PHONE = Pattern.compile("(?:^|[^0-9])(?:\\+?7|8)[\\s(-]?\\(?9\\)?[\\s-]?[0-9]{3}[\\s-]?[0-9]{2}[\\s-]?[0-9]{2}(?:$|[^0-9])");
+    private static final Pattern IMG_URL = Pattern.compile("<img[^>]{0,400}?src\\s*=\\s*[\"']([^\"']{1,300})[\"']", Pattern.CASE_INSENSITIVE);
+    private static final Pattern CARD_LINK = Pattern.compile("/clients/settings/([1-9][0-9]{0,17})/");
+    private static final Pattern CDN_URL = Pattern.compile("https?://[a-z0-9.-]*dikidi[a-z0-9.-]*/[^\"'\\\\<>\\s)]{4,160}");
+    private static final Pattern CDN_PATH = Pattern.compile("[A-Za-z0-9_-]{2,12}/v[0-9]{2,9}/[A-Za-z0-9_-]{5,26}");
+    private static final Pattern DIGITS = Pattern.compile("(?<![0-9])([1-9][0-9]{4,17})(?![0-9])");
 
     private record Res(int status, String body) {}
 
@@ -72,6 +79,7 @@ class CrmDikidiClientIdentityAcceptance {
         final Set<String> visitedClients = new LinkedHashSet<>();
         final Set<String> cardPool = new HashSet<>();
         final Set<String> accessAccounts = new HashSet<>();
+        final Set<String> dialogs = new HashSet<>();
         final Map<String, String> roleOf = new HashMap<>();
         String chatTag(String value) {
             var clean = clean(value);
@@ -84,10 +92,150 @@ class CrmDikidiClientIdentityAcceptance {
             var clean = clean(value);
             return clean != null && cardPool.contains(clean) ? "crmClientId" : null;
         }
+        /** Диалог как ключ: карточка, знающая id диалога клиента, и есть искомый мост. */
+        String dialogTag(String value) {
+            var clean = clean(value);
+            return clean != null && dialogs.contains(clean) ? "dialogId" : null;
+        }
         private static String clean(String value) {
             if (value == null) return null;
             var trimmed = value.strip();
             return trimmed.isEmpty() ? null : trimmed;
+        }
+    }
+
+    /**
+     * Аватар как ключ-кандидат: наблюдение пользователя 18.11.2026 — один и тот же человек в чате
+     * и в карточке клиента выглядит одним и тем же фото. Сравниваем не «похожесть», а идентичность
+     * файла: хэш пути CDN и числовой id файла. Значения не печатаются — только счётчики и формы.
+     */
+    private static final class Avatars {
+        final Map<String, String> chatByHash = new HashMap<>();
+        /** Аватар, привязанный к карточке по СТРОКЕ СПИСКА (R08) — самое чистое свидетельство. */
+        final Map<String, String> listByHash = new HashMap<>();
+        /** Любой dikidi-URL со СТРАНИЦЫ КАРТОЧКИ (R09, включая вкладку диалога). */
+        final Map<String, String> pageByHash = new HashMap<>();
+        final Map<String, String> chatByFileId = new HashMap<>();
+        final Map<String, String> cardByFileId = new HashMap<>();
+        final Set<String> chatOfRoleUser = new HashSet<>();
+        /** Только файлы клиентов (role=user): аватары сотрудников в обеих поверхностях общие, они лишь шумят. */
+        final Set<String> chatUserHashes = new HashSet<>();
+        final Set<String> hosts = new TreeSet<>();
+        int chatSeen;
+
+        void chat(String participant, String url, String fileId, String role) {
+            if (participant == null) return;
+            chatSeen++;
+            if ("user".equals(role)) chatOfRoleUser.add(participant);
+            var hash = hash(url);
+            if (hash != null) {
+                chatByHash.put(hash, participant);
+                if ("user".equals(role)) chatUserHashes.add(hash);
+            }
+            if (url != null) {
+                var path = url.indexOf('/', 8);
+                hosts.add(path < 0 ? url.substring(0, Math.min(24, url.length())) : url.substring(0, path));
+            }
+            if (fileId != null && !fileId.isBlank() && !"0".equals(fileId)) chatByFileId.put(fileId, participant);
+        }
+
+        void card(String cardId, String url, String fileId) {
+            if (cardId == null) return;
+            var hash = hash(url);
+            if (hash != null) listByHash.put(hash, cardId);
+            if (fileId != null && !fileId.isBlank() && !"0".equals(fileId)) cardByFileId.put(fileId, cardId);
+        }
+
+        void cardFileId(String cardId, String fileId) {
+            if (cardId != null && fileId != null && !fileId.isBlank() && !"0".equals(fileId))
+                cardByFileId.put(fileId, cardId);
+        }
+
+        void cardPage(String cardId, String url) {
+            if (cardId == null) return;
+            var hash = hash(url);
+            if (hash != null) pageByHash.put(hash, cardId);
+        }
+
+        Set<String> sharedWithChat(Map<String, String> otherSide) {
+            var shared = new HashSet<>(chatByHash.keySet());
+            shared.retainAll(otherSide.keySet());
+            return shared;
+        }
+
+        Set<String> sharedFileIds() {
+            var shared = new HashSet<>(chatByFileId.keySet());
+            shared.retainAll(cardByFileId.keySet());
+            return shared;
+        }
+
+        /** Сколько совпавших файлов касается учётки и карточки, уже зеркалированных в CRM. */
+        int mirroredPairs(Map<String, String> otherSide, Ids ids) {
+            var ready = 0;
+            for (var hash : sharedWithChat(otherSide))
+                if (ids.chats.contains(chatByHash.get(hash)) && ids.cardPool.contains(otherSide.get(hash))) ready++;
+            return ready;
+        }
+
+        /**
+         * Грубая сеть: встречается ли файл аватара КЛИЕНТА из чата где-нибудь в тексте ответа —
+         * в любом виде (URL, голый путь `cNN/vNNNNN/…`, fragment js). Аватары сотрудников исключены:
+         * они есть в разметке обеих поверхностей и давали бы ложноположительные совпадения.
+         */
+        Set<String> appearsIn(String text) {
+            var found = new HashSet<String>();
+            if (text == null || text.isBlank() || chatUserHashes.isEmpty()) return found;
+            var clipped = text.length() > 4_000_000 ? text.substring(0, 4_000_000) : text;
+            for (var matcher : List.of(CDN_URL.matcher(clipped), CDN_PATH.matcher(clipped)))
+                while (matcher.find()) {
+                    var hash = hash(matcher.group().replaceAll("^.*?dikidi[a-z0-9.-]*/", ""));
+                    if (hash != null && chatUserHashes.contains(hash)) found.add(hash);
+                }
+            return found;
+        }
+
+        /**
+         * Атрибуция «файл ↔ карточка» без знания структуры: вокруг каждого найденного файла ищем
+         * id карточки из нашего пула. Засчитываем только однозначные окна (один id), иначе — молчим.
+         */
+        int attributeFromText(String text, Ids ids) {
+            if (text == null || text.isBlank() || chatUserHashes.isEmpty()) return 0;
+            var clipped = text.length() > 4_000_000 ? text.substring(0, 4_000_000) : text;
+            var seen = new HashSet<String>();
+            var attributed = 0;
+            for (var matcher : List.of(CDN_URL.matcher(clipped), CDN_PATH.matcher(clipped)))
+                while (matcher.find()) {
+                    var hash = hash(matcher.group());
+                    if (hash == null || !chatUserHashes.contains(hash) || !seen.add(hash)) continue;
+                    var window = clipped.substring(Math.max(0, matcher.start() - 400),
+                            Math.min(clipped.length(), matcher.end() + 400));
+                    String cardId = null;
+                    var ambiguous = false;
+                    var digits = DIGITS.matcher(window);
+                    while (digits.find()) {
+                        var candidate = digits.group(1);
+                        if (!ids.cardPool.contains(candidate)) continue;
+                        if (cardId != null && !cardId.equals(candidate)) { ambiguous = true; break; }
+                        cardId = candidate;
+                    }
+                    if (cardId != null && !ambiguous) {
+                        listByHash.put(hash, cardId);
+                        attributed++;
+                    }
+                }
+            return attributed;
+        }
+
+        /** Хэш пути CDN без расширения; маска, а не значение. */
+        private static String hash(String url) {
+            if (url == null) return null;
+            var clean = url.strip();
+            var slash = clean.lastIndexOf('/');
+            if (slash < 0 || slash == clean.length() - 1) return null;
+            var tail = clean.substring(slash + 1).replaceAll("\\?.*$", "");
+            var dot = tail.lastIndexOf('.');
+            if (dot > 0) tail = tail.substring(0, dot);
+            return tail.length() < 4 ? null : tail.toLowerCase(Locale.ROOT);
         }
     }
 
@@ -128,6 +276,9 @@ class CrmDikidiClientIdentityAcceptance {
                                 "IDENT projects=%s (первый выбран; перезапуск: -Dclientbus.crm.acceptance.projectId=<id>)%n", others);
                     }
                     rows.close();
+                    var wanted = System.getProperty("clientbus.crm.acceptance.company");
+                    if (wanted != null) System.out.printf("IDENT companyСовпадаетСВыбраннымПроектом=%s (uuid проекта выше)%n",
+                            wanted.strip().equals(company) ? "да" : "нет");
                     readCandidates(db, projectId, company, ids);
                     db.rollback();
                 }
@@ -160,7 +311,7 @@ class CrmDikidiClientIdentityAcceptance {
                 while (rows.next()) {
                     var external = rows.getString(1);
                     ids.cardPool.add(external);
-                    if (ids.clients.size() < 12) ids.clients.add(external);
+                    if (ids.clients.size() < CARDS) ids.clients.add(external);
                 }
             }
             System.out.printf("IDENT db clients=%d linkedToClient=%d cardPool=%d cardsToProbe=%d%n",
@@ -203,6 +354,7 @@ class CrmDikidiClientIdentityAcceptance {
 
     private void probe(String password, String login, String company, Ids ids) throws Exception {
         var calls = new AtomicInteger();
+        var avatars = new Avatars();
         var cookies = new CookieManager(null, CookiePolicy.ACCEPT_ORIGINAL_SERVER);
         var client = HttpClient.newBuilder().cookieHandler(cookies).connectTimeout(Duration.ofSeconds(5))
                 .followRedirects(HttpClient.Redirect.NEVER).build();
@@ -225,11 +377,12 @@ class CrmDikidiClientIdentityAcceptance {
             assertTrue(authed.path("callback").toString().contains("sw.auth.complete"), "Owner login failed.");
             System.out.println("IDENT login=PASSED");
 
-            chatSurface(client, calls, company, ids);      // сначала роли: без них сравнение визитов двусмысленно
+            chatSurface(client, calls, company, ids, avatars);      // сначала роли: без них сравнение визитов двусмысленно
             visitJournal(client, calls, company, ids);
-            clientCards(client, calls, company, ids);
-            clientData(client, calls, company, ids);
-            clientList(client, calls, company, ids);
+            clientCards(client, calls, company, ids, avatars);
+            clientData(client, calls, company, ids, avatars);
+            clientList(client, calls, company, ids, avatars);
+            reportAvatars(ids, avatars);
         } finally {
             client.shutdownNow();
             System.out.printf("IDENT httpCalls=%d limit=%d mutatingCalls=0 readsOnly=true%n", calls.get(), CALL_LIMIT);
@@ -237,11 +390,11 @@ class CrmDikidiClientIdentityAcceptance {
     }
 
     /** C02/C04: роли участников и всё, что чат знает о телефоне и о карточке CRM. */
-    private void chatSurface(HttpClient client, AtomicInteger calls, String company, Ids ids) throws Exception {
-        exchange(client, calls, "GET", "https://dikidi.ru/ru/owner/ajax/chat/page/?company=" + enc(company), null, true,
-                "https://dikidi.ru/ru/owner/chat/", false);
-        exchange(client, calls, "GET", "https://dikidi.ru/ru/owner/chat/?company=" + enc(company), null, false,
-                "https://dikidi.ru/ru/", false);
+    private void chatSurface(HttpClient client, AtomicInteger calls, String company, Ids ids, Avatars avatars) throws Exception {
+        var chatAjaxPage = exchange(client, calls, "GET", "https://dikidi.ru/ru/owner/ajax/chat/page/?company=" + enc(company),
+                null, true, "https://dikidi.ru/ru/owner/chat/", false).body();
+        var chatPage = exchange(client, calls, "GET", "https://dikidi.ru/ru/owner/chat/?company=" + enc(company), null,
+                false, "https://dikidi.ru/ru/", false).body();
         var referer = "https://dikidi.ru/ru/owner/chat/?company=" + enc(company);
         var list = tree(exchange(client, calls, "GET", "https://chat.dikidi.ru/api/dialogs/list/?interface=owner&company="
                 + enc(company) + "&time=0&msg=true&query=", null, true, referer, true)).path("data").path("list");
@@ -250,6 +403,14 @@ class CrmDikidiClientIdentityAcceptance {
         textHits(list.toString(), ids, listHits);
         System.out.printf("IDENT C02 dialogs=%d listKeys=%s bridgeFields=%s%n", list.size(),
                 list.isArray() && !list.isEmpty() ? keys(list.get(0)) : "-", listHits.isEmpty() ? "нет" : listHits);
+        // Пул id диалогов наполняем ПОСЛЕ разбора самого C02/C04: иначе каждая страница
+        // даёт ложные «попадания» собственным id. Карточка, назвавшая id из этого пула,
+        // и есть доказательство, что DIKIDI связывает карточку с диалогом.
+        var knownDialogs = new TreeSet<String>();
+        for (var dialog : list) {
+            var dialogId = dialog.path("id").asString("");
+            if (dialogId.matches("[1-9][0-9]{0,17}")) knownDialogs.add(dialogId);
+        }
 
         var userKeys = new TreeSet<String>();
         var messageKeys = new TreeSet<String>();
@@ -283,6 +444,9 @@ class CrmDikidiClientIdentityAcceptance {
                     }
                 }
                 roles.add(role.isBlank() ? "(пусто)" : role);
+                var who = text(user.path("id")) != null ? text(user.path("id")) : text(user.path("user_id"));
+                avatars.chat(who, user.path("icon").isValueNode() ? user.path("icon").asString("") : null,
+                        text(user.path("icon_id")), role);
             }
             for (var message : elements(data.path("messages").path("list"))) {
                 if (!message.isObject()) continue;
@@ -304,6 +468,20 @@ class CrmDikidiClientIdentityAcceptance {
         System.out.printf("IDENT C04 phoneFields=%s crmClientIdFields=%s dialogFields=%s%n",
                 userPhone.isEmpty() ? "нет" : userPhone, crmHits.isEmpty() ? "нет" : crmHits,
                 dialogBridge.isEmpty() ? "нет" : dialogBridge);
+        ids.dialogs.addAll(knownDialogs);
+        System.out.printf("IDENT известныхдиалоговдлясравнения=%d%n", ids.dialogs.size());
+        // Страница чата: если интерфейс рисует карточку клиента внутри чата, он откуда-то знает
+        // id карточки. Сканируем обе формы страницы на id из наших пулов.
+        var pageHits = new TreeSet<String>();
+        textHits(chatPage + chatAjaxPage, ids, pageHits);
+        var pageUrls = CDN_URL.matcher(chatPage + chatAjaxPage);
+        var pageUrlCount = 0;
+        while (pageUrls.find()) pageUrlCount++;
+        System.out.printf("IDENT чатстраница bridgeFields=%s dikidiUrl=%d%n", pageHits.isEmpty() ? "нет" : pageHits, pageUrlCount);
+        // Проверка самого метода: файлы аватаров чата, собранные из C04, должны находиться
+        // в разметке самого чата. Если здесь ноль — сравнивать больше нечего и метод неверен.
+        System.out.printf("IDENT чатстраница файловАватаровКлиентовТам=%d из %d (всех участников с файлом %d)%n",
+                avatars.appearsIn(chatPage + chatAjaxPage).size(), avatars.chatUserHashes.size(), avatars.chatByHash.size());
     }
 
     /** R05 визитов: какие служебные id совпадают с id чата и чей это id — клиента или сотрудника. */
@@ -360,73 +538,245 @@ class CrmDikidiClientIdentityAcceptance {
     }
 
     /** R09 карточка клиента: поля формы, заполненность и любые совпадения с id чата. */
-    private void clientCards(HttpClient client, AtomicInteger calls, String company, Ids ids) throws Exception {
+    private void clientCards(HttpClient client, AtomicInteger calls, String company, Ids ids, Avatars avatars) throws Exception {
         var form = new Form();
         var envelope = new TreeSet<String>();
+        var cardsWithImage = 0;
+        var cardsWithChatAvatarFile = 0;
+        var notJsonCards = 0;
+        var dialogKeys = new TreeSet<String>();
         for (var clientId : ids.clients) {
             var body = exchange(client, calls, "GET", "https://dikidi.ru/ru/owner/ajax/clients/settings/"
                     + enc(clientId) + "/?company=" + enc(company), null, true,
                     "https://dikidi.ru/ru/owner/clients/", false).body();
-            var json = JSON.readTree(body);
+            var json = jsonOrNull(body);
+            if (json == null) notJsonCards++;
             var html = body;
-            if (json.isObject()) {
+            var dialogHtml = "";
+            if (json != null && json.isObject()) {
                 envelope.addAll(keysSet(json));
-                html = json.path("html").isValueNode() ? json.path("html").asString("") : body;
-                if (json.path("dialog").isObject() && json.path("dialog").path("html").isValueNode())
-                    html = json.path("dialog").path("html").asString("");
+                if (json.path("html").isValueNode()) html = json.path("html").asString("");
+                var dialog = json.path("dialog");
+                if (dialog.isObject()) {
+                    dialogKeys.addAll(keysSet(dialog));
+                    if (dialog.path("html").isValueNode()) dialogHtml = dialog.path("html").asString("");
+                }
             }
             form.cards++;
             readForm(html, ids, form);
             textHits(body, ids, form.hits);
+            var cardImage = matchFirst(html, IMG_URL);
+            if (cardImage != null) cardsWithImage++;
+            avatars.cardFileId(clientId, formValue(html, "image_id"));
+            var pageUrls = CDN_URL.matcher(html + dialogHtml);
+            while (pageUrls.find()) avatars.cardPage(clientId, pageUrls.group());
+            if (!avatars.appearsIn(body).isEmpty()) cardsWithChatAvatarFile++;
         }
-        System.out.printf("IDENT R09 envelope=%s cards=%d%n", envelope, form.cards);
+        System.out.printf("IDENT R09 envelope=%s dialogKeys=%s cards=%d неJSONответов=%d cardsWithAvatar=%d файловАватаровЧатаВКарточках=%d%n",
+                envelope, dialogKeys, form.cards, notJsonCards, cardsWithImage, cardsWithChatAvatarFile);
         System.out.printf("IDENT R09 fields=%s%n", form.names);
         System.out.printf("IDENT R09 filled=%s%n", form.filled);
         System.out.printf("IDENT R09 shapes=%s%n", form.shapes);
         System.out.printf("IDENT R09 bridgeFields=%s%n", form.hits.isEmpty() ? "нет" : form.hits);
+        // Одна карточка ЦЕЛИКОМ (без ajax): ajax-фрагмент формы может не содержать ни фото,
+        // ни ссылки на диалог — проверять надо и полноценную страницу.
+        var pageHits = new TreeSet<String>();
+        var pageUrlCount = 0;
+        var pageImgCount = 0;
+        if (!ids.clients.isEmpty() && calls.get() < CALL_LIMIT - 2) {
+            var cardId = ids.clients.iterator().next();
+            var page = exchange(client, calls, "GET", "https://dikidi.ru/ru/owner/clients/settings/" + enc(cardId)
+                    + "/?company=" + enc(company), null, false, "https://dikidi.ru/ru/owner/clients/", false).body();
+            textHits(page, ids, pageHits);
+            var urls = CDN_URL.matcher(page);
+            while (urls.find()) pageUrlCount++;
+            var images = IMG_URL.matcher(page);
+            while (images.find()) {
+                pageImgCount++;
+                avatars.cardPage(cardId, images.group(1));
+            }
+        }
+        System.out.printf("IDENT R09 целаястраницаКарточки bridgeFields=%s dikidiUrl=%d img=%d%n",
+                pageHits.isEmpty() ? "нет" : pageHits, pageUrlCount, pageImgCount);
     }
 
-    /** R07 агрегат известных клиентов: поля и совпадения. */
-    private void clientData(HttpClient client, AtomicInteger calls, String company, Ids ids) throws Exception {
-        var form = new ArrayList<Map.Entry<String, String>>();
-        form.add(Map.entry("company", company));
-        var used = 0;
-        for (var id : ids.clients) {
-            if (used++ >= 3) break;
-            form.add(Map.entry("clients_id[]", id));
-        }
-        var body = exchange(client, calls, "POST", "https://dikidi.ru/en/owner/ajax/clients/dataOnLoad/", form, true,
-                "https://dikidi.ru/ru/owner/clients/", false).body();
-        var tree = JSON.readTree(body);
+    /**
+     * R07 агрегат известных клиентов. Ветка `clients` разбирается целиком и пакетами по всему
+     * списку карточек: раньше зонд нырял в первую ветку конверта и про клиентов ничего не видел,
+     * а именно этим запросом список клиентов и дорисовывает то, чего нет в html строк.
+     */
+    private void clientData(HttpClient client, AtomicInteger calls, String company, Ids ids, Avatars avatars) throws Exception {
+        var all = new ArrayList<>(ids.cardPool);
+        java.util.Collections.sort(all);
+        var envelope = new TreeSet<String>();
+        var recordKeys = new TreeSet<String>();
+        var fieldShapes = new TreeMap<String, Set<String>>();
         var hits = new TreeSet<String>();
-        textHits(body, ids, hits);
-        var first = tree.isObject() && !tree.properties().isEmpty() ? tree.properties().iterator().next().getValue() : tree;
-        var inner = first != null && first.isObject() && !first.properties().isEmpty()
-                ? first.properties().iterator().next().getValue() : first;
-        System.out.printf("IDENT R07 envelope=%s level2=%s level3=%s%n", keys(tree), keys(first), keys(inner));
-        System.out.printf("IDENT R07 shapes=%s bridgeFields=%s%n", shapes(inner), hits.isEmpty() ? "нет" : hits);
+        var firstShape = "";
+        var records = 0;
+        var chunks = 0;
+        var notJson = 0;
+        var withUrl = 0;
+        for (var start = 0; start < all.size(); start += 50) {
+            if (calls.get() > CALL_LIMIT - 8) break;
+            var form = new ArrayList<Map.Entry<String, String>>();
+            form.add(Map.entry("company", company));
+            for (var id : all.subList(start, Math.min(start + 50, all.size())))
+                form.add(Map.entry("clients_id[]", id));
+            var body = exchange(client, calls, "POST", "https://dikidi.ru/en/owner/ajax/clients/dataOnLoad/", form,
+                    true, "https://dikidi.ru/ru/owner/clients/", false).body();
+            chunks++;
+            var tree = jsonOrNull(body);
+            if (tree == null) { notJson++; continue; }
+            envelope.addAll(keysSet(tree));
+            var clients = tree.path("clients");
+            if (chunks == 1) {
+                var firstNode = clients.isArray() && !clients.isEmpty() ? clients.get(0)
+                        : clients.isObject() && !clients.properties().isEmpty()
+                                ? clients.properties().iterator().next().getValue() : null;
+                System.out.printf("IDENT R07 веткаclients=%s размер=%d первыйЭлемент=%s%n", clients.getNodeType(),
+                        clients.isArray() ? clients.size() : clients.size(),
+                        firstNode == null ? "-" : firstNode.isObject() ? keys(firstNode) : shape(text(firstNode)));
+            }
+            var entries = new ArrayList<Map.Entry<String, JsonNode>>();
+            if (clients.isArray()) for (var node : clients) entries.add(Map.entry("", node));
+            else if (clients.isObject()) {
+                var properties = new ArrayList<>(clients.properties());
+                var keyed = !properties.isEmpty() && properties.get(0).getKey().matches("[1-9][0-9]{0,17}");
+                if (keyed) entries.addAll(properties);
+                else entries.add(Map.entry("", clients));
+            }
+            for (var entry : entries) {
+                var record = entry.getValue();
+                if (!record.isObject()) continue;
+                records++;
+                if (firstShape.isBlank()) firstShape = shapes(record);
+                var urls = 0;
+                for (var field : record.properties()) {
+                    recordKeys.add(field.getKey());
+                    if (field.getKey().matches("(?i).*(image|photo|avatar|icon|img|dialog|chat|user|contact|link).*"))
+                        fieldShapes.computeIfAbsent(field.getKey(), key -> new TreeSet<>()).add(shape(text(field.getValue())));
+                    fieldShapes.computeIfAbsent("~все", key -> new TreeSet<>()).add(shape(text(field.getValue())));
+                }
+                var matcher = CDN_URL.matcher(record.toString());
+                while (matcher.find()) {
+                    urls++;
+                    if (!entry.getKey().isEmpty()) avatars.card(entry.getKey(), matcher.group(), null);
+                }
+                if (urls > 0) withUrl++;
+                textHits(record.toString(), ids, hits);
+            }
+        }
+        System.out.printf("IDENT R07 envelope=%s chunks=%d неJSONответов=%d карточекВОтвете=%d сUrlВНутри=%d%n",
+                envelope, chunks, notJson, records, withUrl);
+        System.out.printf("IDENT R07 recordKeys=%s%n", recordKeys);
+        System.out.printf("IDENT R07 подозрительныеПоля=%s перваяЗапись=%s%n", fieldShapes, firstShape);
+        System.out.printf("IDENT R07 bridgeFields=%s%n", hits.isEmpty() ? "нет" : hits);
     }
 
     /** R08 список клиентов: атрибуты строк таблицы и совпадения с id чата. */
-    private void clientList(HttpClient client, AtomicInteger calls, String company, Ids ids) throws Exception {
-        exchange(client, calls, "GET", "https://dikidi.ru/ru/owner/clients/?company=" + enc(company), null, false,
-                "https://dikidi.ru/ru/", false);
-        var body = exchange(client, calls, "POST", "https://dikidi.ru/ru/owner/ajax/clients/filter/?company=" + enc(company),
-                List.of(Map.entry("company", company), Map.entry("limit", "50"), Map.entry("offset", "0"),
-                        Map.entry("filter", "username"), Map.entry("order", "asc"), Map.entry("more", "1"), Map.entry("query", "")),
-                true, "https://dikidi.ru/ru/owner/clients/", false).body();
-        var json = JSON.readTree(body);
-        var html = json.path("html").isValueNode() ? json.path("html").asString("") : body;
-        if (json.path("script").isArray()) for (var script : json.path("script"))
-            if (script.path("html").isString()) html = html + script.path("html").asString("");
+    private void clientList(HttpClient client, AtomicInteger calls, String company, Ids ids, Avatars avatars) throws Exception {
+        var listPage = exchange(client, calls, "GET", "https://dikidi.ru/ru/owner/clients/?company=" + enc(company), null,
+                false, "https://dikidi.ru/ru/", false).body();
+        // Начальная серверная разметка списка — это НЕ тот же html, что отдаёт ajax «догрузчик»
+        // (POST filter). Именно в ней могут быть аватары строк; раньше этот ответ выбрасывался.
+        var pageImages = 0;
+        var pageHits = new TreeSet<String>();
+        for (var row : listPage.split("(?i)(?=<tr)")) {
+            var cardId = matchFirst(row, CARD_LINK);
+            var src = matchFirst(row, IMG_URL);
+            if (src == null) {
+                var lazy = CDN_URL.matcher(row);
+                if (lazy.find()) src = lazy.group();
+            }
+            if (cardId != null && src != null) {
+                avatars.card(cardId, src, null);
+                pageImages++;
+            }
+        }
+        var pageUrls = CDN_URL.matcher(listPage);
+        var pageUrlCount = 0;
+        while (pageUrls.find()) pageUrlCount++;
+        textHits(listPage, ids, pageHits);
+        System.out.printf("IDENT R08страница imgКарточек=%d dikidiUrl=%d bridgeFields=%s%n", pageImages, pageUrlCount,
+                pageHits.isEmpty() ? "нет" : pageHits);
+        var json = JSON.readTree("");
+        var html = new StringBuilder();
+        var pages = 0;
+        var scriptParts = new ArrayList<String>();
+        // Несколько страниц списка: аватары карточек нужны массово, одна страница (50 строк)
+        // могла бы просто не включить нужного человека.
+        for (var offset : List.of("0", "50", "100", "150")) {
+            var body = exchange(client, calls, "POST", "https://dikidi.ru/ru/owner/ajax/clients/filter/?company=" + enc(company),
+                    List.of(Map.entry("company", company), Map.entry("limit", "50"), Map.entry("offset", offset),
+                            Map.entry("filter", "username"), Map.entry("order", "asc"), Map.entry("more", "1"), Map.entry("query", "")),
+                    true, "https://dikidi.ru/ru/owner/clients/", false).body();
+            var page = JSON.readTree(body);
+            if (pages == 0) json = page;
+            var part = page.path("html").isValueNode() ? page.path("html").asString("") : body;
+            if (page.path("script").isArray()) for (var script : page.path("script")) {
+                if (script.path("html").isString()) part = part + script.path("html").asString("");
+                scriptParts.add(script.toString());
+            }
+            if (part.isBlank()) break;
+            html.append(part);
+            pages++;
+        }
+        var htmlText = html.toString();
         var attributes = new TreeSet<String>();
-        var matcher = DATA_ATTRIBUTE.matcher(html);
+        var matcher = DATA_ATTRIBUTE.matcher(htmlText);
         while (matcher.find()) attributes.add(matcher.group(1).toLowerCase(Locale.ROOT));
         var hits = new TreeSet<String>();
-        textHits(html, ids, hits);
-        System.out.printf("IDENT R08 envelope=%s rows=%d dataAttributes=%s telLinks=%s%n", keys(json),
-                html.split("<tr", -1).length - 1, attributes, html.toLowerCase(Locale.ROOT).contains("tel:"));
+        textHits(htmlText, ids, hits);
+        // Аватар из строки списка привязываем к карточке той же строки: это единственный
+        // дешёвый способ получить пару «карточка → файл аватара» массово (одним запросом).
+        var rowsWithAvatar = 0;
+        for (var row : htmlText.split("(?i)(?=<tr)")) {
+            var cardId = matchFirst(row, CARD_LINK);
+            var src = matchFirst(row, IMG_URL);
+            if (src == null) {
+                var lazy = CDN_URL.matcher(row);
+                if (lazy.find()) src = lazy.group();
+            }
+            if (cardId != null && src != null) {
+                avatars.card(cardId, src, null);
+                rowsWithAvatar++;
+            }
+        }
+        System.out.printf("IDENT R08 envelope=%s pages=%d rows=%d rowsWithAvatar=%d dataAttributes=%s telLinks=%s%n",
+                keys(json), pages, htmlText.split("<tr", -1).length - 1, rowsWithAvatar, attributes,
+                htmlText.toLowerCase(Locale.ROOT).contains("tel:"));
         System.out.printf("IDENT R08 bridgeFields=%s%n", hits.isEmpty() ? "нет" : hits);
+        var payload = listPage + "\n" + htmlText;
+        System.out.printf("IDENT R08 файловАватаровКлиентовВПayloadе=%d%n", avatars.appearsIn(payload).size());
+        System.out.printf("IDENT R08 гдеФайл: сервернаяСтраница=%d ajaxСтроки=%d ajaxСкрипты=%d%n",
+                avatars.appearsIn(listPage).size(), avatars.appearsIn(htmlText).size(), avatars.appearsIn(String.join("\n", scriptParts)).size());
+        var scriptKeys = new TreeSet<String>();
+        var scriptWithFile = 0;
+        var scriptWithCard = 0;
+        for (var item : scriptParts) {
+            if (avatars.appearsIn(item).isEmpty()) continue;
+            scriptWithFile++;
+            scriptKeys.addAll(keysSet(jsonOrNull(item)));
+            if (DIGITS.matcher(item).results().anyMatch(match -> ids.cardPool.contains(match.group(1)))) scriptWithCard++;
+        }
+        System.out.printf("IDENT R08 скриптов=%d сФайломКлиента=%d сКарточкойТамЖе=%d ключиСкрипта=%s%n",
+                scriptParts.size(), scriptWithFile, scriptWithCard, scriptKeys);
+        System.out.printf("IDENT R08 атрибутированоФайловККарточкам=%d%n", avatars.attributeFromText(payload, ids));
+    }
+
+    /** Итог по аватарам: совпал не «похожий рисунок», а один и тот же файл провайдера. */
+    private static void reportAvatars(Ids ids, Avatars avatars) {
+        System.out.printf("IDENT аватары participants=%d рольUser=%d участниковСАватаром=%d карточекСАватаромСписка=%d карточекСоСтраницыКарточки=%d%n",
+                avatars.chatSeen, avatars.chatOfRoleUser.size(), avatars.chatByHash.size(),
+                avatars.listByHash.size(), avatars.pageByHash.size());
+        System.out.printf("IDENT аватары hosts=%s chatFileIds=%d cardFileIds=%d%n", avatars.hosts,
+                avatars.chatByFileId.size(), avatars.cardByFileId.size());
+        System.out.printf("IDENT аватары совпаденийСЧатом: СтрокаСписка=%d ЗеркалированныхПарСтрокаСписка=%d%n",
+                avatars.sharedWithChat(avatars.listByHash).size(), avatars.mirroredPairs(avatars.listByHash, ids));
+        System.out.printf("IDENT аватары совпаденийСЧатом: СтраницаКарточки=%d ЗеркалированныхПарСтраница=%d поIdФайла=%d%n",
+                avatars.sharedWithChat(avatars.pageByHash).size(), avatars.mirroredPairs(avatars.pageByHash, ids),
+                avatars.sharedFileIds().size());
     }
 
     private static void readForm(String html, Ids ids, Form form) {
@@ -445,6 +795,23 @@ class CrmDikidiClientIdentityAcceptance {
             var value = optionValue.matcher(selected.group());
             form.add("option:selected", value.find() ? value.group(1) : "on", ids);
         }
+    }
+
+    /** Первое совпадение первой группы, иначе null. */
+    private static String matchFirst(String html, Pattern pattern) {
+        var matcher = pattern.matcher(html);
+        return matcher.find() ? matcher.group(1) : null;
+    }
+
+    /** Значение поля формы по имени — нужно, чтобы достать image_id карточки. */
+    private static String formValue(String html, String name) {
+        var matcher = INPUT.matcher(html);
+        while (matcher.find()) {
+            if (!name.equals(matcher.group(1))) continue;
+            var value = VALUE.matcher(matcher.group());
+            return value.find() ? value.group(1) : null;
+        }
+        return null;
     }
 
     /** Рекурсивный сбор объектов, у которых есть собственное поле client_id. */
@@ -485,6 +852,17 @@ class CrmDikidiClientIdentityAcceptance {
             if (chat != null) out.add(matcher.group(1) + "=" + chat);
             var client = ids.clientTag(value);
             if (client != null) out.add(matcher.group(1) + "=" + client);
+            var dialog = ids.dialogTag(value);
+            if (dialog != null) out.add(matcher.group(1) + "=" + dialog);
+        }
+    }
+
+    /** JSON или null: на части запросов платформа отвечает html (заглушка, лимит), это не авария зонда. */
+    private static JsonNode jsonOrNull(String body) {
+        try {
+            return JSON.readTree(body);
+        } catch (RuntimeException failure) {
+            return null;
         }
     }
 
@@ -562,7 +940,7 @@ class CrmDikidiClientIdentityAcceptance {
             assertTrue(form != null && form.size() == 7 && form.stream().allMatch(field ->
                             field.getKey().equals("company") && field.getValue().matches("[1-9][0-9]{0,17}")
                                     || field.getKey().equals("limit") && field.getValue().equals("50")
-                                    || field.getKey().equals("offset") && field.getValue().equals("0")
+                                    || field.getKey().equals("offset") && field.getValue().matches("[0-9]{1,3}")
                                     || Set.of("filter", "order", "query").contains(field.getKey())
                                     || field.getKey().equals("more") && field.getValue().equals("1")),
                     "Client list payload is read only.");
@@ -619,7 +997,7 @@ class CrmDikidiClientIdentityAcceptance {
                     "POST /en/owner/ajax/clients/dataOnLoad/",
                     "GET /ru/owner/ajax/chat/page/", "GET /ru/owner/chat/",
                     "GET /api/dialogs/list/", "GET /api/dialog/get/" -> true;
-            default -> call.matches("GET /ru/owner/ajax/clients/settings/[1-9][0-9]{0,17}/");
+            default -> call.matches("GET /ru/owner/(?:ajax/)?clients/settings/[1-9][0-9]{0,17}/");
         };
     }
 
