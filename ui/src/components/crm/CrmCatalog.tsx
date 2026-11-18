@@ -68,7 +68,8 @@ function MasterRows({ project, query, mapping, unlinked, onMaster, refresh, mast
 }) {
     const scope = useUiScope()
     const data = useCrmPages((staff ? 'crm-staff:' : 'crm-masters:') + project.id + ':' + query + ':' + mapping + ':' + unlinked, project.workspaceId,
-        (signal, cursor) => api.getCrmMasters(project.id, signal, cursor, { q: query, unlinked, includeNotObserved: mapping, mastersOnly }))
+        (signal, cursor) => api.getCrmMasters(project.id, signal, cursor,
+            { q: query, unlinked, includeNotObserved: mapping, mastersOnly, accountsOnly: staff }))
     useEffect(() => { if (refresh) data.reload() }, [refresh])
     const [candidates, setCandidates] = useState<api.CrmEmployeeCandidate[]>([]), [candidateError, setCandidateError] = useState<string | null>(null)
     const [candidateLoading, setCandidateLoading] = useState(false), [candidateQuery, setCandidateQuery] = useState('')
@@ -163,10 +164,24 @@ function MasterRows({ project, query, mapping, unlinked, onMaster, refresh, mast
         finally { setStaffSaving(null) }
     }
     const cabinetFor = (externalId: string) => accesses.filter(row => row.masterExternalId === externalId)
+    // Доказанная формой DIKIDI привязка записи к мастеру показывается человеком: имя из
+    // строки каталога того же проекта, id — как он лежит в записи.
+    const masterNote = (access: api.CrmStaffAccess) => {
+        if (!access.masterExternalId) return null
+        const row = employeeRows.find(value => value.externalId === access.masterExternalId && value.isMaster)
+            ?? employeeRows.find(value => value.externalId === access.masterExternalId)
+        return row ? `Мастер ${row.displayName} · ID ${access.masterExternalId}` : `Мастер ID ${access.masterExternalId}`
+    }
     const accessTable = staff && mapping && accesses.length > 0 && data.page != null
     const operatorIds = new Set(accesses.map(row => row.operatorId).filter(id => id !== null))
     const listRows = accessTable ? (data.page?.items ?? []).filter(row => !operatorIds.has(row.id)) : data.page?.items
     const projectMasterRows = employeeRows.filter(row => row.isMaster)
+    // Оператор записи кабинета — только учётка (chat-аккаунт проекта), и один к одному:
+    // учётка, занятая другой записью, в списке не предлагается (бэкенд это же проверяет).
+    const operatorChoices = (access: api.CrmStaffAccess) => {
+        const taken = new Set(accesses.filter(row => row.id !== access.id && row.operatorId).map(row => row.operatorId as string))
+        return employeeRows.filter(row => !row.isMaster && !taken.has(row.id))
+    }
     return <>
         <CrmFreshness state={data.page?.dataState} archived={project.archived} />
         {mapping && <details className="crm-candidate-search"><summary>Найти сотрудника по имени или логину</summary><label>Поиск сотрудника в списках<input type="search" value={candidateQuery} maxLength={160} onChange={event => setCandidateQuery(event.target.value)} placeholder="Имя или логин" /></label></details>}
@@ -175,21 +190,20 @@ function MasterRows({ project, query, mapping, unlinked, onMaster, refresh, mast
         {(message || undo) && <div className="crm-feedback" role="status">{message} {undo && <button type="button" className="ui-button ui-button-secondary" disabled={!!saving}
             onClick={() => void save(undo.saved, undo.previous, true)}>Отменить изменение</button>}</div>}
         {accessTable && <><div className="crm-access-scroll"><table className="crm-access-table"><thead><tr>
-            <th>Записи кабинета</th><th>Операторы <small>выбирается вручную — связи записей с учётками в DIKIDI нет</small></th><th>Сотрудник ClientBus</th></tr></thead>
+            <th>Профили</th><th>Операторы</th><th>Сотрудник ClientBus</th></tr></thead>
             <tbody>{accesses.map(access => <tr key={access.id}>
-                <td><b>{access.displayName}</b>
+                <td><b>{access.displayName}</b><small className="crm-access-id">{`ID ${access.externalId}`}</small>
                     <div>{access.roleLabel && <span className="crm-access-role">{access.roleLabel}</span>}
                         {access.mainOwner && <span className="crm-access-owner">владелец кабинета</span>}
                         {access.observationState === 'NOT_OBSERVED' && <span className="crm-access-old">больше нет в кабинете</span>}</div>
-                    <div className="crm-access-note">{[access.phone, access.masterExternalId && `DIKIDI: запись привязана к мастеру ID ${access.masterExternalId}`]
+                    <div className="crm-access-note">{[access.phone, masterNote(access)]
                         .filter(Boolean).join(' · ') || '—'}</div></td>
                 <td><select aria-label={'Оператор: ' + access.displayName + ' · ' + access.externalId} value={access.operatorId ?? ''}
                     disabled={project.archived || staffSaving !== null}
                     onChange={event => void saveOperator(access, event.target.value || null)}>
                     <option value="">Оператор не выбран</option>
-                    {access.operatorId && !employeeRows.some(row => row.id === access.operatorId) && <option value={access.operatorId}>{access.operatorDisplayName ?? 'Выбранная учётка'}</option>}
-                    {employeeRows.map(row => <option key={row.id} value={row.id}>{row.displayName} · ID {row.externalId}
-                        {row.isMaster || access.masterExternalId === row.externalId || access.masterExternalId === row.linkedExternalId ? ' · (мастер)' : ''}</option>)}
+                    {access.operatorId && !operatorChoices(access).some(row => row.id === access.operatorId) && <option value={access.operatorId}>{access.operatorDisplayName ?? 'Выбранная учётка'}</option>}
+                    {operatorChoices(access).map(row => <option key={row.id} value={row.id}>{row.displayName} · ID {row.externalId}</option>)}
                 </select>{staffSaving === access.id && <small role="status">Сохраняем…</small>}</td>
                 <td><select aria-label={'Сотрудник ClientBus: ' + access.displayName + ' · ' + access.externalId} value={access.operatorMappingEmployeeId ?? ''}
                     disabled={!access.operatorId || project.archived || staffSaving !== null || !!saving || (candidateLoading && !candidates.length) || !!candidateError}
@@ -205,7 +219,8 @@ function MasterRows({ project, query, mapping, unlinked, onMaster, refresh, mast
                 <small>ID {master.externalId}</small>
                 {staff && master.isMaster && <small className="crm-role-master">Мастер</small>}
                 {staff && !master.isMaster && !master.linkedId && <small>Учётка кабинета</small>}
-                {staff && master.linkedId && <small>Один человек с: {master.linkedDisplayName}</small>}
+                {staff && master.linkedId && <small>{`Один человек с: ${master.linkedDisplayName ?? 'Связанный сотрудник'}`
+                    + (master.linkedExternalId ? ` · ID ${master.linkedExternalId}` : '')}</small>}
                 {staff && master.isMaster && cabinetFor(master.externalId).map(row => <small key={row.id} className="crm-cabinet">
                     {`Кабинет: ${row.displayName}${row.roleLabel ? ` · ${row.roleLabel}` : ''}${row.phone ? ` · ${row.phone}` : ''}${row.mainOwner ? ' · владелец кабинета' : ''}`}</small>)}
                 {master.observationState === 'NOT_OBSERVED' && <small>Отсутствует в последнем полном каталоге</small>}</div>
@@ -230,9 +245,9 @@ function MasterRows({ project, query, mapping, unlinked, onMaster, refresh, mast
         {accessTable && listRows?.length === 0 && (data.page?.items.length ?? 0) > 0 &&
             <p className="crm-notice">Все учётки уже выбраны операторами в таблице выше.</p>}
         <PageStatus data={data} archived={project.archived} empty={staff
-            ? unlinked ? 'Сотрудников без связи по этим условиям нет.' : query ? 'Сотрудники не найдены.' : 'В проекте пока нет сотрудников.'
+            ? unlinked ? 'Учёток без связи по этим условиям нет.' : query ? 'Учётки не найдены.' : 'В проекте пока нет учётных записей кабинета.'
             : unlinked ? 'Мастеров без связи по этим условиям нет.' : query ? 'Мастера не найдены.' : 'В каталоге пока нет мастеров.'}
-            moreLabel={staff ? 'Показать ещё сотрудников' : 'Показать ещё мастеров'} />
+            moreLabel={staff ? 'Показать ещё учётки' : 'Показать ещё мастеров'} />
     </>
 }
 export function CrmMasters({ project, onMaster, refresh }: ProjectProps & { onMaster: (id: string) => void }) {
@@ -242,7 +257,8 @@ export function CrmMasters({ project, onMaster, refresh }: ProjectProps & { onMa
         <MasterRows key={query} project={project} query={query} unlinked={false} mapping={false} mastersOnly onMaster={onMaster} refresh={refresh} />
     </>
 }
-/** Таба «Сотрудники»: все сотрудники проекта (crm.employee), привязка Employee — здесь и не зависит от роли. */
+/** Таба «Управление»: учётки кабинета проекта (crm.employee, ismaster=false) и записи доступа;
+ *  мастера — на вкладке «Мастера», привязка Employee — здесь и не зависит от роли. */
 export function CrmStaff({ project, mapping, onMaster, refresh }: ProjectProps & { mapping: boolean; onMaster: (id: string) => void }) {
     const [query, setQuery] = useState(''), [unlinked, setUnlinked] = useState(false)
     return <>

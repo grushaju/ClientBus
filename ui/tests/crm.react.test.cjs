@@ -337,9 +337,10 @@ test('a restoration preview keeps its reviewed archive version after a newer GET
     assert.equal(fixture.calls[0][2].expectedArchiveVersion, 4)
 })
 test('archived employee mappings are visible but cannot be edited even through an old callback', async t => {
-    const { ui, calls } = await setup(t, 'CrmStaff', { getCrmMasters: async () => page([{ ...master, employeeId: 'employee' }]) },
+    const account = { ...master, id: 'staff-row', externalId: 's1', displayName: 'Reception Rita', isMaster: false, employeeId: 'employee' }
+    const { ui, calls } = await setup(t, 'CrmStaff', { getCrmMasters: async () => page([account]) },
         { project: { ...project, archived: true, enabled: false }, mapping: true })
-    const picker = ui.root.findByProps({ 'aria-label': 'Сотрудник: Test master' })
+    const picker = ui.root.findByProps({ 'aria-label': 'Сотрудник: Reception Rita' })
     assert.equal(picker.props.disabled, true); assert.equal(picker.props.value, 'employee')
     await act(async () => picker.props.onChange({ target: { value: '' } }))
     assert.equal(calls.filter(call => call[0] === 'link').length, 0)
@@ -596,17 +597,22 @@ test('ordinary working directory has no mapping labels, filters or candidate rea
     assert.match(text(ui), /Test master/); assert.doesNotMatch(text(ui), /Без связи|Сопоставлен|Сотрудник ClientBus|Сотрудник:|employee-candidates/)
     assert.equal(ui.root.findAllByType('select').length, 0); assert.deepEqual(calls, [])
 })
-test('the staff tab lists everyone, badges masters and keeps mapping out of the masters tab', async t => {
+test('the masters tab asks for masters, the management tab asks for cabinet accounts only', async t => {
     const rows = [master, { ...master, id: 'staff-row', externalId: 's1', displayName: 'Reception Rita', isMaster: false }]
+    // Фейк честный: сервер отдаёт мастеров только по mastersOnly и только учётки — по accountsOnly.
+    const answer = query => page(query?.accountsOnly ? rows.filter(row => !row.isMaster)
+        : query?.mastersOnly ? rows.filter(row => row.isMaster) : rows)
     const mastersReads = []
-    await setup(t, 'CrmMasters', { getCrmMasters: async (_, signal, cursor, query) => { mastersReads.push(query); return page(rows) } })
-    assert.equal(mastersReads.at(-1).mastersOnly, true)
+    const masters = await setup(t, 'CrmMasters', { getCrmMasters: async (_, signal, cursor, query) => { mastersReads.push(query); return answer(query) } })
+    assert.equal(mastersReads.at(-1).mastersOnly, true); assert.equal(mastersReads.at(-1).accountsOnly, false)
+    assert.match(text(masters.ui), /Test master/, 'мастер остался на вкладке «Мастера»')
     const staffReads = []
-    const staff = await setup(t, 'CrmStaff', { getCrmMasters: async (_, signal, cursor, query) => { staffReads.push(query); return page(rows) } }, { mapping: true })
+    const staff = await setup(t, 'CrmStaff', { getCrmMasters: async (_, signal, cursor, query) => { staffReads.push(query); return answer(query) } }, { mapping: true })
     assert.equal(staffReads.filter(Boolean).at(-1).mastersOnly, false)
+    assert.equal(staffReads.filter(Boolean).at(-1).accountsOnly, true, 'таба «Управление» просит только учётки кабинета')
     assert.match(text(staff.ui), /Reception Rita/)
-    const badges = staff.ui.root.findAllByProps({ className: 'crm-role-master' })
-    assert.equal(badges.length, 1); assert.equal(badges[0].children.join(''), 'Мастер')
+    assert.equal(staff.ui.root.findAllByProps({ className: 'crm-role-master' }).length, 0,
+        'мастера остаются на вкладке «Мастера»')
     const plain = await setup(t, 'CrmStaff', {}, {})
     assert.equal(plain.ui.root.findAllByType('select').length, 0)
     assert.doesNotMatch(text(plain.ui), /Без связи|Сотрудник:/)
@@ -643,7 +649,9 @@ test('the staff table maps a cabinet access record to an operator account and th
     }, { mapping: true })
     assert.match(text(staff.ui), /Irina/)
     assert.match(text(staff.ui), /Administrator/)
-    assert.match(text(staff.ui), /запись привязана к мастеру ID m1/)
+    assert.match(text(staff.ui), /Мастер Master One · ID m1/)
+    assert.doesNotMatch(text(staff.ui), /DIKIDI: запись привязана/)
+    assert.match(text(staff.ui), /ID 701/, 'id записи доступа виден в первой колонке')
     // Выбор оператора: маппинг сотрудника недоступен, пока оператор не выбран.
     const employeeSelect = () => staff.ui.root.findByProps({ 'aria-label': 'Сотрудник ClientBus: Irina · 701' })
     assert.equal(employeeSelect().props.disabled, true)
@@ -655,6 +663,26 @@ test('the staff table maps a cabinet access record to an operator account and th
     const linkCall = staff.calls.filter(call => call[0] === 'link').at(-1)
     assert.equal(linkCall[1].id, 'staff-row', 'маппинг пишется на учётку оператора')
     assert.equal(linkCall[2], 'employee')
+    assert.equal(staff.ui.root.findAllByProps({ role: 'alert' }).length, 0)
+})
+test('the operator column offers only free accounts: never masters, never a taken account', async t => {
+    const catalogMaster = { ...master, id: 'm-row', externalId: 'm1', displayName: 'Master One', isMaster: true }
+    const taken = { ...master, id: 'staff-row', externalId: 's1', displayName: 'Reception Rita', isMaster: false }
+    const free = { ...master, id: 'staff-row-2', externalId: 's2', displayName: 'Night Reception', isMaster: false }
+    const access = (id, operatorId) => ({ id, projectId: 'project', externalId: '70' + id, displayName: 'Access ' + id,
+        masterExternalId: 'm1', phone: null, roleLabel: 'Administrator', mainOwner: false, observationState: 'OBSERVED',
+        lastObservedAt: null, version: 4, operatorId, operatorDisplayName: operatorId ? 'Reception Rita' : null,
+        operatorMappingEmployeeId: null, operatorMappingUpdatedAt: null })
+    const staff = await setup(t, 'CrmStaff', { getCrmMasters: async () => page([catalogMaster, taken, free]),
+        getCrmStaffAccesses: async () => [access('a', 'staff-row'), access('b', null)] }, { mapping: true })
+    const labels = name => staff.ui.root.findByProps({ 'aria-label': name }).findAllByType('option')
+        .map(row => [].concat(row.children ?? []).join(''))
+    const other = labels('Оператор: Access b · 70b')
+    assert.ok(other.some(label => label.includes('Night Reception')), 'свободная учётка предлагается')
+    assert.ok(!other.some(label => label.includes('Reception Rita')), 'занятая учётка не предлагается: оператор один к одному')
+    assert.ok(!other.some(label => label.includes('Master One')), 'мастер не может быть оператором записи кабинета')
+    assert.ok(labels('Оператор: Access a · 70a').some(label => label.includes('Reception Rita')),
+        'собственный выбор остаётся в списке')
     assert.equal(staff.ui.root.findAllByProps({ role: 'alert' }).length, 0)
 })
 test('supervisor saves and undoes using the returned version, and duplicate names have login labels', async t => {

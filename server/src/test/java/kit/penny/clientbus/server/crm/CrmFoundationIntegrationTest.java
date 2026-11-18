@@ -1859,6 +1859,31 @@ class CrmFoundationIntegrationTest {
         assertEquals(target, jdbc.queryForObject(
                 "select employeeid from crm.employee where externalid='7701'", UUID.class));
     }
+    /** 13.6 (решение пользователя 18.11): учётка связывается с записью кабинета один к одному. */
+    @Test void staffAccessOperatorCannotServeTwoAccessRecords() throws Exception {
+        provider.catalogReader = access -> new CrmCatalogSnapshot(FakeProvider.masters("catalog").items(),
+                List.of(), List.of(), Instant.now(), CrmReadResult.Completeness.COMPLETE, "100:CATALOG",
+                null, null, List.of(new CrmStaff("7701", "irina-account", Map.of("rolesId", "2"))),
+                List.of(new CrmStaffAccess("301", "Irina", null, "79990000001", false, Map.of("roleLabel", "Administrator")),
+                        new CrmStaffAccess("302", "Rita", null, "79990000002", false, Map.of("roleLabel", "Administrator"))));
+        var project = bind(connection()); awaitIdle();
+        var accountRow = service.masters(project.id(), null, null, false, true, false, true).items();
+        var account = accountRow.stream().filter(row -> row.externalId().equals("7701")).findFirst().orElseThrow();
+        assertTrue(accountRow.stream().noneMatch(row -> row.isMaster()), "accountsOnly: мастера остаются на своей вкладке");
+        assertTrue(service.masters(project.id(), null, null, false, true, true, false).items().stream()
+                .allMatch(row -> row.isMaster()), "mastersOnly по-прежнему только мастера");
+        var first = service.staffAccesses(project.id()).getFirst();
+        service.linkStaffAccess(first.id(), account.id(), first.version());
+        var second = service.staffAccesses(project.id()).stream()
+                .filter(row -> row.externalId().equals("302")).findFirst().orElseThrow();
+        var failure = assertThrows(CrmException.class,
+                () -> service.linkStaffAccess(second.id(), account.id(), second.version()));
+        assertEquals(409, failure.status()); assertEquals("CRM_STAFF_ACCESS_OPERATOR_TAKEN", failure.code());
+        // Освободив первую запись, ту же учётку можно закрепить за второй — связь не теряется молча.
+        var refreshed = service.staffAccesses(project.id()).getFirst();
+        assertNull(service.linkStaffAccess(refreshed.id(), null, refreshed.version()).operatorId());
+        assertEquals(account.id(), service.linkStaffAccess(second.id(), account.id(), second.version()).operatorId());
+    }
     @Test void priceStorageUpgradeAndHibernateRestartPreserveValuesObservationsAndMappings() throws Exception {
         var project=priceCatalog(); var master=first(project.id());
         service.linkEmployee(master.id(),target,master.version());

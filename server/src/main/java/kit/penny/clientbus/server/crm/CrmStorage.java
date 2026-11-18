@@ -37,6 +37,11 @@ public class CrmStorage implements ApplicationRunner {
         jdbc.execute("alter table crm.connection add column if not exists requestbackoff integer not null default 0");
         jdbc.execute("alter table crm.project add column if not exists journalepoch bigint not null default 0");
         jdbc.execute("alter table crm.project add column if not exists journalreadsequence bigint not null default 0");
+        // 13.6: учётка-оператор привязывается к записи кабинета один к одному (решение пользователя 18.11).
+        if (!jdbc.queryForList("select 1 from crm.staffaccess where employeeid is not null"
+                + " group by projectid, employeeid having count(*) > 1 limit 1").isEmpty())
+            throw new IllegalStateException("crm.staffaccess: одна учётка закреплена за несколькими записями кабинета — снимите дублирующую связь оператора");
+        jdbc.execute("create unique index if not exists uqstaffaccessoperator on crm.staffaccess(projectid, employeeid) where employeeid is not null");
         // 13.4: lease/heartbeat единственного активного runtime технического подключения.
         jdbc.execute(DikidiRuntimeGuard.TABLE_DDL);
         new TransactionTemplate(new DataSourceTransactionManager(java.util.Objects.requireNonNull(jdbc.getDataSource())))

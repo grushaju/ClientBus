@@ -411,11 +411,20 @@ public class CrmService {
     public CrmMasterPageDto masters(UUID projectId, String cursor, String query, boolean unlinked, boolean includeNotObserved) {
         return masters(projectId, cursor, query, unlinked, includeNotObserved, false);
     }
-    /** mastersOnly — страница только мастеров (таба «Мастера»); без него — все сотрудники проекта (таба «Сотрудники»). */
+    /** mastersOnly — страница только мастеров (таба «Мастера»); без него — все сотрудники проекта. */
     public CrmMasterPageDto masters(UUID projectId, String cursor, String query, boolean unlinked, boolean includeNotObserved, boolean mastersOnly) {
+        return masters(projectId, cursor, query, unlinked, includeNotObserved, mastersOnly, false);
+    }
+    /**
+     * accountsOnly — только учётки кабинета (таба «Управление»): мастера живут на своей вкладке,
+     * а операторами записей кабинета могут быть только учётки (решение пользователя 18.11).
+     */
+    public CrmMasterPageDto masters(UUID projectId, String cursor, String query, boolean unlinked, boolean includeNotObserved,
+            boolean mastersOnly, boolean accountsOnly) {
         store.storage.requireReady();
         String search = CrmSearch.normalize(query);
-        String scope = CrmSearch.scope(projectId + "/" + search + "/" + unlinked + "/" + includeNotObserved + (mastersOnly ? "/masters" : ""));
+        String scope = CrmSearch.scope(projectId + "/" + search + "/" + unlinked + "/" + includeNotObserved
+                + (mastersOnly ? "/masters" : "") + (accountsOnly ? "/accounts" : ""));
         return tx.execute(status -> {
             var project = store.project(projectId, store.guard.organization());
             if (unlinked) store.guard.workspace(project.getWorkspace().getId(), true);
@@ -427,13 +436,14 @@ public class CrmService {
             Slice<CrmEmployeeEntity> rows;
             var after = afterId == null ? null : store.masters.findById(afterId).filter(row -> row.getProject().getId().equals(projectId))
                     .orElseThrow(() -> CrmException.conflict("CRM_CONTEXT_CHANGED"));
-            if (search.isEmpty() && !unlinked && includeNotObserved && !mastersOnly) {
+            if (search.isEmpty() && !unlinked && includeNotObserved && !mastersOnly && !accountsOnly) {
                 rows = after == null ? store.masters.findAllByProjectId(projectId, page)
                         : store.masters.findAllByProjectIdAndExternalIdGreaterThan(projectId, after.getExternalId(), page);
             } else rows = store.masters.findAll((root, criteria, cb) -> {
                 var filters = new ArrayList<jakarta.persistence.criteria.Predicate>();
                 filters.add(cb.equal(root.get("project").get("id"), projectId));
                 if (mastersOnly) filters.add(cb.isTrue(root.get("isMaster")));
+                if (accountsOnly) filters.add(cb.isFalse(root.get("isMaster")));
                 if (after != null) filters.add(cb.greaterThan(root.get("externalId"), after.getExternalId()));
                 if (!search.isEmpty()) filters.add(cb.like(cb.lower(root.get("displayName")), CrmSearch.pattern(search), '!'));
                 if (unlinked) filters.add(cb.isNull(root.get("employee")));
@@ -504,6 +514,8 @@ public class CrmService {
      * Выбор учётки-оператора для записи доступа (13.6): человек подтверждает, какая учётка
      * проекта (crm.employee) стоит за этой записью кабинета — моста в DIKIDI нет. Цель —
      * строка того же проекта; маппинг на сотрудника ClientBus остаётся на учётке.
+     * Связь один к одному: учётка не может вести две записи кабинета (гард ниже +
+     * частичный уникальный индекс uqstaffaccessoperator).
      */
     public CrmStaffAccessDto linkStaffAccess(UUID accessId, UUID employeeRowId, long expectedVersion) {
         store.storage.requireReady();
@@ -523,6 +535,14 @@ public class CrmService {
                 operator = store.masters.findById(employeeRowId).orElseThrow(CrmStore::notFound);
                 if (!operator.getProject().getId().equals(project.getId())) throw CrmException.invalid();
                 store.em.refresh(operator, LockModeType.PESSIMISTIC_WRITE);
+                // Один к одному (решение пользователя 18.11): та же учётка не может вести две
+                // записи кабинета — иначе атрибуция оператора перестаёт быть однозначной.
+                if (!store.em.createQuery("select access.id from CrmStaffAccessEntity access"
+                                + " where access.project.id=:project and access.employee.id=:operator and access.id<>:self", UUID.class)
+                        .setParameter("project", project.getId()).setParameter("operator", operator.getId())
+                        .setParameter("self", original.getId()).setMaxResults(1).getResultList().isEmpty())
+                    throw new CrmException(409, "CRM_STAFF_ACCESS_OPERATOR_TAKEN",
+                            "Эта учётка уже закреплена за другой записью кабинета: оператор связывается с учёткой один к одному.");
             }
             var author = store.em.find(EmployeeEntity.class, store.guard.actor());
             if (author == null) throw CrmStore.notFound();

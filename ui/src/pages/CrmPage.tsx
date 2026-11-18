@@ -18,7 +18,7 @@ function CrmProjectCatalog({ project, canManage, rememberedTab, remember }: {
     const { isSuperAdmin } = useAuth()
     const [params] = useSearchParams()
     const scope = useUiScope()
-    const [mapping, setMapping] = useState(false), [drawer, setDrawer] = useState<string | null>(null)
+    const [drawer, setDrawer] = useState<string | null>(null)
     const [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null), [notice, setNotice] = useState('')
     const [refresh, setRefresh] = useState(0)
     const mutation = useRef<AbortController>()
@@ -31,7 +31,7 @@ function CrmProjectCatalog({ project, canManage, rememberedTab, remember }: {
         setBusy(false); setError(null); setNotice('')
         return () => { mutation.current?.abort(); mutation.current = undefined }
     }, [scope])
-    function changeTab(value: string) { remember(value); setMapping(false) }
+    function changeTab(value: string) { remember(value) }
     function tabKeys(event: KeyboardEvent<HTMLButtonElement>) {
         let next: string | undefined
         if (event.key === 'ArrowRight') next = tabs[(tabs.indexOf(tab) + 1) % tabs.length]
@@ -73,15 +73,13 @@ function CrmProjectCatalog({ project, canManage, rememberedTab, remember }: {
         <div className="crm-tab-heading">
             <div className="crm-tabs" role="tablist" aria-label="Каталог CRM">{tabs.map(value => <button type="button" key={value} role="tab" id={'crm-tab-' + value}
                 aria-selected={tab === value} aria-controls="crm-tabpanel" tabIndex={tab === value ? 0 : -1}
-                onKeyDown={tabKeys} onClick={() => changeTab(value)}>{{ appointments: 'Записи', masters: 'Мастера', staff: 'Сотрудники', services: 'Услуги', clients: 'Клиенты', schedule: 'График' }[value]}</button>)}</div>
-            {canManage && <button type="button" className={'ui-button ui-button-secondary' + (tab === 'staff' ? '' : ' crm-action-placeholder')}
-                aria-hidden={tab !== 'staff'} disabled={tab !== 'staff'} aria-pressed={mapping} aria-label={mapping ? 'Вернуться к сотрудникам' : 'Связи с сотрудниками'}
-                onClick={() => setMapping(!mapping)}><span className="crm-label-desktop">{mapping ? 'Вернуться к сотрудникам' : 'Связи с сотрудниками'}</span><span className="crm-label-mobile" aria-hidden="true">{mapping ? 'Сотрудники' : 'Связи'}</span></button>}
+                onKeyDown={tabKeys} onClick={() => changeTab(value)}>{{ appointments: 'Записи', masters: 'Мастера', staff: 'Управление', services: 'Услуги', clients: 'Клиенты', schedule: 'График' }[value]}</button>)}</div>
         </div>
         <div role="tabpanel" className="crm-tabpanel" id="crm-tabpanel" aria-labelledby={'crm-tab-' + tab}>
             {tab === 'appointments' && <CrmProjectAppointments project={project} />}
             {tab === 'masters' && <CrmMasters project={project} onMaster={setDrawer} refresh={refresh} />}
-            {tab === 'staff' && <CrmStaff key={String(mapping)} project={project} mapping={canManage && mapping} onMaster={setDrawer} refresh={refresh} />}
+            {/* Таба «Управление» сразу рабочая: связи видит всякий, кто может их менять (13.6). */}
+            {tab === 'staff' && <CrmStaff project={project} mapping={canManage} onMaster={setDrawer} refresh={refresh} />}
             {tab === 'services' && <CrmServices project={project} onMaster={setDrawer} refresh={refresh} />}
             {tab === 'clients' && <CrmClients project={project} canManage={canManage} />}
             {tab === 'schedule' && <CrmSchedule key={params.get('master') ?? ''} project={project} initialMaster={params.get('master') ?? ''} />}

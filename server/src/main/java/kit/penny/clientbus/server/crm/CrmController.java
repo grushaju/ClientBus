@@ -78,8 +78,9 @@ public class CrmController {
     public CrmMasterPageDto masters(@PathVariable UUID id, @RequestParam(required = false) String cursor,
             @RequestParam(required = false) String q, @RequestParam(defaultValue = "false") boolean unlinked,
             @RequestParam(defaultValue = "true") boolean includeNotObserved,
-            @RequestParam(defaultValue = "false") boolean mastersOnly) {
-        return service.masters(id, cursor, q, unlinked, includeNotObserved, mastersOnly);
+            @RequestParam(defaultValue = "false") boolean mastersOnly,
+            @RequestParam(defaultValue = "false") boolean accountsOnly) {
+        return service.masters(id, cursor, q, unlinked, includeNotObserved, mastersOnly, accountsOnly);
     }
     @GetMapping("/masters/{id}")
     public CrmMasterDto master(@PathVariable UUID id) { return service.master(id); }

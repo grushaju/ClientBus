@@ -167,13 +167,14 @@ export const changeCrmProjectConnection = (id: string, connectionId: string, exp
 export const detachCrmProject = (id: string, expectedVersion: number, signal?: AbortSignal) =>
     json<CrmProject>(`/api/crm/projects/${path(id)}/detach?expectedVersion=${expectedVersion}`, { method: 'POST', signal })
 export const getCrmMasters = (id: string, signal?: AbortSignal, cursor?: string | null,
-    query: { q?: string; unlinked?: boolean; includeNotObserved?: boolean; mastersOnly?: boolean } = {}) => {
+    query: { q?: string; unlinked?: boolean; includeNotObserved?: boolean; mastersOnly?: boolean; accountsOnly?: boolean } = {}) => {
     const params = new URLSearchParams()
     if (cursor) params.set('cursor', cursor)
     if (query.q) params.set('q', query.q)
     if (query.unlinked) params.set('unlinked', 'true')
     if (query.includeNotObserved !== undefined) params.set('includeNotObserved', String(query.includeNotObserved))
     if (query.mastersOnly) params.set('mastersOnly', 'true')
+    if (query.accountsOnly) params.set('accountsOnly', 'true')
     return json<CrmMasterPage>(`/api/crm/projects/${path(id)}/masters${params.size ? '?' + params : ''}`, { signal })
 }
 export const getCrmMaster = (id: string, signal?: AbortSignal) => json<CrmMaster>(`/api/crm/masters/${path(id)}`, { signal })
