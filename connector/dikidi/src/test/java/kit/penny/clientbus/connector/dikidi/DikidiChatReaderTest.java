@@ -51,8 +51,8 @@ class DikidiChatReaderTest {
                 java.util.Collections.synchronizedList(new ArrayList<>());
         String sendMessageResponse;
         int sendStatus = 200;
-        static final String SEND_OK = "{\"error\":{\"code\":0,\"message\":null},\"data\":{\"id\":302529699,"
-                + "\"date\":1794759088,\"user_id\":11461940,\"user_name\":null,\"user_icon\":null,"
+        static final String SEND_OK = "{\"error\":{\"code\":0,\"message\":null},\"data\":{\"id\":93000010,"
+                + "\"date\":1794759088,\"user_id\":91000001,\"user_name\":null,\"user_icon\":null,"
                 + "\"status\":\"active\",\"text\":\"Пишу вам исходящее сообщение\",\"joining\":null,"
                 + "\"read\":0,\"emoji\":0,\"out\":1,\"seen\":0}}";
         /** C07: подлинный ответ загрузки из захвата 15.11.2026 + перехват частей. */
@@ -64,8 +64,8 @@ class DikidiChatReaderTest {
                 java.util.Collections.synchronizedList(new ArrayList<>());
         String readResponse;
         int readStatus = 200;
-        static final String UPLOAD_OK = "{\"error\":{\"code\":0,\"message\":null},\"data\":[101395217,\"image\","
-                + "\"https://f2.dikidi.ru/c51/v50698/34spc96l45.jpg\",\"45hj7ovmrf\",960,1280,\"11мкр\",\"jpg\",297675]}";
+        static final String UPLOAD_OK = "{\"error\":{\"code\":0,\"message\":null},\"data\":[100000001,\"image\","
+                + "\"https://f2.dikidi.ru/c01/v00002/bbbbbbbbbb.jpg\",\"joincode0001\",960,1280,\"вложение\",\"jpg\",297675]}";
         @Override public Response upload(URI uri, String fieldName, String fileName, String contentType,
                 byte[] content, String projectId, kit.penny.clientbus.integration.dikidi.RequestProfile profile,
                 Duration timeout, Observer observer) {
@@ -383,21 +383,21 @@ class DikidiChatReaderTest {
             harness.site.dialogs = "{\"data\":{\"list\":[{\"id\":\"7\",\"name\":\"Клиент Тест\","
                     + "\"date\":1793121632,\"msg\":\"ок\"}],\"more\":false}}";
             harness.site.detail.put("7", "{\"data\":{"
-                    + "\"dialog\":{\"id\":11633401,\"name\":\"Клиент Тест\",\"role\":\"support\",\"date\":1793121632},"
+                    + "\"dialog\":{\"id\":92000001,\"name\":\"Клиент Тест\",\"role\":\"support\",\"date\":1793121632},"
                     + "\"messages\":{\"list\":[],\"total\":0,\"more\":false},"
                     + "\"users\":{\"list\":{"
-                    + "\"11461940\":{\"id\":11461940,\"name\":\"Penny Kit\",\"role\":\"support\",\"online\":1},"
-                    + "\"13731015\":{\"id\":13731015,\"name\":\"Клиент Тест\",\"role\":\"user\",\"online\":0}"
+                    + "\"91000001\":{\"id\":91000001,\"name\":\"Penny Kit\",\"role\":\"support\",\"online\":1},"
+                    + "\"91000003\":{\"id\":91000003,\"name\":\"Клиент Тест\",\"role\":\"user\",\"online\":0}"
                     + "},\"total\":2}}}");
             harness.site.pages.put("7|null", "{\"data\":{\"list\":["
-                    + "{\"id\":299215974,\"date\":1793121632,\"user_id\":13731015,\"user_name\":\"Клиент Тест\","
+                    + "{\"id\":93000002,\"date\":1793121632,\"user_id\":91000003,\"user_name\":\"Клиент Тест\","
                     + "\"text\":\"Хорошо\",\"joining\":null,\"out\":0},"
-                    + "{\"id\":299215837,\"date\":1793121454,\"user_id\":11461940,\"user_name\":\"Penny Kit\","
+                    + "{\"id\":93000001,\"date\":1793121454,\"user_id\":91000001,\"user_name\":\"Penny Kit\","
                     + "\"text\":\"Да, жду вас два раза\",\"joining\":null,\"out\":1}"
                     + "],\"total\":2,\"more\":false}}");
             var result = harness.connector.handle(new SyncRecentChatsCommand(ACCOUNT));
             assertEquals(1, result.size(), "живая форма C04/C05 (числовые id, users.list-обёртка) читается");
-            assertEquals("13731015", result.get(0).clientExternalId(), "клиент — не автор out=1");
+            assertEquals("91000003", result.get(0).clientExternalId(), "клиент — не автор out=1");
             assertEquals("Клиент Тест", result.get(0).clientDisplayName());
         }
     }
@@ -410,27 +410,27 @@ class DikidiChatReaderTest {
     @Test void multipleSalonStaffDoNotBreakClientDialog() {
         try (var harness = new Harness(5)) {
             harness.site.dialogs = "{\"data\":{\"list\":[{\"id\":\"7\",\"name\":\"Клиент Тест\","
-                    + "\"date\":1793129339,\"msg\":\"Клиент вас привет. СуперАдмин решает\"}],\"more\":false}}";
-            harness.site.detail.put("7", "{\"data\":{\"dialog\":{\"id\":11634515,\"name\":\"Клиент Тест\"},"
+                    + "\"date\":1793129339,\"msg\":\"Ответ салона. СуперАдмин решает\"}],\"more\":false}}";
+            harness.site.detail.put("7", "{\"data\":{\"dialog\":{\"id\":92000002,\"name\":\"Клиент Тест\"},"
                     + "\"messages\":{\"list\":[],\"total\":4,\"more\":false},"
                     + "\"users\":{\"list\":{"
-                    + "\"11461940\":{\"id\":11461940,\"name\":\"Penny Kit\",\"role\":\"support\"},"
-                    + "\"11865938\":{\"id\":11865938,\"name\":\"Мастер Тест\",\"role\":\"support\"},"
-                    + "\"13731015\":{\"id\":13731015,\"name\":\"Клиент Тест\",\"role\":\"user\"}"
+                    + "\"91000001\":{\"id\":91000001,\"name\":\"Penny Kit\",\"role\":\"support\"},"
+                    + "\"91000002\":{\"id\":91000002,\"name\":\"Мастер Тест\",\"role\":\"support\"},"
+                    + "\"91000003\":{\"id\":91000003,\"name\":\"Клиент Тест\",\"role\":\"user\"}"
                     + "},\"total\":3}}}");
             harness.site.pages.put("7|null", "{\"data\":{\"list\":["
-                    + "{\"id\":299223864,\"date\":1793129339,\"user_id\":11461940,\"text\":\"Клиент вас привет\","
+                    + "{\"id\":93000006,\"date\":1793129339,\"user_id\":91000001,\"text\":\"Ответ салона\","
                     + "\"joining\":null,\"out\":1},"
-                    + "{\"id\":299223847,\"date\":1793129307,\"user_id\":13731015,\"text\":\"Хорошо, а что скажет ваш босс\","
+                    + "{\"id\":93000005,\"date\":1793129307,\"user_id\":91000003,\"text\":\"Вопрос клиента\","
                     + "\"joining\":null,\"out\":0},"
-                    + "{\"id\":299223824,\"date\":1793129260,\"user_id\":11865938,\"text\":\"Добрый вечер, конечно!\","
+                    + "{\"id\":93000004,\"date\":1793129260,\"user_id\":91000002,\"text\":\"Ответ второго сотрудника\","
                     + "\"joining\":null,\"out\":1},"
-                    + "{\"id\":299223791,\"date\":1793129205,\"user_id\":13731015,\"text\":\"Здравствуйте\","
+                    + "{\"id\":93000003,\"date\":1793129205,\"user_id\":91000003,\"text\":\"Приветствие клиента\","
                     + "\"joining\":null,\"out\":0}"
                     + "],\"total\":4,\"more\":false}}");
             var result = harness.connector.handle(new SyncRecentChatsCommand(ACCOUNT));
             assertEquals(1, result.size(), "несколько сотрудников салона — не повод терять клиентский диалог");
-            assertEquals("13731015", result.get(0).clientExternalId());
+            assertEquals("91000003", result.get(0).clientExternalId());
             assertEquals("Клиент Тест", result.get(0).clientDisplayName());
         }
     }
@@ -442,7 +442,7 @@ class DikidiChatReaderTest {
                     + "\"date\":1793129339}],\"more\":false}}";
             harness.site.detail.put("8", "{\"data\":{\"dialog\":{},\"messages\":{\"list\":[]},"
                     + "\"users\":{\"list\":{"
-                    + "\"11461940\":{\"id\":11461940,\"name\":\"Салон\",\"role\":\"support\"},"
+                    + "\"91000001\":{\"id\":91000001,\"name\":\"Салон\",\"role\":\"support\"},"
                     + "\"42\":{\"id\":42,\"name\":\"агент DIKIDI\",\"role\":\"support\"}"
                     + "},\"total\":2}}}");
             harness.site.pages.put("8|null", "{\"data\":{\"list\":["
@@ -456,32 +456,32 @@ class DikidiChatReaderTest {
     /** Подлинный joining 15.11.2026: «image» + JSON-путь payload → CDN-скачивание в хост-хранилище. */
     @Test void joiningImagesAreDownloadedIntoHostStorage() {
         try (var harness = new Harness(5)) {
-            String joining = "[[\"image\",\"[2,101392433,\\\"c51\\\\/v50697\\\\/23s40uub39\\\",960,1280]\","
-                    + "\"38pilpvon5\"]]";
+            String joining = "[[\"image\",\"[2,100000002,\\\"c01\\\\/v00001\\\\/aaaaaaaaaa\\\",960,1280]\","
+                    + "\"joincode0002\"]]";
             harness.site.pages.put("7|null", "{\"data\":{\"list\":["
-                    + "{\"id\":302525640,\"date\":1794754950,\"user_id\":11461940,\"text\":\"\",\"joining\":" + joining + ",\"out\":1},"
-                    + "{\"id\":302525636,\"date\":1794754903,\"user_id\":11461940,\"text\":\"Карта и чек\",\"joining\":"
+                    + "{\"id\":93000009,\"date\":1794754950,\"user_id\":91000001,\"text\":\"\",\"joining\":" + joining + ",\"out\":1},"
+                    + "{\"id\":93000008,\"date\":1794754903,\"user_id\":91000001,\"text\":\"Подпись к вложениям\",\"joining\":"
                     + joining + ",\"out\":1},"
-                    + "{\"id\":302525630,\"date\":1794754800,\"user_id\":13731015,\"text\":\"Здравствуйте\","
+                    + "{\"id\":93000007,\"date\":1794754800,\"user_id\":91000003,\"text\":\"Приветствие клиента\","
                     + "\"joining\":null,\"out\":0}"
                     + "]}}");
-            harness.site.pages.put("7|302525630", "{\"data\":{\"list\":[]}}");
-            harness.site.media.put("https://f2.dikidi.ru/c51/v50697/23s40uub39.jpg?size=b", new byte[]{1, 2, 3});
-            var result = harness.connector.handle(new SyncConversationHistoryCommand(ACCOUNT, "13731015", null, 50, "7"));
-            assertEquals(List.of("302525630", "302525636", "302525640"),
+            harness.site.pages.put("7|93000007", "{\"data\":{\"list\":[]}}");
+            harness.site.media.put("https://f2.dikidi.ru/c01/v00001/aaaaaaaaaa.jpg?size=b", new byte[]{1, 2, 3});
+            var result = harness.connector.handle(new SyncConversationHistoryCommand(ACCOUNT, "91000003", null, 50, "7"));
+            assertEquals(List.of("93000007", "93000008", "93000009"),
                     result.messages().stream().map(ConnectorInboundMessage::externalId).toList(),
                     "сообщение с вложениями больше не отбрасывается как «врезка»");
             assertEquals(2, harness.storedFiles.size(), "каждое image-вложение скачивается и хранится один раз");
             var text = result.messages().get(1);
-            // Дефект 15.11.2026: «Карта и чек» с файлами уходил TEXT (правило text.isBlank()),
+            // Дефект 15.11.2026: «Подпись к вложениям» с файлами уходил TEXT (правило text.isBlank()),
             // и диалог не показывал вложения. Живые Telegram-строки: картинка с подписью = IMAGE.
             assertEquals(kit.penny.clientbus.common.enums.MessageType.IMAGE, text.type(),
-                    "подпись + файл — IMAGE (правило Telegram: «Ку-ку»+фото = IMAGE)");
-            assertEquals(List.of("stored/23s40uub39.jpg"),
+                    "подпись + файл — IMAGE (правило Telegram: подпись+фото = IMAGE)");
+            assertEquals(List.of("stored/aaaaaaaaaa.jpg"),
                     text.attachments().stream().map(kit.penny.clientbus.connector.api.model.ConnectorMessageAttachment::storageKey).toList());
             assertEquals(kit.penny.clientbus.common.enums.MessageType.IMAGE, result.messages().get(2).type(),
                     "сообщение из одного вложения — IMAGE");
-            assertEquals("11461940", result.messages().get(1).authorExternalId(),
+            assertEquals("91000001", result.messages().get(1).authorExternalId(),
                     "автор вложенного сообщения — сотрудник платформы");
         }
     }
@@ -489,17 +489,17 @@ class DikidiChatReaderTest {
     /** Постоянная недоступность CDN: текст сохраняется без вложения, чисто вложение честно пропускается. */
     @Test void permanentCdnFailureKeepsTextMessages() {
         try (var harness = new Harness(5)) {
-            String joining = "[[\"image\",\"[2,101392433,\\\"c51\\\\/v50697\\\\/23s40uub39\\\",960,1280]\","
-                    + "\"38pilpvon5\"]]";
+            String joining = "[[\"image\",\"[2,100000002,\\\"c01\\\\/v00001\\\\/aaaaaaaaaa\\\",960,1280]\","
+                    + "\"joincode0002\"]]";
             harness.site.pages.put("7|null", "{\"data\":{\"list\":["
-                    + "{\"id\":302525640,\"date\":1794754950,\"user_id\":11461940,\"text\":\"\",\"joining\":" + joining + ",\"out\":1},"
-                    + "{\"id\":302525636,\"date\":1794754903,\"user_id\":11461940,\"text\":\"Карта и чек\",\"joining\":"
+                    + "{\"id\":93000009,\"date\":1794754950,\"user_id\":91000001,\"text\":\"\",\"joining\":" + joining + ",\"out\":1},"
+                    + "{\"id\":93000008,\"date\":1794754903,\"user_id\":91000001,\"text\":\"Подпись к вложениям\",\"joining\":"
                     + joining + ",\"out\":1}"
                     + "]}}");
-            harness.site.pages.put("7|302525636", "{\"data\":{\"list\":[]}}");
+            harness.site.pages.put("7|93000008", "{\"data\":{\"list\":[]}}");
             // media не смонтирован: CDN отвечает пустым телом — постоянный отказ.
-            var result = harness.connector.handle(new SyncConversationHistoryCommand(ACCOUNT, "13731015", null, 50, "7"));
-            assertEquals(List.of("302525636"),
+            var result = harness.connector.handle(new SyncConversationHistoryCommand(ACCOUNT, "91000003", null, 50, "7"));
+            assertEquals(List.of("93000008"),
                     result.messages().stream().map(ConnectorInboundMessage::externalId).toList(),
                     "текст выживает без вложения, недоказанное вложение-без-текста не выдумывается");
             assertTrue(result.messages().get(0).attachments().isEmpty());
@@ -536,18 +536,18 @@ class DikidiChatReaderTest {
 
     private static kit.penny.clientbus.connector.api.command.SendMessageCommand send(String text) {
         return new kit.penny.clientbus.connector.api.command.SendMessageCommand(
-                UUID.randomUUID(), ACCOUNT, "13731015", kit.penny.clientbus.common.enums.MessageType.TEXT,
-                text, List.of(), UUID.randomUUID(), "11633401");
+                UUID.randomUUID(), ACCOUNT, "91000003", kit.penny.clientbus.common.enums.MessageType.TEXT,
+                text, List.of(), UUID.randomUUID(), "92000001");
     }
 
     /** C06 (захват 15.11.2026): POST + эхо сообщения с присвоенным id — внешний id наружу. */
     @Test void outboundSendReturnsPlatformId() {
         try (var harness = new Harness(5)) {
             var result = harness.connector.handle(send("Пишу вам исходящее сообщение"));
-            assertEquals("302529699", result.externalId());
+            assertEquals("93000010", result.externalId());
             assertEquals(1, harness.site.sendForms.size());
             assertTrue(harness.site.sendForms.get(0).stream()
-                    .anyMatch(e -> e.getKey().equals("dialog") && e.getValue().equals("11633401")),
+                    .anyMatch(e -> e.getKey().equals("dialog") && e.getValue().equals("92000001")),
                     "диалог берётся из команды, а не резолвится вслепую");
         }
     }
@@ -583,20 +583,20 @@ class DikidiChatReaderTest {
     @Test void outboundImageUploadsFileAndSendsWithFilesField() {
         try (var harness = new Harness(5)) {
             var command = new kit.penny.clientbus.connector.api.command.SendMessageCommand(
-                    UUID.randomUUID(), ACCOUNT, "13731015", kit.penny.clientbus.common.enums.MessageType.IMAGE,
+                    UUID.randomUUID(), ACCOUNT, "91000003", kit.penny.clientbus.common.enums.MessageType.IMAGE,
                     "Прикладываю файл", List.of(new kit.penny.clientbus.connector.api.model.ConnectorAttachment(
                             kit.penny.clientbus.common.enums.MessageAttachmentType.IMAGE,
-                            "11мкр.jpg", "image/jpeg", 3L, new java.io.ByteArrayInputStream(new byte[]{1, 2, 3}))),
-                    UUID.randomUUID(), "11633401");
+                            "вложение.jpg", "image/jpeg", 3L, new java.io.ByteArrayInputStream(new byte[]{1, 2, 3}))),
+                    UUID.randomUUID(), "92000001");
             var result = harness.connector.handle(command);
-            assertEquals("302529699", result.externalId());
+            assertEquals("93000010", result.externalId());
             assertEquals(1, harness.site.uploads.size());
             assertEquals("file", harness.site.uploads.get(0)[0], "multipart-поле доказано захватом");
-            assertEquals("11мкр.jpg", harness.site.uploads.get(0)[1]);
+            assertEquals("вложение.jpg", harness.site.uploads.get(0)[1]);
             var form = harness.site.sendForms.get(0);
-            assertEquals("11633401", value(form, "dialog"));
+            assertEquals("92000001", value(form, "dialog"));
             assertEquals("Прикладываю файл", value(form, "text"));
-            assertEquals(List.of("101395217"), allValues(form, "files[]"),
+            assertEquals(List.of("100000001"), allValues(form, "files[]"),
                     "files[] — числовой fileId из ответа C07, не joining-структура");
             assertTrue(value(form, "tabHash").matches("[0-9a-z]{4,16}"), "tabHash — base36 как getHash() веб-клиента");
             assertTrue(form.stream().noneMatch(e -> e.getKey().equals("joining")),
@@ -616,14 +616,14 @@ class DikidiChatReaderTest {
     @Test void markReadPostsInboundIdsUpToLastRead() {
         try (var harness = new Harness(5)) {
             harness.site.pages.put("7|null", "{\"data\":{\"list\":["
-                    + "{\"id\":300,\"date\":1794754960,\"user_id\":13731015,\"text\":\"третее\",\"joining\":null,\"out\":0},"
-                    + "{\"id\":200,\"date\":1794754950,\"user_id\":13731015,\"text\":\"второе\",\"joining\":null,\"out\":0},"
-                    + "{\"id\":150,\"date\":1794754940,\"user_id\":11461940,\"text\":\"ответ салона\",\"joining\":null,\"out\":1},"
-                    + "{\"id\":100,\"date\":1794754930,\"user_id\":13731015,\"text\":\"первое\",\"joining\":null,\"out\":0}"
+                    + "{\"id\":300,\"date\":1794754960,\"user_id\":91000003,\"text\":\"третее\",\"joining\":null,\"out\":0},"
+                    + "{\"id\":200,\"date\":1794754950,\"user_id\":91000003,\"text\":\"второе\",\"joining\":null,\"out\":0},"
+                    + "{\"id\":150,\"date\":1794754940,\"user_id\":91000001,\"text\":\"ответ салона\",\"joining\":null,\"out\":1},"
+                    + "{\"id\":100,\"date\":1794754930,\"user_id\":91000003,\"text\":\"первое\",\"joining\":null,\"out\":0}"
                     + "]}}");
             harness.site.pages.put("7|100", "{\"data\":{\"list\":[]}}");
             harness.connector.handle(new kit.penny.clientbus.connector.api.command.MarkMessagesReadCommand(
-                    ACCOUNT, "13731015", "200", "7"));
+                    ACCOUNT, "91000003", "200", "7"));
             assertEquals(1, harness.site.readForms.size());
             var form = harness.site.readForms.get(0);
             assertEquals("7", value(form, "dialog"));
@@ -637,13 +637,13 @@ class DikidiChatReaderTest {
     @Test void markReadFailurePropagates() {
         try (var harness = new Harness(5)) {
             harness.site.pages.put("7|null", "{\"data\":{\"list\":["
-                    + "{\"id\":100,\"date\":1794754930,\"user_id\":13731015,\"text\":\"раз\",\"joining\":null,\"out\":0}"
+                    + "{\"id\":100,\"date\":1794754930,\"user_id\":91000003,\"text\":\"раз\",\"joining\":null,\"out\":0}"
                     + "]}}");
             harness.site.pages.put("7|100", "{\"data\":{\"list\":[]}}");
             harness.site.readResponse = "{\"error\":{\"code\":5,\"message\":\"dialog not found\"},\"data\":null}";
             assertThrows(kit.penny.clientbus.integration.dikidi.DikidiFailure.class,
                     () -> harness.connector.handle(new kit.penny.clientbus.connector.api.command.MarkMessagesReadCommand(
-                            ACCOUNT, "13731015", "200", "7")));
+                            ACCOUNT, "91000003", "200", "7")));
         }
     }
 
@@ -655,15 +655,15 @@ class DikidiChatReaderTest {
     @Test void readFlagOnOutboundEchoBecomesRecipientRead() {
         try (var harness = new Harness(5)) {
             harness.site.pages.put("7|null", "{\"data\":{\"list\":["
-                    + "{\"id\":102,\"date\":1794754960,\"user_id\":11461940,\"text\":\"прочитано\",\"joining\":null,"
+                    + "{\"id\":102,\"date\":1794754960,\"user_id\":91000001,\"text\":\"прочитано\",\"joining\":null,"
                     + "\"out\":1,\"read\":1},"
-                    + "{\"id\":101,\"date\":1794754950,\"user_id\":11461940,\"text\":\"не прочитано\",\"joining\":null,"
+                    + "{\"id\":101,\"date\":1794754950,\"user_id\":91000001,\"text\":\"не прочитано\",\"joining\":null,"
                     + "\"out\":1,\"read\":0},"
-                    + "{\"id\":100,\"date\":1794754940,\"user_id\":13731015,\"text\":\"входящее\",\"joining\":null,"
+                    + "{\"id\":100,\"date\":1794754940,\"user_id\":91000003,\"text\":\"входящее\",\"joining\":null,"
                     + "\"out\":0,\"read\":1}"
                     + "]}}");
             harness.site.pages.put("7|100", "{\"data\":{\"list\":[]}}");
-            var result = harness.connector.handle(new SyncConversationHistoryCommand(ACCOUNT, "13731015", null, 50, "7"));
+            var result = harness.connector.handle(new SyncConversationHistoryCommand(ACCOUNT, "91000003", null, 50, "7"));
             assertEquals(java.util.Optional.of(Boolean.TRUE),
                     java.util.Optional.ofNullable(message(result, "102").recipientRead()));
             assertEquals(Boolean.FALSE, message(result, "101").recipientRead());
@@ -694,11 +694,11 @@ class DikidiChatReaderTest {
         try (var harness = new Harness(5)) {
             harness.site.uploadStatus = 503;
             var command = new kit.penny.clientbus.connector.api.command.SendMessageCommand(
-                    UUID.randomUUID(), ACCOUNT, "13731015", kit.penny.clientbus.common.enums.MessageType.IMAGE,
+                    UUID.randomUUID(), ACCOUNT, "91000003", kit.penny.clientbus.common.enums.MessageType.IMAGE,
                     "", List.of(new kit.penny.clientbus.connector.api.model.ConnectorAttachment(
                             kit.penny.clientbus.common.enums.MessageAttachmentType.IMAGE,
                             "x.jpg", "image/jpeg", 3L, new java.io.ByteArrayInputStream(new byte[]{1, 2, 3}))),
-                    UUID.randomUUID(), "11633401");
+                    UUID.randomUUID(), "92000001");
             var rejected = assertThrows(kit.penny.clientbus.connector.api.error.ConnectorSendRejectedException.class,
                     () -> harness.connector.handle(command));
             assertTrue(rejected.getCause() instanceof kit.penny.clientbus.integration.dikidi.DikidiFailure,
@@ -724,7 +724,7 @@ class DikidiChatReaderTest {
     @Test void unreadableReadCursorMarksNothing() {
         try (var harness = new Harness(5)) {
             harness.connector.handle(new kit.penny.clientbus.connector.api.command.MarkMessagesReadCommand(
-                    ACCOUNT, "13731015", "не-число", "7"));
+                    ACCOUNT, "91000003", "не-число", "7"));
             assertTrue(harness.site.readForms.isEmpty(), "мусорный lastReadExternalId не отмечает ничего");
         }
     }
@@ -736,17 +736,17 @@ class DikidiChatReaderTest {
     @Test void markReadPagesDownToReadCursor() {
         try (var harness = new Harness(5)) {
             harness.site.pages.put("7|null", "{\"data\":{\"list\":["
-                    + "{\"id\":300,\"date\":1794754990,\"user_id\":11461940,\"text\":\"а\",\"joining\":null,\"out\":1},"
-                    + "{\"id\":290,\"date\":1794754980,\"user_id\":11461940,\"text\":\"б\",\"joining\":null,\"out\":1},"
-                    + "{\"id\":280,\"date\":1794754970,\"user_id\":11461940,\"text\":\"в\",\"joining\":null,\"out\":1}"
+                    + "{\"id\":300,\"date\":1794754990,\"user_id\":91000001,\"text\":\"а\",\"joining\":null,\"out\":1},"
+                    + "{\"id\":290,\"date\":1794754980,\"user_id\":91000001,\"text\":\"б\",\"joining\":null,\"out\":1},"
+                    + "{\"id\":280,\"date\":1794754970,\"user_id\":91000001,\"text\":\"в\",\"joining\":null,\"out\":1}"
                     + "]}}");
             harness.site.pages.put("7|280", "{\"data\":{\"list\":["
-                    + "{\"id\":150,\"date\":1794754960,\"user_id\":13731015,\"text\":\"прочитать\",\"joining\":null,\"out\":0},"
-                    + "{\"id\":140,\"date\":1794754950,\"user_id\":11461940,\"text\":\"исходящее\",\"joining\":null,\"out\":1},"
-                    + "{\"id\":120,\"date\":1794754940,\"user_id\":13731015,\"text\":\"тоже\",\"joining\":null,\"out\":0}"
+                    + "{\"id\":150,\"date\":1794754960,\"user_id\":91000003,\"text\":\"прочитать\",\"joining\":null,\"out\":0},"
+                    + "{\"id\":140,\"date\":1794754950,\"user_id\":91000001,\"text\":\"исходящее\",\"joining\":null,\"out\":1},"
+                    + "{\"id\":120,\"date\":1794754940,\"user_id\":91000003,\"text\":\"тоже\",\"joining\":null,\"out\":0}"
                     + "]}}");
             harness.connector.handle(new kit.penny.clientbus.connector.api.command.MarkMessagesReadCommand(
-                    ACCOUNT, "13731015", "160", "7"));
+                    ACCOUNT, "91000003", "160", "7"));
             assertEquals(1, harness.site.readForms.size());
             assertEquals(List.of("150", "120"), allValues(harness.site.readForms.get(0), "msg[]"),
                     "вторая страница не потеряна, исходящее не отмечено");

@@ -27,11 +27,11 @@ class DikidiChannelConnectorTest {
         // отказ ДО обращения к платформе, классифицирован как доказанное отсутствие эффекта.
         assertThrows(kit.penny.clientbus.connector.api.error.ConnectorSendRejectedException.class,
                 () -> connector.handle(new kit.penny.clientbus.connector.api.command.SendMessageCommand(
-                        UUID.randomUUID(), UUID.randomUUID(), "13731015",
+                        UUID.randomUUID(), UUID.randomUUID(), "91000003",
                         kit.penny.clientbus.common.enums.MessageType.TEXT, "   ", List.of())));
         assertThrows(kit.penny.clientbus.connector.api.error.ConnectorSendRejectedException.class,
                 () -> connector.handle(new kit.penny.clientbus.connector.api.command.SendMessageCommand(
-                        UUID.randomUUID(), UUID.randomUUID(), "13731015",
+                        UUID.randomUUID(), UUID.randomUUID(), "91000003",
                         kit.penny.clientbus.common.enums.MessageType.IMAGE, "подпись",
                         List.of(new kit.penny.clientbus.connector.api.model.ConnectorAttachment(
                                 kit.penny.clientbus.common.enums.MessageAttachmentType.IMAGE,
@@ -41,7 +41,7 @@ class DikidiChannelConnectorTest {
         // падать, а не молча проходить (молчаливый проход = ложная отметка).
         assertThrows(RuntimeException.class, () -> connector.handle(
                 new kit.penny.clientbus.connector.api.command.MarkMessagesReadCommand(
-                        UUID.randomUUID(), "13731015", "302525636", "11633401")));
+                        UUID.randomUUID(), "91000003", "93000008", "92000001")));
         // Чтение — реализовано в 13.5: коннектор действительно несёт обе read-capability.
         assertTrue(connector instanceof kit.penny.clientbus.connector.api.capability.DialogReader);
         assertTrue(connector instanceof kit.penny.clientbus.connector.api.capability.HistoryReader);

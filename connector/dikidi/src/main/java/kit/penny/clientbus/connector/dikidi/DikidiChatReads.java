@@ -170,7 +170,7 @@ public final class DikidiChatReads {
 
     /**
      * joining — массив записей [вид, payload, код]. Доказан «image» с JSON-строкой
-     * payload [_, fileId, "c51/v50697/hash", w, h] → https://f2.dikidi.ru/{путь}.jpg?size=b
+     * payload [_, fileId, "cNN/vNNNNN/hash", w, h] → https://f2.dikidi.ru/{путь}.jpg?size=b
      * (пользовательский пример 15.11.2026). Иные виды и неразложимая форма — вложение
      * без url: сообщение импортируется, контент не угадывается.
      */

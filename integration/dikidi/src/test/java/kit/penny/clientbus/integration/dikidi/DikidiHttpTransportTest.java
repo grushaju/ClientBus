@@ -169,7 +169,7 @@ class DikidiHttpTransportTest {
      * [A-Za-z0-9/_-] её не пропускал, фейковые транспорты guard не проходят — тестов не было.
      */
     @Test void mediaAndUploadProfilesAdmitOnlyTheirExactFileHops() {
-        JdkDikidiTransport.destination(URI.create("https://f2.dikidi.ru/c51/v50697/23s40uub39.jpg"), RequestProfile.MEDIA);
+        JdkDikidiTransport.destination(URI.create("https://f2.dikidi.ru/c01/v00001/aaaaaaaaaa.jpg"), RequestProfile.MEDIA);
         assertThrows(DikidiFailure.class, () -> JdkDikidiTransport.destination(
                 URI.create("https://f2.dikidi.ru/upload/?v=2"), RequestProfile.MEDIA));
         assertThrows(DikidiFailure.class, () -> JdkDikidiTransport.destination(
