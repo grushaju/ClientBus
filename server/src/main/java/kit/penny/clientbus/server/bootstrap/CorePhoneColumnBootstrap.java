@@ -10,6 +10,7 @@ import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -59,12 +60,11 @@ import java.util.Objects;
  * Ожидание блокировки ограничено {@link #LOCK_TIMEOUT}: без потолка старт встал бы навсегда
  * за любой длинной транзакцией и не сказал бы в лог ни слова.
  *
- * <p>Что здесь честно, но неприятно. Колонок две, и каждая добавляется отдельным
- * {@code alter table}: если база и правда переписывает таблицу на каждом добавлении
- * вычисляемой колонки (документация PostgreSQL это оговаривает), первый старт платит за это
- * дважды. Объединение в один {@code alter} — известная экономия, и она сознательно не
- * сделана: стартовый путь с разбором «каким колонкам что нужно» дороже удвоенной цены одного
- * запуска, а замером здесь это не проверялось.
+ * <p>Колонок две, и обе добавляются одним {@code alter table}. Это не косметика: добавление
+ * вычисляемой колонки PostgreSQL делает переписыванием таблицы, и два отдельных {@code alter}
+ * платили бы этим дважды за один запуск. Сколько именно экономит объединение на большой базе,
+ * здесь не измерялось — экономия следует из формулировки документации, а проверки закрепляют,
+ * что объединённый путь создаёт ровно те же колонки и индексы.
  */
 @Component
 public class CorePhoneColumnBootstrap implements ApplicationRunner {
@@ -119,69 +119,97 @@ public class CorePhoneColumnBootstrap implements ApplicationRunner {
             log.warn("Нормализованные колонки {} пропущены: таблица ещё не создана", TABLE);
             return;
         }
-        for (Column column : List.of(NORMALIZED, TAIL)) {
-            try {
-                ensure(column);
-            } catch (RuntimeException failure) {
-                // Дальше молчать нельзя: без колонки выдача кандидатов сломается уже в
-                // запросах, а очередь на блокировку таблицы к этому моменту разошлась бы по
-                // всему флоту. Старт падает сразу и с объяснением, а не ждёт вечно.
-                log.error("Нормализованная колонка {}.{} не готова: таблица не отдала блокировку "
-                                + "за {} либо база недоступна. Удалите длинную транзакцию и повторите запуск.",
-                        TABLE, column.name(), LOCK_TIMEOUT, failure);
-                throw failure;
-            }
+        try {
+            ensureAll(List.of(NORMALIZED, TAIL));
+        } catch (RuntimeException failure) {
+            // Дальше молчать нельзя: без колонки выдача кандидатов сломается уже в запросах,
+            // а очередь на блокировку таблицы к этому моменту разошлась бы по всему флоту.
+            // Старт падает сразу и с объяснением, а не ждёт вечно.
+            log.error("Нормализованные колонки {} не готовы: таблица не отдала блокировку за {} "
+                            + "либо база недоступна. Удалите длинную транзакцию и повторите запуск.",
+                    TABLE, LOCK_TIMEOUT, failure);
+            throw failure;
         }
     }
 
-    private void ensure(Column column) {
-        List<String> stored = definition(column);
-        if (stored.size() == 1 && canonical(column, stored.get(0))) {
-            ensureIndex(column); // форма на месте ни о чём не говорит про индекс: его могли снять
-            return;              // рабочая база: два дешёвых запроса к каталогу, данных не читаем
+    /** Колонка в правилах — ещё не значит «всё на месте»: индекс проверяется отдельно. */
+    private void ensureAll(List<Column> columns) {
+        List<Column> stale = new ArrayList<>();
+        for (Column column : columns) {
+            List<String> stored = definition(column);
+            if (stored.size() == 1 && canonical(column, stored.get(0))) {
+                ensureIndex(column);
+            } else {
+                stale.add(column);
+            }
         }
-        Outcome outcome = transaction().execute(status -> {
+        if (!stale.isEmpty()) {
+            repair(stale);
+        }
+    }
+
+    /**
+     * Починка всех отставших колонок за один заход: блокировка берётся один раз, а колонки
+     * добавляются одним {@code alter} — иначе таблица переписывалась бы по разу на каждую.
+     */
+    private void repair(List<Column> stale) {
+        transaction().executeWithoutResult(ignored -> {
             // Блокировка берётся сразу та, которую всё равно потребует alter: отдельная слабая
             // блокировка до него только создавала бы иллюзию порядка.
             jdbc.execute("set local lock_timeout = '" + LOCK_TIMEOUT + "'");
             jdbc.execute("lock table " + TABLE + " in access exclusive mode");
-            // Под блокировкой каталог перечитывается: пока мы ждали своей очереди, колонку мог
-            // создать второй экземпляр приложения, а повторный add упал бы «column already
-            // exists» и уронил бы старт целиком.
-            List<String> now = definition(column);
-            if (now.size() == 1 && canonical(column, now.get(0))) {
-                ensureIndex(column);
-                return Outcome.KEPT;
+            List<String> dropped = new ArrayList<>();
+            List<Column> added = new ArrayList<>();
+            for (Column column : stale) {
+                // Под блокировкой каталог перечитывается: пока мы ждали своей очереди, колонку
+                // мог создать второй экземпляр приложения, а повторный add упал бы «column
+                // already exists» и уронил бы старт целиком.
+                List<String> now = definition(column);
+                if (now.size() == 1 && canonical(column, now.get(0))) {
+                    ensureIndexUnderLock(column);
+                    continue;
+                }
+                boolean generated = now.size() == 1 && now.get(0) != null;
+                if (generated && valuesAgree(column)) {
+                    // База разошлась с приложением в записи выражения, а не в его смысле.
+                    // Пересоздание переписывало бы таблицу ради косметики — и платило бы этим
+                    // каждый запуск на любой версии, где депарсер пишет иначе.
+                    log.warn("Определение {}.{} записано иначе, чем ожидает приложение, а значения "
+                            + "совпадают: колонка не пересоздаётся", TABLE, column.name());
+                    ensureIndexUnderLock(column);
+                    continue;
+                }
+                if (!now.isEmpty()) {
+                    // Значение в вычисляемой колонке нельзя «поправить»: база пересчитывает его
+                    // только на добавлении, поэтому колонка уходит целиком.
+                    dropped.add(column.name());
+                }
+                added.add(column);
             }
-            boolean generated = now.size() == 1 && now.get(0) != null;
-            if (generated && valuesAgree(column)) {
-                // База разошлась с приложением в записи выражения, а не в его смысле. Пересоздание
-                // переписывало бы таблицу ради косметики — и платило бы этим каждый запуск на
-                // любой версии, где депарсер пишет иначе.
-                log.warn("Определение {}.{} записано иначе, чем ожидает приложение, а значения "
-                        + "совпадают: колонка не пересоздаётся", TABLE, column.name());
-                ensureIndex(column);
-                return Outcome.KEPT;
+            if (added.isEmpty()) {
+                return;
             }
-            if (!now.isEmpty()) {
-                // Значение в вычисляемой колонке нельзя «поправить»: база пересчитывает его
-                // только на добавлении, поэтому колонка уходит целиком.
-                jdbc.execute("alter table " + TABLE + " drop column " + column.name());
+            if (!dropped.isEmpty()) {
+                jdbc.execute("alter table " + TABLE + " drop column " + String.join(", drop column ", dropped));
             }
-            jdbc.execute("alter table " + TABLE + " add column " + column.name()
-                    + " text generated always as (" + column.expression() + ") stored");
-            jdbc.execute(column.index());
-            return now.isEmpty() ? Outcome.CREATED : Outcome.REPAIRED;
+            List<String> additions = new ArrayList<>();
+            for (Column column : added) {
+                additions.add("add column " + column.name() + " text generated always as ("
+                        + column.expression() + ") stored");
+            }
+            jdbc.execute("alter table " + TABLE + " " + String.join(", ", additions));
+            for (Column column : added) {
+                jdbc.execute(column.index());
+            }
+            if (dropped.isEmpty()) {
+                log.info("Нормализованные колонки созданы: {}.{} одним изменением таблицы",
+                        TABLE, added.stream().map(Column::name).toList());
+            } else {
+                log.warn("Нормализованные колонки {}.{} не соответствовали правилу и пересозданы",
+                        TABLE, added.stream().map(Column::name).toList());
+            }
         });
-        switch (outcome) {
-            case REPAIRED -> log.warn("Нормализованная колонка {}.{} не соответствовала правилу и пересоздана",
-                    TABLE, column.name());
-            case CREATED -> log.info("Нормализованная колонка создана: {}.{}", TABLE, column.name());
-            case KEPT -> { }
-        }
     }
-
-    private enum Outcome { CREATED, REPAIRED, KEPT }
 
     /**
      * Индекс — отдельный факт о базе: колонка могла пережить его (снят вручную, база
@@ -189,11 +217,30 @@ public class CorePhoneColumnBootstrap implements ApplicationRunner {
      * сканированием, а выглядит при этом вполне рабочим, поэтому проверяется всегда.
      */
     private void ensureIndex(Column column) {
-        if (exists(SCHEMA + "." + column.indexName())) return;
-        transaction().executeWithoutResult(ignored -> {
-            jdbc.execute("set local lock_timeout = '" + LOCK_TIMEOUT + "'");
-            jdbc.execute(column.index());
-        });
+        if (exists(SCHEMA + "." + column.indexName())) {
+            return;
+        }
+        // Блокировки ещё нет, поэтому короткая отдельная транзакция: set local без
+        // транзакции не значил бы ничего.
+        transaction().executeWithoutResult(ignored -> createIndex(column));
+        logIndexRestored(column);
+    }
+
+    /** Вызывается, когда ACCESS EXCLUSIVE уже держится: индекс дописывается тем же соединением. */
+    private void ensureIndexUnderLock(Column column) {
+        if (exists(SCHEMA + "." + column.indexName())) {
+            return;
+        }
+        createIndex(column);
+        logIndexRestored(column);
+    }
+
+    private void createIndex(Column column) {
+        jdbc.execute("set local lock_timeout = '" + LOCK_TIMEOUT + "'");
+        jdbc.execute(column.index());
+    }
+
+    private void logIndexRestored(Column column) {
         log.warn("Индекс {} восстановлен: он оказался снят, и кандидаты привязки снова "
                 + "читались бы сканированием таблицы", column.indexName());
     }

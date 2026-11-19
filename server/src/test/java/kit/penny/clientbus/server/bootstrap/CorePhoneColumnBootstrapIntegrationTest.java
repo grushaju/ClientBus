@@ -263,6 +263,30 @@ class CorePhoneColumnBootstrapIntegrationTest extends AbstractIntegrationTest {
         }
     }
 
+    /**
+     * Смешанное состояние — одна колонка верна, соседняя вычисляет не то. Именно здесь
+     * объединённое изменение таблицы может ошибиться в обе стороны: задеть то, что уже
+     * правильно, или не починить то, что требует пересчёта.
+     */
+    @Test
+    void aColumnThatIsRightIsLeftAloneWhileItsBrokenNeighbourIsRecomputed() {
+        markColumn();
+        swapTailExpression(9); // хвост из девяти цифр вместо десяти
+        try {
+            assertTrue(countProbeRows() > 0, "проба не состоялась: сверять значения не с чем");
+
+            bootstrap.run(null);
+
+            assertEquals(MARK, columnMark(), "верная колонка пострадала ради соседней");
+            assertEquals(shape(CorePhoneColumnBootstrap.TAIL_EXPRESSION),
+                    shape(storedExpression("phonetail")), "испорченная колонка не вернулась к правилу");
+            assertTrue(indexPresent(CorePhoneColumnBootstrap.TAIL.indexName()),
+                    "индекс починенной колонки не восстановился вместе с ней");
+        } finally {
+            restoreTailColumn();
+        }
+    }
+
     /** Строки с противными написаниями — чтобы сверка значений была проверкой, а не пустотой. */
     private void seedProbePhones() {
         organization = organizations.saveAndFlush(TestDataFactory.organization());
@@ -306,20 +330,38 @@ class CorePhoneColumnBootstrapIntegrationTest extends AbstractIntegrationTest {
         bootstrap.run(null);
     }
 
+    /** Хвост по другому правилу: то же основание, другая длина — значения расходятся. */
+    private void swapTailExpression(int digits) {
+        if (countProbeRows() == 0) seedProbePhones();
+        jdbc.execute("alter table dbo.clientphone drop column if exists phonetail");
+        String base = CorePhoneColumnBootstrap.NORMALIZED_EXPRESSION;
+        jdbc.execute("alter table dbo.clientphone add column phonetail text generated always as (case when length("
+                + base + ")>=" + (digits + 1) + " then right(" + base + "," + digits + ") end) stored");
+    }
+
+    private void restoreTailColumn() {
+        jdbc.execute("alter table dbo.clientphone drop column if exists phonetail");
+        bootstrap.run(null);
+    }
+
     private int countProbeRows() {
         return jdbc.queryForObject("select count(*) from dbo.clientphone p join dbo.client c on c.clientid=p.clientid"
                 + " where c.firstname like ?", Integer.class, PROBE + "%");
     }
 
     private String storedExpression() {
+        return storedExpression("normalizedphone");
+    }
+
+    private String storedExpression(String column) {
         return jdbc.queryForObject("""
                 select case when a.attgenerated='s' then pg_get_expr(d.adbin, a.attrelid) end
                   from pg_attribute a
                   join pg_class c on c.oid=a.attrelid
                   join pg_namespace n on n.oid=c.relnamespace
                   left join pg_attrdef d on d.adrelid=a.attrelid and d.adnum=a.attnum
-                 where n.nspname='dbo' and c.relname='clientphone' and a.attname='normalizedphone'
-                """, String.class);
+                 where n.nspname='dbo' and c.relname='clientphone' and a.attname=?
+                """, String.class, column);
     }
 
     private boolean indexPresent(String index) {
