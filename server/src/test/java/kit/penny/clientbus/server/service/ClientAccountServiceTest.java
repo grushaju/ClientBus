@@ -36,7 +36,7 @@ class ClientAccountServiceTest {
     @Mock
     private CurrentUserService currentUserService;
 
-    /** Нужен新方法у кандидатов: requireAccountAccess смотрит видимость учётки в диалогах. */
+    /** Нужен новому методу кандидатов: requireAccountAccess смотрит видимость учётки в диалогах. */
     @Mock
     private ConversationRepository conversationRepository;
 

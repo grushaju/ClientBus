@@ -91,7 +91,7 @@ export function useConversationMessages(conversationId: string | undefined, visi
     }, [session])
     const isCurrent = (generation: number) => session.active && currentSession.current === session
         && (!scope || scope.isCurrent()) && session.generation === generation
-    // Актуальный workspaceId читается через ref в момент构造 history-контекста:
+    // Актуальный workspaceId читается через ref в момент создания history-контекста:
     // иначе либо контекст рождается с устаревшим workspaceId, либо добавление
     // его в deps перезапускает загрузку сообщений при прилете метаданных.
     const workspaceIdRef = useRef(workspaceId)
