@@ -59,11 +59,12 @@ class CrmClientAvatarsTest {
         assertEquals(1, first.size());
         var key = first.get("10");
         assertArrayEquals(new byte[] { 1, 2, 3 }, storage.objects.get(key));
-        // Тот же файл на другом хосте cdn — тот же файл: сеть не трогается.
-        var second = avatars.materialize(List.of(card("10", "https://f2.dikidi.net/c01/v00001/aaaaaaaaaa.jpg")),
+        // Тот же файл на другом зеркале cdn и в другом варианте размера — тот же файл: сеть не трогается.
+        var second = avatars.materialize(List.of(card("10", "https://f2.dikidi.net/c01/v00001/aaaaaaaaaa.jpg?size=b")),
                 Map.of("10", new CrmClientAvatars.Previous("/c01/v00001/aaaaaaaaaa", key)));
         assertTrue(second.isEmpty());
-        assertEquals(List.of(canonical), requested);
+        // Качаем вариант, который провайдер реально отдаёт (мелкий из css-фона строки), а не голый путь.
+        assertEquals(List.of(canonical + CrmClientAvatars.REQUEST_SUFFIX), requested);
     }
 
     @Test void downloadsAgainWhenFileObjectOrOriginChanged() {

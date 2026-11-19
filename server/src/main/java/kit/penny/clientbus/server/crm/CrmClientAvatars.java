@@ -38,6 +38,13 @@ public class CrmClientAvatars {
     private static final Logger log = LoggerFactory.getLogger(CrmClientAvatars.class);
     /** Файл аватара — маленькая картинка; всё больше этого подозрительно и не скачивается. */
     static final int MAX_BYTES = 512 * 1024;
+    /**
+     * Вариант файла, который просим у cdn. Список отдаёт аватар ссылкой с `?size=s` (мелкий вариант
+     * в css-фоне и крупный `?size=b` в href обёртки), канонический путь хранится без query — это ключ
+     * файла, а не адрес загрузки. Голый путь живым прогоном не подтверждён, `?size=s` подтверждён
+     * (анонимный GET: 200, image/jpeg), поэтому качаем вариант, который реально отдаёт провайдер.
+     */
+    static final String REQUEST_SUFFIX = "?size=s";
     private static final Map<String, String> TYPES = Map.of(
             "image/jpeg", "jpg", "image/png", "png", "image/gif", "gif", "image/webp", "webp");
 
@@ -74,7 +81,7 @@ public class CrmClientAvatars {
             var known = previous.get(item.externalId());
             if (known != null && origin.equals(known.origin()) && known.storageKey() != null
                     && storage.exists(known.storageKey())) continue;
-            var key = mirror(canonical);
+            var key = mirror(canonical + REQUEST_SUFFIX);
             if (key != null) mirror.put(item.externalId(), key);
         }
         return mirror;

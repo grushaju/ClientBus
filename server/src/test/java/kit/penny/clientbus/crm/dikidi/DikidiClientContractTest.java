@@ -47,6 +47,32 @@ class DikidiClientContractTest {
             assertEquals(Set.of("displayName","phone"),foreign.presentFields());
         }
     }
+    @Test void realListRowShapeYieldsNamePhoneAndFileWithoutQueryOrTemplateText() {
+        // Форма живой строки списка клиентов (приведена пользователем 19.11.2026, значения синтетические):
+        // имя и телефон — div внутри td.username, а не td; аватар — <a href=…?size=b> с div-фоном ?size=s;
+        // в каждой строке висят служебные span «Заблокирован»/«Удален» — их текст в имя попадать не должен.
+        var row=DikidiClientsHtml.parse("""
+                <tr id="item-123"><td class="for_check"><div class="checkbox">
+                <input class="custom-checkbox" type="checkbox" autosubmit="false" name="checkedId[]" value="123"><label for="client-123"></label></div></td>
+                <td class="username"><div class="inline-block info-block">
+                <a class="open fancybox begin_link" href="https://f1.dikidi.ru/c01/v00001/aaaaaaaaaa.jpg?size=b">
+                <div data-colorId="4" class="icon ico-circle clients_icon" style="background-image: url(https://f1.dikidi.ru/c01/v00001/aaaaaaaaaa.jpg?size=s);cursor: pointer;"></div></a>
+                <div class="line-name"><span class="circle"></span><a>Иван CRM </a></div>
+                <div class="line-phone">+7 (999) 123-45-67</div>
+                <div class="line-birthday hide"><i class="glyphicon glyphicon-gift"></i><span class="date"></span></div>
+                <span class="blocked" data-tooltip="true" title="Клиент в черном списке">Заблокирован</span>
+                <span class="deleted" data-tooltip="true" title="Клиент удален из списка">Удален</span>
+                <div class="groups"></div></div></td>
+                <td class="appointments text-center"><div class="count">0</div></td>
+                <td class="lastvizit text-center">-</td><td class="discount text-center">0</td>
+                <td class="middlecheck text-center">0</td><td class="spent text-center">0</td><td class="actions"></td></tr>""").getFirst();
+        assertEquals("123",row.externalId()); assertEquals("PROJECT",row.identityKind());
+        assertEquals("Иван CRM",row.displayName());
+        assertEquals("79991234567",CrmPhone.normalize(row.contacts().get("phone")));
+        // Query варианта размера — не часть файла: канонический путь без ?size=
+        assertEquals("https://f1.dikidi.ru/c01/v00001/aaaaaaaaaa.jpg",row.avatarUrl());
+        assertTrue(row.presentFields().containsAll(Set.of("displayName","phone","avatar")));
+    }
     @Test void phoneNormalizationDoesNotGuessCountryOrAcceptExtensionText() {
         assertEquals("89991234567",CrmPhone.normalize("8 (999) 123-45-67"));
         assertNotEquals(CrmPhone.normalize("89991234567"),CrmPhone.normalize("+79991234567"));

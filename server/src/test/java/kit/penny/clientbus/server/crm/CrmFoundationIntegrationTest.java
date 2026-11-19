@@ -2378,7 +2378,7 @@ class CrmFoundationIntegrationTest {
             @Override public void delete(String key){ objects.remove(key); } };
         clientSync=new CrmClientSync(store,jdbc,tx.getTransactionManager(),new CrmRegistry(List.of(provider)),cipher,events,
                 new CrmClientWriter(store),new CrmClientAvatars(mirror,url->{ downloaded.incrementAndGet();
-                    return new CrmClientAvatars.Fetch.Image(new byte[]{1,2,3},url.endsWith(".png")?"image/png":"image/jpeg"); }),clientNanoTime::get);
+                    return new CrmClientAvatars.Fetch.Image(new byte[]{1,2,3},url.contains(".png")?"image/png":"image/jpeg"); }),clientNanoTime::get);
         provider.clientReader=cursor -> clientPage(List.of(new CrmClient("1","PROJECT","Иван CRM",Map.of(),Map.of("source","R08"),
                 Set.of("displayName","avatar"),"https://f1.dikidi.ru/c01/v00001/aaaaaaaaaa.jpg")),null);
         clientSync.refresh(row.projectId()); awaitClients();
