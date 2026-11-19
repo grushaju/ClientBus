@@ -6,6 +6,7 @@ import javax.swing.text.html.*;
 import javax.swing.text.html.parser.ParserDelegator;
 import java.io.*;
 import java.util.*;
+import java.util.regex.Pattern;
 
 /** R08 HTML is data only; script content, links and image URLs are never executed. */
 final class DikidiClientsHtml extends HTMLEditorKit.ParserCallback {
@@ -53,7 +54,11 @@ final class DikidiClientsHtml extends HTMLEditorKit.ParserCallback {
     }
     final List<CrmClient> clients = new ArrayList<>();
     final Set<String> ids = new HashSet<>();
+    // Аватар строки списка — не <img>, а css-фон элемента строки (проверено живьём 18.11.2026:
+    // div[class,data-colorid,style] внутри строки, url(...) в style). Файл того же cdn, что и иконка чата.
+    private static final Pattern BACKGROUND = Pattern.compile("url\\(\\s*['\"]?([^'\")\\s]{4,400})", Pattern.CASE_INSENSITIVE);
     private String id;
+    private String avatar;
     private int depth, nameDepth=-1, anchorDepth=-1, phoneDepth=-1;
     private boolean invalid;
     private boolean phonePresent;
@@ -74,9 +79,16 @@ final class DikidiClientsHtml extends HTMLEditorKit.ParserCallback {
             if (!id.matches("[0-9]{1,128}") || !ids.add(id)) invalid();
             // System identity has not been established by the protocol research.
             if ("1".equals(String.valueOf(attrs.getAttribute("data-is-system")))) invalid();
-            name.setLength(0); phone.setLength(0); phonePresent=false;
+            name.setLength(0); phone.setLength(0); phonePresent=false; avatar=null;
         }
         if (id == null) return;
+        if (avatar == null) {
+            var style = String.valueOf(attrs.getAttribute(HTML.Attribute.STYLE));
+            var background = BACKGROUND.matcher(style);
+            // Первый фон строки, оказавшийся файлом cdn провайдера: чужие url и мусор отбрасываются.
+            if (style.toLowerCase(Locale.ROOT).contains("background") && background.find())
+                avatar = CrmAvatarUrl.canonical(background.group(1));
+        }
         var classes = Arrays.asList(String.valueOf(attrs.getAttribute(HTML.Attribute.CLASS)).split("\\s+"));
         if (classes.contains("line-name")) nameDepth=depth;
         if (tag == HTML.Tag.A && nameDepth >= 0) anchorDepth=depth;
@@ -94,9 +106,11 @@ final class DikidiClientsHtml extends HTMLEditorKit.ParserCallback {
             if (displayName.isBlank()) invalid();
             Set<String> fields = new HashSet<>(Set.of("displayName"));
             if (phonePresent) fields.add("phone");
+            if (avatar != null) fields.add("avatar");
             clients.add(new CrmClient(id, "PROJECT", displayName,
-                    phonePresent ? Map.of("phone",phone.toString().strip()) : Map.of(), Map.of("source","R08"), fields));
-            id=null; nameDepth=anchorDepth=phoneDepth=-1;
+                    phonePresent ? Map.of("phone",phone.toString().strip()) : Map.of(), Map.of("source","R08"),
+                    fields, avatar));
+            id=null; avatar=null; nameDepth=anchorDepth=phoneDepth=-1;
         }
         if (nameDepth==depth) nameDepth=-1;
         if (anchorDepth==depth) anchorDepth=-1;

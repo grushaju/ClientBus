@@ -28,6 +28,25 @@ class DikidiClientContractTest {
                 ROW.replace("id='item-123'","id='item-123' data-is-system='1'")))
             assertEquals(CrmFailure.Code.INVALID_RESPONSE,assertThrows(CrmFailure.class,()->DikidiClientsHtml.parse(html)).code());
     }
+    @Test void rowAvatarComesFromCssBackgroundAndOnlyFromAProviderCdnFile() {
+        // Живая форма строки R08 (18.11.2026): аватар — фон div рядом со ссылкой карточки, а не <img>.
+        // Порядок div и ссылки провайдер меняет, поэтому проверяются оба варианта имени в строке.
+        String file="<div class='client-img' data-colorid='1' style='background-image:url(https://f1.dikidi.ru/c01/v00001/aaaaaaaaaa.jpg)'></div>";
+        for (String html:List.of("<tr id='item-123'><td class='line-name'>"+file+"<a>Long &amp; Name</a></td></tr>",
+                "<tr id='item-123'><td class='line-name'><a>Long &amp; Name"+file+"</a></td><td class='line-phone'>+7 (999) 123-45-67</td></tr>")) {
+            var row=DikidiClientsHtml.parse(html).getFirst();
+            assertEquals("Long & Name",row.displayName());
+            assertEquals("https://f1.dikidi.ru/c01/v00001/aaaaaaaaaa.jpg",row.avatarUrl());
+            assertTrue(row.presentFields().contains("avatar"));
+        }
+        // Чужой хост, файл без каталога и скрипт вместо пути — не аватар: карточка остаётся без зеркала.
+        for (String url:List.of("https://example.com/c01/v00001/aaaaaaaaaa.jpg","https://f1.dikidi.ru/aaaaaaaaaa.jpg","javascript:alert(1)")) {
+            var foreign=DikidiClientsHtml.parse(ROW.replace("<td class='line-name'>",
+                    "<td class='line-name'><div style='background:url("+url+")'></div>")).getFirst();
+            assertNull(foreign.avatarUrl());
+            assertEquals(Set.of("displayName","phone"),foreign.presentFields());
+        }
+    }
     @Test void phoneNormalizationDoesNotGuessCountryOrAcceptExtensionText() {
         assertEquals("89991234567",CrmPhone.normalize("8 (999) 123-45-67"));
         assertNotEquals(CrmPhone.normalize("89991234567"),CrmPhone.normalize("+79991234567"));

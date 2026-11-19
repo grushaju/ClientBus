@@ -24,6 +24,10 @@ public class CrmClientEntity extends CrmRecord {
     @JdbcTypeCode(SqlTypes.JSON) @Column(name="profile", nullable=false, columnDefinition="jsonb")
     private Map<String,Object> profile = Map.of();
     @Column(name="normalizedphone", length=15) private String normalizedPhone;
+    /** Зеркало аватара карточки: локальный ключ вложения; сырой url провайдера в хосте не хранится. */
+    @Column(name="avatarurl", length=512) private String avatarUrl;
+    /** Ключ файла провайдера (путь без расширения): по нему понять, тот ли это файл, не скачивая его. */
+    @Column(name="avatarorigin", length=200) private String avatarOrigin;
     @ManyToOne(fetch=FetchType.LAZY)
     @JoinColumn(name="clientid", foreignKey=@ForeignKey(name="fkclientcore")) private ClientEntity client;
     @ManyToOne(fetch=FetchType.LAZY)
@@ -46,6 +50,10 @@ public class CrmClientEntity extends CrmRecord {
     public void setProfile(Map<String,Object> value) { profile=value; }
     public String getNormalizedPhone() { return normalizedPhone; }
     public void setNormalizedPhone(String value) { normalizedPhone=value; }
+    public String getAvatarUrl() { return avatarUrl; }
+    public void setAvatarUrl(String value) { avatarUrl=value; }
+    public String getAvatarOrigin() { return avatarOrigin; }
+    public void setAvatarOrigin(String value) { avatarOrigin=value; }
     public ClientEntity getClient() { return client; }
     public void setClient(ClientEntity value) { client=value; }
     public EmployeeEntity getMappingUpdatedBy() { return mappingUpdatedBy; }

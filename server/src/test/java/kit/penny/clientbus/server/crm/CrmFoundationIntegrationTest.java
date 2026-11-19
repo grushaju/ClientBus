@@ -160,7 +160,8 @@ class CrmFoundationIntegrationTest {
         sync = new CrmCatalogSync(store, jdbc, manager, registry, cipher, events,
                 new CrmCatalogWriter(store));
         catalog = new CrmCatalogReader(store, serviceRepository, offerRepository, sync, manager);
-        clientSync = new CrmClientSync(store, jdbc, manager, registry, cipher, events, new CrmClientWriter(store), clientNanoTime::get);
+        clientSync = new CrmClientSync(store, jdbc, manager, registry, cipher, events, new CrmClientWriter(store),
+                new CrmClientAvatars(mock(kit.penny.clientbus.server.storage.IAttachmentStorage.class)), clientNanoTime::get);
         clients = new CrmClientService(store, clientSync, events, manager);
         scheduleSync=new CrmScheduleSync(store,jdbc,manager,registry,cipher,events,new CrmScheduleWriter(store));
         scheduleReader=new CrmScheduleReader(store,scheduleSync,manager);
@@ -2362,6 +2363,40 @@ class CrmFoundationIntegrationTest {
         provider.clientReader=cursor -> clientPage(List.of(new CrmClient("1","PROJECT",null,Map.of("phone",""),Map.of(),Set.of("phone"))),null);
         clientSync.refresh(row.projectId()); awaitClients();
         assertEquals(longName,clients.client(row.id()).displayName()); assertNull(clients.client(row.id()).normalizedPhone());
+    }
+    @Test void clientAvatarIsMirroredToStorageWhileRawProviderUrlStaysOutOfDatabase() throws Exception {
+        var row=importClient();
+        var objects=new java.util.HashMap<String,byte[]>();
+        var downloaded=new java.util.concurrent.atomic.AtomicInteger();
+        var mirror=new kit.penny.clientbus.server.storage.IAttachmentStorage(){
+            @Override public kit.penny.clientbus.server.storage.StoredAttachmentMetadata store(java.io.InputStream content,String fileName,long size,String contentType){
+                try { var bytes=content.readAllBytes(); var key="stored/avatar-"+objects.size()+".jpg"; objects.put(key,bytes);
+                    return new kit.penny.clientbus.server.storage.StoredAttachmentMetadata(key,fileName,contentType,size); }
+                catch (java.io.IOException failure){ throw new java.io.UncheckedIOException(failure); } }
+            @Override public java.io.InputStream load(String key){ return new java.io.ByteArrayInputStream(objects.getOrDefault(key,new byte[0])); }
+            @Override public boolean exists(String key){ return objects.containsKey(key); }
+            @Override public void delete(String key){ objects.remove(key); } };
+        clientSync=new CrmClientSync(store,jdbc,tx.getTransactionManager(),new CrmRegistry(List.of(provider)),cipher,events,
+                new CrmClientWriter(store),new CrmClientAvatars(mirror,url->{ downloaded.incrementAndGet();
+                    return new CrmClientAvatars.Fetch.Image(new byte[]{1,2,3},url.endsWith(".png")?"image/png":"image/jpeg"); }),clientNanoTime::get);
+        provider.clientReader=cursor -> clientPage(List.of(new CrmClient("1","PROJECT","Иван CRM",Map.of(),Map.of("source","R08"),
+                Set.of("displayName","avatar"),"https://f1.dikidi.ru/c01/v00001/aaaaaaaaaa.jpg")),null);
+        clientSync.refresh(row.projectId()); awaitClients();
+        var mirrored=clients.client(row.id());
+        assertNotNull(mirrored.avatarUrl()); assertTrue(objects.containsKey(mirrored.avatarUrl()));
+        assertFalse(mirrored.avatarUrl().contains("dikidi"));
+        assertEquals("/c01/v00001/aaaaaaaaaa",jdbc.queryForObject("select avatarorigin from crm.client where projectid=? and externalid='1'",
+                String.class,row.projectId()));
+        assertEquals(0,jdbc.queryForObject("select count(*) from crm.client where projectid=? and (avatarurl like '%dikidi%' or profile::text like '%dikidi%')",
+                Integer.class,row.projectId()));
+        // Тот же файл провайдера при следующей синхронизации вторично не качается.
+        clientSync.refresh(row.projectId()); awaitClients(); assertEquals(1,downloaded.get());
+        // Провайдер выдал другой файл — зеркало обновляется, карточка не остаётся с прежним ключом.
+        provider.clientReader=cursor -> clientPage(List.of(new CrmClient("1","PROJECT","Иван CRM",Map.of(),Map.of("source","R08"),
+                Set.of("displayName","avatar"),"https://f1.dikidi.ru/c01/v00001/bbbbbbbbbb.png")),null);
+        clientSync.refresh(row.projectId()); awaitClients();
+        assertEquals(2,downloaded.get());
+        assertNotEquals(mirrored.avatarUrl(),clients.client(row.id()).avatarUrl());
     }
     @Test void candidatePhonesAreNormalizedButNeverAutomaticallyLinkedAndExactMatchesPrecedeLimit() throws Exception {
         var row=importClient(); var matched=coreClient("Match","+7 999 123 45 67");

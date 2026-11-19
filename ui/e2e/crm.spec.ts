@@ -390,7 +390,7 @@ async function installCrm(page: Page, existing = true) {
     const counters = { creates: 0, checks: 0, bindings: 0, links: 0, credentialReads: 0, refreshes: 0, candidates: 0, deletions: 0, detachments: 0, projectLists: 0, projectReads: 0,
         clientLinks: 0, coreCreates: 0, appointmentReads: 0, intervalReads: 0, financeReads: 0, historyReads: 0, unknown: [] as string[] }
     const crmClients: CrmClient[] = [0,1].map(i => ({ id: 'crm-client-' + i, projectId: 'crm-project', externalId: 'client-' + i, identityKind: 'PROJECT', displayName: i ? 'Другой клиент CRM' : 'Иван CRM',
-        contacts: { phone: '70000000001' }, normalizedPhone: '70000000001', clientId: i ? 'client-1' : null,
+        contacts: { phone: '70000000001' }, normalizedPhone: '70000000001', avatarUrl: i ? 'crm/avatars/client-1.gif' : null, clientId: i ? 'client-1' : null,
         mappingUpdatedAt: null, mappingUpdatedBy: null, mappingPreviousId: null, mappingReason: null, lastObservedAt: '2026-11-08T09:00:00Z', version: 0 }))
     const visits: CrmAppointment[] = [{ id: 'visit-1', projectId: 'crm-project', workspaceId: 'workspace-1', externalId: 'visit-external', kind: 'APPOINTMENT', crmClientId: 'crm-client-1', clientId: 'client-1',
         clientIdentityKind: 'PROJECT', externalClientId: 'client-1',
@@ -441,6 +441,11 @@ async function installCrm(page: Page, existing = true) {
         const crmClient = crmClients.find(row => path === '/api/crm/clients/' + row.id || path.startsWith('/api/crm/clients/' + row.id + '/'))
         if (crmClient) {
             if (path.endsWith('/client-candidates')) return reply([{ id: 'client-1', firstName: 'Иван', lastName: 'Клиент', phoneList: ['70000000001'], phoneMatch: true }])
+            // Зеркало аватара карточки: байты или 404 — карточка с инициалом. Фикстура — настоящий
+            // gif 1×1, иначе браузер не декодирует картинку и <img> уходит в onError.
+            if (path.endsWith('/avatar/content')) return crmClient.avatarUrl
+                ? route.fulfill({ status: 200, contentType: 'image/gif', body: Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64') })
+                : route.fulfill({ status: 404 })
             if (method === 'GET') return reply(crmClient)
             expect(method === 'DELETE' ? Number(url.searchParams.get('expectedVersion')) : body.expectedVersion).toBe(crmClient.version)
             if (path.endsWith('/client')) { counters.coreCreates++; expect(body.firstName).toBeTruthy(); crmClient.clientId = 'client-1' }
@@ -895,11 +900,14 @@ test('CRM 13.9: секция «CRM» панели диалога показыв�
     const crm = panel.locator('details.crm-client-context')
     await expect(crm.locator('> summary')).toHaveText('CRM')
     // Секция живёт под «Аккаунтом», а не над ним.
-    expect((await crm.boundingBox()).y).toBeGreaterThan((await panel.getByRole('heading', { name: 'Аккаунт' }).boundingBox()).y)
+    const summaryBox = await crm.boundingBox(), headingBox = await panel.getByRole('heading', { name: 'Аккаунт' }).boundingBox()
+    expect(!!summaryBox && !!headingBox && summaryBox.y > headingBox.y).toBe(true)
     expect(fixture.counters.historyReads).toBe(0)
     await crm.locator('> summary').click()
     await expect(crm.getByText('Другой клиент CRM')).toBeVisible()
     await expect(crm.getByText('Салон №17 · ID client-1')).toBeVisible()
+    // Аватар карточки — локальное зеркало, байты отдаёт хост, а не cdn провайдера.
+    await expect(crm.locator('.crm-client-avatar img')).toBeVisible()
     // Визиты из панели убраны: ни строк, ни обращений за историей.
     await expect(panel.locator('.crm-appointment-row')).toHaveCount(0)
     expect(fixture.counters.historyReads).toBe(0)

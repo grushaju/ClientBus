@@ -154,7 +154,8 @@ public class CrmClientService {
     }
     static CrmClientDto dto(CrmClientEntity row) {
         return new CrmClientDto(row.getId(),row.getProject().getId(),row.getExternalId(),row.getIdentityKind(),row.getDisplayName(),
-                Map.copyOf(row.getContacts()),row.getNormalizedPhone(),row.getClient()==null ? null : row.getClient().getId(),
+                Map.copyOf(row.getContacts()),row.getNormalizedPhone(),row.getAvatarUrl(),
+                row.getClient()==null ? null : row.getClient().getId(),
                 row.getMappingUpdatedAt(),row.getMappingUpdatedBy()==null ? null : row.getMappingUpdatedBy().getId(),
                 row.getMappingPreviousId(),row.getMappingReason(),row.getLastObservedAt(),row.getVersion());
     }

@@ -37,6 +37,8 @@ class CrmDikidiClientIdentityAcceptance {
     private static final int CALL_LIMIT = Integer.getInteger("clientbus.crm.acceptance.calls", 60);
     /** Сколько карточек открываем целиком (R09): запрос дорогой, бюджет ограничиваем явно. */
     private static final int CARDS = Math.clamp(Integer.getInteger("clientbus.crm.acceptance.cards", 12), 1, 60);
+    /** Дамп формы разметки (тег и имена атрибутов носителя файла), а не значений: по нему пишется разбор. */
+    private static final boolean AVATAR_SHAPE = Boolean.getBoolean("clientbus.crm.acceptance.avatarShape");
     private static final Pattern INPUT = Pattern.compile(
             "<(?:input|select|textarea)[^>]{0,600}?name\\s*=\\s*[\"']?([A-Za-z0-9_.\\[\\]-]{1,64})[\"']?[^>]{0,600}?>",
             Pattern.CASE_INSENSITIVE);
@@ -50,6 +52,8 @@ class CrmDikidiClientIdentityAcceptance {
     private static final Pattern CDN_URL = Pattern.compile("https?://[a-z0-9.-]*dikidi[a-z0-9.-]*/[^\"'\\\\<>\\s)]{4,160}");
     private static final Pattern CDN_PATH = Pattern.compile("[A-Za-z0-9_-]{2,12}/v[0-9]{2,9}/[A-Za-z0-9_-]{5,26}");
     private static final Pattern DIGITS = Pattern.compile("(?<![0-9])([1-9][0-9]{4,17})(?![0-9])");
+    /** Аватар строки списка лежит в css-фоне, а не в img: url(...) внутри style. */
+    private static final Pattern STYLE_URL = Pattern.compile("style\\s*=\\s*[\"'][^\"']{0,600}?url\\(\\s*['\"]?([^'\")\\s]{4,300})", Pattern.CASE_INSENSITIVE);
 
     private record Res(int status, String body) {}
 
@@ -541,6 +545,7 @@ class CrmDikidiClientIdentityAcceptance {
     private void clientCards(HttpClient client, AtomicInteger calls, String company, Ids ids, Avatars avatars) throws Exception {
         var form = new Form();
         var envelope = new TreeSet<String>();
+        var photoShapes = new StringBuilder();
         var cardsWithImage = 0;
         var cardsWithChatAvatarFile = 0;
         var notJsonCards = 0;
@@ -567,11 +572,16 @@ class CrmDikidiClientIdentityAcceptance {
             textHits(body, ids, form.hits);
             var cardImage = matchFirst(html, IMG_URL);
             if (cardImage != null) cardsWithImage++;
-            avatars.cardFileId(clientId, formValue(html, "image_id"));
+            var imageFlag = formValue(html, "image_id");
+            avatars.cardFileId(clientId, imageFlag);
+            // Карточка с фото (image_id=1): где лежит его адрес — решаем по форме разметки, а не на глаз.
+            if (AVATAR_SHAPE && "1".equals(imageFlag) && photoShapes.length() < 400_000)
+                photoShapes.append(html).append('\n');
             var pageUrls = CDN_URL.matcher(html + dialogHtml);
             while (pageUrls.find()) avatars.cardPage(clientId, pageUrls.group());
             if (!avatars.appearsIn(body).isEmpty()) cardsWithChatAvatarFile++;
         }
+        if (AVATAR_SHAPE) avatarShape("R09карточкиСФото", photoShapes.toString());
         System.out.printf("IDENT R09 envelope=%s dialogKeys=%s cards=%d неJSONответов=%d cardsWithAvatar=%d файловАватаровЧатаВКарточках=%d%n",
                 envelope, dialogKeys, form.cards, notJsonCards, cardsWithImage, cardsWithChatAvatarFile);
         System.out.printf("IDENT R09 fields=%s%n", form.names);
@@ -763,9 +773,80 @@ class CrmDikidiClientIdentityAcceptance {
         System.out.printf("IDENT R08 скриптов=%d сФайломКлиента=%d сКарточкойТамЖе=%d ключиСкрипта=%s%n",
                 scriptParts.size(), scriptWithFile, scriptWithCard, scriptKeys);
         System.out.printf("IDENT R08 атрибутированоФайловККарточкам=%d%n", avatars.attributeFromText(payload, ids));
+        if (AVATAR_SHAPE) {
+            avatarShape("R08страница", listPage);
+            avatarShape("R08ajax", htmlText);
+            avatarFetch(htmlText);
+        }
+    }
+
+    /**
+     * Лежит ли файл аватара в открытом доступе: решает, кто его скачивает — провайдер через
+     * сессионный клиент или сервер отдельным запросом. Печатается только код ответа, тип и размер.
+     */
+    private void avatarFetch(String htmlText) {
+        var urls = STYLE_URL.matcher(htmlText);
+        if (!urls.find()) {
+            System.out.println("IDENT файлАватара вРазметкеНеНайден");
+            return;
+        }
+        var absolute = urls.group(1).startsWith("//") ? "https:" + urls.group(1) : urls.group(1);
+        if (!absolute.startsWith("https://") || !absolute.contains("dikidi")) {
+            System.out.println("IDENT файлАватара неcdn");
+            return;
+        }
+        try {
+            // Отдельный клиент без cookie jar: проверяем именно анонимную доступность файла.
+            var anonymous = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).followRedirects(HttpClient.Redirect.NORMAL).build();
+            var response = anonymous.send(HttpRequest.newBuilder(URI.create(absolute)).timeout(Duration.ofSeconds(20))
+                    .header("User-Agent", "Mozilla/5.0 ClientBus").GET().build(), HttpResponse.BodyHandlers.ofByteArray());
+            System.out.printf("IDENT файлАватара анонимно: код=%d тип=%s байт=%d перенаправлен=%b%n", response.statusCode(),
+                    response.headers().firstValue("content-type").orElse("нет"), response.body().length,
+                    response.uri().toString().equals(absolute) ? false : true);
+        } catch (Exception failure) {
+            System.out.println("IDENT файлАватара анонимно: сбой=" + failure.getClass().getSimpleName());
+        }
     }
 
     /** Итог по аватарам: совпал не «похожий рисунок», а один и тот же файл провайдера. */
+    /**
+     * Только форма разметки: для каждого упоминания файла DIKIDI — имя тега-носителя, имена его
+     * атрибутов, абсолютный ли путь и лежит ли тег внутри строки таблицы списка. Значения (url,
+     * id, имена) не печатаются: здесь решается, каким разбором этот файл доставать, а не кто на фото.
+     */
+    private static void avatarShape(String label, String text) {
+        var shapes = new TreeMap<String, int[]>();
+        var seen = new TreeSet<Integer>();
+        for (var pattern : List.of(CDN_URL, CDN_PATH)) {
+            var matcher = pattern.matcher(text);
+            while (matcher.find()) {
+                if (!seen.add(matcher.start())) continue;
+                var start = text.lastIndexOf('<', matcher.start());
+                var end = text.indexOf('>', matcher.end());
+                if (start < 0 || end < start || end - start > 1200) continue;
+                var tag = text.substring(start, end + 1);
+                var name = tag.substring(1).split("[\\s/>]", 2)[0].toLowerCase(Locale.ROOT);
+                var attrs = new TreeSet<String>();
+                var attr = Pattern.compile("([A-Za-z_:][-A-Za-z0-9_:.]*)\\s*=\\s*[\"']").matcher(tag);
+                while (attr.find()) attrs.add(attr.group(1).toLowerCase(Locale.ROOT));
+                var rowStart = text.lastIndexOf("<tr", start);
+                var close = rowStart < 0 ? -1 : text.indexOf("</tr", rowStart);
+                var inRow = rowStart >= 0 && (close < 0 || close > start);
+                var key = name + "[" + String.join(",", attrs) + "]" + (matcher.group().startsWith("http") ? " абс" : " отн");
+                var counter = shapes.computeIfAbsent(key, ignored -> new int[2]);
+                counter[0]++;
+                if (inRow) counter[1]++;
+            }
+        }
+        var total = shapes.values().stream().mapToInt(counter -> counter[0]).sum();
+        System.out.printf("IDENT форма %s всего=%d подписей=%d%n", label, total, shapes.size());
+        shapes.entrySet().stream()
+                .sorted(Comparator.comparingInt((Map.Entry<String, int[]> entry) -> entry.getValue()[0]).reversed())
+                .limit(12)
+                .forEach(entry -> System.out.printf("IDENT форма %s %s ×%d вСтроке=%d%n", label, entry.getKey(),
+                        entry.getValue()[0], entry.getValue()[1]));
+    }
+
     private static void reportAvatars(Ids ids, Avatars avatars) {
         System.out.printf("IDENT аватары participants=%d рольUser=%d участниковСАватаром=%d карточекСАватаромСписка=%d карточекСоСтраницыКарточки=%d%n",
                 avatars.chatSeen, avatars.chatOfRoleUser.size(), avatars.chatByHash.size(),

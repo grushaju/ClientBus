@@ -7,6 +7,7 @@ import kit.penny.clientbus.crm.api.*;
 import kit.penny.clientbus.server.notification.outbox.UiDomainEvents;
 import kit.penny.clientbus.server.persistence.entity.crm.*;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -29,6 +30,7 @@ public class CrmClientSync {
     private final CrmSecretCipher cipher;
     private final UiDomainEvents events;
     private final CrmClientWriter writer;
+    private final CrmClientAvatars clientAvatars;
     private final LongSupplier nanoTime;
     private final ThreadPoolExecutor executor = new ThreadPoolExecutor(2, 2, 30, TimeUnit.SECONDS,
             new SynchronousQueue<>(), task -> { var thread = new Thread(task, "crm-clients"); thread.setDaemon(true); return thread; },
@@ -36,14 +38,16 @@ public class CrmClientSync {
 
     @Autowired
     public CrmClientSync(CrmStore store, JdbcTemplate jdbc, PlatformTransactionManager manager,
-                          CrmRegistry registry, CrmSecretCipher cipher, UiDomainEvents events, CrmClientWriter writer) {
-        this(store, jdbc, manager, registry, cipher, events, writer, System::nanoTime);
+                          CrmRegistry registry, CrmSecretCipher cipher, UiDomainEvents events, CrmClientWriter writer,
+                          CrmClientAvatars clientAvatars) {
+        this(store, jdbc, manager, registry, cipher, events, writer, clientAvatars, System::nanoTime);
     }
     CrmClientSync(CrmStore store, JdbcTemplate jdbc, PlatformTransactionManager manager,
-                  CrmRegistry registry, CrmSecretCipher cipher, UiDomainEvents events, CrmClientWriter writer, LongSupplier nanoTime) {
+                  CrmRegistry registry, CrmSecretCipher cipher, UiDomainEvents events, CrmClientWriter writer,
+                  CrmClientAvatars clientAvatars, LongSupplier nanoTime) {
         this.store = store; this.jdbc = jdbc; this.tx = new TransactionTemplate(manager);
         this.registry = registry; this.cipher = cipher; this.events = events;
-        this.writer = writer; this.nanoTime = nanoTime;
+        this.writer = writer; this.clientAvatars = clientAvatars; this.nanoTime = nanoTime;
     }
     public CrmSyncStateDto refresh(UUID projectId) {
         return refresh(projectId, "CLIENTS");
@@ -143,6 +147,13 @@ public class CrmClientSync {
                         throw new CrmFailure(CrmFailure.Code.INVALID_RESPONSE);
                 }
                 int loadedPages = pageNumber+1;
+                // Аватары зеркалятся до транзакции: сеть не должна держать строки списка заблокированными.
+                var mirrored = new HashMap<String, CrmClientAvatars.Previous>();
+                jdbc.query("select externalid, avatarorigin, avatarurl from crm.client where projectid = ?",
+                        (RowCallbackHandler) row -> mirrored.put(row.getString(1),
+                                new CrmClientAvatars.Previous(row.getString(2), row.getString(3))),
+                        claim.context().projectId());
+                var avatarKeys = clientAvatars.materialize(result.items(), mirrored);
                 boolean limited = pageNumber==99 || expired(deadline);
                 boolean terminal = result.nextCursor()==null;
                 boolean finished = terminal || limited;
@@ -152,7 +163,7 @@ public class CrmClientSync {
                     var project = store.requireContext(claim.context());
                     store.guard.workspace(claim.actorId(), project.getWorkspace().getId());
                     requireClaim(claim);
-                    writer.apply(project, result);
+                    writer.apply(project, result, avatarKeys);
                     var connection=project.getConnection();
                     health.get().apply(connection,CrmConnectionStatus.CONNECTED,null);
                     store.em.flush();

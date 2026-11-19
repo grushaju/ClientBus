@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import * as api from '../../api/crmApi'
+import { CrmClientAvatar } from './CrmClientAvatar'
 import { useCrmPages } from './useCrmPages'
 import { CrmDialog, CrmPageStatus, CrmStatus, useCrmAction, useCrmRead, useCrmSearch } from './CrmReadShared'
 
@@ -28,7 +29,7 @@ export function CrmClientCard({ project, id, canManage, close, changed }: { proj
     const saved = () => { setMode(null); setSelected(undefined); data.reload(); changed() }
     return <CrmDialog title="Клиент CRM" close={close}>
         {(data.error || action.error) && <p role="alert" className="crm-error">{action.error || data.error} <button type="button" onClick={data.reload}>Перечитать карточку</button></p>}
-        {row ? <><h3>{row.displayName}</h3><p>{project.displayName} · ID {row.externalId}</p>
+        {row ? <><div className="crm-client-card-head"><CrmClientAvatar id={row.id} avatarUrl={row.avatarUrl} displayName={row.displayName} size={56} /><h3>{row.displayName}</h3></div><p>{project.displayName} · ID {row.externalId}</p>
             {Object.entries(row.contacts).map(([key, value]) => <p key={key}>{key}: {value}</p>)}
             {row.clientId ? <p>Связан с <Link to={'/clients/' + encodeURIComponent(row.clientId)}>клиентом ClientBus</Link></p> : <p>Без связи с ClientBus</p>}
             {row.mappingUpdatedAt && <p>Связь изменена: {new Date(row.mappingUpdatedAt).toLocaleString('ru-RU')} · {row.mappingReason} · автор {row.mappingUpdatedBy}</p>}

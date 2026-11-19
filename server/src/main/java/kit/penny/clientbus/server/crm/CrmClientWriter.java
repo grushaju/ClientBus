@@ -11,14 +11,17 @@ import java.util.*;
 public class CrmClientWriter {
     private final CrmStore store;
     public CrmClientWriter(CrmStore store) { this.store=store; }
-    public void apply(CrmProjectEntity project, CrmClientPage page) {
+    public void apply(CrmProjectEntity project, CrmClientPage page) { apply(project, page, Map.of()); }
+
+    /** @param avatarKeys локальные ключи зеркала аватара (externalId → storageKey) для строк этой страницы. */
+    public void apply(CrmProjectEntity project, CrmClientPage page, Map<String,String> avatarKeys) {
         Set<List<String>> seen=new HashSet<>();
         if (page.items().size()>1000) invalid();
         for (var source : page.items()) {
             if (source.externalId()==null || source.externalId().isBlank() || source.externalId().length()>128
                     || !"PROJECT".equals(source.identityKind()) || !seen.add(List.of(source.identityKind(), source.externalId()))
                     || source.displayName()!=null && source.displayName().length()>65536
-                    || !Set.of("displayName","phone").containsAll(source.presentFields())
+                    || !Set.of("displayName","phone","avatar").containsAll(source.presentFields())
                     || !Set.of("phone").containsAll(source.contacts().keySet())
                     || source.contacts().values().stream().anyMatch(value -> value.length()>256)) invalid();
             var rows=store.em.createQuery("from CrmClientEntity where project.id=:project and identityKind=:kind and externalId=:external", CrmClientEntity.class)
@@ -34,6 +37,11 @@ public class CrmClientWriter {
             }
             // Only reviewed profile fields are persisted; never raw provider HTML or arbitrary JSON.
             if ("R08".equals(source.profile().get("source"))) row.setProfile(Map.of("source","R08"));
+            // Аватар — украшение: чужая ссылка не проходит проверку формы, а без скачанного файла
+            // строка остаётся с прежним зеркалом (синхронизацию из-за картинки не ломаем).
+            var canonical = CrmAvatarUrl.canonical(source.avatarUrl());
+            var mirrored = canonical == null ? null : avatarKeys.get(source.externalId());
+            if (mirrored != null) { row.setAvatarOrigin(CrmAvatarUrl.key(canonical)); row.setAvatarUrl(mirrored); }
             row.setLastObservedAt(page.observedAt());
             if (created) store.em.persist(row);
         }

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import * as api from '../../api/crmApi'
 import { useAuth } from '../../auth/AuthContext'
+import { CrmClientAvatar } from './CrmClientAvatar'
 import { CrmClientCard } from './CrmClients'
 import { useCrmAction, useCrmRead, useCrmSearch } from './CrmReadShared'
 
@@ -50,6 +51,7 @@ function LinkedClients({ clientId, workspaceId, phones, canManage, openCard }: {
         {data.error && <p role="alert" className="crm-error">{data.error} <button type="button" className="ui-button ui-button-sm ui-button-secondary" onClick={data.reload}>Повторить</button></p>}
         {data.loading && !data.data && <p className="conversation-client-panel-state">Загрузка клиентов CRM…</p>}
         {!!data.data?.length && <ul className="crm-client-cards">{data.data.map(link => <li key={link.client.id}>
+            <CrmClientAvatar id={link.client.id} avatarUrl={link.client.avatarUrl} displayName={link.client.displayName} size={36} />
             <div className="crm-client-card-main"><strong>{link.client.displayName}</strong>
                 <small>{link.project.displayName}{link.project.archived ? ' · архив' : ''} · ID {link.client.externalId}</small>
                 <small>{link.client.normalizedPhone ?? 'Телефон неизвестен'}</small></div>

@@ -31,8 +31,23 @@ class CrmHttpContractTest {
         schedules=mock(CrmScheduleSync.class); scheduleReader=mock(CrmScheduleReader.class);
         appointments=mock(CrmAppointmentSync.class); appointmentReader=mock(CrmAppointmentReader.class);
         operations=mock(CrmOperationService.class);
-        mvc = MockMvcBuilders.standaloneSetup(new CrmController(service,sync,clientSync,schedules,appointments), new CrmCatalogController(catalog), new CrmClientController(clients),new CrmScheduleController(scheduleReader),new CrmAppointmentController(appointmentReader),new CrmOperationController(operations))
+        mvc = MockMvcBuilders.standaloneSetup(new CrmController(service,sync,clientSync,schedules,appointments), new CrmCatalogController(catalog), new CrmClientController(clients,mock(kit.penny.clientbus.server.storage.IAttachmentStorage.class)),new CrmScheduleController(scheduleReader),new CrmAppointmentController(appointmentReader),new CrmOperationController(operations))
                 .setControllerAdvice(new CrmRequestErrors(), new GlobalExceptionHandler()).build();
+    }
+    @Test void crmClientAvatarServesMirroredBytesAndStaysSilentWithoutThem() throws Exception {
+        var storage = mock(kit.penny.clientbus.server.storage.IAttachmentStorage.class);
+        var avatar = MockMvcBuilders.standaloneSetup(new CrmClientController(clients,storage)).build();
+        var id = UUID.randomUUID();
+        // Без зеркала карточка живёт с инициалом: отсутствующий файл — это 404, а не ошибка карточки.
+        when(clients.client(id)).thenReturn(new CrmClientDto(id,UUID.randomUUID(),"1","PROJECT","Клиент CRM",
+                Map.of(),null,null,null,null,null,null,null,java.time.Instant.now(),0));
+        avatar.perform(get("/api/crm/clients/"+id+"/avatar/content")).andExpect(status().isNotFound());
+        when(clients.client(id)).thenReturn(new CrmClientDto(id,UUID.randomUUID(),"1","PROJECT","Клиент CRM",
+                Map.of(),null,"crm/avatars/client.jpg",null,null,null,null,null,java.time.Instant.now(),0));
+        when(storage.exists("crm/avatars/client.jpg")).thenReturn(true);
+        when(storage.load("crm/avatars/client.jpg")).thenReturn(new java.io.ByteArrayInputStream(new byte[]{1,2,3}));
+        avatar.perform(get("/api/crm/clients/"+id+"/avatar/content")).andExpect(status().isOk())
+                .andExpect(content().bytes(new byte[]{1,2,3}));
     }
     @Test void appointmentCommandsRequireADurableKeyAndValidateTheirIntentBeforeAdmission() throws Exception {
         UUID project=UUID.randomUUID(),key=UUID.randomUUID(),id=UUID.randomUUID();

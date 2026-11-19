@@ -36,7 +36,7 @@ export interface CrmSyncState {
 }
 export interface CrmClient {
     id: string; projectId: string; externalId: string; identityKind: string; displayName: string
-    contacts: Record<string, string>; normalizedPhone: string | null; clientId: string | null
+    contacts: Record<string, string>; normalizedPhone: string | null; avatarUrl: string | null; clientId: string | null
     mappingUpdatedAt: string | null; mappingUpdatedBy: string | null; mappingPreviousId: string | null
     mappingReason: string | null; lastObservedAt: string | null; version: number
 }
@@ -99,6 +99,12 @@ export const getCrmClients = async (id: string, query: { q?: string; unlinked?: 
     return { ...result, dataState: result.syncState }
 }
 export const getCrmClient = (id: string, signal?: AbortSignal) => json<CrmClient>(`/api/crm/clients/${path(id)}`, { signal })
+/** Байты зеркала аватара карточки; 404 — обычный случай (аватара нет), карточка рисуется с инициалом. */
+export const getCrmClientAvatarContent = async (id: string, signal?: AbortSignal): Promise<Blob> => {
+    const response = await apiFetch(`/api/crm/clients/${path(id)}/avatar/content`, { signal })
+    if (!response.ok) throw Error('Аватар недоступен')
+    return response.blob()
+}
 export const getCrmClientCandidates = (id: string, q: string, signal?: AbortSignal) => json<CrmClientCandidate[]>(`/api/crm/clients/${path(id)}/client-candidates?${queryString({ q })}`, { signal })
 export const linkCrmClient = (row: CrmClient, clientId: string | null, signal?: AbortSignal) => clientId
     ? json<CrmClient>(`/api/crm/clients/${path(row.id)}/client-link`, body('PUT', { clientId, expectedVersion: row.version }, signal))
