@@ -25,6 +25,12 @@ public class GlobalExceptionHandler {
                 .body(new ErrorResponse("CONVERSATION_ASSIGNMENT_CONFLICT", exception.getMessage()));
     }
 
+    @ExceptionHandler(ClientInUseException.class)
+    public ResponseEntity<ErrorResponse> handleClientInUse(ClientInUseException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse("CLIENT_IN_USE", exception.getMessage()));
+    }
+
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException exception) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)

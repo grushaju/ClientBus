@@ -38,6 +38,27 @@ class InboxErrorResponseTest {
                 .andExpect(jsonPath("$.code").value("NOT_FOUND"));
     }
 
+    /**
+     * Удаление клиента с живыми привязками обязано отдавать 409 с причиной: без отказа оно
+     * падало на внешнем ключе clientaccount_client_fk, и оператор видел нарушение
+     * целостности вместо того, что ему сделать.
+     */
+    @Test
+    void deletingClientWithLinkedAccountsAnswersConflictWithReason() throws Exception {
+        var service = mock(kit.penny.clientbus.server.service.ClientService.class);
+        UUID id = UUID.randomUUID();
+        doThrow(new kit.penny.clientbus.server.exception.ClientInUseException(
+                "Клиент связан с учётными записями чатов (2). Сначала снимите привязку."))
+                .when(service).deleteClient(id);
+        MockMvcBuilders.standaloneSetup(new ClientController(service,
+                        mock(kit.penny.clientbus.server.storage.IAttachmentStorage.class)))
+                .setControllerAdvice(new GlobalExceptionHandler()).build()
+                .perform(delete("/api/clients/" + id))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CLIENT_IN_USE"))
+                .andExpect(jsonPath("$.message").value("Клиент связан с учётными записями чатов (2). Сначала снимите привязку."));
+    }
+
     private org.springframework.test.web.servlet.MockMvc mvc(ConversationService service) {
         return MockMvcBuilders.standaloneSetup(new ConversationController(service, mock(ConversationGroupService.class),
                         mock(kit.penny.clientbus.server.service.OutboundConversationService.class)))

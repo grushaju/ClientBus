@@ -528,6 +528,15 @@ public class ClientService {
 
         requireClientOrganizationAccess(entity);
 
+        // Проверка стоит ДО CRM-guard'а: отказ не должен ни снимать сопоставления CRM, ни
+        // поднимать события инвалидации. Учётки чатов удерживают клиента внешним ключом,
+        // поэтому без отказа здесь оператор получил бы нарушение целостности (500) вместо
+        // причины, а снять привязку можно только отдельной операцией.
+        long linkedAccounts = clientAccountRepository.countByClientId(id);
+        if (linkedAccounts > 0)
+            throw new kit.penny.clientbus.server.exception.ClientInUseException(
+                    "Клиент связан с учётными записями чатов (" + linkedAccounts + "). Сначала снимите привязку.");
+
         if (crmDeletionGuard != null) crmDeletionGuard.client(entity);
         if (uiEvents != null) uiEvents.organization(entity.getOrganization().getId(), "clients.invalidated");
         clientRepository.delete(entity);

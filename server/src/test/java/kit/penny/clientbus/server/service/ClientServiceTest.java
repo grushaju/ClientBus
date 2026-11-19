@@ -491,6 +491,25 @@ class ClientServiceTest {
         order.verify(clientRepository).delete(client);
     }
 
+    /**
+     * Привязанного клиента удалять нельзя, и отказ обязан прийти ДО CRM-guard'а: иначе
+     * попытка удаления уже успела бы снять сопоставления карточек и поднять инвалидации.
+     */
+    @Test void deleteClientRefusesWhileChatAccountsAreLinked() {
+        var crm = mock(kit.penny.clientbus.server.crm.CrmDeletionGuard.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(clientService, "crmDeletionGuard", crm);
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
+        when(currentUserService.getCurrentOrganizationId()).thenReturn(organizationId);
+        when(clientAccountRepository.countByClientId(clientId)).thenReturn(2L);
+
+        var failure = assertThrows(kit.penny.clientbus.server.exception.ClientInUseException.class,
+                () -> clientService.deleteClient(clientId));
+
+        assertTrue(failure.getMessage().contains("(2)"), "причина обязана называть число мешающих привязок");
+        verify(crm, never()).client(any());
+        verify(clientRepository, never()).delete(any());
+    }
+
     @Test void crmDeletionFailurePreventsCoreDeletion() {
         var crm = mock(kit.penny.clientbus.server.crm.CrmDeletionGuard.class);
         org.springframework.test.util.ReflectionTestUtils.setField(clientService, "crmDeletionGuard", crm);

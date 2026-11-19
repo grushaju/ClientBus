@@ -33,6 +33,15 @@ public interface ClientAccountRepository
             UUID clientId
     );
 
+    /**
+     * Сколько учётных записей чатов держат этого клиента: удаление клиента с ненулевым
+     * значением запрещено (внешний ключ clientaccount_client_fk), оператору обязана быть
+     * названа причина, а не нарушение целостности.
+     */
+    long countByClientId(
+            UUID clientId
+    );
+
     @Query("""
     SELECT DISTINCT a
     FROM ClientAccountEntity a
