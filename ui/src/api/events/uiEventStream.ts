@@ -128,8 +128,9 @@ export function startUiEventStream(options: UiStreamOptions): { stop: () => void
                 const tab = tabId()
                 if (tab) params.set('tab', tab)
                 const encoded = params.toString()
-                // Не params.size: у свойства size поздняя поддержка (Firefox 139), а потеря
-                // workspaceId здесь молча меняет область событий — поток жил бы по ORGANIZATION.
+                // Не params.size: способ один на весь api-слой, а undefined вместо свойства
+                // сделал бы условие ложным. Потеря workspaceId молча меняет область событий —
+                // поток жил бы по ORGANIZATION.
                 const query = encoded ? `?${encoded}` : ''
                 const response = await (options.fetcher ?? fetch)('/api/events' + query, {
                     headers: { Authorization: `Bearer ${token}`, Accept: 'text/event-stream' },

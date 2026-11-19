@@ -95,9 +95,11 @@ const body = (method: string, value: unknown, signal?: AbortSignal): RequestInit
 const path = (id: string) => encodeURIComponent(id)
 const queryString = (value: object) => new URLSearchParams(Object.entries(value).filter(([, item]) => item !== undefined && item !== null && item !== '').map(([key, item]) => [key, String(item)]))
 /**
- * Хвост `?…` для условно заполняемых параметров. Намеренно через toString(): у
- * URLSearchParams.size поздно появившаяся поддержка (Firefox 139), а молча потерянный
- * параметр здесь означает молча расширенную выборку.
+ * Хвост `?…` для условно заполняемых параметров. Дело не в браузерах: у URLSearchParams.size
+ * поддержка широко доступна с 2023 года. Дело в том, что способ один на весь api-слой:
+ * тернарник над свойством объекта даёт undefined там, где свойства нет (эти модули
+ * исполняются и вне браузера), а undefined в условии — это молча потерянный параметр и
+ * молча расширенная выборка.
  */
 const querySuffix = (params: URLSearchParams) => { const encoded = params.toString(); return encoded ? `?${encoded}` : '' }
 export const getCrmClients = async (id: string, query: { q?: string; unlinked?: boolean; cursor?: string }, signal?: AbortSignal): Promise<CrmReadPage<CrmClient>> => {

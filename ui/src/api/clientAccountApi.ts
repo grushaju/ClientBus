@@ -8,8 +8,8 @@ import type {
 export async function getWorkspaceClientAccounts(workspaceId: string, channelAccountIds: string[] = []): Promise<ClientAccountDto[]> {
     const params = new URLSearchParams()
     channelAccountIds.forEach(id => params.append('channelAccountIds', id))
-    // toString(), а не params.size: у size поздно появившаяся поддержка (Firefox 139),
-    // а молча потерянный фильтр канала отдал бы учётки всех каналов workspace.
+    // toString(), а не params.size: способ один на весь api-слой, а undefined в условии
+    // (свойства может не быть в среде исполнения) отдал бы учётки всех каналов workspace.
     const query = params.toString()
     const response = await apiFetch(`/api/clientaccounts/workspace/${workspaceId}${query ? `?${query}` : ''}`)
     return response.json()

@@ -9,7 +9,7 @@ const flush = async () => { for (let index = 0; index < 60; index++) await Promi
 /**
  * Страница каналов с указанным списком и записью обращений к маршрутам включения и
  * отключения. Диалоги и аватары заглушены: здесь проверяется только то, какое действие
- * страница предлагает каналу в данном статусе.
+ * страница предлагает каналу в данном статусе — и предлагает ли вообще.
  */
 async function page(t, channels) {
     const calls = { telegramEnable: [], telegramDisable: [], dikidiDisconnect: [] }
@@ -46,8 +46,9 @@ const button = (renderer, label) => renderer.root
     .findAll(node => node.type === 'button')
     .find(node => node.children.map(String).join('') === label)
 
-const note = (renderer) => renderer.root
+const notes = (renderer) => renderer.root
     .findAll(node => node.props?.className === 'channel-card-action-note')
+    .map(node => node.children.map(String).join(''))
 
 const channel = (overrides) => ({
     id: 'channel', workspaceId: 'W-A', type: 'TELEGRAM', status: 'DISABLED', name: 'Channel',
@@ -56,16 +57,16 @@ const channel = (overrides) => ({
 
 /**
  * Отключённый DIKIDI-канал возникает по-настоящему: при откреплении проекта с сохранённой
- * перепиской канал уходит в DISABLED и остаётся. Кнопка «Включить» вела бы telegram-маршрут
- * — запроса включения у DIKIDI нет, а канал возвращается сам при возврате проекта.
+ * перепиской канал уходит в DISABLED и остаётся. Кнопка «Включить» вела бы telegram-маршрут —
+ * запроса включения у DIKIDI нет, а канал возвращается сам при возврате проекта.
  */
 test('a disabled DIKIDI channel is not offered an enable action of another platform', async t => {
-    const { renderer, calls } = await page(t, [channel({ type: 'DIKIDI' })])
+    const { renderer } = await page(t, [channel({ type: 'DIKIDI' })])
 
     assert.equal(button(renderer, 'Включить'), undefined,
         'страница предлагает DIKIDI-каналу действие, которого у него нет')
-    assert.equal(note(renderer).length, 1, 'причина отсутствия действия обязана быть названа')
-    assert.deepEqual(calls.telegramEnable, [])
+    assert.deepEqual(notes(renderer), ['Включится сам, когда проект снова будет подключён'],
+        'причина отсутствия действия обязана быть названа')
 })
 
 /** Telegram-канал в том же статусе включается по-прежнему: правка не должна была ничего отнять. */
@@ -74,8 +75,41 @@ test('a disabled telegram channel is still enabled through its own route', async
 
     const action = button(renderer, 'Включить')
     assert.ok(action, 'у telegram-канала пропало включение')
+    assert.deepEqual(notes(renderer), [], 'telegram-каналу не место с пояснением вместо кнопки')
     await act(async () => { await action.props.onClick(); await flush() })
 
     assert.deepEqual(calls.telegramEnable, ['account'])
     assert.deepEqual(calls.dikidiDisconnect, [])
+})
+
+/**
+ * Белый список важнее чёрного: «не DIKIDI» означает, что любой следующий канал молча
+ * получает чужой маршрут. Канал без маршрута обязан получить пояснение, а не запрос.
+ */
+test('a channel without its own route is offered neither enable nor disable', async t => {
+    const { renderer, calls } = await page(t, [
+        channel({ id: 'off', type: 'WHATSAPP', status: 'DISABLED' }),
+        channel({ id: 'on', type: 'WHATSAPP', status: 'CONNECTED' }),
+    ])
+
+    assert.equal(button(renderer, 'Включить'), undefined)
+    assert.equal(button(renderer, 'Отключить'), undefined)
+    assert.deepEqual(notes(renderer), [
+        'Управление этим каналом ещё не настроено',
+        'Управление этим каналом ещё не настроено',
+    ])
+    assert.deepEqual(calls.telegramEnable, [])
+    assert.deepEqual(calls.telegramDisable, [])
+})
+
+/** У DIKIDI отключение своим маршрутом было и раньше — новый белый список его не отменил. */
+test('a connected DIKIDI channel is still disconnected through its own route', async t => {
+    const { renderer, calls } = await page(t, [channel({ type: 'DIKIDI', status: 'CONNECTED' })])
+
+    const action = button(renderer, 'Отключить')
+    assert.ok(action, 'у DIKIDI-канала пропало отключение')
+    await act(async () => { await action.props.onClick(); await flush() })
+
+    assert.deepEqual(calls.dikidiDisconnect, ['account'])
+    assert.deepEqual(calls.telegramDisable, [])
 })

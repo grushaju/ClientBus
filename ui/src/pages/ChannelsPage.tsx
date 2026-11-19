@@ -628,7 +628,9 @@ function ChannelsPageContent() {
                                         )}
 
                                     {channel.status ===
-                                        'CONNECTED' && (
+                                        'CONNECTED' &&
+                                        (channel.type === 'TELEGRAM' ||
+                                            channel.type === 'DIKIDI' ? (
                                             <button
                                                 type="button"
                                                 className="ui-button ui-button-secondary"
@@ -640,22 +642,19 @@ function ChannelsPageContent() {
                                             >
                                                 Отключить
                                             </button>
-                                        )}
+                                        ) : (
+                                            /* Кнопка только там, где у страницы есть маршрут
+                                               для этого типа: «кроме DIKIDI» означало бы, что
+                                               следующий унаследованный канал получает чужой
+                                               запрос. */
+                                            <div className="channel-card-action-note">
+                                                Управление этим каналом ещё не настроено
+                                            </div>
+                                        ))}
 
                                     {channel.status ===
                                         'DISABLED' &&
-                                        (channel.type === 'DIKIDI' ? (
-                                            /* У DIKIDI-канала нет ручного включения: он сам
-                                               возвращается в подключение, когда проект снова
-                                               присоединён (DikidiChannelProvisioning). Кнопка
-                                               здесь вела бы маршрут чужой платформы: канал
-                                               отключают не здесь, и «Включить» для него
-                                               означало бы запрос, которого не существует. */
-                                            <div className="channel-card-action-note">
-                                                Включится сам, когда проект снова будет
-                                                подключён
-                                            </div>
-                                        ) : (
+                                        (channel.type === 'TELEGRAM' ? (
                                             <button
                                                 type="button"
                                                 className="ui-button ui-button-primary"
@@ -667,6 +666,18 @@ function ChannelsPageContent() {
                                             >
                                                 Включить
                                             </button>
+                                        ) : (
+                                            /* Белый список, а не «кроме DIKIDI»: включение
+                                               здесь — это маршрут конкретной платформы, и
+                                               любой следующий канал получил бы его молча.
+                                               У DIKIDI ручного включения нет вовсе: канал
+                                               возвращается сам, когда проект снова
+                                               присоединён (DikidiChannelProvisioning). */
+                                            <div className="channel-card-action-note">
+                                                {channel.type === 'DIKIDI'
+                                                    ? 'Включится сам, когда проект снова будет подключён'
+                                                    : 'Управление этим каналом ещё не настроено'}
+                                            </div>
                                         ))}
 
                                     {isSuperAdmin && (
