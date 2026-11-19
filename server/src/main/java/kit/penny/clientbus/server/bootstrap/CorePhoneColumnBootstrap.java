@@ -46,12 +46,39 @@ import java.util.Objects;
  * на это время таблица блокируется целиком, и на большой базе первый после выпуска старт
  * заметно дольше обычного. Дальше проверка обращается только к каталогу и ничего не читает
  * в данных, то есть платить приходится один раз, а не при каждом запуске.
+ *
+ * <p>Три вещи, которые здесь легко было оставить на честном слове и которые поэтому
+ * проверяются явно. Индекс — отдельный факт: колонка могла пережить свой индекс (снят
+ * вручную, база поднята из дампа без индексов), и выглядит это как полностью рабочая
+ * установка, только кандидаты снова читаются сканированием. Блокировка берётся сразу та,
+ * которую всё равно потребует {@code alter} (ACCESS EXCLUSIVE), и каталог под ней
+ * перечитывается: при перекате двух экземпляров второй иначе ронял бы старт ошибкой
+ * «column already exists». И пересоздание колонки — действие разрушительное, поэтому
+ * перед ним значения сверяются со всеми строками: если база разошлась с приложением только в
+ * записи выражения (свой депарсер, другая версия), таблица ради косметики не переписывается.
+ * Ожидание блокировки ограничено {@link #LOCK_TIMEOUT}: без потолка старт встал бы навсегда
+ * за любой длинной транзакцией и не сказал бы в лог ни слова.
+ *
+ * <p>Что здесь честно, но неприятно. Колонок две, и каждая добавляется отдельным
+ * {@code alter table}: если база и правда переписывает таблицу на каждом добавлении
+ * вычисляемой колонки (документация PostgreSQL это оговаривает), первый старт платит за это
+ * дважды. Объединение в один {@code alter} — известная экономия, и она сознательно не
+ * сделана: стартовый путь с разбором «каким колонкам что нужно» дороже удвоенной цены одного
+ * запуска, а замером здесь это не проверялось.
  */
 @Component
 public class CorePhoneColumnBootstrap implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(CorePhoneColumnBootstrap.class);
 
-    private static final String TABLE = "dbo.clientphone";
+    private static final String SCHEMA = "dbo";
+    private static final String TABLE_NAME = "clientphone";
+    private static final String TABLE = SCHEMA + "." + TABLE_NAME;
+
+    /**
+     * Потолок ожидания блокировки: без него старт встаёт на неопределённое время за любой
+     * длинной транзакцией, которая держит таблицу, и в логах при этом ничего нет.
+     */
+    private static final String LOCK_TIMEOUT = "60s";
 
     /** Цифры телефона без форматирования; null остаётся null — мусорный номер не признак. */
     static final String NORMALIZED_EXPRESSION = "case when " + digits() + " ~ '^[0-9]{7,15}$' then " + digits() + " end";
@@ -61,10 +88,10 @@ public class CorePhoneColumnBootstrap implements ApplicationRunner {
             + NORMALIZED_EXPRESSION + ",10) end";
 
     static final Column NORMALIZED = new Column("normalizedphone", NORMALIZED_EXPRESSION,
-            "create index if not exists clientphone_normalized_ix on dbo.clientphone (normalizedphone, clientid)",
+            "create index if not exists clientphone_normalized_ix on " + TABLE + " (normalizedphone, clientid)",
             "clientphone_normalized_ix");
     static final Column TAIL = new Column("phonetail", TAIL_EXPRESSION,
-            "create index if not exists clientphone_tail_ix on dbo.clientphone (phonetail, clientid)",
+            "create index if not exists clientphone_tail_ix on " + TABLE + " (phonetail, clientid)",
             "clientphone_tail_ix");
 
     /**
@@ -88,39 +115,103 @@ public class CorePhoneColumnBootstrap implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
-        if (Integer.valueOf(0).equals(jdbc.queryForObject(
-                "select case when to_regclass(?) is null then 0 else 1 end", Integer.class, TABLE))) {
+        if (!exists(TABLE)) {
             log.warn("Нормализованные колонки {} пропущены: таблица ещё не создана", TABLE);
             return;
         }
         for (Column column : List.of(NORMALIZED, TAIL)) {
-            ensure(column);
+            try {
+                ensure(column);
+            } catch (RuntimeException failure) {
+                // Дальше молчать нельзя: без колонки выдача кандидатов сломается уже в
+                // запросах, а очередь на блокировку таблицы к этому моменту разошлась бы по
+                // всему флоту. Старт падает сразу и с объяснением, а не ждёт вечно.
+                log.error("Нормализованная колонка {}.{} не готова: таблица не отдала блокировку "
+                                + "за {} либо база недоступна. Удалите длинную транзакцию и повторите запуск.",
+                        TABLE, column.name(), LOCK_TIMEOUT, failure);
+                throw failure;
+            }
         }
     }
 
     private void ensure(Column column) {
         List<String> stored = definition(column);
         if (stored.size() == 1 && canonical(column, stored.get(0))) {
-            return; // рабочая база: один дешёвый запрос к каталогу на старт
+            ensureIndex(column); // форма на месте ни о чём не говорит про индекс: его могли снять
+            return;              // рабочая база: два дешёвых запроса к каталогу, данных не читаем
         }
-        boolean repair = !stored.isEmpty();
-        new TransactionTemplate(new DataSourceTransactionManager(Objects.requireNonNull(jdbc.getDataSource())))
-                .executeWithoutResult(status -> {
-                    jdbc.execute("lock table " + TABLE + " in share row exclusive mode");
-                    if (repair) {
-                        // Колонка пересоздаётся целиком: значение в вычисляемой колонке
-                        // нельзя «поправить», база пересчитывает его на добавлении.
-                        jdbc.execute("alter table " + TABLE + " drop column " + column.name());
-                    }
-                    jdbc.execute("alter table " + TABLE + " add column " + column.name()
-                            + " text generated always as (" + column.expression() + ") stored");
-                    jdbc.execute(column.index());
-                });
-        if (repair) {
-            log.warn("Нормализованная колонка {}.{} не соответствовала правилу и пересоздана", TABLE, column.name());
-        } else {
-            log.info("Нормализованная колонка создана: {}.{}", TABLE, column.name());
+        Outcome outcome = transaction().execute(status -> {
+            // Блокировка берётся сразу та, которую всё равно потребует alter: отдельная слабая
+            // блокировка до него только создавала бы иллюзию порядка.
+            jdbc.execute("set local lock_timeout = '" + LOCK_TIMEOUT + "'");
+            jdbc.execute("lock table " + TABLE + " in access exclusive mode");
+            // Под блокировкой каталог перечитывается: пока мы ждали своей очереди, колонку мог
+            // создать второй экземпляр приложения, а повторный add упал бы «column already
+            // exists» и уронил бы старт целиком.
+            List<String> now = definition(column);
+            if (now.size() == 1 && canonical(column, now.get(0))) {
+                ensureIndex(column);
+                return Outcome.KEPT;
+            }
+            boolean generated = now.size() == 1 && now.get(0) != null;
+            if (generated && valuesAgree(column)) {
+                // База разошлась с приложением в записи выражения, а не в его смысле. Пересоздание
+                // переписывало бы таблицу ради косметики — и платило бы этим каждый запуск на
+                // любой версии, где депарсер пишет иначе.
+                log.warn("Определение {}.{} записано иначе, чем ожидает приложение, а значения "
+                        + "совпадают: колонка не пересоздаётся", TABLE, column.name());
+                ensureIndex(column);
+                return Outcome.KEPT;
+            }
+            if (!now.isEmpty()) {
+                // Значение в вычисляемой колонке нельзя «поправить»: база пересчитывает его
+                // только на добавлении, поэтому колонка уходит целиком.
+                jdbc.execute("alter table " + TABLE + " drop column " + column.name());
+            }
+            jdbc.execute("alter table " + TABLE + " add column " + column.name()
+                    + " text generated always as (" + column.expression() + ") stored");
+            jdbc.execute(column.index());
+            return now.isEmpty() ? Outcome.CREATED : Outcome.REPAIRED;
+        });
+        switch (outcome) {
+            case REPAIRED -> log.warn("Нормализованная колонка {}.{} не соответствовала правилу и пересоздана",
+                    TABLE, column.name());
+            case CREATED -> log.info("Нормализованная колонка создана: {}.{}", TABLE, column.name());
+            case KEPT -> { }
         }
+    }
+
+    private enum Outcome { CREATED, REPAIRED, KEPT }
+
+    /**
+     * Индекс — отдельный факт о базе: колонка могла пережить его (снят вручную, база
+     * восстановлена из дампа без индексов). Без индекса сравнение снова становится
+     * сканированием, а выглядит при этом вполне рабочим, поэтому проверяется всегда.
+     */
+    private void ensureIndex(Column column) {
+        if (exists(SCHEMA + "." + column.indexName())) return;
+        transaction().executeWithoutResult(ignored -> {
+            jdbc.execute("set local lock_timeout = '" + LOCK_TIMEOUT + "'");
+            jdbc.execute(column.index());
+        });
+        log.warn("Индекс {} восстановлен: он оказался снят, и кандидаты привязки снова "
+                + "читались бы сканированием таблицы", column.indexName());
+    }
+
+    /** Значения колонки сверяются со всех строк, а не предполагаются по тексту определения. */
+    private boolean valuesAgree(Column column) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("select not exists (select 1 from " + TABLE
+                + " p where p." + column.name() + " is distinct from (" + column.expression() + "))", Boolean.class));
+    }
+
+    private TransactionTemplate transaction() {
+        return new TransactionTemplate(new DataSourceTransactionManager(
+                Objects.requireNonNull(jdbc.getDataSource())));
+    }
+
+    private boolean exists(String object) {
+        return Integer.valueOf(1).equals(jdbc.queryForObject(
+                "select case when to_regclass(?) is null then 0 else 1 end", Integer.class, object));
     }
 
     /** Форма колонки глазами базы: признак вычисляемости и текст выражения. */
@@ -131,8 +222,8 @@ public class CorePhoneColumnBootstrap implements ApplicationRunner {
                   join pg_class c on c.oid = a.attrelid
                   join pg_namespace n on n.oid = c.relnamespace
                   left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
-                 where n.nspname = 'dbo' and c.relname = 'clientphone' and a.attname = ? and not a.attisdropped
-                """, String.class, column.name());
+                 where n.nspname = ? and c.relname = ? and a.attname = ? and not a.attisdropped
+                """, String.class, SCHEMA, TABLE_NAME, column.name());
     }
 
     /**

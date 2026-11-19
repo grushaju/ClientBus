@@ -41,6 +41,9 @@ class CorePhoneColumnBootstrapIntegrationTest extends AbstractIntegrationTest {
     /** Маркер пробных клиентов: по нему вычищаются и клиенты, и их телефоны. */
     private static final String PROBE = "phone-cols-";
 
+    /** Пометка колонки: теряется при любом её пересоздании. */
+    private static final String MARK = "probnaya-marka";
+
     @Autowired private JdbcTemplate jdbc;
     @Autowired private CorePhoneColumnBootstrap bootstrap;
     @Autowired private OrganizationRepository organizations;
@@ -193,6 +196,135 @@ class CorePhoneColumnBootstrapIntegrationTest extends AbstractIntegrationTest {
         // постфактум. Значим ровно поиск по ключу — Index Cond с самой колонкой.
         assertTrue(plan.contains("INDEX COND") && plan.contains("PHONETAIL = '9991234567'"),
                 "условие по хвосту телефона читается фильтром, а не поиском по индексу: " + plan);
+    }
+
+    /**
+     * Индекс — отдельный факт о базе: его могут снять, пока колонка стоит. Оставить это без
+     * внимания значит получить полностью рабочую на вид установку, которая читает кандидатов
+     * сканированием. Проверка стоит того ещё и потому, что восстановление индекса не должно
+     * тащить за собой переписывание таблицы.
+     */
+    @Test
+    void anIndexTakenOffBehindOurBackIsPutBackWithoutTouchingTheColumn() {
+        markColumn();
+        jdbc.execute("drop index dbo." + CorePhoneColumnBootstrap.TAIL.indexName());
+        assertTrue(!indexPresent(CorePhoneColumnBootstrap.TAIL.indexName()), "проба не состоялась: индекс на месте");
+
+        bootstrap.run(null);
+
+        assertTrue(indexPresent(CorePhoneColumnBootstrap.TAIL.indexName()),
+                "индекс не восстановлен: сравнение по хвосту снова станет сканированием");
+        assertEquals(MARK, columnMark(), "восстановление индекса потянуло за собой пересоздание колонки");
+    }
+
+    /**
+     * Разная запись одного и того же выражения — не повод переписывать таблицу. Иначе на любой
+     * базе, где депарсер пишет иначе, старт платил бы переписыванием каждый раз, а это ровно
+     * тот риск, который выглядит как «всё работает, просто медленнее».
+     */
+    @Test
+    void aColumnWrittenDifferentlyButComputingTheSameValuesIsLeftAlone() {
+        swapNormalizedExpression("^[0123456789]{7,15}$"); // тот же смысл, записанный иначе
+        try {
+            assertTrue(countProbeRows() > 0, "проба не состоялась: сверять значения не с чем");
+            assertTrue(!CorePhoneColumnBootstrap.shape(storedExpression())
+                    .equals(CorePhoneColumnBootstrap.shape(CorePhoneColumnBootstrap.NORMALIZED_EXPRESSION)),
+                    "проба не состоялась: запись совпала с ожидаемой");
+            markColumn();
+
+            bootstrap.run(null);
+
+            assertEquals(MARK, columnMark(),
+                    "колонка переписана ради способа записи, хотя значения совпадают");
+        } finally {
+            restoreNormalizedColumn();
+        }
+    }
+
+    /**
+     * Вторая половина той же правды: если значения действительно расходятся, колонка
+     * пересоздаётся. Без этой половины проверка выше прошла бы и на коде, который не
+     * пересоздаёт ничего.
+     */
+    @Test
+    void aColumnComputingDifferentValuesIsRecomputedEvenThoughItLooksGenerated() {
+        swapNormalizedExpression("^[0-9]{7,11}$"); // потолок ниже правила: двенадцать цифр теряются
+        try {
+            markColumn();
+
+            bootstrap.run(null);
+
+            assertNull(columnMark(), "колонка с другим правилом осталась на месте: "
+                    + "новые клиенты выпадали бы из кандидатов молча");
+            assertEquals(CorePhoneColumnBootstrap.shape(CorePhoneColumnBootstrap.NORMALIZED_EXPRESSION),
+                    CorePhoneColumnBootstrap.shape(storedExpression()), "колонка не вернулась к правилу");
+        } finally {
+            restoreNormalizedColumn();
+        }
+    }
+
+    /** Строки с противными написаниями — чтобы сверка значений была проверкой, а не пустотой. */
+    private void seedProbePhones() {
+        organization = organizations.saveAndFlush(TestDataFactory.organization());
+        for (var phone : List.of("+7 (999) 765-43 21", "799912345678", "78125550011", "+7(999)765-43-21x4")) {
+            var client = new ClientEntity(PROBE + Math.abs(phone.hashCode()), "Probe", organization);
+            client.setPhoneList(List.of(phone));
+            clients.saveAndFlush(client);
+        }
+    }
+
+    private void swapNormalizedExpression(String regex) {
+        if (countProbeRows() == 0) seedProbePhones();
+        jdbc.execute("alter table dbo.clientphone drop column if exists normalizedphone");
+        String digits = "translate(phone,'" + CrmPhone.FORMATTING_CHARACTERS + "','')";
+        jdbc.execute("alter table dbo.clientphone add column normalizedphone text generated always as (case when "
+                + digits + " ~ '" + regex + "' then " + digits + " end) stored");
+    }
+
+    /**
+     * Пометка на колонке — единственный неоспоримый признак того, что её не трогали: при
+     * пересоздании она теряется всегда, тогда как идентификаторы база умеет выдать заново те
+     * же самые, и проверка на них время от времени проходила бы молча.
+     */
+    private void markColumn() {
+        jdbc.execute("comment on column dbo.clientphone.normalizedphone is '" + MARK + "'");
+    }
+
+    private String columnMark() {
+        return jdbc.queryForObject("""
+                select col_description(c.oid, a.attnum)
+                  from pg_class c
+                  join pg_namespace n on n.oid=c.relnamespace
+                  join pg_attribute a on a.attrelid=c.oid
+                 where n.nspname='dbo' and c.relname='clientphone' and a.attname='normalizedphone'
+                   and not a.attisdropped
+                """, String.class);
+    }
+
+    private void restoreNormalizedColumn() {
+        jdbc.execute("alter table dbo.clientphone drop column if exists normalizedphone");
+        bootstrap.run(null);
+    }
+
+    private int countProbeRows() {
+        return jdbc.queryForObject("select count(*) from dbo.clientphone p join dbo.client c on c.clientid=p.clientid"
+                + " where c.firstname like ?", Integer.class, PROBE + "%");
+    }
+
+    private String storedExpression() {
+        return jdbc.queryForObject("""
+                select case when a.attgenerated='s' then pg_get_expr(d.adbin, a.attrelid) end
+                  from pg_attribute a
+                  join pg_class c on c.oid=a.attrelid
+                  join pg_namespace n on n.oid=c.relnamespace
+                  left join pg_attrdef d on d.adrelid=a.attrelid and d.adnum=a.attnum
+                 where n.nspname='dbo' and c.relname='clientphone' and a.attname='normalizedphone'
+                """, String.class);
+    }
+
+    private boolean indexPresent(String index) {
+        return Integer.valueOf(1).equals(jdbc.queryForObject(
+                "select case when to_regclass(?) is null then 0 else 1 end", Integer.class, "dbo." + index));
     }
 
     private static String shape(String value) {
