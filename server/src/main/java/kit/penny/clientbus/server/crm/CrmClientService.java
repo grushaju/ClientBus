@@ -85,7 +85,13 @@ public class CrmClientService {
                     """,UUID.class).setParameter("org",organization).setParameter("search",search)
                     .setParameter("pattern",CrmSearch.pattern(search)).setParameter("phone",phone)
                     .setParameter("queryPhone",queryPhone).setParameter("formatting",CrmPhone.FORMATTING_CHARACTERS).getResultList();
-            return ids.stream().map(clientId -> store.em.find(ClientEntity.class,clientId)).filter(Objects::nonNull).map(target -> new CrmClientCandidateDto(
+            if (ids.isEmpty()) return List.of();
+            // Один запрос на весь список вместо обращения по каждому идентификатору: этот
+            // поиск живёт в форме привязки и вызывается на каждое действие оператора, а
+            // строк здесь до пятидесяти. Телефоны догружаются пакетом (см. @BatchSize).
+            var targets = store.em.createQuery("select c from ClientEntity c where c.id in :ids", ClientEntity.class)
+                    .setParameter("ids", ids).getResultList();
+            return targets.stream().map(target -> new CrmClientCandidateDto(
                     target.getId(),target.getFirstName(),target.getLastName(),List.copyOf(target.getPhoneList()),
                     !phone.isEmpty() && target.getPhoneList().stream().anyMatch(value -> phone.equals(CrmPhone.normalize(value)))))
                     .sorted(Comparator.comparing(CrmClientCandidateDto::phoneMatch).reversed().thenComparing(CrmClientCandidateDto::id)).toList();

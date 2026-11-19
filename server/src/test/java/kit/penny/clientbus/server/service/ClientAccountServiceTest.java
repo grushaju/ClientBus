@@ -301,9 +301,10 @@ class ClientAccountServiceTest {
         UUID other = UUID.randomUUID();
         when(clientRepository.searchLinkCandidateIds(eq(organizationId), eq(""), eq("%%"), eq("9991234567"), anyString()))
                 .thenReturn(java.util.List.of(other, matched));
-        when(clientRepository.findById(other)).thenReturn(Optional.of(client(other, "Иван", "Безтелефонный", java.util.List.of())));
-        when(clientRepository.findById(matched)).thenReturn(Optional.of(client(matched, "Пётр", "Другой",
-                java.util.List.of("7 999 123-45-67", "+7 888 000 00 00"))));
+        when(clientRepository.findAllById(java.util.List.of(other, matched)))
+                .thenReturn(java.util.List.of(
+                        client(other, "Иван", "Безтелефонный", java.util.List.of()),
+                        client(matched, "Пётр", "Другой", java.util.List.of("7 999 123-45-67", "+7 888 000 00 00"))));
 
         var result = clientAccountService.clientLinkCandidates(accountId, "   ");
 
@@ -314,6 +315,10 @@ class ClientAccountServiceTest {
         assertTrue(result.getFirst().phoneMatch());
         assertEquals(java.util.List.of("7 999 123-45-67", "+7 888 000 00 00"), result.getFirst().phoneList());
         assertFalse(result.getLast().phoneMatch());
+        // Список берётся одним обращением: построчная выборка превращала форму привязки
+        // в десятки запросов на каждое действие оператора.
+        verify(clientRepository).findAllById(java.util.List.of(other, matched));
+        verify(clientRepository, never()).findById(any());
     }
 
     @Test
@@ -334,6 +339,8 @@ class ClientAccountServiceTest {
                 .thenReturn(java.util.List.of());
 
         assertTrue(clientAccountService.clientLinkCandidates(accountId, " Анна ").isEmpty());
+        // Пустой список идентификаторов не должен превращаться в запрос «где id in ()».
+        verify(clientRepository, never()).findAllById(any());
     }
 
     @Test

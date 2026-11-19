@@ -1,6 +1,7 @@
 package kit.penny.clientbus.server.persistence.entity;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
@@ -29,7 +30,11 @@ public class ClientEntity {
     @Column(name = "lastname", nullable = false, length = 50)
     private String lastName;
 
+    // Пакетная догрузка телефонов: список кандидатов привязки отдаёт до 50 клиентов за
+    // один вызов, и без размера пакета Hibernate сходил бы за телефонами каждого из них
+    // отдельно. Порядку списка это не вредит: порядок не гарантировался и раньше.
     @ElementCollection
+    @BatchSize(size = 50)
     @CollectionTable(
             name = "clientphone",
             joinColumns = @JoinColumn(name = "clientid"),

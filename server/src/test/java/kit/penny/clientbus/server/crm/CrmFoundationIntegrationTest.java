@@ -2498,6 +2498,38 @@ class CrmFoundationIntegrationTest {
         assertEquals(List.of(unicode),candidates.stream().map(CrmClientCandidateDto::id).toList());
         assertTrue(candidates.getFirst().phoneMatch());
     }
+    /**
+     * Список кандидатов читается пакетом. Поиск живёт в форме привязки и вызывается на
+     * каждое действие оператора, а строк здесь до пятидесяти; до пакетной выборки такая
+     * выдача стоила около сотни обращений к базе (по одному на клиента и по одному на его
+     * телефоны). Нижняя граница — страховка от пустой проверки: если счётчик запросов
+     * окажется выключенным, он вернул бы ноль и любое утверждение о верхнем пределе
+     * получилось бы ложно-зелёным.
+     */
+    @Test void candidateListReadsClientsAndPhonesInBatches() throws Exception {
+        var row=importClient();
+        for (int i=0;i<40;i++) coreClient("Batch text "+i,"12345678901");
+        var statistics=em.getEntityManagerFactory().unwrap(SessionFactory.class).getStatistics();
+        // Счётчик включается только на время этой проверки и выключается в finally: он
+        // дороже на каждой сессии, а нужен одному тесту, и не должен менять профиль
+        // остальных двухсот тестов этого harness'а.
+        statistics.setStatisticsEnabled(true);
+        long statements;
+        try {
+            assertTrue(statistics.isStatisticsEnabled(),"счётчик обязан быть включён, иначе проверка пуста");
+            statistics.clear();
+            var candidates=clients.candidates(row.id(),"Batch text");
+            statements=statistics.getPrepareStatementCount();
+            assertEquals(40,candidates.size());
+        } finally {
+            statistics.setStatisticsEnabled(false);
+        }
+        assertTrue(statements>=3,() -> "обращения к базе обязаны учитываться, фактически: "+statements);
+        // Один запрос на идентификаторы, один на клиентов, один пакет на телефоны и
+        // несколько служебных обращений guard'а: измерено — 5 против 83 при построчной
+        // выборке без пакета телефонов.
+        assertTrue(statements<=8,() -> "кандидаты читаются не пакетом, подготовлено запросов: "+statements);
+    }
     @Test void clientDeletionDetachesWithAuditAndCoreForeignKeyFailureRollsEverythingBack() throws Exception {
         var row=importClient(); var target=coreClient("Target","12345678901");
         clients.link(row.id(),target,row.version());

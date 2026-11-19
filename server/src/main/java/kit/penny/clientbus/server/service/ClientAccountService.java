@@ -239,12 +239,16 @@ public class ClientAccountService {
         String pattern = likePattern(search);
         String tail = phoneTail(account.getPhone());
 
-        return clientRepository
+        var ids = clientRepository
                 .searchLinkCandidateIds(currentUserService.getCurrentOrganizationId(), search, pattern, tail,
-                        kit.penny.clientbus.crm.api.CrmPhone.FORMATTING_CHARACTERS)
+                        kit.penny.clientbus.crm.api.CrmPhone.FORMATTING_CHARACTERS);
+        if (ids.isEmpty()) return List.of();
+        // Один запрос на весь список вместо обращения по каждому идентификатору: поиск
+        // вызывается из формы привязки на каждое действие оператора, строк здесь до
+        // пятидесяти. Порядок итоговой выдачи задаёт сортировка ниже, а не порядок ids.
+        // Телефоны догружаются пакетом (см. @BatchSize у коллекции клиента).
+        return clientRepository.findAllById(ids)
                 .stream()
-                .map(clientRepository::findById)
-                .flatMap(java.util.Optional::stream)
                 .map(target -> new ClientLinkCandidateDto(target.getId(), target.getFirstName(), target.getLastName(),
                         List.copyOf(target.getPhoneList()),
                         !tail.isEmpty() && target.getPhoneList().stream().anyMatch(value -> tail.equals(phoneTail(value)))))
