@@ -47,11 +47,16 @@ class DikidiChatAccessTest {
 
     static class Accounts implements HostChannelAccounts {
         final HostChannelAccountSnapshot snapshot;
+        /** Зеркало аватара канала: коннектор обязан звать хост только с доказуемым владельцем. */
+        final List<Object[]> avatars = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
         Accounts(HostChannelAccountSnapshot snapshot) { this.snapshot = snapshot; }
         @Override public HostChannelAccountSnapshot require(UUID channelAccountId) { return snapshot; }
         @Override public Optional<HostChannelAccountSnapshot> find(UUID channelAccountId) { return Optional.of(snapshot); }
         @Override public List<UUID> findIdsByChannelTypeAndChannelStatuses(ChannelType channelType, List<ChannelConnectionStatus> channelStatuses) { return List.of(); }
         @Override public void updateProfile(UUID channelAccountId, String externalId, String username, String phone, String displayName, String avatarUrl) { }
+        @Override public void updateAvatar(UUID channelAccountId, String avatarStorageKey) {
+            avatars.add(new Object[]{channelAccountId, avatarStorageKey});
+        }
         @Override public void requireWorkspaceAccessForAccount(UUID channelAccountId) { }
         @Override public UUID findExistingClientAccountId(ChannelType channelType, String externalId) { return null; }
     }

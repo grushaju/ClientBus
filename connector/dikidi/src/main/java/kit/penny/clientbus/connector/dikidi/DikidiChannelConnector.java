@@ -67,6 +67,8 @@ public class DikidiChannelConnector implements IChannelConnector {
     private final DikidiChatAccess chatAccess;
     private final kit.penny.clientbus.connector.api.host.HostAttachmentStorage attachments;
     private final int initialBudgetPages;
+    /** Кто подключён (по ответу C06) и какая его иконка уже отражена в канале. */
+    private final Map<java.util.UUID, OwnerAvatar> owners = new java.util.concurrent.ConcurrentHashMap<>();
 
     public DikidiChannelConnector(DikidiClient client, DikidiTechnicalCredentials credentials,
             HostChannelAccounts accounts, HostConversationCheckpoints checkpoints,
@@ -146,7 +148,19 @@ public class DikidiChannelConnector implements IChannelConnector {
                     throw new kit.penny.clientbus.connector.api.error.ConnectorSendRejectedException(
                             "DIKIDI dialog could not be resolved before send", unresolvedDialog);
                 }
-                return reads.sendMessage(session, company, sendForm(dialog, text, uploads));
+                var sent = reads.sendMessage(session, company, sendForm(dialog, text, uploads));
+                // Аватар канала зеркалится с владельца подключения. Только после принятого C06:
+                // ответ платформы называет автора НАШЕЙ сессии, и это единственное доказуемое
+                // утверждение «вот кто подключён». Сбой картинки не имеет права испортить
+                // отправку, которая уже состоялась.
+                if (sent.accepted())
+                    try {
+                        mirrorOwnerAvatar(account, session, company, sent.authorExternalId(), sent.authorIcon());
+                    } catch (RuntimeException decoration) {
+                        log.debug("DIKIDI channel avatar mirror failed (send is unaffected): {}",
+                                decoration.toString());
+                    }
+                return sent;
             });
             if (!outcome.accepted())
                 throw new kit.penny.clientbus.connector.api.error.ConnectorSendRejectedException(
@@ -301,6 +315,7 @@ public class DikidiChannelConnector implements IChannelConnector {
         reads.shell(session, company);
         var participants = reads.participantsDetailed(session, dialog.id(), company);
         var sample = reads.messages(session, dialog.id(), null, 5, company).messages();
+        refreshOwnerAvatar(account, session, company, sample);
         var classified = classify(participants, sample);
         if (classified.isEmpty()) {
             log.info("DIKIDI dialog skipped (client/support not resolvable without guessing): account={}, "
@@ -319,6 +334,47 @@ public class DikidiChannelConnector implements IChannelConnector {
                 storeIcon(session, company, dialog.icon()),
                 dialog.id());
     }
+
+    /**
+     * Аватар канала = аватар владельца DIKIDI, от которого выполняется подключение
+     * (решение пользователя 19.11.2026). Доказуемый источник — ответ C06: платформа сама
+     * называет автора сообщения, отправленного нашей сессией, то есть владельца. Никакой
+     * другой признак для этого не годится: out=1 в диалоге бывает у нескольких сотрудников
+     * салона, а иконки участников C04 — это люди, не подключение.
+     * Скачивание — профиль MEDIA, в канал кладётся storageKey (удалённый URL в avatarUrl
+     * не живёт: байты отдаёт хост).
+     */
+    private void mirrorOwnerAvatar(HostChannelAccountSnapshot account, DikidiClient.Session session, String company,
+            String authorExternalId, String iconUrl) {
+        if (authorExternalId == null || iconUrl == null) return;
+        var known = owners.get(account.id());
+        if (known != null && known.iconUrl().equals(iconUrl)) return;
+        String key = storeIcon(session, company, iconUrl);
+        if (key == null) return; // транспорт подвёл — пробуем следующим пассажем, аватар остаётся прежним
+        accounts.updateAvatar(account.id(), key);
+        owners.put(account.id(), new OwnerAvatar(authorExternalId, iconUrl));
+        log.info("DIKIDI channel avatar mirrored from the connecting owner: account={}", account.id());
+    }
+
+    /**
+     * Смена фото владельца замечается из страниц, которые всё равно читаются: отдельного
+     * запроса ради аватара нет. Пока владельца не видели (сообщений наружу не было), ничего
+     * не угадывается — канал остаётся с буквенной заглушкой.
+     */
+    private void refreshOwnerAvatar(HostChannelAccountSnapshot account, DikidiClient.Session session, String company,
+            List<DikidiChatReads.Message> sample) {
+        var known = owners.get(account.id());
+        if (known == null) return;
+        for (var message : sample)
+            if (message.out() && known.authorExternalId().equals(message.userId()) && message.authorIcon() != null
+                    && !message.authorIcon().equals(known.iconUrl())) {
+                mirrorOwnerAvatar(account, session, company, known.authorExternalId(), message.authorIcon());
+                return;
+            }
+    }
+
+    /** Владелец подключения и его иконка в пределах процесса (после перезапуска придёт с новой отправкой). */
+    private record OwnerAvatar(String authorExternalId, String iconUrl) {}
 
     /**
      * Иконка диалога C02 (аватар клиента): сырой удалённый URL в avatarUrl не отдаётся —

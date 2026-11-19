@@ -101,6 +101,25 @@ public class ChannelAccountsHostAdapter
     }
 
     @Override
+    public void updateAvatar(
+            UUID channelAccountId,
+            String avatarStorageKey
+    ) {
+        if (avatarStorageKey == null || avatarStorageKey.isBlank())
+            return; // absence of a photo never clears what is already shown
+        ChannelAccountEntity account =
+                channelAccountRepository.findById(channelAccountId)
+                        .orElseThrow(() -> new IllegalStateException(
+                                "Telegram channel account not found: "
+                                        + channelAccountId
+                        ));
+        if (avatarStorageKey.equals(account.getAvatarUrl()))
+            return;
+        account.setAvatarUrl(avatarStorageKey);
+        channelAccountRepository.save(account);
+    }
+
+    @Override
     public void requireWorkspaceAccessForAccount(
             UUID channelAccountId
     ) {

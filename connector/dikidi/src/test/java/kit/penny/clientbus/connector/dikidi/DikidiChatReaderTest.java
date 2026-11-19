@@ -138,12 +138,14 @@ class DikidiChatReaderTest {
                 new DikidiRequests(new DikidiRequests.Settings(1e9, 100000, 1024, Duration.ofSeconds(30),
                         Duration.ofMinutes(15), 1e9, 100000), DikidiRequests.memory()));
         final DikidiChannelConnector connector;
+        final DikidiChatAccessTest.Accounts accounts;
         Harness(int budget) {
             DikidiTechnicalCredentials credentials = accountId -> new DikidiCredential(UUID.randomUUID(), 1,
                     "owner", "secret".toCharArray());
             var accounts = new DikidiChatAccessTest.Accounts(new HostChannelAccountSnapshot(ACCOUNT,
                     UUID.randomUUID(), UUID.randomUUID(), kit.penny.clientbus.common.enums.ChannelType.DIKIDI,
                     kit.penny.clientbus.common.enums.ChannelConnectionStatus.CONNECTED, null, COMPANY));
+            this.accounts = accounts;
             var reads = new DikidiChatReads();
             var storage = new kit.penny.clientbus.connector.api.host.HostAttachmentStorage() {
                 @Override public kit.penny.clientbus.connector.api.host.HostStoredAttachment store(
@@ -549,6 +551,78 @@ class DikidiChatReaderTest {
             assertTrue(harness.site.sendForms.get(0).stream()
                     .anyMatch(e -> e.getKey().equals("dialog") && e.getValue().equals("92000001")),
                     "диалог берётся из команды, а не резолвится вслепую");
+        }
+    }
+
+    /**
+     * Аватар канала = аватар владельца DIKIDI, от которого выполняется подключение
+     * (решение пользователя 19.11.2026). Доказательство владельца — ответ C06: автора
+     * сообщения, отправленного нашей сессией, назвала платформа.
+     */
+    @Test void channelAvatarMirrorsTheOwnerOfTheSessionThatSent() {
+        try (var harness = new Harness(5)) {
+            harness.site.sendMessageResponse = Site.SEND_OK.replace("\"user_icon\":null",
+                    "\"user_icon\":\"https://f2.dikidi.net/c01/v00001/aaaaaaaaaa.jpg\"");
+            harness.site.media.put("https://f2.dikidi.net/c01/v00001/aaaaaaaaaa.jpg", new byte[]{1, 2, 3});
+
+            assertEquals("93000010", harness.connector.handle(send("текст")).externalId());
+            assertEquals(1, harness.accounts.avatars.size(), "отправка назвала владельца — канал получил его аватар");
+            assertEquals(ACCOUNT, harness.accounts.avatars.get(0)[0]);
+            assertTrue(String.valueOf(harness.accounts.avatars.get(0)[1]).endsWith("aaaaaaaaaa.jpg"),
+                    "в канал кладётся локальный storageKey, а не удалённый URL");
+            assertEquals(1, harness.site.uris.stream().filter(u -> u.contains("aaaaaaaaaa")).count());
+
+            harness.connector.handle(send("текст ещё раз"));
+            assertEquals(1, harness.site.uris.stream().filter(u -> u.contains("aaaaaaaaaa")).count(),
+                    "не изменившаяся иконка не перекачивается на каждую отправку");
+            assertEquals(1, harness.accounts.avatars.size());
+        }
+    }
+
+    /** Сбой картинки не имеет права испортить уже отправленное сообщение: канал просто ждёт. */
+    @Test void ownerAvatarFailureLeavesTheSentMessageAlone() {
+        try (var harness = new Harness(5)) {
+            harness.site.sendMessageResponse = Site.SEND_OK.replace("\"user_icon\":null",
+                    "\"user_icon\":\"https://f2.dikidi.net/c01/v00001/aaaaaaaaaa.jpg\"");
+            // media не смонтирован: CDN отвечает пустым телом — скачивать нечего.
+            assertEquals("93000010", harness.connector.handle(send("текст")).externalId());
+            assertTrue(harness.accounts.avatars.isEmpty(), "без файла аватар канала не меняется");
+        }
+    }
+
+    /**
+     * Иконки участников — это люди, а не подключение: пока платформа не назвала автора нашей
+     * сессии, канал остаётся с буквенной заглушкой. Зато смена фото владельца замечается из
+     * страниц, которые и так читаются, — отдельного запроса ради аватара нет.
+     */
+    @Test void ownerPhotoChangeIsCaughtFromPagesWeAlreadyReadAndForeignIconsAreIgnored() {
+        try (var harness = new Harness(5)) {
+            harness.site.dialogs = "{\"data\":{\"list\":[{\"id\":\"7\",\"name\":\"Ким\",\"date\":1700000500,"
+                    + "\"msg\":\"ок\",\"badge\":0}],\"more\":false}}";
+            harness.site.detail.put("7", "{\"data\":{\"users\":{\"list\":{\"21\":{\"id\":21,\"role\":\"user\"},"
+                    + "\"91000001\":{\"id\":91000001,\"role\":\"support\"},\"22\":{\"id\":22,\"role\":\"support\"}},"
+                    + "\"total\":3}}}");
+            harness.site.pages.put("7|null", "{\"data\":{\"list\":["
+                    + "{\"id\":\"301\",\"user_id\":\"21\",\"text\":\"здравствуйте\",\"out\":0,\"date\":1700000490},"
+                    + "{\"id\":\"302\",\"user_id\":\"91000001\",\"text\":\"да\",\"out\":1,\"date\":1700000500,"
+                    + "\"user_icon\":\"https://f2.dikidi.net/c01/v00002/cccccccccc.jpg\"}]}}");
+            harness.site.media.put("https://f2.dikidi.net/c01/v00002/cccccccccc.jpg", new byte[]{4, 5});
+
+            harness.connector.handle(new kit.penny.clientbus.connector.api.command.SyncRecentChatsCommand(ACCOUNT));
+            assertTrue(harness.accounts.avatars.isEmpty(),
+                    "чужая иконка support-участника не становится аватаром канала");
+
+            harness.site.sendMessageResponse = Site.SEND_OK.replace("\"user_icon\":null",
+                    "\"user_icon\":\"https://f2.dikidi.net/c01/v00001/aaaaaaaaaa.jpg\"");
+            harness.site.media.put("https://f2.dikidi.net/c01/v00001/aaaaaaaaaa.jpg", new byte[]{1, 2, 3});
+            harness.connector.handle(send("текст"));
+            assertEquals(1, harness.accounts.avatars.size());
+            assertTrue(String.valueOf(harness.accounts.avatars.get(0)[1]).endsWith("aaaaaaaaaa.jpg"));
+
+            harness.connector.handle(new kit.penny.clientbus.connector.api.command.SyncRecentChatsCommand(ACCOUNT));
+            assertEquals(2, harness.accounts.avatars.size(),
+                    "тот же владелец с другим user_icon — аватар канала обновляется без нового запроса");
+            assertTrue(String.valueOf(harness.accounts.avatars.get(1)[1]).endsWith("cccccccccc.jpg"));
         }
     }
 

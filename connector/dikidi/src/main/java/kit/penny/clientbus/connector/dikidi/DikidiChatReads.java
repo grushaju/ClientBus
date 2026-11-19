@@ -45,10 +45,12 @@ public final class DikidiChatReads {
      * живые примеры 15.11.2026), а не служебная врезка: текст при вложениях
      * остаётся текстом сообщения. read/seen (13.6, по коду веб-клиента): у исходящих
      * read>0 — собеседник прочитал (счётчик читателей); у входящих seen — просмотрено
-     * салоном (именно его ставит C08-отметка).
+     * салоном (именно его ставит C08-отметка). authorIcon — user_icon автора: у ответа C06
+     * это автор НАШЕЙ сессии, то есть владелец подключения (аватар канала), а не любой
+     * out=1: сторон support в диалоге бывает несколько.
      */
     public record Message(String id, long epoch, String userId, String userName, String text, boolean out,
-            List<Attachment> attachments, int read, int seen) {}
+            List<Attachment> attachments, int read, int seen, String authorIcon) {}
 
     /** Вложение joining: вид («image», …) и скачиваемый MEDIA-url, если форма доказана. */
     public record Attachment(String kind, String url) {}
@@ -163,7 +165,8 @@ public final class DikidiChatReads {
             result.add(new Message(id, epoch(message.path("date")), message.path("user_id").asString(""),
                     message.path("user_name").asString(null), message.path("text").asString(""),
                     "1".equals(message.path("out").asString("")), attachments(message.path("joining")),
-                    message.path("read").asInt(0), message.path("seen").asInt(0)));
+                    message.path("read").asInt(0), message.path("seen").asInt(0),
+                    blankToNull(message.path("user_icon").asString(null))));
         }
         return new MessagesPage(List.copyOf(result), result.isEmpty());
     }
@@ -206,8 +209,13 @@ public final class DikidiChatReads {
         return response.binary();
     }
 
-    /** Результат C06: accepted=false — только явно доказанный отказ платформы (error.code≠0). */
-    public record SendOutcome(boolean accepted, String externalId, int errorCode) {}
+    /**
+     * Результат C06: accepted=false — только явно доказанный отказ платформы (error.code≠0).
+     * authorExternalId/authorIcon — user_id и user_icon сохранённого сообщения: их прислала
+     * платформа по НАШЕЙ сессии, значит это и есть владелец подключения (аватар канала).
+     */
+    public record SendOutcome(boolean accepted, String externalId, int errorCode,
+            String authorExternalId, String authorIcon) {}
 
     /**
      * C06 отправка (захват пользователя 15.11.2026): POST https://chat.dikidi.ru/api/dialog/message/;
@@ -228,12 +236,13 @@ public final class DikidiChatReads {
         var error = root.path("error");
         String code = error.isObject() ? error.path("code").asString("0") : error.asString("0");
         if (!"0".equals(code) && !code.isEmpty())
-            return new SendOutcome(false, null, code.matches("-?[0-9]+") ? Integer.parseInt(code) : -1);
+            return new SendOutcome(false, null, code.matches("-?[0-9]+") ? Integer.parseInt(code) : -1, null, null);
         var data = root.path("data");
         String id = data.path("id").asString("");
         if (!id.matches("[0-9]+") || !"1".equals(data.path("out").asString("")))
             throw new DikidiFailure(INVALID_RESPONSE);
-        return new SendOutcome(true, id, 0);
+        return new SendOutcome(true, id, 0, blankToNull(data.path("user_id").asString(null)),
+                blankToNull(data.path("user_icon").asString(null)));
     }
 
     /** Файл, принятый C07-загрузкой: готовый источник вхождения joining. */

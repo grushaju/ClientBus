@@ -40,6 +40,19 @@ public interface HostChannelAccounts {
             String avatarUrl
     );
 
+    /**
+     * Зеркало аватара учётной записи канала: отдельный контракт, а не часть updateProfile, —
+     * профиль канала (externalId/username/phone/displayName) для DIKIDI живёт в CRM и не должен
+     * перезаписываться снимком коннектора.
+     *
+     * @param avatarStorageKey локальный ключ хранилища (не удалённый URL: хост отдаёт байты из
+     *        локального хранилища); пусто/null — аватар не меняется (снимает его только человек)
+     */
+    void updateAvatar(
+            UUID channelAccountId,
+            String avatarStorageKey
+    );
+
     /** Host-side workspace check for the current user; throws when access is not permitted. */
     void requireWorkspaceAccessForAccount(
             UUID channelAccountId
