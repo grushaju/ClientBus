@@ -138,7 +138,7 @@ class ConnectorImplementationArchitectureTest {
 
     /**
      * Совпадение по префиксу засчитывается только на границе имени: иначе разрешённый
-     * EventOrigin пропускал бы EventOriginЛюбоеДругоеИмя, а пакет без точки на конце —
+     * EventOrigin пропускал бы имя с тем же началом и другим окончанием, а пакет без точки на конце —
      * любое имя с тем же началом.
      */
     private static boolean namedAs(String reference, String name) {
