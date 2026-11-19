@@ -55,8 +55,12 @@ clientbus:
       lease: PT30M
 
   jwt:
-    # YOUR_BASE64_SECRET_KEY
-    secret: FnQHtz4yCzaBgma1a25xV30mShdAQZx/33msarZ57f0=
+    # Ключ подписи обязан прийти извне. Значение, лежащее в репозитории, — это возможность
+    # подписать собственный токен для любого, кто репозиторий читает; прежний ключ здесь и
+    # был таким. Пустым он быть не может: JwtService отказывает в запуске и называет
+    # переменную. Для локального запуска подойдёт тот же механизм, что и для ключей CRM, —
+    # optional:file:./server/data/crm-secrets.properties (см. spring.config.import ниже).
+    secret: ${CLIENTBUS_JWT_SECRET:}
     expiration: 1800000
 
   bootstrap:

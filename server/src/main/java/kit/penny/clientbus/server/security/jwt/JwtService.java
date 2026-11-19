@@ -22,9 +22,29 @@ public class JwtService {
             @Value("${clientbus.jwt.secret}") String secret,
             @Value("${clientbus.jwt.expiration}") long expiration
     ) {
-        this.secretKey = Keys.hmacShaKeyFor(
-                Decoders.BASE64.decode(secret)
-        );
+        // Значение по умолчанию в конфигурации было бы дырой, а не удобством: публичный ключ
+        // подписи позволяет любому выдать себя за любого. Поэтому здесь отказ с названием
+        // переменной, а не тихая работа с тем, что нашлось.
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalStateException("Ключ подписи clientbus.jwt.secret не задан. Укажите "
+                    + "CLIENTBUS_JWT_SECRET (base64 не короче 32 байт); запуск с ключом из "
+                    + "репозитория запрещён.");
+        }
+
+        byte[] key;
+        try {
+            key = Decoders.BASE64.decode(secret);
+        } catch (RuntimeException failure) {
+            throw new IllegalStateException("clientbus.jwt.secret обязан быть base64-строкой "
+                    + "(например, вывод openssl rand -base64 32)", failure);
+        }
+
+        try {
+            this.secretKey = Keys.hmacShaKeyFor(key);
+        } catch (RuntimeException failure) {
+            throw new IllegalStateException("clientbus.jwt.secret слишком короткий: ключу HMAC-SHA256 "
+                    + "нужно не меньше 256 бит (32 байта, base64 из 44 символов)", failure);
+        }
 
         this.expiration = expiration;
     }
