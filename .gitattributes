@@ -1,0 +1,51 @@
+# Окончания строк: в индексе — нормализованные LF, в рабочем дереве — окончание своей
+# платформы. Индекс этого репозитория уже целиком в LF (проверено `git ls-files --eol`:
+# 1168 файлов, ни одного i/crlf и ни одного i/mixed), поэтому правило ниже ничего не
+# переписывает: оно убирает двусмысленность core.autocrlf для других операционных систем
+# и молчаливые предупреждения git на каждой операции add.
+* text=auto
+
+# Бинарное содержимое помечено явно: автоопределение по первым байтам может не
+# сработать на коротких или формально «похожих на текст» файлах, а тихая порча
+# такого файла неотличима от честного изменения.
+*.dll binary
+*.ogg binary
+*.ico binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.pdf binary
+*.zip binary
+*.jks binary
+*.keystore binary
+
+# Текстовые форматы проекта — явно. Правило выше обработало бы их и так; перечисление
+# страхует от неверного автоопределения на пустых и сгенерированных файлах.
+*.java text
+*.ts text
+*.tsx text
+*.js text
+*.cjs text
+*.mjs text
+*.md text
+*.txt text
+*.yml text
+*.yaml text
+*.sql text
+*.json text
+*.xml text
+*.css text
+*.html text
+*.properties text
+*.svg text
+*.ps1 text
+*.iml text
+*.factories text
+*.imports text
+
+# Окончание скриптов предопределено их потребителями, а не платформой клонировавшего.
+*.sh text eol=lf
