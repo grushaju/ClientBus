@@ -2411,6 +2411,48 @@ class CrmFoundationIntegrationTest {
         assertNotNull(clients.client(row.id()).avatarUrl());
         assertEquals(3,downloaded.get());
     }
+    /**
+     * Решение пользователя 19.11.2026: зеркало аватара карточки CRM живёт только в `crm.client` и в
+     * `dbo.client.avatarurl` не переносится ни при каких условиях. Проверка поставлена на живую БД, а
+     * не на моки, потому что соблазн дописать такую строку в CrmClientWriter обязательно появится:
+     * карточка уже знает клиента, аватар уже скачан, «одна строчка» выглядит безобидно. Последствия
+     * не безобидные — картинка стала бы каналом переноса между поверхностями и ещё одним основанием
+     * считать двух людей одним клиентом помимо воли сотрудника.
+     */
+    @Test void mirroredCardAvatarNeverReachesTheCoreClientAvatar() throws Exception {
+        var row=importClient(); var core=coreClient("Хозяин аватара","70000000001");
+        clients.link(row.id(),core,row.version());
+        var objects=new java.util.HashMap<String,byte[]>();
+        var mirror=new kit.penny.clientbus.server.storage.IAttachmentStorage(){
+            @Override public kit.penny.clientbus.server.storage.StoredAttachmentMetadata store(java.io.InputStream content,String fileName,long size,String contentType){
+                try { var bytes=content.readAllBytes(); var key="stored/never-"+objects.size()+".jpg"; objects.put(key,bytes);
+                    return new kit.penny.clientbus.server.storage.StoredAttachmentMetadata(key,fileName,contentType,size); }
+                catch (java.io.IOException failure){ throw new java.io.UncheckedIOException(failure); } }
+            @Override public java.io.InputStream load(String key){ return new java.io.ByteArrayInputStream(objects.getOrDefault(key,new byte[0])); }
+            @Override public boolean exists(String key){ return objects.containsKey(key); }
+            @Override public void delete(String key){ objects.remove(key); } };
+        clientSync=new CrmClientSync(store,jdbc,tx.getTransactionManager(),new CrmRegistry(List.of(provider)),cipher,events,
+                new CrmClientWriter(store),new CrmClientAvatars(mirror,url->new CrmClientAvatars.Fetch.Image(new byte[]{1,2,3},"image/jpeg")),clientNanoTime::get);
+        provider.clientReader=cursor -> clientPage(List.of(new CrmClient("1","PROJECT","Иван CRM",Map.of(),Map.of("source","R08"),
+                Set.of("displayName","avatar"),"https://f1.dikidi.ru/c01/v00001/dddddddddd.jpg")),null);
+        clientSync.refresh(row.projectId()); awaitClients();
+        // Зеркало есть у карточки — и только у неё.
+        assertNotNull(clients.client(row.id()).avatarUrl());
+        assertEquals(1,objects.size());
+        assertNull(jdbc.queryForObject("select avatarurl from dbo.client where clientid=?",String.class,core));
+        // Смена файла провайдера тоже не переносит ничего: у клиента аватар по-прежнему не выставлен.
+        provider.clientReader=cursor -> clientPage(List.of(new CrmClient("1","PROJECT","Иван CRM",Map.of(),Map.of("source","R08"),
+                Set.of("displayName","avatar"),"https://f1.dikidi.ru/c01/v00001/eeeeeeeeee.png")),null);
+        clientSync.refresh(row.projectId()); awaitClients();
+        assertNull(jdbc.queryForObject("select avatarurl from dbo.client where clientid=?",String.class,core));
+        // И снятие зеркала («фото нет») не трогает клиента: у аватара клиента один хозяин — оператор.
+        provider.clientReader=cursor -> clientPage(List.of(new CrmClient("1","PROJECT","Иван CRM",Map.of(),Map.of("source","R08"),
+                Set.of("displayName","avatar"),null)),null);
+        clientSync.refresh(row.projectId()); awaitClients();
+        assertNull(clients.client(row.id()).avatarUrl());
+        assertNull(jdbc.queryForObject("select avatarurl from dbo.client where clientid=?",String.class,core));
+    }
+
     @Test void candidatePhonesAreNormalizedButNeverAutomaticallyLinkedAndExactMatchesPrecedeLimit() throws Exception {
         var row=importClient(); var matched=coreClient("Match","+7 999 123 45 67");
         coreClient("Other country format","89991234567");
