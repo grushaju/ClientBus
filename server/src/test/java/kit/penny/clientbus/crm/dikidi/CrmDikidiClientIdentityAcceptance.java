@@ -776,39 +776,47 @@ class CrmDikidiClientIdentityAcceptance {
         if (AVATAR_SHAPE) {
             avatarShape("R08страница", listPage);
             avatarShape("R08ajax", htmlText);
-            avatarFetch(htmlText);
+            avatarFetch(calls, htmlText);
         }
     }
 
     /**
      * Лежит ли файл аватара в открытом доступе: решает, кто его скачивает — провайдер через
      * сессионный клиент или сервер отдельным запросом. Печатается только код ответа, тип и размер.
+     * Адрес проходит тот же allowlist, что и продукт (CrmAvatarUrl), и тратит вызов из бюджета:
+     * отдельный http-клиент не имеет права быть дырой в разрешённых маршрутах.
      */
-    private void avatarFetch(String htmlText) {
+    private void avatarFetch(AtomicInteger calls, String htmlText) {
         var urls = STYLE_URL.matcher(htmlText);
         if (!urls.find()) {
             System.out.println("IDENT файлАватара вРазметкеНеНайден");
             return;
         }
-        var absolute = urls.group(1).startsWith("//") ? "https:" + urls.group(1) : urls.group(1);
-        if (!absolute.startsWith("https://") || !absolute.contains("dikidi")) {
+        var canonical = kit.penny.clientbus.crm.api.CrmAvatarUrl.canonical(
+                urls.group(1).startsWith("//") ? "https:" + urls.group(1) : urls.group(1));
+        if (canonical == null) {
             System.out.println("IDENT файлАватара неcdn");
             return;
         }
+        // Отдельный клиент без cookie jar: проверяем именно анонимную доступность файла.
+        assertTrue(calls.incrementAndGet() <= CALL_LIMIT, "Probe request budget exceeded.");
         try {
-            // Отдельный клиент без cookie jar: проверяем именно анонимную доступность файла.
-            var anonymous = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).followRedirects(HttpClient.Redirect.NORMAL).build();
-            var response = anonymous.send(HttpRequest.newBuilder(URI.create(absolute)).timeout(Duration.ofSeconds(20))
-                    .header("User-Agent", "Mozilla/5.0 ClientBus").GET().build(), HttpResponse.BodyHandlers.ofByteArray());
+            var anonymous = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10))
+                    .followRedirects(HttpClient.Redirect.NEVER).build();
+            var response = anonymous.send(HttpRequest.newBuilder(URI.create(canonical + "?size=s"))
+                            .timeout(Duration.ofSeconds(20)).header("User-Agent", "Mozilla/5.0 ClientBus").GET().build(),
+                    HttpResponse.BodyHandlers.ofInputStream());
+            int bytes;
+            try (var body = response.body()) {
+                bytes = body.readNBytes(1024 * 1024).length;
+            }
             System.out.printf("IDENT файлАватара анонимно: код=%d тип=%s байт=%d перенаправлен=%b%n", response.statusCode(),
-                    response.headers().firstValue("content-type").orElse("нет"), response.body().length,
-                    response.uri().toString().equals(absolute) ? false : true);
+                    response.headers().firstValue("content-type").orElse("нет"), bytes, false);
         } catch (Exception failure) {
             System.out.println("IDENT файлАватара анонимно: сбой=" + failure.getClass().getSimpleName());
         }
     }
 
-    /** Итог по аватарам: совпал не «похожий рисунок», а один и тот же файл провайдера. */
     /**
      * Только форма разметки: для каждого упоминания файла DIKIDI — имя тега-носителя, имена его
      * атрибутов, абсолютный ли путь и лежит ли тег внутри строки таблицы списка. Значения (url,

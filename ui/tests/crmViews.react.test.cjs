@@ -455,3 +455,32 @@ test('own completed history stays readable when local storage is unavailable', a
     await act(async () => f.ui.root.findByType('details').props.onToggle({ currentTarget: { open: true } }))
     assert.match(text(f.ui), /Читаемый автор/); assert.doesNotMatch(text(f.ui), /Storage unavailable/)
 })
+
+test('CRM card avatar shows mirrored bytes and revokes the object URL on unmount', async t => {
+    const created = [], revoked = []
+    t.mock.method(URL, 'createObjectURL', () => { const url = `blob:${created.length}`; created.push(url); return url })
+    t.mock.method(URL, 'revokeObjectURL', url => revoked.push(url))
+    const delivered = deferred()
+    const Avatar = load('../crm/CrmClientAvatar.tsx', { '../../api/crmApi': { getCrmClientAvatarContent: () => delivered.promise } }).CrmClientAvatar
+    let ui
+    await act(async () => { ui = create(React.createElement(Avatar, { id: 'crm-1', avatarUrl: 'crm/avatars/1.gif', displayName: 'Иван CRM', size: 36 })) })
+    assert.deepEqual(created, [], 'без байтов аватара object URL не создаётся')
+    await act(async () => { delivered.resolve(new Blob(['gif'], { type: 'image/gif' })) })
+    assert.equal(ui.root.findAllByType('img').length, 1)
+    assert.deepEqual(created, ['blob:0'])
+    await act(async () => { ui.unmount() })
+    assert.deepEqual(revoked, ['blob:0'])
+})
+
+test('CRM card avatar keeps an initial when the mirror is absent or its bytes fail', async t => {
+    const api = { '../../api/crmApi': { getCrmClientAvatarContent: async () => { throw Error('нет зеркала') } } }
+    const Avatar = load('../crm/CrmClientAvatar.tsx', api).CrmClientAvatar
+    let ui
+    await act(async () => { ui = create(React.createElement(Avatar, { id: 'crm-2', avatarUrl: 'crm/avatars/2.gif', displayName: 'Иван CRM' })) })
+    assert.equal(ui.root.findAllByType('img').length, 0)
+    assert.match(text(ui), /И/)
+    await act(async () => { ui.unmount() })
+    await act(async () => { ui = create(React.createElement(Avatar, { id: 'crm-3', avatarUrl: null, displayName: null })) })
+    assert.match(text(ui), /•/)
+    await act(async () => { ui.unmount() })
+})

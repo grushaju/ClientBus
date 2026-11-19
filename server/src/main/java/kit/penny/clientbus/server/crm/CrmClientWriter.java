@@ -42,6 +42,12 @@ public class CrmClientWriter {
             var canonical = CrmAvatarUrl.canonical(source.avatarUrl());
             var mirrored = canonical == null ? null : avatarKeys.get(source.externalId());
             if (mirrored != null) { row.setAvatarOrigin(CrmAvatarUrl.key(canonical)); row.setAvatarUrl(mirrored); }
+            else if (canonical == null && source.avatarUrl() == null && source.presentFields().contains("avatar")) {
+                // Провайдер сказал, что фото нет: зеркало снимается, иначе карточка вечно держала бы
+                // файл человека, которого у провайдера уже нет. Сам объект не удаляем: ключи в хосте
+                // разделяются между таблицами, их собирает 13.5 по числу ссылок.
+                row.setAvatarOrigin(null); row.setAvatarUrl(null);
+            }
             row.setLastObservedAt(page.observedAt());
             if (created) store.em.persist(row);
         }

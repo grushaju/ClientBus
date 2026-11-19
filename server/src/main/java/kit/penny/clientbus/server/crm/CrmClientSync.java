@@ -148,12 +148,20 @@ public class CrmClientSync {
                 }
                 int loadedPages = pageNumber+1;
                 // Аватары зеркалятся до транзакции: сеть не должна держать строки списка заблокированными.
-                var mirrored = new HashMap<String, CrmClientAvatars.Previous>();
-                jdbc.query("select externalid, avatarorigin, avatarurl from crm.client where projectid = ?",
-                        (RowCallbackHandler) row -> mirrored.put(row.getString(1),
-                                new CrmClientAvatars.Previous(row.getString(2), row.getString(3))),
-                        claim.context().projectId());
-                var avatarKeys = clientAvatars.materialize(result.items(), mirrored);
+                // Страница без аватаров не стоит ни чтения зеркала, ни сети; сеть ограничена и общим
+                // бюджетом синхронизации, и отдельным слотом, чтобы не просрочить аренду писателя (120 с).
+                final Map<String,String> avatarKeys;
+                if (result.items().stream().anyMatch(item -> item.presentFields().contains("avatar"))) {
+                    var mirrored = new HashMap<String, CrmClientAvatars.Previous>();
+                    jdbc.query("select externalid, avatarorigin, avatarurl from crm.client where projectid = ?",
+                            (RowCallbackHandler) row -> mirrored.put(row.getString(1),
+                                    new CrmClientAvatars.Previous(row.getString(2), row.getString(3))),
+                            claim.context().projectId());
+                    // Бюджет отдаём относительным: у зеркала свои часы, и абстрактный дедлайн
+                    // синхронизации в них ничего не значит. Слот — минута, чтобы не просрочить аренду.
+                    avatarKeys = clientAvatars.materialize(result.items(), mirrored, CrmClientAvatars.MAX_FILES_PER_PAGE,
+                            Math.min(deadline-nanoTime.getAsLong(), TimeUnit.SECONDS.toNanos(60)));
+                } else avatarKeys = Map.of();
                 boolean limited = pageNumber==99 || expired(deadline);
                 boolean terminal = result.nextCursor()==null;
                 boolean finished = terminal || limited;
@@ -188,6 +196,11 @@ public class CrmClientSync {
         } catch (CrmFailure error) { fail(claim,CrmStore.failure(error).code(),health.get()); }
         catch (CrmException error) { fail(claim,error.code(),health.get()); }
         catch (RuntimeException error) { fail(claim,"CRM_TEMPORARILY_UNAVAILABLE",health.get()); }
+        catch (Error fatal) {
+            // Ошибка уровня JVM не должна переживать аренду: мимо fail() строка синхронизации
+            // оставалась бы занятой до истечения claimuntil, а проект — без ответа и без кода.
+            fail(claim,"CRM_TEMPORARILY_UNAVAILABLE"); throw fatal;
+        }
     }
     private boolean expired(long deadline) { return nanoTime.getAsLong()-deadline>=0; }
     private void finishLimited(Claim claim) {

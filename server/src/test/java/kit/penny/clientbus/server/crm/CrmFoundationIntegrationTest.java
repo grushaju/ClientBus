@@ -2397,6 +2397,19 @@ class CrmFoundationIntegrationTest {
         clientSync.refresh(row.projectId()); awaitClients();
         assertEquals(2,downloaded.get());
         assertNotEquals(mirrored.avatarUrl(),clients.client(row.id()).avatarUrl());
+        // Провайдер убрал фото: маска «наблюдали и его нет» снимает зеркало, иначе карточка вечно
+        // держала бы человека, которого у провайдера уже нет (сам объект — сборщику осиротевших 13.5).
+        provider.clientReader=cursor -> clientPage(List.of(new CrmClient("1","PROJECT","Иван CRM",Map.of(),Map.of("source","R08"),
+                Set.of("displayName","avatar"),null)),null);
+        clientSync.refresh(row.projectId()); awaitClients();
+        assertNull(jdbc.queryForObject("select avatarurl from crm.client where projectid=? and externalid='1'",String.class,row.projectId()));
+        assertNull(jdbc.queryForObject("select avatarorigin from crm.client where projectid=? and externalid='1'",String.class,row.projectId()));
+        // Фото вернулось — зеркало появляется снова.
+        provider.clientReader=cursor -> clientPage(List.of(new CrmClient("1","PROJECT","Иван CRM",Map.of(),Map.of("source","R08"),
+                Set.of("displayName","avatar"),"https://f1.dikidi.ru/c01/v00001/cccccccccc.jpg")),null);
+        clientSync.refresh(row.projectId()); awaitClients();
+        assertNotNull(clients.client(row.id()).avatarUrl());
+        assertEquals(3,downloaded.get());
     }
     @Test void candidatePhonesAreNormalizedButNeverAutomaticallyLinkedAndExactMatchesPrecedeLimit() throws Exception {
         var row=importClient(); var matched=coreClient("Match","+7 999 123 45 67");

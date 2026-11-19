@@ -73,6 +73,37 @@ class DikidiClientContractTest {
         assertEquals("https://f1.dikidi.ru/c01/v00001/aaaaaaaaaa.jpg",row.avatarUrl());
         assertTrue(row.presentFields().containsAll(Set.of("displayName","phone","avatar")));
     }
+    @Test void avatarUrlCanonicalizesCdnMirrorsAndRefusesTraversalOrForeignHost() {
+        // Зеркало cdn — любой fN, хост нижним регистром, вариант размера (?size=) не часть файла.
+        assertEquals("https://f7.dikidi.net/c01/v00001/aaaaaaaaaa.jpg",
+                CrmAvatarUrl.canonical("https://F7.dikidi.net/c01/v00001/aaaaaaaaaa.jpg?size=b"));
+        assertEquals("/c01/v00001/aaaaaaaaaa",CrmAvatarUrl.key("https://f1.dikidi.ru/c01/v00001/aaaaaaaaaa.jpg"));
+        for (String junk:List.of("https://f1.dikidi.ru/c01/../v00001/aaaaaaaaaa.jpg","https://f1.dikidi.ru/c01/%2e%2e/v00001/aaaaaaaaaa.jpg",
+                "https://f1.dikidi.ru:8443/c01/v00001/aaaaaaaaaa.jpg","https://x@dikidi.ru/c01/v00001/aaaaaaaaaa.jpg",
+                "https://dikidi.ru.evil.test/c01/v00001/aaaaaaaaaa.jpg","http://f1.dikidi.ru/c01/v00001/aaaaaaaaaa.jpg"))
+            assertNull(CrmAvatarUrl.canonical(junk),junk);
+    }
+    @Test void absentPhotoIsObservedFactWhileUntrustedBackgroundLeavesItUnknown() {
+        // Живой слот аватара (div class="icon …") без url — это «фото нет»: поле наблюдали со значением null,
+        // и писатель вправе снять прежнее зеркало. Разметка без слота вообще ничего не утверждает.
+        var slot=DikidiClientsHtml.parse("<tr id='item-123'><td class='username'><div class='line-name'>"
+                +"<div class='icon ico-circle clients_icon' data-colorId='2'></div><a>Иван CRM</a></div>"
+                +"<div class='line-phone'>+7 (999) 123-45-67</div></td></tr>").getFirst();
+        assertNull(slot.avatarUrl());
+        assertTrue(slot.presentFields().contains("avatar"));
+        // Чужой фон в том же слоте: строку мы не поняли — прежним зеркалом ради картинки не жертвуем.
+        var foreign=DikidiClientsHtml.parse("<tr id='item-123'><td class='username'><div class='line-name'>"
+                +"<div class='icon ico-circle clients_icon' style='background:url(https://evil.example.test/c01/v00001/aaaaaaaaaa.jpg)'></div><a>Иван CRM</a></div>"
+                +"<div class='line-phone'>+7 (999) 123-45-67</div></td></tr>").getFirst();
+        assertNull(foreign.avatarUrl());
+        assertFalse(foreign.presentFields().contains("avatar"));
+        // Decor-фон не из слота, стоящий раньше, не вытесняет фото из слота.
+        var decorated=DikidiClientsHtml.parse("<tr id='item-123'><td class='username'><div class='line-name'>"
+                +"<span class='badge' style='background:url(https://f1.dikidi.ru/c01/v00001/zzzzzzzzzz.jpg)'></span>"
+                +"<div class='icon ico-circle clients_icon' style='background-image:url(https://f1.dikidi.ru/c01/v00001/aaaaaaaaaa.jpg?size=s)'></div>"
+                +"<a>Иван CRM</a></div><div class='line-phone'>+7 (999) 123-45-67</div></td></tr>").getFirst();
+        assertEquals("https://f1.dikidi.ru/c01/v00001/aaaaaaaaaa.jpg",decorated.avatarUrl());
+    }
     @Test void phoneNormalizationDoesNotGuessCountryOrAcceptExtensionText() {
         assertEquals("89991234567",CrmPhone.normalize("8 (999) 123-45-67"));
         assertNotEquals(CrmPhone.normalize("89991234567"),CrmPhone.normalize("+79991234567"));

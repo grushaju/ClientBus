@@ -18,7 +18,7 @@ public final class CrmAvatarUrl {
 
     private CrmAvatarUrl() { }
 
-    /** Абсолютный https-url файла или null: протокол, хост и форма пути должны совпасть. */
+    /** Абсолютный https-url файла или null. Хост каноничен в нижнем регистре, query отброшен. */
     public static String canonical(String raw) {
         if (raw == null) return null;
         var value = raw.strip();
@@ -27,9 +27,17 @@ public final class CrmAvatarUrl {
         else if (value.startsWith("/")) value = "https://dikidi.ru" + value;
         var uri = parse(value);
         if (uri == null || !"https".equals(uri.getScheme()) || uri.getHost() == null || uri.getPath() == null) return null;
+        // Зеркала cdn (f1., f2., …) значимы только как хост: новое зеркало провайдера не должно
+        // молча лишать карточку аватара, поэтому префикс любой цифры, а не перечисление.
         var host = uri.getHost().toLowerCase(Locale.ROOT);
-        var zone = host.startsWith("f1.") || host.startsWith("f2.") ? host.substring(3) : host;
+        var zone = host.replaceFirst("^f[0-9]{1,3}\\.", "");
         if (!HOSTS.contains(zone) || !FILE.matcher(uri.getPath()).matches()) return null;
+        // Форма пути проверяется по ДЕКОДИРОВАННОМУ значению: %2e%2e становится «..» и отбивается
+        // здесь же. Хранить и скачивать путь с переходом вверх мы не будем ни в каком виде.
+        for (var segment : uri.getPath().split("/")) if (segment.equals(".") || segment.equals("..")) return null;
+        // Ключ пути кладётся в crm.client.avatarorigin (varchar 200): путь длиннее лимита не просто
+        // не влезет — он уронил бы всю страницу списка ошибкой колонки, поэтому отклоняем здесь.
+        if (uri.getPath().length() > 190) return null;
         return "https://" + host + uri.getPath();
     }
 

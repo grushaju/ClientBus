@@ -107,10 +107,52 @@ class CrmClientAvatarsTest {
         assertTrue(storage.objects.isEmpty());
     }
 
+    /** Один файл на двух строках страницы — одно скачивание и один объект в хранилище. */
+    @Test void sameProviderFileOnTwoRowsIsDownloadedOnce() {
+        var requested = new ArrayList<String>();
+        var avatars = new CrmClientAvatars(new Storage(), url -> {
+            requested.add(url);
+            return new CrmClientAvatars.Fetch.Image(new byte[] { 7 }, "image/jpeg");
+        });
+        var result = avatars.materialize(List.of(card("30", "https://f1.dikidi.ru/c01/v00001/aaaaaaaaaa.jpg?size=s"),
+                card("31", "https://f2.dikidi.net/c01/v00001/aaaaaaaaaa.jpg?size=b")), Map.of());
+        assertEquals(2, result.size());
+        assertEquals(result.get("30"), result.get("31"));
+        assertEquals(1, requested.size());
+    }
+
     @Test void downloadFailureLeavesCardWithoutAvatarInsteadOfBreakingSync() {
         var storage = new Storage();
         var avatars = new CrmClientAvatars(storage, url -> { throw new IllegalStateException("cdn недоступен"); });
         assertTrue(avatars.materialize(List.of(card("20", "https://f1.dikidi.ru/c01/v00001/xxtt11aaoo.jpg")), Map.of()).isEmpty());
         assertTrue(storage.objects.isEmpty());
+    }
+
+    /** Медленный cdn не уводит синхронизацию за бюджет: и потолок файлов, и срок считаются до скачивания. */
+    @Test void networkBudgetStopsDownloadsWithoutBreakingThePage() {
+        var rows = List.of(card("21", "https://f1.dikidi.ru/c01/v00001/aaaaaaaaaa.jpg"),
+                card("22", "https://f1.dikidi.ru/c01/v00002/bbbbbbbbbb.jpg"));
+        // Потолок файлов за страницу.
+        var clock = new java.util.concurrent.atomic.AtomicLong();
+        var capped = new ArrayList<String>();
+        var byCount = new CrmClientAvatars(new Storage(), url -> {
+            capped.add(url);
+            return new CrmClientAvatars.Fetch.Image(new byte[] { 5 }, "image/jpeg");
+        }, clock::get);
+        assertEquals(1, byCount.materialize(rows, Map.of(), 1, Long.MAX_VALUE).size());
+        assertEquals(1, capped.size());
+        // Срок наступает после первого скачивания: второе уже не начинается, страница остаётся валидной.
+        var ticking = new java.util.concurrent.atomic.AtomicLong();
+        var fetched = new ArrayList<String>();
+        var byDeadline = new CrmClientAvatars(new Storage(), url -> {
+            fetched.add(url);
+            ticking.set(2);
+            return new CrmClientAvatars.Fetch.Image(new byte[] { 5 }, "image/jpeg");
+        }, ticking::get);
+        assertEquals(1, byDeadline.materialize(rows, Map.of(), rows.size(), 1).size());
+        assertEquals(1, fetched.size());
+        // Просроченный бюджет не начинает ни одного скачивания.
+        assertTrue(byDeadline.materialize(rows, Map.of(), rows.size(), 0).isEmpty());
+        assertEquals(1, fetched.size());
     }
 }

@@ -59,6 +59,7 @@ final class DikidiClientsHtml extends HTMLEditorKit.ParserCallback {
     private static final Pattern BACKGROUND = Pattern.compile("url\\(\\s*['\"]?([^'\")\\s]{4,400})", Pattern.CASE_INSENSITIVE);
     private String id;
     private String avatar;
+    private boolean avatarHinted, backgroundSeen, iconSlot;
     private int depth, nameDepth=-1, anchorDepth=-1, phoneDepth=-1;
     private boolean invalid;
     private boolean phonePresent;
@@ -79,17 +80,26 @@ final class DikidiClientsHtml extends HTMLEditorKit.ParserCallback {
             if (!id.matches("[0-9]{1,128}") || !ids.add(id)) invalid();
             // System identity has not been established by the protocol research.
             if ("1".equals(String.valueOf(attrs.getAttribute("data-is-system")))) invalid();
-            name.setLength(0); phone.setLength(0); phonePresent=false; avatar=null;
+            name.setLength(0); phone.setLength(0); phonePresent=false;
+            avatar=null; avatarHinted=false; backgroundSeen=false; iconSlot=false;
         }
         if (id == null) return;
-        if (avatar == null) {
-            var style = String.valueOf(attrs.getAttribute(HTML.Attribute.STYLE));
-            var background = BACKGROUND.matcher(style);
-            // Первый фон строки, оказавшийся файлом cdn провайдера: чужие url и мусор отбрасываются.
-            if (style.toLowerCase(Locale.ROOT).contains("background") && background.find())
-                avatar = CrmAvatarUrl.canonical(background.group(1));
-        }
         var classes = Arrays.asList(String.valueOf(attrs.getAttribute(HTML.Attribute.CLASS)).split("\\s+"));
+        // Слот аватара живой строки — div class="icon ico-circle clients_icon": когда фото нет,
+        // DIKIDI оставляет цветной кружок (data-colorId) без url. Значит «фото нет» — это виденный
+        // слот без фона, а не отсутствие разметки: иначе смена провайдером формы молча стёрла бы
+        // все зеркала.
+        var slot = classes.stream().anyMatch(value -> value.equals("icon") || value.equals("avatar")
+                || value.endsWith("_icon") || value.endsWith("-icon"));
+        if (slot) iconSlot = true;
+        var style = String.valueOf(attrs.getAttribute(HTML.Attribute.STYLE));
+        var background = BACKGROUND.matcher(style);
+        if (style.toLowerCase(Locale.ROOT).contains("background") && background.find()) {
+            backgroundSeen = true;
+            var canonical = CrmAvatarUrl.canonical(background.group(1));
+            // Чужие url и мусор отбрасываются; фон из слота аватара важнее decor-фона раньше него.
+            if (canonical != null && (avatar == null || (slot && !avatarHinted))) { avatar = canonical; avatarHinted = slot; }
+        }
         if (classes.contains("line-name")) nameDepth=depth;
         if (tag == HTML.Tag.A && nameDepth >= 0) anchorDepth=depth;
         if (classes.contains("line-phone")) { phoneDepth=depth; phonePresent=true; }
@@ -106,7 +116,9 @@ final class DikidiClientsHtml extends HTMLEditorKit.ParserCallback {
             if (displayName.isBlank()) invalid();
             Set<String> fields = new HashSet<>(Set.of("displayName"));
             if (phonePresent) fields.add("phone");
-            if (avatar != null) fields.add("avatar");
+            // Маска честнее значения: «аватар наблюдали и его нет» (слот без фона) отличается от
+            // «мы ничего не поняли в этой строке» — второе не даёт писателю снимать прежнее зеркало.
+            if (avatar != null || (iconSlot && !backgroundSeen)) fields.add("avatar");
             clients.add(new CrmClient(id, "PROJECT", displayName,
                     phonePresent ? Map.of("phone",phone.toString().strip()) : Map.of(), Map.of("source","R08"),
                     fields, avatar));

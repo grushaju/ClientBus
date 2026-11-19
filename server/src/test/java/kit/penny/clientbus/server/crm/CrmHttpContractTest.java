@@ -46,8 +46,20 @@ class CrmHttpContractTest {
                 Map.of(),null,"crm/avatars/client.jpg",null,null,null,null,null,java.time.Instant.now(),0));
         when(storage.exists("crm/avatars/client.jpg")).thenReturn(true);
         when(storage.load("crm/avatars/client.jpg")).thenReturn(new java.io.ByteArrayInputStream(new byte[]{1,2,3}));
+        // Тип берётся из нашего ключа, а не из заголовка провайдера; эталон — сам ключ хранилища.
         avatar.perform(get("/api/crm/clients/"+id+"/avatar/content")).andExpect(status().isOk())
+                .andExpect(header().string("ETag","\"crm/avatars/client.jpg\""))
+                .andExpect(header().string("Cache-Control","no-cache"))
+                .andExpect(content().contentTypeCompatibleWith(MediaType.IMAGE_JPEG))
                 .andExpect(content().bytes(new byte[]{1,2,3}));
+        avatar.perform(get("/api/crm/clients/"+id+"/avatar/content").header("If-None-Match","\"crm/avatars/client.jpg\""))
+                .andExpect(status().isNotModified());
+        // Зеркало указывало на ключ, которого в хранилище уже нет (сборщик осиротевших файлов) — тоже 404.
+        var vanished = mock(kit.penny.clientbus.server.storage.IAttachmentStorage.class);
+        when(vanished.exists("crm/avatars/client.jpg")).thenReturn(true);
+        when(vanished.load("crm/avatars/client.jpg")).thenThrow(new IllegalStateException("Attachment not found"));
+        MockMvcBuilders.standaloneSetup(new CrmClientController(clients,vanished)).build()
+                .perform(get("/api/crm/clients/"+id+"/avatar/content")).andExpect(status().isNotFound());
     }
     @Test void appointmentCommandsRequireADurableKeyAndValidateTheirIntentBeforeAdmission() throws Exception {
         UUID project=UUID.randomUUID(),key=UUID.randomUUID(),id=UUID.randomUUID();
