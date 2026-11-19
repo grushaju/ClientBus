@@ -643,7 +643,19 @@ function ChannelsPageContent() {
                                         )}
 
                                     {channel.status ===
-                                        'DISABLED' && (
+                                        'DISABLED' &&
+                                        (channel.type === 'DIKIDI' ? (
+                                            /* У DIKIDI-канала нет ручного включения: он сам
+                                               возвращается в подключение, когда проект снова
+                                               присоединён (DikidiChannelProvisioning). Кнопка
+                                               здесь вела бы маршрут чужой платформы: канал
+                                               отключают не здесь, и «Включить» для него
+                                               означало бы запрос, которого не существует. */
+                                            <div className="channel-card-action-note">
+                                                Включится сам, когда проект снова будет
+                                                подключён
+                                            </div>
+                                        ) : (
                                             <button
                                                 type="button"
                                                 className="ui-button ui-button-primary"
@@ -655,7 +667,7 @@ function ChannelsPageContent() {
                                             >
                                                 Включить
                                             </button>
-                                        )}
+                                        ))}
 
                                     {isSuperAdmin && (
                                         <>
