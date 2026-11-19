@@ -1,6 +1,7 @@
 package kit.penny.clientbus.server.crm;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
+import org.springframework.beans.factory.annotation.Qualifier;
 import kit.penny.clientbus.common.dto.crm.*;
 import kit.penny.clientbus.server.storage.IAttachmentStorage;
 import org.springframework.core.io.InputStreamResource;
@@ -17,7 +18,12 @@ import java.util.*;
 public class CrmClientController {
     private final CrmClientService service;
     private final IAttachmentStorage storage;
-    public CrmClientController(CrmClientService service, IAttachmentStorage storage) {
+    /**
+     * Квалификатор нужен: IAttachmentStorage в контексте два (component-scanned LocalIAttachmentStorage
+     * и настроенный bean attachmentStorage). Без имени подбор по типу неоднозначен и контекст не стартует.
+     */
+    public CrmClientController(CrmClientService service,
+            @Qualifier("attachmentStorage") IAttachmentStorage storage) {
         this.service=service; this.storage=storage;
     }
     @GetMapping("/projects/{id}/clients")

@@ -72,7 +72,19 @@ public class CrmClientAvatars {
     private final Fetch fetch;
     private final LongSupplier nanoTime;
 
-    public CrmClientAvatars(IAttachmentStorage storage) { this(storage, new Remote()); }
+    /**
+     * Единственный конструктор, который видит Spring: два остальных package-private и служат тестам.
+     * Аннотация обязательна — при нескольких конструкторах Spring сам не выбирает, каким собирать bean,
+     * и контекст приложения падает с «No default constructor found» (проверено тестом на полный
+     * контекст). Квалификатор тоже обязателен: IAttachmentStorage в контексте два — @Component на
+     * LocalIAttachmentStorage и настроенный bean attachmentStorage из StorageConfiguration; без имени
+     * Spring либо падает как ambiguous, либо (если параметр случайно совпал по имени) берёт хранилище
+     * без настроенного пути, и файлы уходят не туда.
+     */
+    @org.springframework.beans.factory.annotation.Autowired
+    public CrmClientAvatars(@org.springframework.beans.factory.annotation.Qualifier("attachmentStorage") IAttachmentStorage storage) {
+        this(storage, new Remote());
+    }
 
     CrmClientAvatars(IAttachmentStorage storage, Fetch fetch) { this(storage, fetch, System::nanoTime); }
 
