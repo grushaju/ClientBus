@@ -190,6 +190,7 @@ class UiSseGatewayTest {
         gateway.register(subject(),workspace,new Sink());Sink rejected=new Sink();gateway.register(subject(),workspace,rejected);
         until(()->rejected.closed);assertTrue(gateway.connectionCount()<=2);release.countDown();
     }
+    /** Отказывать по-прежнему может только предел экземпляра: он бережёт процесс, а не сотрудника. */
     @Test void connectionLimitRejectsBeforeAllocatingAnotherSession() {
         create(4,2,16,Duration.ofSeconds(2));gateway.pipelineHealthy();
         for(int i=0;i<8;i++) gateway.register(subject(),workspace,new Sink());
@@ -205,14 +206,19 @@ class UiSseGatewayTest {
      */
     @Test void ownLimitDisplacesTheOldestStreamInsteadOfRefusing() {
         create(4,2,16,Duration.ofSeconds(2),2);gateway.pipelineHealthy();
+        // Чужой поток заведомо древнее всех своих: если фильтр по сотруднику испортится,
+        // вытеснят именно его — и тест это увидит.
+        var foreign=new Sink();
+        gateway.register(AccessSubject.session(UUID.randomUUID(),Instant.now().plusSeconds(60)),workspace,foreign);
+        until(()->foreign.events.size()==1);
         var oldest=new Sink();var kept=new Sink();
         gateway.register(subject(),workspace,oldest,"tab-one");until(()->oldest.events.size()==1);
         gateway.register(subject(),workspace,kept,"tab-two");until(()->kept.events.size()==1);
         var fresh=new Sink();
         gateway.register(subject(),workspace,fresh,"tab-three");
         until(()->oldest.closed);
-        assertEquals(2,gateway.connectionCount());
-        assertFalse(kept.closed);until(()->fresh.events.size()==1);
+        assertEquals(3,gateway.connectionCount());
+        assertFalse(kept.closed);assertFalse(foreign.closed);until(()->fresh.events.size()==1);
         assertClosedReason("displaced");
         assertNull(metrics.find("clientbus.notification.sse.admissions").tag("result","limit").counter(),
                 "вытеснение не должно учитываться как отказ лимита");

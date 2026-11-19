@@ -127,7 +127,10 @@ export function startUiEventStream(options: UiStreamOptions): { stop: () => void
                 if (options.workspaceId) params.set('workspaceId', options.workspaceId)
                 const tab = tabId()
                 if (tab) params.set('tab', tab)
-                const query = params.size ? `?${params}` : ''
+                const encoded = params.toString()
+                // Не params.size: у свойства size поздняя поддержка (Firefox 139), а потеря
+                // workspaceId здесь молча меняет область событий — поток жил бы по ORGANIZATION.
+                const query = encoded ? `?${encoded}` : ''
                 const response = await (options.fetcher ?? fetch)('/api/events' + query, {
                     headers: { Authorization: `Bearer ${token}`, Accept: 'text/event-stream' },
                     signal: attempt.signal, cache: 'no-store', credentials: 'omit',

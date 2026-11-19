@@ -259,6 +259,8 @@ test('stream carries one stable tab id per browser tab', async () => {
     assert.equal(urls.length, 2)
     const tabs = urls.map(url => new URL('http://internal' + url).searchParams.get('tab'))
     assert.match(tabs[0], /^[A-Za-z0-9_-]{8,64}$/)
+    assert.equal(new URL('http://internal' + urls[0]).searchParams.get('workspaceId'), id,
+        'параметр вкладки не имеет права вытеснять workspaceId: без него поток жил бы wider-областью')
     assert.equal(tabs[0], tabs[1], 'переподключение той же вкладки обязано называть себя тем же id: сервер заменяет свой поток')
     assert.equal(store.size, 1)
 })

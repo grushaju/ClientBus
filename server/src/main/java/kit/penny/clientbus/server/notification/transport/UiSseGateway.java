@@ -137,7 +137,10 @@ public class UiSseGateway {
             }
             public void close() { emitter.complete(); }
         },tab);
-        emitter.onCompletion(connection::close); emitter.onTimeout(connection::close); emitter.onError(e -> connection.close());
+        // Таймаут асинхронного запроса — это истечение срока жизни потока (stream-ttl), а не
+        // закрытие клиентом: с тех пор закрытие отличается в метрике.
+        emitter.onCompletion(connection::close); emitter.onTimeout(() -> connection.close(UiTransportMetrics.CloseReason.EXPIRED));
+        emitter.onError(e -> connection.close());
         return emitter;
     }
 
