@@ -12,6 +12,7 @@ import kit.penny.clientbus.connector.api.model.ConnectorSendResult;
 import kit.penny.clientbus.connector.api.IChannelConnector;
 import kit.penny.clientbus.connector.api.model.SyncConversationHistoryResult;
 import kit.penny.clientbus.connector.api.error.ConnectorSendOutcomeUnknownException;
+import kit.penny.clientbus.connector.api.error.ConnectorSendRejectedException;
 import kit.penny.clientbus.connector.api.command.*;
 import kit.penny.clientbus.connector.telegram.client.TelegramClientContext;
 import kit.penny.clientbus.connector.telegram.client.TelegramClientManager;
@@ -108,6 +109,16 @@ public class TelegramChannelConnector
     public ConnectorSendResult handle(
             SendMessageCommand command
     ) {
+        var dispatched = new java.util.concurrent.atomic.AtomicBoolean();
+        try { return send(command, dispatched); }
+        catch (ConnectorSendOutcomeUnknownException unknown) { throw unknown; }
+        catch (RuntimeException failure) {
+            if (dispatched.get()) throw new ConnectorSendOutcomeUnknownException("Telegram send outcome unknown", failure);
+            throw new ConnectorSendRejectedException(failure.getMessage(), failure);
+        }
+    }
+
+    private ConnectorSendResult send(SendMessageCommand command, java.util.concurrent.atomic.AtomicBoolean dispatched) {
         validateCommand(command);
 
         long chatId =
@@ -131,19 +142,19 @@ public class TelegramChannelConnector
             case TEXT -> sendText(
                     telegramClient,
                     chatId,
-                    command
+                    command, dispatched
             );
 
             case IMAGE -> sendImage(
                     telegramClient,
                     chatId,
-                    command
+                    command, dispatched
             );
 
             case AUDIO -> sendAudio(
                     telegramClient,
                     chatId,
-                    command
+                    command, dispatched
             );
 
             default -> throw new IllegalArgumentException(
@@ -777,7 +788,7 @@ public class TelegramChannelConnector
     private ConnectorSendResult sendText(
             TelegramClient telegramClient,
             long chatId,
-            SendMessageCommand command
+            SendMessageCommand command, java.util.concurrent.atomic.AtomicBoolean dispatched
     ) {
         TdApi.InputMessageText content =
                 new TdApi.InputMessageText(
@@ -793,6 +804,7 @@ public class TelegramChannelConnector
 
         try {
 
+            dispatched.set(true);
             message =
                     telegramClient
                             .send(
@@ -827,7 +839,7 @@ public class TelegramChannelConnector
     private ConnectorSendResult sendImage(
             TelegramClient telegramClient,
             long chatId,
-            SendMessageCommand command
+            SendMessageCommand command, java.util.concurrent.atomic.AtomicBoolean dispatched
     ) {
         ConnectorAttachment attachment =
                 getSingleAttachment(
@@ -840,14 +852,14 @@ public class TelegramChannelConnector
                 chatId,
                 command,
                 attachment,
-                this::createImageContent
+                this::createImageContent, dispatched
         );
     }
 
     private ConnectorSendResult sendAudio(
             TelegramClient telegramClient,
             long chatId,
-            SendMessageCommand command
+            SendMessageCommand command, java.util.concurrent.atomic.AtomicBoolean dispatched
     ) {
         ConnectorAttachment attachment =
                 getSingleAttachment(
@@ -860,7 +872,7 @@ public class TelegramChannelConnector
                 chatId,
                 command,
                 attachment,
-                this::createAudioContent
+                this::createAudioContent, dispatched
         );
     }
 
@@ -869,7 +881,7 @@ public class TelegramChannelConnector
             long chatId,
             SendMessageCommand command,
             ConnectorAttachment attachment,
-            TelegramContentFactory contentFactory
+            TelegramContentFactory contentFactory, java.util.concurrent.atomic.AtomicBoolean dispatched
     ) {
         Path temporaryFile = null;
 
@@ -912,6 +924,7 @@ public class TelegramChannelConnector
 
             try {
 
+                dispatched.set(true);
                 message =
                         telegramClient
                                 .send(

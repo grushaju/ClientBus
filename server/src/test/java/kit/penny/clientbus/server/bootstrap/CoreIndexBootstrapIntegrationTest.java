@@ -207,6 +207,72 @@ class CoreIndexBootstrapIntegrationTest extends AbstractIntegrationTest {
                 () -> conversations.saveAndFlush(conversation(counterpart, null)));
     }
 
+    @Test
+    void correctPredicateWithTheWrongKeyIsRepaired() {
+        graph();
+        var counterpart = client(PROBE + "-wrong-key");
+        jdbc.execute("drop index dbo.conversation_channel_client_dialog_uix");
+        jdbc.execute("create unique index conversation_channel_client_dialog_uix on dbo.conversation"
+                + " (channelaccountid) where dialogexternalid is not null");
+        try {
+            bootstrap.run(null);
+            conversations.saveAndFlush(conversation(counterpart, PROBE + "-first"));
+            conversations.saveAndFlush(conversation(counterpart, PROBE + "-second"));
+            assertThrows(DataIntegrityViolationException.class,
+                    () -> conversations.saveAndFlush(conversation(counterpart, PROBE + "-first")));
+        } finally {
+            jdbc.execute("drop index if exists dbo.conversation_channel_client_dialog_uix");
+            jdbc.execute(CoreIndexBootstrap.DIALOG_UNIQUE.create());
+        }
+    }
+
+    @Test
+    void callbackExpressionWithoutThePendingIdIsNotAcceptedAsCanonical() {
+        jdbc.execute("drop index dbo.outboundsendcallback_slot_uix");
+        jdbc.execute("create unique index outboundsendcallback_slot_uix on dbo.outboundsendcallback"
+                + " (channelaccountid, coalesce(dialogexternalid,recipientexternalid))");
+        try {
+            bootstrap.run(null);
+            var account = UUID.randomUUID();
+            callback(account, PROBE + "-same-dialog", PROBE + "-first-pending");
+            callback(account, PROBE + "-same-dialog", PROBE + "-second-pending");
+            assertThrows(DataIntegrityViolationException.class,
+                    () -> callback(account, PROBE + "-same-dialog", PROBE + "-first-pending"));
+        } finally {
+            jdbc.execute("drop index if exists dbo.outboundsendcallback_slot_uix");
+            jdbc.execute(CoreIndexBootstrap.CALLBACK_SLOT_UNIQUE.create());
+        }
+    }
+
+    @Test
+    void concurrentStartupRepairsTheSameIndexOnlyOnce() {
+        jdbc.execute("drop index dbo.conversation_channel_client_nodialog_uix");
+        jdbc.execute("create index conversation_channel_client_nodialog_uix on dbo.conversation (channelaccountid)");
+        var start = new java.util.concurrent.CountDownLatch(1);
+        Runnable startup = () -> {
+            try { start.await(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new RuntimeException(e); }
+            bootstrap.run(null);
+        };
+        var first = java.util.concurrent.CompletableFuture.runAsync(startup);
+        var second = java.util.concurrent.CompletableFuture.runAsync(startup);
+        start.countDown();
+        java.util.concurrent.CompletableFuture.allOf(first, second).orTimeout(20, java.util.concurrent.TimeUnit.SECONDS).join();
+    }
+
+    @Test
+    void canonicalNameOnAnotherTableFailsWithoutDroppingThatIndex() {
+        jdbc.execute("drop index dbo.conversation_channel_client_dialog_uix");
+        jdbc.execute("create index conversation_channel_client_dialog_uix on dbo.outboundsendcallback (channelaccountid)");
+        try {
+            assertThrows(IllegalStateException.class, () -> bootstrap.run(null));
+            assertEquals("outboundsendcallback", jdbc.queryForObject("select tablename from pg_indexes"
+                    + " where schemaname='dbo' and indexname='conversation_channel_client_dialog_uix'", String.class));
+        } finally {
+            jdbc.execute("drop index if exists dbo.conversation_channel_client_dialog_uix");
+            jdbc.execute(CoreIndexBootstrap.DIALOG_UNIQUE.create());
+        }
+    }
+
     private void graph() {
         organization = organizations.saveAndFlush(TestDataFactory.organization());
         workspace = workspaces.saveAndFlush(TestDataFactory.workspace(organization));

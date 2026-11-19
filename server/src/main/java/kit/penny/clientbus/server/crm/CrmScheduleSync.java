@@ -26,6 +26,7 @@ public class CrmScheduleSync {
     private record Claim(CrmContext context, CrmScheduleScope scope, CrmWorkIntervalQuery query,
                          UUID actorId, UUID token, long generation) {}
     private record Subscription(UUID projectId, UUID organizationId, UUID actorId, CrmScheduleScope scope) {}
+    @org.springframework.beans.factory.annotation.Autowired(required=false) private CrmSyncProperties syncProperties;
     private final CrmStore store;
     private final JdbcTemplate jdbc;
     private final TransactionTemplate tx;
@@ -90,11 +91,17 @@ public class CrmScheduleSync {
         }
         return started;
     }
+    long runBackground(UUID projectId,UUID organization,UUID master,java.time.LocalDate from,java.time.LocalDate to,UUID actor) {
+        var claim=claim(projectId,organization,actor,new CrmScheduleScope(master,from,to),0);
+        if(claim==null)throw CrmException.conflict("CRM_CONNECTION_BUSY");
+        run(claim);
+        return claim.generation();
+    }
     private Claim claim(UUID projectId,UUID organization,UUID actor,CrmScheduleScope scope,long intervalMs) {
         return tx.execute(status -> {
             var project=store.projects.findByIdAndOrganizationId(projectId,organization).orElseThrow(CrmStore::notFound);
             store.em.refresh(project, LockModeType.PESSIMISTIC_WRITE);
-            store.guard.workspace(actor,project.getWorkspace().getId());
+            if (actor!=null) store.guard.workspace(actor,project.getWorkspace().getId());
             if (!project.isEnabled()) throw new CrmException(409,"CRM_CONFIGURATION_REQUIRED","Проект CRM отключён.");
             store.requireNetwork(project);store.credentials(project.getConnection()); registry.require(project.getProvider());
             if (intervalMs>0 && (!Boolean.TRUE.equals(jdbc.queryForObject("""
@@ -106,19 +113,19 @@ public class CrmScheduleSync {
                     || project.getConnection().getStatus()==CrmConnectionStatus.REAUTH_REQUIRED)) return null;
             var master=master(projectId, scope.masterId());
             CrmContext context=store.context(project);
-            Map<String,Object> subscription=new HashMap<>(scope.fields()); subscription.put("refreshActorId",actor.toString());
+            Map<String,Object> subscription=new HashMap<>(scope.fields()); if(actor!=null) subscription.put("refreshActorId",actor.toString()); else subscription.put("coordinator",true);
             initialize(context, "CONTROL", "WRITER:SCHEDULE", "CONTROL", Map.of());
             initialize(context, "SCOPE", "WORK_INTERVALS", scope.key(), subscription);
             jdbc.update("update crm.syncstate set scope=cast(? as jsonb) where projectid=? and dataset='WORK_INTERVALS' and scopekey=?",
                     JSON.writeValueAsString(subscription),projectId,scope.key());
             UUID token=UUID.randomUUID();
-            var generations=jdbc.query("""
+            var generations=jdbc.query(lease("""
                     update crm.syncstate set generation=generation+1,version=version+1,claimtoken=?,
                         claimuntil=clock_timestamp()+interval '120 seconds',connectionid=?,credentialversion=?,
                         contextversion=?,zonerevision=?,status='RUNNING',lastattemptat=clock_timestamp(),updatedat=clock_timestamp()
                     where projectid=? and dataset='WRITER:SCHEDULE' and scopekey='CONTROL'
                         and (claimuntil is null or claimuntil<=clock_timestamp()) returning generation
-                    """, (rs,index) -> rs.getLong(1), token, context.connectionId(), context.credentialVersion(),
+                    """), (rs,index) -> rs.getLong(1), token, context.connectionId(), context.credentialVersion(),
                     context.contextVersion(), context.zoneRevision(), projectId);
             if (generations.isEmpty()) {
                 if (intervalMs>0) return null;
@@ -171,7 +178,7 @@ public class CrmScheduleSync {
         try {
             CrmCredentials credentials=tx.execute(status -> {
                 var project=store.requireContext(claim.context());
-                store.guard.workspace(claim.actorId(),project.getWorkspace().getId()); requireClaim(claim);
+                if (claim.actorId()!=null) store.guard.workspace(claim.actorId(),project.getWorkspace().getId()); requireClaim(claim);
                 jdbc.update("update crm.syncstate set status='RUNNING',version=version+1,updatedat=clock_timestamp() where projectid=? and dataset='WORK_INTERVALS' and scopekey=? and generation=? and claimtoken=?",
                         project.getId(),claim.scope().key(),claim.generation(),claim.token());
                 health.set(CrmHealthCheck.begin(project.getConnection()));
@@ -182,6 +189,7 @@ public class CrmScheduleSync {
                 if (Thread.currentThread().isInterrupted()) throw new CrmFailure(CrmFailure.Code.TEMPORARY_FAILURE);
                 result=registry.require(credentials.provider).readWorkIntervals(access,claim.context().externalProjectId(),claim.query());
             }
+            if(Thread.currentThread().isInterrupted())throw new CrmFailure(CrmFailure.Code.TEMPORARY_FAILURE);
             if (result == null || !claim.context().externalProjectId().equals(result.externalProjectId()) || !claim.query().equals(result.scope()))
                 throw new CrmFailure(CrmFailure.Code.CONTEXT_MISMATCH);
             if (result.observedAt() == null || result.completeness() == null || result.observedAt().isAfter(Instant.now().plusSeconds(300)))
@@ -189,7 +197,7 @@ public class CrmScheduleSync {
             if (Thread.currentThread().isInterrupted()) throw new CrmFailure(CrmFailure.Code.TEMPORARY_FAILURE);
             tx.executeWithoutResult(status -> {
                 var project=store.requireContext(claim.context());
-                store.guard.workspace(claim.actorId(),project.getWorkspace().getId()); requireClaim(claim);
+                if (claim.actorId()!=null) store.guard.workspace(claim.actorId(),project.getWorkspace().getId()); requireClaim(claim);
                 writer.apply(project,master(project.getId(),claim.scope().masterId()),result,claim.generation());
                 health.get().apply(project.getConnection(),CrmConnectionStatus.CONNECTED,null);
                 store.em.flush(); requireClaim(claim);
@@ -271,7 +279,7 @@ public class CrmScheduleSync {
                     && connection.getId().equals(rs.getObject("connectionid",UUID.class))
                     && connection.getCredentialVersion() == rs.getLong("credentialversion")
                     && project.getContextVersion() == rs.getLong("contextversion") && project.getZoneRevision() == rs.getLong("zonerevision")
-                    && "SUCCEEDED".equals(status) && success != null && success.isAfter(Instant.now().minusSeconds(300));
+                    && "SUCCEEDED".equals(status) && success != null && success.isAfter(Instant.now().minus(syncProperties==null ? java.time.Duration.ofSeconds(300) : syncProperties.policy(CrmSyncProperties.Dataset.SCHEDULES).getStaleAfter()));
             return new CrmSyncStateDto("WORK_INTERVALS",status,attempt,success,success == null ? "NEVER_LOADED" : current ? "CURRENT" : "STALE",
                     completeness,error,rs.getLong("generation"),scope.fields(),successful,attempted);
         },project.getId(),scope.key());
@@ -282,5 +290,6 @@ public class CrmScheduleSync {
         return jdbc.query("select version from crm.syncstate where projectid=? and dataset='WRITER:SCHEDULE' and scopekey='CONTROL'",
                 (rs,index) -> rs.getLong(1),projectId).stream().findFirst().orElse(0L);
     }
+    private String lease(String sql){return sql.replace("interval '120 seconds'", "("+(syncProperties==null ? 120000L : syncProperties.getLeaseDuration().toMillis())+" * interval '1 millisecond')");}
     @PreDestroy public void close() { executor.shutdownNow(); }
 }

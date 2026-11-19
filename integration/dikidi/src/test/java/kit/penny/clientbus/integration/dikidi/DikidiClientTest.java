@@ -18,6 +18,35 @@ import static org.junit.jupiter.api.Assertions.*;
  * остановка одного потребителя не трогает другого (close только у сборки).
  */
 class DikidiClientTest {
+    @Test void closedClientAndRetiredSessionCannotIssueNewRequests() {
+        var fake = new Fake().login().queue(200, "first");
+        var client = new DikidiClient(settings(), () -> fake);
+        var credential = credential(java.util.UUID.randomUUID(), 1);
+        var saved = new java.util.concurrent.atomic.AtomicReference<DikidiClient.Session>();
+        client.execute(credential, Instant.now().plusSeconds(30), session -> {
+            saved.set(session);
+            return session.call("GET", "https://dikidi.ru/ru/", null, false, null, null);
+        });
+        client.invalidate(credential.connectionId());
+        int before = fake.addresses.size();
+        assertThrows(DikidiFailure.class, () -> saved.get().call("GET", "https://dikidi.ru/ru/", null, false, null, null));
+        client.close();
+        assertThrows(DikidiFailure.class, () -> client.execute(credential, null, session -> "unreachable"));
+        assertEquals(before, fake.addresses.size());
+    }
+    @Test void olderCredentialsCannotRecreateAnOldSessionAfterANewerVersionWasObserved() {
+        var first = new Fake().login().queue(200, "v1");
+        var second = new Fake().login().queue(200, "v2");
+        var count = new java.util.concurrent.atomic.AtomicInteger();
+        var id = java.util.UUID.randomUUID();
+        try (var client = new DikidiClient(settings(), () -> count.getAndIncrement() == 0 ? first : second)) {
+            client.execute(credential(id, 1), null, s -> s.call("GET", "https://dikidi.ru/ru/", null, false, null, null));
+            client.invalidate(id);
+            client.execute(credential(id, 2), null, s -> s.call("GET", "https://dikidi.ru/ru/", null, false, null, null));
+            assertThrows(DikidiFailure.class, () -> client.execute(credential(id, 1), null, s -> "stale"));
+            assertEquals(2, count.get());
+        }
+    }
     private static final class Fake implements DikidiTransport {
         final ArrayDeque<DikidiTransport.Response> responses = new ArrayDeque<>();
         final java.util.List<String> addresses = new java.util.ArrayList<>();

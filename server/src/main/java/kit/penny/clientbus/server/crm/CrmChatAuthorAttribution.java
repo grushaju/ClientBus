@@ -42,6 +42,7 @@ public class CrmChatAuthorAttribution {
         return projects
                 .findFirstByWorkspaceIdAndProviderAndArchivedFalseOrderByCreatedAtAsc(
                         workspace.getId(), CrmType.DIKIDI)
+                .filter(project -> project.getExternalId().equals(account.getExternalId()))
                 .flatMap(project -> employees.findByProjectIdAndExternalId(project.getId(), authorExternalId))
                 // Связь 13.6 («учётка ↔ сотрудник каталога», подтверждается человеком):
                 // строка учётки наследует маппинг цели; цепочки связей запрещены сервисом,

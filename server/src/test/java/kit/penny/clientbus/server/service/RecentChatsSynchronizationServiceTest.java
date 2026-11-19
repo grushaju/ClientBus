@@ -27,6 +27,36 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class RecentChatsSynchronizationServiceTest {
+    @Test void changingBatchesEventuallyServeEveryDialog() {
+        var batches = new ArrayList<List<PlatformConversationRequest>>();
+        for (int batch = 0; batch < 5; batch++) {
+            var dialogs = new ArrayList<PlatformConversationRequest>();
+            for (int item = 0; item < 100; item++) {
+                String external = Integer.toString(1000 + batch * 100 + item);
+                dialogs.add(conversation(external));
+                stubAccount(external, ClientAccountState.ACTIVE);
+            }
+            batches.add(dialogs);
+        }
+        for (int pass = 0; pass < 25; pass++) service.process(ChannelType.TELEGRAM, batches.get(pass % 5));
+        var captor = ArgumentCaptor.forClass(SyncConversationHistoryCommand.class);
+        verify(syncConversationHistoryCommandPublisher, times(500)).publish(eq(ChannelType.TELEGRAM), captor.capture());
+        assertEquals(500, captor.getAllValues().stream().map(SyncConversationHistoryCommand::conversationExternalId).distinct().count());
+    }
+
+    @Test void laterPassServesDialogsBeyondTheFirstTwenty() {
+        var dialogs = new ArrayList<PlatformConversationRequest>();
+        for (int i = 0; i < 40; i++) {
+            String external = Integer.toString(200 + i);
+            dialogs.add(conversation(external));
+            stubAccount(external, ClientAccountState.ACTIVE);
+        }
+        service.process(ChannelType.TELEGRAM, dialogs);
+        service.process(ChannelType.TELEGRAM, dialogs);
+        var captor = ArgumentCaptor.forClass(SyncConversationHistoryCommand.class);
+        verify(syncConversationHistoryCommandPublisher, times(40)).publish(eq(ChannelType.TELEGRAM), captor.capture());
+        assertEquals(40, captor.getAllValues().stream().map(SyncConversationHistoryCommand::conversationExternalId).distinct().count());
+    }
 
     private static final UUID ACCOUNT_ID =
             UUID.fromString("11111111-1111-1111-1111-111111111111");

@@ -73,7 +73,7 @@ public class ClientAccountService {
         if (request.clientId() != null) {
 
             client = clientRepository
-                    .findById(request.clientId())
+                    .findByIdForUpdate(request.clientId())
                     .orElseThrow(() ->
                             new EntityNotFoundException(
                                     "Client not found: "

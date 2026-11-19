@@ -57,6 +57,72 @@ async function fixture(t, name, props = {}, overrides = {}, admin = false, inten
         update: async value => { attributes = { ...attributes, ...value }; await act(async () => ui.update(render())) },
     }
 }
+
+test('CRM clients show provider aggregates and send sort changes to the paged API', async t => {
+    const reads = []
+    const f = await fixture(t, 'CrmClients', {}, { getCrmClients: async (_, query) => {
+        reads.push(query)
+        return page([{ ...client, visitCount: 5, totalSpent: '3500.25', averageCheck: '700.05', currency: 'RUB' },
+            { ...client, id: 'missing', displayName: 'Без статистики', visitCount: null, totalSpent: null }])
+    } })
+    assert.match(text(f.ui), /Кол-во визитов/)
+    assert.match(text(f.ui), /3.?500,25 RUB/)
+    assert.match(text(f.ui), /Нет данных/)
+    assert.equal(reads.at(-1).sort, 'NAME'); assert.equal(reads.at(-1).direction, 'ASC')
+    assert.equal(f.ui.root.findAllByType('select').length, 0)
+    assert.match(text(f.ui), /Средний чек/)
+    assert.match(text(f.ui), /700,05 RUB/)
+    await click(f.ui, /^Кол-во визитов/)
+    assert.equal(reads.at(-1).sort, 'VISITS'); assert.equal(reads.at(-1).direction, 'DESC')
+    await click(f.ui, /^Потраченная сумма/)
+    assert.equal(reads.at(-1).sort, 'SPENT')
+    await click(f.ui, /^Потраченная сумма/)
+    assert.equal(reads.at(-1).direction, 'ASC')
+    assert.equal(reads.at(-1).cursor, undefined)
+})
+
+test('client column headers change rendered order through the actual API wrapper', async t => {
+    const rows = [
+        { ...client, id: 'a', displayName: 'Анна', visitCount: 2, totalSpent: '9000.00', averageCheck: '4500.00', currency: 'RUB' },
+        { ...client, id: 'b', displayName: 'Борис', visitCount: 8, totalSpent: '1000.00', averageCheck: '125.00', currency: 'RUB' },
+        { ...client, id: 'c', displayName: 'Вера', visitCount: 5, totalSpent: '4000.00', averageCheck: '800.00', currency: 'RUB' },
+    ]
+    const requests = []
+    const realApi = load('../../api/crmApi.ts', { './apiClient': { apiFetch: async url => {
+        const query = new URL(url, 'http://test').searchParams
+        requests.push(query)
+        const sorted = [...rows].sort((a, b) => {
+            const difference = query.get('sort') === 'VISITS' ? a.visitCount - b.visitCount
+                : query.get('sort') === 'SPENT' ? Number(a.totalSpent) - Number(b.totalSpent)
+                : query.get('sort') === 'AVERAGE_CHECK' ? Number(a.averageCheck) - Number(b.averageCheck)
+                : a.displayName.localeCompare(b.displayName, 'ru')
+            return query.get('direction') === 'DESC' ? -difference : difference
+        })
+        return { json: async () => ({ ...page(sorted), syncState: state }) }
+    } } })
+    const f = await fixture(t, 'CrmClients', {}, { getCrmClients: realApi.getCrmClients })
+    const names = () => f.ui.root.findByType('tbody').findAllByType('tr').map(row => row.findByType('button').children.join(''))
+    assert.deepEqual(names(), ['Анна', 'Борис', 'Вера'])
+    const headers = f.ui.root.findAllByType('th')
+    assert.deepEqual(headers.slice(0, 4).map(header => header.findByType('button').children[0]), ['Клиент', 'Кол-во визитов', 'Средний чек', 'Потраченная сумма'])
+    await click(f.ui, /^Кол-во визитов/)
+    assert.deepEqual(names(), ['Борис', 'Вера', 'Анна'])
+    assert.equal(f.ui.root.findAllByType('th')[1].props['aria-sort'], 'descending')
+    await click(f.ui, /^Кол-во визитов/)
+    assert.deepEqual(names(), ['Анна', 'Вера', 'Борис'])
+    await click(f.ui, /^Потраченная сумма/)
+    assert.deepEqual(names(), ['Анна', 'Вера', 'Борис'])
+    await click(f.ui, /^Потраченная сумма/)
+    assert.deepEqual(names(), ['Борис', 'Вера', 'Анна'])
+    await click(f.ui, /^Средний чек/)
+    assert.deepEqual(names(), ['Анна', 'Вера', 'Борис'])
+    await click(f.ui, /^Средний чек/)
+    assert.deepEqual(names(), ['Борис', 'Вера', 'Анна'])
+    await click(f.ui, /^Клиент/)
+    assert.deepEqual(names(), ['Анна', 'Борис', 'Вера'])
+    assert.equal(requests.at(-1).get('sort'), 'NAME')
+    assert.equal(requests.at(-1).get('direction'), 'ASC')
+})
 test('a member explicitly confirms the first client link; matching phones never link automatically', async t => {
     const { ui, calls } = await fixture(t, 'CrmClientCard')
     await click(ui, 'Выбрать клиента ClientBus'); assert.deepEqual(calls, [])
@@ -454,6 +520,39 @@ test('own completed history stays readable when local storage is unavailable', a
     }, false, { readIntent() { throw Error('Storage unavailable') }, resolveIntent() { throw Error('Must not resolve without a matching pointer') } })
     await act(async () => f.ui.root.findByType('details').props.onToggle({ currentTarget: { open: true } }))
     assert.match(text(f.ui), /Читаемый автор/); assert.doesNotMatch(text(f.ui), /Storage unavailable/)
+})
+
+test('sync overview loads on demand and exposes errors and statistics coverage', async t => {
+    let reads = 0
+    const f = await fixture(t, 'CrmSyncOverview', {}, { getCrmSyncOverview: async () => {
+        reads++
+        return { enabled: true, clients: { total: 100, missing: 20, fresh: 75, oldestat: null },
+            stored: { masters: 7, services: 19, appointments: 123, intervals: 42 },
+            datasets: [{ dataset: 'CLIENTS', scopes: 10, completed: 4, pending: 3, running: 2, failed: 1, due: 3,
+                lastattemptat: '2026-11-20T01:00:00Z', nextat: '2026-11-20T01:10:00Z',
+                datefrom: '2026-11-01', dateto: '2026-11-30', lastsuccessat: null, errorcode: 'CRM_REAUTH_REQUIRED' }] }
+    } })
+    assert.equal(reads, 0)
+    await act(async () => f.ui.root.findByType('details').props.onToggle({ currentTarget: { open: true } }))
+    assert.equal(reads, 1)
+    assert.match(text(f.ui), /75.*100/)
+    assert.match(text(f.ui), /Загружено в проект/)
+    const cells = f.ui.root.findByType('tbody').findAllByType('td')
+    assert.deepEqual(cells.slice(1, 6).map(cell => cell.children[0]), ['10', '4', '3', '2', '1'])
+    assert.match(text(f.ui), /123/)
+    assert.match(text(f.ui), /CRM_REAUTH_REQUIRED/)
+    assert.equal(cells[6].children[0], '3')
+    assert.match(text(f.ui), /2026-11-01/)
+    assert.match(text(f.ui), /Наступил срок запуска/)
+    await click(f.ui, 'Обновить состояние синхронизации')
+    assert.equal(reads, 2)
+})
+
+test('client statistics refresh requests a separate batch', async t => {
+    const f = await fixture(t, 'CrmClients')
+    await click(f.ui, 'Обновить статистику')
+    assert.equal(f.calls.filter(c => c[0] === 'refresh').length, 1)
+    assert.ok(JSON.stringify(f.calls).includes('CLIENT_STATISTICS'))
 })
 
 test('CRM card avatar shows mirrored bytes and revokes the object URL on unmount', async t => {

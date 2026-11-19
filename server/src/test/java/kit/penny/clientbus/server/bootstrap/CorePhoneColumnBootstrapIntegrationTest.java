@@ -52,6 +52,59 @@ class CorePhoneColumnBootstrapIntegrationTest extends AbstractIntegrationTest {
 
     private OrganizationEntity organization;
 
+    @Test
+    void anEmptyTableDoesNotProveAnIncorrectGeneratedExpressionIsCorrect() {
+        jdbc.execute("alter table dbo.clientphone drop column normalizedphone");
+        jdbc.execute("alter table dbo.clientphone add column normalizedphone text generated always as (null::text) stored");
+        try {
+            bootstrap.run(null);
+            organization = organizations.saveAndFlush(TestDataFactory.organization());
+            var client = new ClientEntity(PROBE + "future", "Probe", organization);
+            client.setPhoneList(List.of("+7 (999) 765-43-21"));
+            clients.saveAndFlush(client);
+            assertEquals("79997654321", jdbc.queryForObject("select normalizedphone from dbo.clientphone where clientid=?",String.class,client.getId()));
+        } finally { restoreNormalizedColumn(); }
+    }
+
+    @Test
+    void validationModeDoesNotRepairMissingIndex() {
+        jdbc.execute("drop index dbo.clientphone_tail_ix");
+        try {
+            var validation = new CorePhoneColumnBootstrap(jdbc,false,java.time.Duration.ofSeconds(1),java.time.Duration.ofSeconds(5));
+            org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,()->validation.run(null));
+            assertTrue(!indexPresent("clientphone_tail_ix"));
+        } finally { bootstrap.run(null); }
+    }
+
+    @Test
+    void clientDeletionLockConflictsWithForeignKeyKeyShare() {
+        organization = organizations.saveAndFlush(TestDataFactory.organization());
+        var client = clients.saveAndFlush(new ClientEntity(PROBE + "lock", "Probe", organization));
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            assertTrue(clients.findByIdForUpdate(client.getId()).isPresent());
+            try (var connection = jdbc.getDataSource().getConnection(); var statement = connection.createStatement()) {
+                statement.execute("set lock_timeout='200ms'");
+                var failure = org.junit.jupiter.api.Assertions.assertThrows(java.sql.SQLException.class,
+                        () -> statement.executeQuery("select clientid from dbo.client where clientid='" + client.getId() + "' for key share"));
+                assertEquals("55P03", failure.getSQLState());
+            } catch (java.sql.SQLException failure) {
+                throw new AssertionError(failure);
+            }
+        });
+    }
+
+    @Test
+    void wrongIndexDefinitionIsRepairedWithoutRebuildingColumns() {
+        markColumn();
+        jdbc.execute("drop index dbo.clientphone_tail_ix");
+        jdbc.execute("create index clientphone_tail_ix on dbo.clientphone(clientid) where phonetail is not null");
+        bootstrap.run(null);
+        assertEquals("phonetail", jdbc.queryForObject("select pg_get_indexdef('dbo.clientphone_tail_ix'::regclass,1,true)",String.class));
+        assertNull(jdbc.queryForObject("select pg_get_expr(indpred,indrelid) from pg_index where indexrelid='dbo.clientphone_tail_ix'::regclass",String.class));
+        bootstrap.run(null);
+        assertEquals(MARK, columnMark());
+    }
+
     @AfterEach
     void cleanProbes() {
         jdbc.update("delete from dbo.clientphone where clientid in"
@@ -223,19 +276,18 @@ class CorePhoneColumnBootstrapIntegrationTest extends AbstractIntegrationTest {
      * тот риск, который выглядит как «всё работает, просто медленнее».
      */
     @Test
-    void aColumnWrittenDifferentlyButComputingTheSameValuesIsLeftAlone() {
+    void anUnrecognizedExpressionIsReplacedEvenIfExistingValuesAgree() {
         swapNormalizedExpression("^[0123456789]{7,15}$"); // тот же смысл, записанный иначе
         try {
             assertTrue(countProbeRows() > 0, "проба не состоялась: сверять значения не с чем");
-            assertTrue(!CorePhoneColumnBootstrap.shape(storedExpression())
-                    .equals(CorePhoneColumnBootstrap.shape(CorePhoneColumnBootstrap.NORMALIZED_EXPRESSION)),
+            assertTrue(!shape(storedExpression())
+                    .equals(shape(CorePhoneColumnBootstrap.NORMALIZED_EXPRESSION)),
                     "проба не состоялась: запись совпала с ожидаемой");
             markColumn();
 
             bootstrap.run(null);
 
-            assertEquals(MARK, columnMark(),
-                    "колонка переписана ради способа записи, хотя значения совпадают");
+            assertNull(columnMark());
         } finally {
             restoreNormalizedColumn();
         }
@@ -256,8 +308,8 @@ class CorePhoneColumnBootstrapIntegrationTest extends AbstractIntegrationTest {
 
             assertNull(columnMark(), "колонка с другим правилом осталась на месте: "
                     + "новые клиенты выпадали бы из кандидатов молча");
-            assertEquals(CorePhoneColumnBootstrap.shape(CorePhoneColumnBootstrap.NORMALIZED_EXPRESSION),
-                    CorePhoneColumnBootstrap.shape(storedExpression()), "колонка не вернулась к правилу");
+            assertEquals(shape(CorePhoneColumnBootstrap.NORMALIZED_EXPRESSION),
+                    shape(storedExpression()), "колонка не вернулась к правилу");
         } finally {
             restoreNormalizedColumn();
         }
@@ -369,9 +421,23 @@ class CorePhoneColumnBootstrapIntegrationTest extends AbstractIntegrationTest {
                 "select case when to_regclass(?) is null then 0 else 1 end", Integer.class, "dbo." + index));
     }
 
-    private static String shape(String value) {
-        // Сравнение формы выражения берется у самого бутстрапа: тест обязан проверять ровно
-        // тот компаратор, которым он сверяет колонку при старте, а не свой собственный.
-        return CorePhoneColumnBootstrap.shape(value);
+    static String shape(String value) {
+        if (value == null) return "";
+        // Spaces, parentheses and letter case inside SQL literals are data, not formatting.
+        // In particular removing a space from translate's alphabet changes phone normalization.
+        var literals = java.util.regex.Pattern.compile("'(?:''|[^'])*'").matcher(value);
+        value = literals.replaceAll(match -> "literal_" + java.util.HexFormat.of().formatHex(
+                match.group().getBytes(java.nio.charset.StandardCharsets.UTF_8)) + "_end");
+        return value.toLowerCase(Locale.ROOT)
+                .replace("::text", "")
+                // Кавычки базы бывают трёх видов: строковый литерал, идентификатор функции
+                // (right депарсится как "right") и обратные кавычки из чужих дампов.
+                .replace("'", "")
+                .replace("`", "")
+                .replace("\"", "")
+                .replaceAll("\\s", "")
+                .replace("elsenull", "")
+                .replace("(", "")
+                .replace(")", "");
     }
 }

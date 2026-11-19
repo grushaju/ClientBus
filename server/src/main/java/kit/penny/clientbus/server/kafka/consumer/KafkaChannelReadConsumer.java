@@ -29,14 +29,18 @@ public class KafkaChannelReadConsumer {
 
     private final ChannelAvailabilityService channelAvailabilityService;
 
+    private final org.springframework.kafka.core.KafkaTemplate<String, Object> kafkaTemplate;
+
     public KafkaChannelReadConsumer(
             ChannelConnectorRegistry channelConnectorRegistry,
-            ChannelAvailabilityService channelAvailabilityService
+            ChannelAvailabilityService channelAvailabilityService,
+            org.springframework.kafka.core.KafkaTemplate<String, Object> kafkaTemplate
     ) {
         this.channelConnectorRegistry =
                 channelConnectorRegistry;
         this.channelAvailabilityService =
                 channelAvailabilityService;
+        this.kafkaTemplate = kafkaTemplate;
     }
 
     @KafkaListener(
@@ -80,14 +84,22 @@ public class KafkaChannelReadConsumer {
                         channelType
                 );
 
-        connector.handle(
+        var next = connector.continueRead(
                 new MarkMessagesReadCommand(
                         kafkaCommand.channelAccountId(),
                         kafkaCommand.recipientExternalId(),
                         kafkaCommand.lastReadExternalId(),
-                        kafkaCommand.dialogExternalId()
+                        kafkaCommand.dialogExternalId(),
+                        kafkaCommand.beforeExternalId()
                 )
         );
+        if (next != null) {
+            var continuation = new ChannelReadKafkaCommand(next.channelAccountId(), next.recipientExternalId(),
+                    next.lastReadExternalId(), next.dialogExternalId(), next.beforeExternalId());
+            kafkaTemplate.send(topic, next.channelAccountId().toString(), new KafkaEvent<>(
+                    java.util.UUID.randomUUID(), KafkaEventType.CHANNEL_READ, 1, java.time.Instant.now(),
+                    event.correlationId(), continuation)).join();
+        }
     }
 
     private void validateEvent(

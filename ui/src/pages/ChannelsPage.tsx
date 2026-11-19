@@ -304,7 +304,8 @@ function ChannelsPageContent() {
 
     function handleEnable(
         channel: ChannelDto,
-    ) {        if (!channel.account) {
+    ) {
+        if (!channel.account) {
             setError(
                 'У канала отсутствует подключённый аккаунт.',
             )

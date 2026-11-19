@@ -28,9 +28,26 @@ class DikidiRuntimeGuardTest {
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
             connection.createStatement().execute("create schema crm");
             connection.createStatement().execute(DikidiRuntimeGuard.TABLE_DDL);
+            connection.createStatement().execute("create table crm.connection(id uuid primary key,credentialversion bigint,status text)");
         }
         jdbc = new JdbcTemplate(new org.springframework.jdbc.datasource.SingleConnectionDataSource(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(), true));
+    }
+    @Test void revokedVersionAndDisabledConnectionCannotStartExternalWork() {
+        var id = UUID.randomUUID();
+        jdbc.update("insert into crm.connection values(?,1,'CONNECTED')", id);
+        var guard = new DikidiRuntimeGuard(jdbc, () -> { });
+        guard.requireUsable(id, 1);
+        jdbc.update("update crm.connection set credentialversion=2 where id=?", id);
+        assertThrows(DikidiFailure.class, () -> guard.requireUsable(id, 1));
+        guard.requireUsable(id, 2);
+        jdbc.update("update crm.connection set status='DISABLED' where id=?", id);
+        assertThrows(DikidiFailure.class, () -> guard.requireUsable(id, 2));
+    }
+    @Test void unavailableStorageNeverAllowsUnfencedExternalWork() {
+        var guard = new DikidiRuntimeGuard(jdbc, () -> { throw new IllegalStateException("storage unavailable"); });
+        var error = assertThrows(DikidiFailure.class, () -> guard.requireUsable(UUID.randomUUID()));
+        assertTrue(error.notDispatched());
     }
     @Test void oneOwnerHoldsWhileSecondDegradesAndStaleLeaseIsReclaimable() {
         var connection = UUID.randomUUID();
@@ -98,10 +115,10 @@ class DikidiRuntimeGuardTest {
         first.release();
         assertEquals(0, jdbc.queryForObject("select count(*) from crm.connectionruntime where connectionid=?", Integer.class, mine));
     }
-    @Test void storageNotReadyProceedsWithoutDegradationAndWithoutClaims() {
+    @Test void storageNotReadyRefusesExternalWorkWithoutClaims() {
         var connection = UUID.randomUUID();
         var guard = new DikidiRuntimeGuard(jdbc, () -> { throw new IllegalStateException("not ready"); });
-        assertDoesNotThrow(() -> guard.requireUsable(connection));
+        assertThrows(DikidiFailure.class, () -> guard.requireUsable(connection));
         assertEquals(0, jdbc.queryForObject("select count(*) from crm.connectionruntime where connectionid=?",
                 Integer.class, connection));
     }

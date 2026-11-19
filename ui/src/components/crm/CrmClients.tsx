@@ -31,6 +31,7 @@ export function CrmClientCard({ project, id, canManage, close, changed }: { proj
         {(data.error || action.error) && <p role="alert" className="crm-error">{action.error || data.error} <button type="button" onClick={data.reload}>Перечитать карточку</button></p>}
         {row ? <><div className="crm-client-card-head"><CrmClientAvatar id={row.id} avatarUrl={row.avatarUrl} displayName={row.displayName} size={56} /><h3>{row.displayName}</h3></div><p>{project.displayName} · ID {row.externalId}</p>
             {Object.entries(row.contacts).map(([key, value]) => <p key={key}>{key}: {value}</p>)}
+            <p>Визиты: {row.visitCount ?? 'Нет данных'} · Средний чек: {clientMoney(row, row.averageCheck)} · Потрачено: {clientMoney(row, row.totalSpent)}</p>
             {row.clientId ? <p>Связан с <Link to={'/clients/' + encodeURIComponent(row.clientId)}>клиентом ClientBus</Link></p> : <p>Без связи с ClientBus</p>}
             {row.mappingUpdatedAt && <p>Связь изменена: {new Date(row.mappingUpdatedAt).toLocaleString('ru-RU')} · {row.mappingReason} · автор {row.mappingUpdatedBy}</p>}
             <Link to={'/crm?' + new URLSearchParams({ tab: 'appointments', workspace: project.workspaceId, project: project.id, crmClientId: row.id })}>Визиты клиента</Link>
@@ -53,21 +54,47 @@ export function CrmClientCard({ project, id, canManage, close, changed }: { proj
         </> : !data.error && <p>Загрузка клиента…</p>}
     </CrmDialog>
 }
-function ClientRows({ project, query, unlinked, canManage }: { project: api.CrmProject; query: string; unlinked: boolean; canManage: boolean }) {
-    const data = useCrmPages('crm-clients:' + project.id + ':' + query + ':' + unlinked, project.workspaceId, (signal, cursor) => api.getCrmClients(project.id, { q: query, unlinked, cursor }, signal))
+type ClientSort = 'NAME' | 'VISITS' | 'SPENT' | 'AVERAGE_CHECK'
+function clientMoney(row: api.CrmClient, value: string | null | undefined) {
+    if (value == null) return 'Нет данных'
+    const [whole, fraction] = value.split('.')
+    const amount = new Intl.NumberFormat('ru-RU').format(BigInt(whole)) + (fraction ? ',' + fraction : '')
+    return row.currency ? amount + ' ' + row.currency : amount
+}
+function ClientRows({ project, query, unlinked, canManage, sort, direction, changeSort }: { project: api.CrmProject; query: string; unlinked: boolean; canManage: boolean; sort: ClientSort; direction: 'ASC' | 'DESC'; changeSort: (sort: ClientSort) => void }) {
+    const data = useCrmPages('crm-clients:' + project.id + ':' + query + ':' + unlinked + ':' + sort + ':' + direction, project.workspaceId, (signal, cursor) => api.getCrmClients(project.id, { q: query, unlinked, cursor, sort, direction }, signal))
     const action = useCrmAction('refresh-clients:' + project.id, project.workspaceId)
     const [selected, setSelected] = useState<string | null>(null)
+    const sortHeader = (column: ClientSort, label: string) => <th scope="col" aria-sort={sort === column ? direction === 'ASC' ? 'ascending' : 'descending' : 'none'}>
+        <button type="button" className="crm-column-sort" onClick={() => changeSort(column)}>{label}<span aria-hidden="true">{sort === column ? direction === 'ASC' ? ' ↑' : ' ↓' : ' ↕'}</span></button></th>
     return <><button type="button" className="ui-button ui-button-secondary" disabled={action.busy || project.archived || !project.enabled || ['DISABLED', 'REAUTH_REQUIRED'].includes(project.connectionState)}
         onClick={() => void action.run(signal => api.refreshCrmData(project.id, { dataset: 'CLIENTS' }, signal), data.reload)}>Обновить клиентов</button>
+        <button type="button" className="ui-button ui-button-secondary" disabled={action.busy || project.archived || !project.enabled || ['DISABLED', 'REAUTH_REQUIRED'].includes(project.connectionState)}
+            onClick={() => void action.run(signal => api.refreshCrmData(project.id, { dataset: 'CLIENT_STATISTICS' }, signal), data.reload)}>Обновить статистику</button>
         {action.error && <p role="alert" className="crm-error">{action.error}</p>}<CrmStatus state={data.page?.dataState} archived={project.archived} />
-        <ul className="crm-masters">{data.page?.items.map(row => <li className="crm-master" key={row.id}><div><button type="button" className="crm-text-button" onClick={() => setSelected(row.id)}>{row.displayName}</button>
-            <small>{Object.values(row.contacts).join(' · ') || 'Контакты не указаны'}</small></div><span>{row.clientId ? 'Связан с ClientBus' : 'Без связи'}{row.lastObservedAt && ' · ' + new Date(row.lastObservedAt).toLocaleString('ru-RU')}</span></li>)}</ul>
+        {data.page && data.page.items.length > 0 && <div className="crm-clients-table-scroll"><table className="crm-masters crm-clients-table">
+            <thead><tr>{sortHeader('NAME', 'Клиент')}{sortHeader('VISITS', 'Кол-во визитов')}{sortHeader('AVERAGE_CHECK', 'Средний чек')}{sortHeader('SPENT', 'Потраченная сумма')}<th scope="col">Связь и обновление</th></tr></thead>
+            <tbody>{data.page.items.map(row => <tr key={row.id}><td><button type="button" className="crm-text-button" onClick={() => setSelected(row.id)}>{row.displayName}</button>
+                <small>{Object.values(row.contacts).join(' · ') || 'Контакты не указаны'}</small></td>
+                <td className="crm-client-number">{row.visitCount ?? 'Нет данных'}</td><td className="crm-client-number">{clientMoney(row, row.averageCheck)}</td><td className="crm-client-number">{clientMoney(row, row.totalSpent)}</td>
+                <td><span>{row.clientId ? 'Связан с ClientBus' : 'Без связи'}</span>{row.statisticsUpdatedAt
+                    ? <small>Статистика: {new Date(row.statisticsUpdatedAt).toLocaleString('ru-RU')}</small>
+                    : row.lastObservedAt && <small>{new Date(row.lastObservedAt).toLocaleString('ru-RU')}</small>}</td></tr>)}</tbody>
+        </table></div>}
+        {data.page && data.page.items.length > 0 && data.page.items.every(row => row.averageCheck == null)
+            && <p role="status">Средний чек ещё не загружен. Нажмите «Обновить статистику» — сначала обновятся клиенты без статистики и с самыми старыми данными.</p>}
         <CrmPageStatus data={data} empty="Клиенты по этим условиям не найдены." />
         {selected && <CrmClientCard key={selected} id={selected} project={project} canManage={canManage} close={() => setSelected(null)} changed={data.reload} />}</>
 }
 export function CrmClients({ project, canManage }: { project: api.CrmProject; canManage: boolean }) {
+    const [sort, setSort] = useState<ClientSort>('NAME'), [direction, setDirection] = useState<'ASC' | 'DESC'>('ASC')
+    const changeSort = (column: ClientSort) => {
+        setSort(column)
+        setDirection(sort === column ? direction === 'ASC' ? 'DESC' : 'ASC' : column === 'NAME' ? 'ASC' : 'DESC')
+    }
     const [input, setInput] = useState(''), [unlinked, setUnlinked] = useState(false), query = useCrmSearch(input)
     return <><div className="crm-toolbar"><label className="crm-search">Найти клиента CRM<input type="search" maxLength={160} value={input} onChange={event => setInput(event.target.value)} /></label>
-        <label className="crm-checkbox"><input type="checkbox" checked={unlinked} onChange={event => setUnlinked(event.target.checked)} />Без связи с ClientBus</label></div>
-        <ClientRows key={project.id + ':' + query + ':' + unlinked} project={project} query={query} unlinked={unlinked} canManage={canManage} /></>
+        <label className="crm-checkbox"><input type="checkbox" checked={unlinked} onChange={event => setUnlinked(event.target.checked)} />Без связи с ClientBus</label>
+        </div>
+        <ClientRows key={project.id + ':' + query + ':' + unlinked + ':' + sort + ':' + direction} project={project} query={query} unlinked={unlinked} canManage={canManage} sort={sort} direction={direction} changeSort={changeSort} /></>
 }

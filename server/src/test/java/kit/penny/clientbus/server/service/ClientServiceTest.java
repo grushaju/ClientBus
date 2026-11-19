@@ -853,7 +853,7 @@ class ClientServiceTest {
         ClientAccountDto expectedDto =
                 mock(ClientAccountDto.class);
 
-        when(clientRepository.findById(clientId))
+        when(clientRepository.findByIdForUpdate(clientId))
                 .thenReturn(Optional.of(client));
 
         when(clientAccountRepository
@@ -882,7 +882,7 @@ class ClientServiceTest {
         assertSame(expectedDto, result);
 
         verify(clientRepository)
-                .findById(clientId);
+                .findByIdForUpdate(clientId);
 
         verify(currentUserService)
                 .getCurrentOrganizationId();
@@ -912,7 +912,7 @@ class ClientServiceTest {
                         "Ivan"
                 );
 
-        when(clientRepository.findById(clientId))
+        when(clientRepository.findByIdForUpdate(clientId))
                 .thenReturn(Optional.empty());
 
         EntityNotFoundException exception =
@@ -930,7 +930,7 @@ class ClientServiceTest {
         );
 
         verify(clientRepository)
-                .findById(clientId);
+                .findByIdForUpdate(clientId);
 
         verifyNoInteractions(currentUserService);
         verifyNoInteractions(clientAccountRepository);
@@ -949,7 +949,7 @@ class ClientServiceTest {
                         "Ivan"
                 );
 
-        when(clientRepository.findById(clientId))
+        when(clientRepository.findByIdForUpdate(clientId))
                 .thenReturn(Optional.of(client));
 
         when(clientAccountRepository
@@ -977,7 +977,7 @@ class ClientServiceTest {
         );
 
         verify(clientRepository)
-                .findById(clientId);
+                .findByIdForUpdate(clientId);
 
         verify(currentUserService)
                 .getCurrentOrganizationId();
@@ -1016,7 +1016,7 @@ class ClientServiceTest {
         ClientAccountDto expectedDto =
                 mock(ClientAccountDto.class);
 
-        when(clientRepository.findById(clientId))
+        when(clientRepository.findByIdForUpdate(clientId))
                 .thenReturn(Optional.of(client));
 
         when(clientAccountRepository.findById(accountId))
@@ -1051,7 +1051,7 @@ class ClientServiceTest {
         );
 
         verify(clientRepository)
-                .findById(clientId);
+                .findByIdForUpdate(clientId);
 
         verify(currentUserService)
                 .getCurrentOrganizationId();
@@ -1075,7 +1075,7 @@ class ClientServiceTest {
     @Test
     void assignClientAccount_clientNotFound() {
 
-        when(clientRepository.findById(clientId))
+        when(clientRepository.findByIdForUpdate(clientId))
                 .thenReturn(Optional.empty());
 
         EntityNotFoundException exception =
@@ -1093,7 +1093,7 @@ class ClientServiceTest {
         );
 
         verify(clientRepository)
-                .findById(clientId);
+                .findByIdForUpdate(clientId);
 
         verifyNoInteractions(clientAccountRepository);
         verifyNoInteractions(conversationRepository);
@@ -1102,7 +1102,7 @@ class ClientServiceTest {
     @Test
     void assignClientAccount_accountNotFound() {
 
-        when(clientRepository.findById(clientId))
+        when(clientRepository.findByIdForUpdate(clientId))
                 .thenReturn(Optional.of(client));
 
         when(clientAccountRepository.findById(accountId))
@@ -1126,7 +1126,7 @@ class ClientServiceTest {
         );
 
         verify(clientRepository)
-                .findById(clientId);
+                .findByIdForUpdate(clientId);
 
         verify(currentUserService)
                 .getCurrentOrganizationId();
@@ -1144,7 +1144,7 @@ class ClientServiceTest {
         ClientAccountDto accountDto =
                 mock(ClientAccountDto.class);
 
-        when(clientRepository.findById(clientId))
+        when(clientRepository.findByIdForUpdate(clientId))
                 .thenReturn(Optional.of(client));
 
         when(clientAccountRepository.findById(accountId))
@@ -1184,7 +1184,7 @@ class ClientServiceTest {
 
     @Test
     void assignClientAccount_alreadyAssignedButInaccessible_denied() {
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
+        when(clientRepository.findByIdForUpdate(clientId)).thenReturn(Optional.of(client));
         when(clientAccountRepository.findById(accountId)).thenReturn(Optional.of(account));
         when(currentUserService.getCurrentOrganizationId()).thenReturn(organizationId);
 
@@ -1205,7 +1205,7 @@ class ClientServiceTest {
 
         account.setClient(anotherClient);
 
-        when(clientRepository.findById(clientId))
+        when(clientRepository.findByIdForUpdate(clientId))
                 .thenReturn(Optional.of(client));
 
         when(clientAccountRepository.findById(accountId))
@@ -1249,7 +1249,7 @@ class ClientServiceTest {
         unassignedAccount.setChannelType(ChannelType.TELEGRAM);
         unassignedAccount.setExternalId("telegram-123");
 
-        when(clientRepository.findById(clientId))
+        when(clientRepository.findByIdForUpdate(clientId))
                 .thenReturn(Optional.of(client));
 
         when(clientAccountRepository.findById(accountId))
@@ -1307,7 +1307,7 @@ class ClientServiceTest {
         when(clientAccountRepository.findById(accountId))
                 .thenReturn(Optional.of(account));
 
-        when(clientRepository.findById(newClientId))
+        when(clientRepository.findByIdForUpdate(newClientId))
                 .thenReturn(Optional.of(newClient));
 
         when(conversationRepository
@@ -1342,7 +1342,7 @@ class ClientServiceTest {
                 .findById(accountId);
 
         verify(clientRepository)
-                .findById(newClientId);
+                .findByIdForUpdate(newClientId);
 
         verify(currentUserService)
                 .getCurrentOrganizationId();
@@ -1410,7 +1410,7 @@ class ClientServiceTest {
                 ))
                 .thenReturn(List.of(mock(ConversationEntity.class)));
 
-        when(clientRepository.findById(newClientId))
+        when(clientRepository.findByIdForUpdate(newClientId))
                 .thenReturn(Optional.empty());
 
         EntityNotFoundException exception =
@@ -1435,7 +1435,7 @@ class ClientServiceTest {
                         accountId,
                         employeeId
                 );
-        verify(clientRepository).findById(newClientId);
+        verify(clientRepository).findByIdForUpdate(newClientId);
 
         verify(clientAccountMapper, never()).toDto(any());
     }

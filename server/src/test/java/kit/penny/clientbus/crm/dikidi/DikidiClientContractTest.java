@@ -8,6 +8,38 @@ import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class DikidiClientContractTest {
+    static String statisticsHtml() {
+        return "<div class='indent'><div class='form-group row'><div class='col-xs-4'>Всего записей:</div><div class='col-xs-8'>12</div></div>"
+                +"<div class='form-group row'><div class='col-xs-4'>Потрачено:</div><div class='col-xs-8'>0.00 RUB</span></div></div>"
+                +"<div class='form-group row'><div class='col-xs-4'>Средний чек:</div><div class='col-xs-8'>2 625.00 RUB</div></div></div>"
+                +"<script>throw new Error('never execute');</script>";
+    }
+    @Test void statisticsTabProvidesTheAverageAndCalculatedTotalInsteadOfTheZeroSpentField() {
+        var stats=DikidiClientStatisticsHtml.parse(statisticsHtml());
+        assertEquals(12L,stats.visits()); assertEquals(new java.math.BigDecimal("2625.00"),stats.averageCheck());
+        assertEquals(new java.math.BigDecimal("31500.00"),stats.totalSpent()); assertEquals("RUB",stats.currency());
+        var row=read("{\"html\":\""+ROW+"\"}",null,true).items().getFirst();
+        assertEquals(stats.averageCheck(),row.averageCheck()); assertEquals(stats.totalSpent(),row.totalSpent());
+        assertEquals(12L,row.visitCount()); assertEquals("RUB",row.statisticsCurrency());
+        for (String bad:List.of(statisticsHtml().replace("Средний чек:","Другое:"),statisticsHtml().replace("2 625.00 RUB","-1 RUB"),
+                statisticsHtml().replace("2 625.00 RUB","1.234 RUB"),statisticsHtml()+statisticsHtml()))
+            assertThrows(CrmFailure.class,()->DikidiClientStatisticsHtml.parse(bad));
+        assertEquals(java.math.BigDecimal.ZERO.setScale(2),DikidiClientStatisticsHtml.parse(statisticsHtml().replace(">12<",">0<")).totalSpent());
+    }
+    @Test void rowAggregatesUseTheObservedAppointmentsAndSpentCells() {
+        var row=DikidiClientsHtml.parse("<tr id='item-123'><td class='username'><div class='line-name'><a>Client</a></div></td>"
+                + "<td class='appointments text-center'>5</td><td class='middlecheck'>700</td>"
+                + "<td class='spent text-center'>3&nbsp;500,25</td></tr>").getFirst();
+        assertEquals(5L,row.visitCount());
+        assertEquals(new java.math.BigDecimal("3500.25"),row.totalSpent());
+        assertTrue(row.presentFields().containsAll(Set.of("visitCount","totalSpent")));
+        assertNull(DikidiClientsHtml.parse(ROW).getFirst().visitCount());
+        assertFalse(DikidiClientsHtml.parse(ROW).getFirst().presentFields().contains("totalSpent"));
+        for (String value:List.of("oops","-1","1,234","999999999999999999999999"))
+            assertThrows(CrmFailure.class,()->DikidiClientsHtml.parse(ROW.replace("</tr>","<td class='spent'>"+value+"</td></tr>")));
+        var zero=DikidiClientsHtml.parse(ROW.replace("</tr>","<td class='appointments'>0</td><td class='spent'>0</td></tr>")).getFirst();
+        assertEquals(0L,zero.visitCount()); assertEquals(java.math.BigDecimal.ZERO,zero.totalSpent());
+    }
     private static final String ROW="<tr id='item-123'><td class='line-name'><a>Long &amp; Name</a><span>VIP</span></td><td class='line-phone'>+7 (999) 123-45-67</td></tr>";
     @Test void htmlExtractsOnlyReviewedFieldsWithoutBadgesOrExecutingLinks() {
         var row=DikidiClientsHtml.parse(ROW).getFirst();
@@ -115,20 +147,29 @@ class DikidiClientContractTest {
         assertNull(CrmPhone.normalize("+7\u00a0(999) 123-45-67 ext 4"));
     }
     private CrmClientPage read(String response, String cursor) {
+        return read(response,cursor,false);
+    }
+    private CrmClientPage read(String response, String cursor, boolean statisticsOnly) {
         var responses=new ArrayDeque<>(List.of("<input name='telegram_csrf' type='hidden' value='first'>",
                 "{\"html\":\"<input name='csrf' type='hidden' value='second'>\"}",
                 "{\"callback\":[\"sw.auth.complete();\"]}","journal",
                 "{\"company\":{\"accesses\":{\"100\":{\"actor\":{\"id\":\"actor\"}}}},\"masters\":{\"info\":{\"ids\":[],\"data\":[]}}}",response));
         try (var provider=new DikidiProvider(new DikidiProvider.Settings(Duration.ofSeconds(2),Duration.ofSeconds(15),65536),
                 () -> (method,uri,form,ajax,project,timeout) -> {
+                    if (uri.getPath().endsWith("/clients/settings/123/")) {
+                        assertEquals("POST",method); assertEquals("company=100&tab=statistics",uri.getQuery());
+                        assertEquals(List.of(Map.entry("tabs","true")),form);
+                        return new DikidiTransport.Response(200,tools.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(
+                                Map.of("container",".modal.settings #tab-settings-statistics","callback","never execute", "html",statisticsHtml())));
+                    }
                     if (uri.getPath().endsWith("/clients/filter/")) {
                         assertEquals("POST",method); assertEquals("100",project);
                         assertTrue(form.contains(Map.entry("offset",cursor==null ? "0" : cursor)));
-                        assertTrue(form.contains(Map.entry("limit","50")));
+                        assertTrue(form.contains(Map.entry("limit","5")));
                     }
                     return new DikidiTransport.Response(200,responses.removeFirst());
                 }); var access=new CrmAccess(UUID.randomUUID(),1,"70000000000","test-secret".toCharArray())) {
-            return provider.readClients(access,"100",cursor);
+            return statisticsOnly ? provider.readClientStatistics(access,"100",List.of("123")) : provider.readClients(access,"100",cursor);
         }
     }
     @Test void offsetPagesRemainUnknownAndOnlyExplicitEmptyHtmlTerminates() {

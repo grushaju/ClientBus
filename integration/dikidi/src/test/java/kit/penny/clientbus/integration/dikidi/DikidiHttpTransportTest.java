@@ -12,6 +12,19 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class DikidiHttpTransportTest {
+    @Test void chatMessageRedirectNeverReplaysTheMutatingPost() {
+        for (int status : List.of(307, 308)) {
+            var client = mock(HttpClient.class);
+            doReturn(CompletableFuture.completedFuture(redirect(status, "/api/dialog/message/")))
+                    .when(client).sendAsync(any(HttpRequest.class), any(HttpResponse.BodyHandler.class));
+            try (var transport = new JdkDikidiTransport(client, 4096)) {
+                assertThrows(DikidiFailure.class, () -> transport.exchange("POST",
+                        URI.create("https://chat.dikidi.ru/api/dialog/message/"), List.of(Map.entry("text", "test")),
+                        true, "company", RequestProfile.OWNER_CHAT, Duration.ofSeconds(2), new DikidiTransport.Observer() {}));
+                verify(client, times(1)).sendAsync(any(HttpRequest.class), any(HttpResponse.BodyHandler.class));
+            }
+        }
+    }
     @Test void everyRedirectIsAdmittedSeparatelyAndCooldownStopsBeforeSecondSend(){
         var client=mock(HttpClient.class);var id=UUID.randomUUID();var pauses=DikidiRequests.memory();
         var traffic=new DikidiRequests(DikidiRequests.Settings.defaults(),pauses);

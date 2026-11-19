@@ -45,6 +45,24 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @SpringBootTest
 class DikidiProvisioningIntegrationTest extends AbstractIntegrationTest {
+    @Autowired kit.penny.clientbus.connector.api.host.HostConversationCheckpoints hostCheckpoints;
+
+    @Test void checkpointAcknowledgementIsFencedAndRejectsDetachedChannels() {
+        var project = project(CrmType.DIKIDI);
+        provisioning.provisionOnBind(project);
+        var channel = channels.findAllByWorkspaceIdAndType(project.getWorkspace().getId(), ChannelType.DIKIDI).getFirst();
+        jdbc.update("update dbo.channel set status='CONNECTED' where channelid=?", channel.getId());
+        var account = channel.getAccount().getId();
+        var first = new kit.penny.clientbus.connector.api.host.HostConversationCheckpoints.ConversationCheckpoint("100", "90", false, false, 100);
+        var stale = new kit.penny.clientbus.connector.api.host.HostConversationCheckpoints.ConversationCheckpoint("90", "80", false, false, 90);
+        hostCheckpoints.acknowledge(new kit.penny.clientbus.connector.api.host.HostConversationCheckpoints.Update(account, project.getExternalId(), "dialog", null, first));
+        hostCheckpoints.acknowledge(new kit.penny.clientbus.connector.api.host.HostConversationCheckpoints.Update(account, project.getExternalId(), "dialog", null, stale));
+        assertEquals(first, hostCheckpoints.load(account, "dialog").orElseThrow());
+        jdbc.update("update dbo.channel set status='DISABLED' where channelid=?", channel.getId());
+        assertThrows(IllegalStateException.class, () -> hostCheckpoints.acknowledge(
+                new kit.penny.clientbus.connector.api.host.HostConversationCheckpoints.Update(account, project.getExternalId(), "dialog", first, stale)));
+        assertEquals(first, hostCheckpoints.load(account, "dialog").orElseThrow());
+    }
     @Autowired DikidiChannelProvisioning provisioning;
     @Autowired ChannelService channelService;
     @Autowired ChannelRepository channels;

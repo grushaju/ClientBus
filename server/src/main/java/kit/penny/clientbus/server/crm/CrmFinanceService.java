@@ -17,8 +17,10 @@ import java.util.*;
 /** On-demand, bounded I/O outside the database transaction; FINANCE owns financial fields only. */
 @Service
 public class CrmFinanceService {
+    @org.springframework.beans.factory.annotation.Autowired(required=false) private CrmSyncQueue syncQueue;
     private record Claim(UUID appointmentId,long appointmentVersion,CrmContext context,CrmFinanceQuery query,
             UUID actor,UUID token,long generation,Instant expiresAt,CrmCredentials credentials,CrmHealthCheck health) {}
+    @org.springframework.beans.factory.annotation.Autowired(required=false) private CrmSyncProperties syncProperties;
     private final CrmStore store;
     private final CrmRegistry registry;
     private final CrmSecretCipher cipher;
@@ -41,12 +43,27 @@ public class CrmFinanceService {
         });
     }
     public CrmFinanceDto refresh(UUID id) {
+        if(syncQueue!=null && syncProperties!=null && syncProperties.isEnabled()){
+            var saved=read(id);
+            tx.executeWithoutResult(status->{
+                var row=appointment(id);
+                if(!"APPOINTMENT".equals(row.getKind()))throw CrmStore.failure(new CrmFailure(CrmFailure.Code.CAPABILITY_UNVERIFIED));
+                syncQueue.requestFinance(row.getProject().getId(),id,store.guard.actor());
+            });
+            return new CrmFinanceDto(id,saved.snapshot(),saved.observedAt(),saved.completeness(),
+                new CrmSyncStateDto("FINANCE","QUEUED",Instant.now(),saved.observedAt(),"STALE",saved.completeness(),null,0));
+        }
+        refreshNow(id,null,null);return read(id);
+    }
+    long runBackground(UUID id,UUID organization,UUID actor){return refreshNow(id,organization,actor);}
+    private long refreshNow(UUID id,UUID backgroundOrganization,UUID backgroundActor) {
         store.storage.requireReady();
         Claim claim=tx.execute(status -> {
             var row=appointment(id);
-            var visible=store.project(row.getProject().getId(),store.guard.organization());
+            var visible=backgroundOrganization==null ? store.project(row.getProject().getId(),store.guard.organization()) : store.projects.findByIdAndOrganizationId(row.getProject().getId(),backgroundOrganization).orElseThrow(CrmStore::notFound);
             var project=store.requireContext(store.context(visible));
-            store.guard.workspace(project.getWorkspace().getId(),false);
+            if(backgroundOrganization==null)store.guard.workspace(project.getWorkspace().getId(),false);
+            else if(backgroundActor!=null)store.guard.workspace(backgroundActor,project.getWorkspace().getId());
             store.em.refresh(row,LockModeType.PESSIMISTIC_WRITE);
             if (!"APPOINTMENT".equals(row.getKind())) throw CrmStore.failure(new CrmFailure(CrmFailure.Code.CAPABILITY_UNVERIFIED));
             var credentials=store.credentials(project.getConnection());
@@ -58,7 +75,7 @@ public class CrmFinanceService {
             var query=new CrmFinanceQuery(row.getExternalId(),row.getStartLocal().toLocalDate(),
                     row.getExternalClientId()==null ? null : new CrmClientReference(row.getClientIdentityKind(),row.getExternalClientId()));
             UUID token=UUID.randomUUID(); state.setGeneration(Math.incrementExact(Math.max(control.getGeneration(),row.getFinancialGeneration())));
-            state.setClaimToken(token); state.setClaimUntil(now.plusSeconds(120)); state.setStatus("RUNNING");
+            state.setClaimToken(token); state.setClaimUntil(now.plus(syncProperties==null ? Duration.ofSeconds(120) : syncProperties.getLeaseDuration())); state.setStatus("RUNNING");
             var context=store.context(project);
             state.setConnectionId(context.connectionId()); state.setCredentialVersion(context.credentialVersion());
             state.setContextVersion(context.contextVersion()); state.setZoneRevision(context.zoneRevision());
@@ -68,7 +85,7 @@ public class CrmFinanceService {
             control.setStatus("RUNNING"); control.setLastAttemptAt(now);
             control.setConnectionId(context.connectionId()); control.setCredentialVersion(context.credentialVersion());
             control.setContextVersion(context.contextVersion()); control.setZoneRevision(context.zoneRevision());
-            return new Claim(id,row.getVersion(),context,query,store.guard.actor(),token,state.getGeneration(),
+            return new Claim(id,row.getVersion(),context,query,backgroundOrganization==null ? store.guard.actor() : backgroundActor,token,state.getGeneration(),
                     state.getClaimUntil(),credentials,CrmHealthCheck.begin(project.getConnection()));
         });
         try {
@@ -76,10 +93,11 @@ public class CrmFinanceService {
             try (var access=claim.credentials().open(cipher)) {
                 snapshot=registry.require(claim.credentials().provider).readFinance(access,claim.context().externalProjectId(),claim.query());
             }
+            if(Thread.currentThread().isInterrupted())throw new CrmFailure(CrmFailure.Code.TEMPORARY_FAILURE);
             validate(snapshot,claim.context().externalProjectId(),claim.query());
             tx.executeWithoutResult(status -> {
                 var project=store.requireContext(claim.context());
-                store.guard.workspace(claim.actor(),project.getWorkspace().getId());
+                if(claim.actor()!=null)store.guard.workspace(claim.actor(),project.getWorkspace().getId());
                 var row=appointment(id); store.em.refresh(row,LockModeType.PESSIMISTIC_WRITE);
                 var state=requireClaim(row,claim);
                 if (row.getVersion()!=claim.appointmentVersion() || row.getFinancialGeneration()>=claim.generation())
@@ -105,7 +123,7 @@ public class CrmFinanceService {
             if (error instanceof CrmException || error instanceof org.springframework.security.access.AccessDeniedException) throw error;
             throw CrmStore.failure(new CrmFailure(CrmFailure.Code.TEMPORARY_FAILURE));
         }
-        return read(id);
+        return claim.generation();
     }
     private void fail(Claim claim,String code) {
         try { tx.executeWithoutResult(status -> {
@@ -178,7 +196,7 @@ public class CrmFinanceService {
                 && connection.getId().equals(state.getConnectionId()) && connection.getCredentialVersion()==state.getCredentialVersion()
                 && project.getContextVersion()==state.getContextVersion() && project.getZoneRevision()==state.getZoneRevision()
                 && Set.of("SUCCEEDED","PARTIAL").contains(status) && scopeMatches(row) && row.getFinancialObservedAt()!=null
-                && row.getFinancialObservedAt().isAfter(Instant.now().minusSeconds(300));
+                && row.getFinancialObservedAt().isAfter(Instant.now().minus(syncProperties==null ? Duration.ofSeconds(300) : syncProperties.policy(CrmSyncProperties.Dataset.FINANCE).getStaleAfter()));
         var sync=new CrmSyncStateDto("FINANCE",status,state==null ? null : state.getLastAttemptAt(),row.getFinancialObservedAt(),
                 row.getFinancialObservedAt()==null ? "NEVER_LOADED" : current ? "CURRENT" : "STALE",row.getFinancialCompleteness(),
                 error,state==null ? 0 : state.getGeneration(),Map.of("appointmentId",row.getId().toString()),

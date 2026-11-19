@@ -322,9 +322,15 @@ public class KafkaOutboundMessageConsumer {
          */
         try {
 
-            messageService.registerExternalAttempt(messageId, kafkaCommand.sendAttemptId(),
-                    command.channelAccountId(), command.recipientExternalId(),
-                    kafkaCommand.dialogExternalId(), result.externalId());
+            if (result.completed()) {
+                messageService.registerAcceptedExternalAttempt(messageId, kafkaCommand.sendAttemptId(),
+                        command.channelAccountId(), command.recipientExternalId(),
+                        kafkaCommand.dialogExternalId(), result.externalId());
+            } else {
+                messageService.registerExternalAttempt(messageId, kafkaCommand.sendAttemptId(),
+                        command.channelAccountId(), command.recipientExternalId(),
+                        kafkaCommand.dialogExternalId(), result.externalId());
+            }
 
         } catch (Exception e) {
 

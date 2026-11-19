@@ -51,7 +51,7 @@ public class CoreIndexBootstrap implements ApplicationRunner {
             "create unique index if not exists conversation_channel_client_dialog_uix"
                     + " on dbo.conversation (channelaccountid, dialogexternalid)"
                     + " where dialogexternalid is not null",
-            "dialogexternalid is not null", null,
+            "dialogexternalid is not null", "channelaccountid|dialogexternalid",
             """
             select 1 from dbo.conversation where dialogexternalid is not null
              group by channelaccountid, dialogexternalid having count(*) > 1 limit 1""",
@@ -64,7 +64,7 @@ public class CoreIndexBootstrap implements ApplicationRunner {
             "create unique index if not exists conversation_channel_client_nodialog_uix"
                     + " on dbo.conversation (channelaccountid, clientaccountid)"
                     + " where dialogexternalid is null",
-            "dialogexternalid is null", null,
+            "dialogexternalid is null", "channelaccountid|clientaccountid",
             """
             select 1 from dbo.conversation where dialogexternalid is null
              group by channelaccountid, clientaccountid having count(*) > 1 limit 1""",
@@ -80,7 +80,7 @@ public class CoreIndexBootstrap implements ApplicationRunner {
             "create unique index if not exists outboundsendcallback_slot_uix"
                     + " on dbo.outboundsendcallback (channelaccountid,"
                     + " coalesce(dialogexternalid, recipientexternalid), pendingexternalid)",
-            null, "coalesce(dialogexternalid, recipientexternalid)",
+            null, "channelaccountid|coalesce(dialogexternalid,recipientexternalid)|pendingexternalid",
             """
             select 1 from dbo.outboundsendcallback
              group by channelaccountid, coalesce(dialogexternalid, recipientexternalid), pendingexternalid
@@ -90,9 +90,9 @@ public class CoreIndexBootstrap implements ApplicationRunner {
 
     /**
      * @param predicate ожидаемый предикат частичного индекса (пусто — индексу предикат не положен)
-     * @param contains обязательный фрагмент определения для индексов по выражению
+     * @param keys полный упорядоченный состав ключа, разделённый символом |
      */
-    record Spec(String index, String table, String create, String predicate, String contains,
+    record Spec(String index, String table, String create, String predicate, String keys,
                 String duplicates, String remedy) {
     }
 
@@ -122,15 +122,18 @@ public class CoreIndexBootstrap implements ApplicationRunner {
             return; // работающая база: одна дешёвая проверка каталога на старт, без сканирования данных
         }
 
-        if (!jdbc.queryForList(spec.duplicates(), String.class).isEmpty()) {
-            throw new IllegalStateException(spec.remedy());
-        }
-
         boolean repair = !present.isEmpty();
         new TransactionTemplate(new DataSourceTransactionManager(Objects.requireNonNull(jdbc.getDataSource())))
                 .executeWithoutResult(status -> {
                     jdbc.execute("lock table " + spec.table() + " in share row exclusive mode");
-                    if (repair) {
+                    // Another instance may have repaired it while this instance waited for the lock.
+                    var locked = definition(spec);
+                    if (locked.size() == 1 && matches(spec, locked.getFirst())) return;
+                    if (!locked.isEmpty() && !Boolean.TRUE.equals(locked.getFirst().get("correct_table")))
+                        throw new IllegalStateException("Canonical index name belongs to another table: " + spec.index());
+                    if (!jdbc.queryForList(spec.duplicates(), String.class).isEmpty())
+                        throw new IllegalStateException(spec.remedy());
+                    if (!locked.isEmpty()) {
                         // DROP INDEX принимает schema.index, а не table.index: трёхсоставное имя
                         // PostgreSQL читает как ссылку на другую базу и отказывает.
                         jdbc.execute("drop index " + schema(spec) + "." + spec.index());
@@ -153,25 +156,28 @@ public class CoreIndexBootstrap implements ApplicationRunner {
     /** Свойства индекса глазами базы: уникальность, предикат, полное определение. */
     private List<Map<String, Object>> definition(Spec spec) {
         return jdbc.queryForList("""
-                select i.indisunique,
+                select i.indisunique, i.indisvalid, i.indisready,
+                       i.indrelid = to_regclass(?) as correct_table,
+                       (select string_agg(pg_get_indexdef(i.indexrelid, k, true), '|' order by k)
+                          from generate_series(1, i.indnkeyatts) k) as keys,
                        coalesce(pg_get_expr(i.indpred, i.indrelid), '') as predicate,
                        pg_get_indexdef(i.indexrelid) as definition
                   from pg_index i
                   join pg_class c on c.oid = i.indexrelid
                   join pg_namespace n on n.oid = c.relnamespace
                  where n.nspname = ? and c.relname = ?
-                """, schema(spec), spec.index());
+                """, spec.table(), schema(spec), spec.index());
     }
 
     private static boolean matches(Spec spec, Map<String, Object> row) {
-        if (!Boolean.TRUE.equals(row.get("indisunique"))) {
+        if (!Boolean.TRUE.equals(row.get("indisunique")) || !Boolean.TRUE.equals(row.get("indisvalid"))
+                || !Boolean.TRUE.equals(row.get("indisready")) || !Boolean.TRUE.equals(row.get("correct_table"))) {
             return false;
         }
         if (!normalize(spec.predicate()).equals(normalize((String) row.get("predicate")))) {
             return false;
         }
-        String definition = String.valueOf(row.get("definition")).toLowerCase(Locale.ROOT);
-        return spec.contains() == null || definition.contains(spec.contains());
+        return normalize(spec.keys()).equals(normalize((String) row.get("keys")));
     }
 
     /** pg_get_expr оборачивает предикат в скобки и расставляет пробелы по-своему — сравниваем суть. */

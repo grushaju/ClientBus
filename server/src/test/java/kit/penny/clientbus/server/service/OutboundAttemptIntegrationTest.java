@@ -26,6 +26,25 @@ import static org.junit.jupiter.api.Assertions.*;
 @SpringBootTest(properties = {"clientbus.notifications.creation-enabled=true",
         "clientbus.notifications.callback-cleanup-ms=3600000"})
 class OutboundAttemptIntegrationTest extends AbstractIntegrationTest {
+    @Test void finalAcceptanceReconcilesAnEarlyImportedEchoWithoutLosingTheAuthor() {
+        UUID id = outbound();
+        UUID sendAttempt = attempt(id);
+        UUID echo = tx.execute(status -> {
+            var row = new MessageEntity(em.find(ConversationEntity.class, conversation), MessageType.TEXT,
+                    MessageDirection.OUTBOUND, MessageSenderType.EMPLOYEE);
+            row.setContent("test"); row.setExternalId("synchronous-final");
+            row.setProcessingStatus(MessageProcessingStatus.PROCESSED); row.setDeliveryStatus(MessageDeliveryStatus.SENT);
+            em.persist(row); em.flush(); return row.getId();
+        });
+        messages.registerAcceptedExternalAttempt(id, sendAttempt, account, recipient, null, "synchronous-final");
+        assertEquals("SENT", value(id, "deliverystatus"));
+        assertEquals("synchronous-final", value(id, "externalid"));
+        assertEquals(employee, jdbc.queryForObject("select employeeid from dbo.message where messageid=?", UUID.class, id));
+        assertEquals(0, jdbc.queryForObject("select count(*) from dbo.message where messageid=?", Integer.class, echo));
+        messages.registerAcceptedExternalAttempt(id, sendAttempt, account, recipient, null, "synchronous-final");
+        assertEquals(1, jdbc.queryForObject("select count(*) from dbo.message where conversationid=? and externalid=?",
+                Integer.class, conversation, "synchronous-final"));
+    }
     @Autowired MessageService messages;
     @Autowired MessageProcessingService processing;
     @Autowired OutboundCallbackStore callbacks;

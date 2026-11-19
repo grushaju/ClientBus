@@ -39,6 +39,25 @@ import static org.mockito.ArgumentMatchers.eq;
 
 @ExtendWith(MockitoExtension.class)
 class KafkaSyncConversationHistoryConsumerTest {
+    @Test void failedPageHandoffDoesNotAcknowledgeItsCheckpoint() {
+        var checkpoints = mock(kit.penny.clientbus.connector.api.host.HostConversationCheckpoints.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(consumer, "checkpoints", checkpoints);
+        var pending = new kit.penny.clientbus.connector.api.host.HostConversationCheckpoints.Update(
+                ACCOUNT_ID, "company", "dialog", null,
+                new kit.penny.clientbus.connector.api.host.HostConversationCheckpoints.ConversationCheckpoint("101", "101", false, false, 0));
+        var page = kit.penny.clientbus.server.connector.ConnectorPayloadMapper.toConnectorMessages(List.of(message("101")));
+        when(connectorRegistry.getConnector(ChannelType.TELEGRAM)).thenReturn(connector);
+        when(connector.handle(any(SyncConversationHistoryCommand.class)))
+                .thenReturn(new SyncConversationHistoryResult(page, false, "PAGE_COMPLETE", pending));
+        doThrow(new IllegalStateException("broker unavailable")).when(publisher).publish(any());
+        assertThrows(IllegalStateException.class, () -> consumer.consume(event(), TELEGRAM_TOPIC));
+        verifyNoInteractions(checkpoints);
+        doNothing().when(publisher).publish(any());
+        consumer.consume(event(), TELEGRAM_TOPIC);
+        var order = inOrder(publisher, checkpoints);
+        order.verify(publisher, times(2)).publish(any());
+        order.verify(checkpoints).acknowledge(pending);
+    }
 
     private static final UUID ACCOUNT_ID =
             UUID.fromString(

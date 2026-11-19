@@ -9,6 +9,11 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 @Configuration
 public class CrmConfiguration {
+    @Bean(name="crmSyncHeartbeatScheduler",destroyMethod="shutdown",defaultCandidate=false)
+    public static ThreadPoolTaskScheduler crmSyncHeartbeatScheduler() {
+        var scheduler=new ThreadPoolTaskScheduler();scheduler.setPoolSize(1);
+        scheduler.setThreadNamePrefix("crm-sync-heartbeat-");scheduler.setRemoveOnCancelPolicy(true);return scheduler;
+    }
     // Infrastructure must be constructible before JPA; it must not instantiate the CRM worker.
     @Bean(name="crmScheduleScheduler",destroyMethod="shutdown",defaultCandidate=false)
     public static ThreadPoolTaskScheduler crmScheduleScheduler() {

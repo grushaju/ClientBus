@@ -34,6 +34,7 @@ public class DikidiCredentialsHost implements DikidiTechnicalCredentials {
                 join dbo.channelaccount ca on ca.channelid = ch.channelid
                 where ca.channelaccountid = ? and ch.type = 'DIKIDI'
                   and p.provider = 'DIKIDI' and p.archived = false
+                  and p.externalid = ca.externalid
                 """, channelAccountId);
         UUID connection = UUID.fromString(String.valueOf(row.get("id")));
         char[] secret = cipher.decrypt(UUID.fromString(String.valueOf(row.get("organizationid"))),

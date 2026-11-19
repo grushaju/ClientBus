@@ -1200,6 +1200,8 @@ class CrmFoundationIntegrationTest {
         volatile Function<String, CrmClientPage> clientReader = cursor -> new CrmClientPage(List.of(), null,
                 Instant.now(), CrmReadResult.Completeness.UNKNOWN, "100:CLIENTS");
         public CrmClientPage readClients(CrmAccess access, String id, String cursor) { return clientReader.apply(cursor); }
+        volatile java.util.function.Function<List<String>,CrmClientPage> statisticsReader = ids -> { throw new CrmFailure(CrmFailure.Code.CAPABILITY_UNVERIFIED); };
+        public CrmClientPage readClientStatistics(CrmAccess access, String id, List<String> ids) { return statisticsReader.apply(ids); }
         volatile Function<String, CrmProjectInfo> inspector = id -> new CrmProjectInfo(id, "Test project", "RUB", null);
         final CountDownLatch entered = new CountDownLatch(1), release = new CountDownLatch(1);
         public String code() { return "DIKIDI"; }
@@ -2243,7 +2245,7 @@ class CrmFoundationIntegrationTest {
     @Test void hibernateUpdatePreservesExistingDboAndCrmAndNamesHaveNoUnderscores() throws Exception {
         var connection = connection(); var project = bind(connection); awaitIdle();
         var mapped = first(project.id()); service.linkEmployee(mapped.id(), target, mapped.version());
-        assertEquals(Set.of("connection","project","employee","service","masterservice","staffaccess","syncstate","client","workinterval","appointment","appointmentservice","appointmentmaster","operation","connectionruntime"),
+        assertEquals(Set.of("connection","project","employee","service","masterservice","staffaccess","syncstate","client","workinterval","appointment","appointmentservice","appointmentmaster","operation","connectionruntime","syncjob","syncconnectionlease"),
                 new HashSet<>(jdbc.queryForList("select tablename from pg_tables where schemaname='crm'",String.class)));
         for (String sql : List.of("select column_name from information_schema.columns where table_schema='crm'",
                 "select indexname from pg_indexes where schemaname='crm'",
@@ -2261,6 +2263,8 @@ class CrmFoundationIntegrationTest {
         jdbc.execute("drop table crm.staffaccess"); // 13.6: в развёрнутую форму не входит, initialize() вернёт
         jdbc.execute("alter table crm.employee drop column lastobservedgeneration, drop column observationstate");
         jdbc.execute("drop table crm.connectionruntime"); // 13.4: в развёрнутую форму 12.3 не входит, initialize() её вернёт
+        jdbc.execute("drop table crm.syncjob");
+        jdbc.execute("drop table crm.syncconnectionlease");
         assertEquals(4, jdbc.queryForObject("select count(*) from pg_tables where schemaname='crm'", Integer.class));
         factory = buildFactory();
         new CrmStorage(jdbc).initialize();
@@ -2270,11 +2274,404 @@ class CrmFoundationIntegrationTest {
         assertEquals(1,jdbc.queryForObject("select count(*) from dbo.workspace where workspaceid=?",Integer.class,workspace));
         assertEquals(target, jdbc.queryForObject("select employeeid from crm.employee where id=?", UUID.class, mapped.id()));
         assertEquals("initial one", jdbc.queryForObject("select displayname from crm.employee where id=?", String.class, mapped.id()));
-        assertEquals(14, jdbc.queryForObject("select count(*) from pg_tables where schemaname='crm'", Integer.class));
+        assertEquals(16, jdbc.queryForObject("select count(*) from pg_tables where schemaname='crm'", Integer.class));
     }
     private static CrmClient externalClient(String id, String name) {
         return new CrmClient(id,"PROJECT",name,Map.of("phone","+7 (999) 123-45-67"),Map.of("source","R08"),Set.of("displayName","phone"));
     }
+
+    @Test void clientStatisticsSortAcrossPagesAndMissingValuesStayLast() throws Exception {
+        var project=bind(connection()); awaitIdle();
+        var imported=new ArrayList<CrmClient>();
+        for (int i=104;i>=0;i--) imported.add(new CrmClient(Integer.toString(i+1),"PROJECT",String.format("Client%03d",i),
+                Map.of(),Map.of("source","R08"),Set.of("displayName","visitCount","totalSpent"),null,(long)i,BigDecimal.valueOf(i*10L)));
+        imported.add(externalClient("unknown","Unknown"));
+        provider.clientReader=cursor->clientPage(imported,null);
+        clientSync.refresh(project.id()); awaitClients();
+        var alpha=clients.clients(project.id(),null,false,null,"NAME","ASC");
+        assertEquals("Client000",alpha.items().getFirst().displayName());
+        assertEquals(100,alpha.items().size()); assertTrue(alpha.hasMore());
+        var alphaTail=clients.clients(project.id(),null,false,alpha.nextCursor(),"NAME","ASC");
+        assertEquals(6,alphaTail.items().size()); assertEquals("Unknown",alphaTail.items().getLast().displayName());
+        var visits=clients.clients(project.id(),null,false,null,"VISITS","DESC");
+        assertEquals(104L,visits.items().getFirst().visitCount());
+        var tail=clients.clients(project.id(),null,false,visits.nextCursor(),"VISITS","DESC");
+        assertEquals(0L,tail.items().get(4).visitCount()); assertNull(tail.items().getLast().visitCount());
+        assertThrows(CrmException.class,()->clients.clients(project.id(),null,false,visits.nextCursor(),"SPENT","DESC"));
+        var spent=clients.clients(project.id(),null,false,null,"SPENT","DESC");
+        assertEquals("1040.00",spent.items().getFirst().totalSpent());
+        assertThrows(CrmException.class,()->clients.clients(project.id(),null,false,null,"BAD","ASC"));
+        provider.clientReader=cursor->clientPage(List.of(externalClient("105","Changed name")),null);
+        clientSync.refresh(project.id()); awaitClients();
+        assertEquals(104L,clients.clients(project.id(),null,false,null,"VISITS","DESC").items().getFirst().visitCount());
+        provider.clientReader=cursor->clientPage(List.of(new CrmClient("105","PROJECT",null,Map.of(),Map.of(),
+                Set.of("visitCount","totalSpent"),null,0L,BigDecimal.ZERO)),null);
+        clientSync.refresh(project.id()); awaitClients();
+        var zero=clients.clients(project.id(),"Changed name",false,null).items().getFirst();
+        assertEquals(0L,zero.visitCount()); assertEquals("0.00",zero.totalSpent());
+    }
+    @Test void averageCheckIsPersistedDisplayedSortedAndPreservedWhenNotObserved() throws Exception {
+        var project=bind(connection()); awaitIdle();
+        var fields=Set.of("displayName","visitCount","totalSpent","averageCheck","statisticsCurrency");
+        provider.clientReader=cursor->clientPage(List.of(
+                new CrmClient("1","PROJECT","First",Map.of(),Map.of("source","R08"),fields,null,
+                        12L,new BigDecimal("31500.00"),new BigDecimal("2625.00"),"RUB"),
+                new CrmClient("2","PROJECT","Second",Map.of(),Map.of("source","R08"),fields,null,
+                        2L,new BigDecimal("1000.00"),new BigDecimal("500.00"),"RUB")),null);
+        clientSync.refresh(project.id()); awaitClients();
+        var sorted=clients.clients(project.id(),null,false,null,"AVERAGE_CHECK","DESC").items();
+        assertEquals("2625.00",sorted.getFirst().averageCheck()); assertEquals("31500.00",sorted.getFirst().totalSpent());
+        assertEquals(12L,sorted.getFirst().visitCount()); assertEquals("RUB",sorted.getFirst().currency());
+        assertEquals("500.00",clients.clients(project.id(),null,false,null,"AVERAGE_CHECK","ASC").items().getFirst().averageCheck());
+        provider.clientReader=cursor->clientPage(List.of(externalClient("1","Updated")),null);
+        clientSync.refresh(project.id()); awaitClients();
+        var preserved=clients.client(sorted.getFirst().id());
+        assertEquals("2625.00",preserved.averageCheck()); assertEquals("31500.00",preserved.totalSpent());
+    }
+
+    @Test void queuedForceSurvivesARegularRequestForTheSameScope() throws Exception {
+        var project=bind(connection());awaitIdle();
+        var queue=new CrmSyncQueue(jdbc,tx.getTransactionManager(),new CrmSyncProperties());
+        queue.requestPeriod(project.id(),CrmSyncProperties.Dataset.APPOINTMENTS,null,SCHEDULE_DAY,SCHEDULE_DAY,true,admin);
+        queue.requestPeriod(project.id(),CrmSyncProperties.Dataset.APPOINTMENTS,null,SCHEDULE_DAY,SCHEDULE_DAY,false,admin);
+        var job=queue.claim();assertTrue(job.force());assertEquals(1,queue.state(project.id()).size());
+        queue.finish(job,null,false);
+    }
+    @Test void onePageBudgetPlansAndCompletesEveryDayOfAutomaticAndManualPeriods() throws Exception {
+        var project=bind(connection());awaitIdle();jdbc.update("update crm.project set zoneid='Europe/Moscow' where id=?",project.id());
+        var settings=new CrmSyncProperties();for(var policy:settings.getDatasets().values())policy.setEnabled(false);
+        var policy=settings.policy(CrmSyncProperties.Dataset.APPOINTMENTS);policy.setEnabled(true);policy.setFutureDays(6);policy.setPastDays(0);policy.setChunkDays(7);policy.setMaxPagesPerRun(1);
+        ReflectionTestUtils.setField(appointmentSync,"syncProperties",settings);
+        var queue=new CrmSyncQueue(jdbc,tx.getTransactionManager(),settings);
+        var coordinator=new CrmSyncCoordinator(settings,queue,jdbc,storage,sync,clientSync,appointmentSync,scheduleSync,finance,appointmentTimes,store.guard);
+        try{
+            coordinator.plan();assertEquals(7,queue.state(project.id()).size());
+            assertEquals(0,jdbc.queryForObject("select count(*) from crm.syncjob where datefrom<>dateto",Integer.class));
+            policy.setEnabled(false);coordinator.plan();
+            // Reproduce a queued period left by the previous implementation, then migrate it too.
+            var period=new CrmAppointmentScope("APPOINTMENTS",null,SCHEDULE_DAY,SCHEDULE_DAY.plusDays(6));
+            queue.request(project.id(),CrmSyncProperties.Dataset.APPOINTMENTS,period.key(),null,null,period.dateFrom(),period.dateTo(),true,admin);
+            coordinator.plan();assertEquals(7,queue.state(project.id()).size());
+            coordinator.request(project.id(),new RefreshCrmRequest("APPOINTMENTS",null,SCHEDULE_DAY,SCHEDULE_DAY.plusDays(6)));
+            var days=new HashSet<LocalDate>();
+            provider.appointmentsReader=read->{
+                assertEquals(read.query().dateFrom(),read.query().dateTo());days.add(read.query().dateFrom());
+                return new CrmAppointmentPage(List.of(),null,Instant.now(),CrmReadResult.Completeness.UNKNOWN,read.project(),read.query());
+            };
+            CrmSyncQueue.Job job;while((job=queue.claim())!=null)ReflectionTestUtils.invokeMethod(coordinator,"execute",job);
+            assertEquals(7,days.size());assertEquals(0,queue.state(project.id()).size());
+            var state=appointmentSync.state(project.id(),"APPOINTMENTS",null,SCHEDULE_DAY,SCHEDULE_DAY.plusDays(6));
+            assertEquals("PARTIAL",state.status());assertNotNull(state.lastSuccessAt());assertNull(state.errorCode());assertEquals("UNKNOWN",state.completeness());
+        }finally{coordinator.close();}
+    }
+    @Test void failedFinanceCandidatesDoNotBlockUnattemptedAppointments() throws Exception {
+        var project=bind(connection());awaitIdle();jdbc.update("update crm.project set zoneid='Europe/Moscow' where id=?",project.id());
+        var records=new ArrayList<CrmAppointment>();for(int i=0;i<6;i++)records.add(appointment("finance-"+i,0,12,"1"));
+        loadAppointments(project.id(),CrmReadResult.Completeness.COMPLETE,records);
+        var settings=new CrmSyncProperties();for(var policy:settings.getDatasets().values())policy.setEnabled(false);
+        var policy=settings.policy(CrmSyncProperties.Dataset.FINANCE);policy.setEnabled(true);policy.setPastDays(365);policy.setBatchSize(2);
+        var queue=new CrmSyncQueue(jdbc,tx.getTransactionManager(),settings);
+        var coordinator=new CrmSyncCoordinator(settings,queue,jdbc,storage,sync,clientSync,appointmentSync,scheduleSync,finance,appointmentTimes,store.guard);
+        try{
+            coordinator.plan();var failed=new HashSet<UUID>();
+            for(int i=0;i<2;i++){var job=queue.claim();assertNotNull(job);failed.add(job.appointment());queue.finish(job,"CRM_TEMPORARILY_UNAVAILABLE",false);}
+            // Even after all records have been attempted, old failures waiting for retry must not reserve the batch.
+            for(UUID id:jdbc.queryForList("select id from crm.appointment where projectid=?",UUID.class,project.id()))
+                if(!failed.contains(id))queue.put(project.id(),CrmSyncProperties.Dataset.FINANCE,id.toString(),null,id,null,null,false);
+            jdbc.update("update crm.syncjob set lastattemptat=clock_timestamp()-interval '1 hour' where projectid=? and dataset='FINANCE'",project.id());
+            for(UUID id:failed)jdbc.update("update crm.syncjob set lastattemptat=clock_timestamp()-interval '1 day',nextat=clock_timestamp()+interval '1 hour' where appointmentid=?",id);
+            coordinator.plan();assertEquals(2,queue.state(project.id()).size());
+            for(int i=0;i<2;i++){var job=queue.claim();assertNotNull(job);assertFalse(failed.contains(job.appointment()));queue.finish(job,null,false);}
+        }finally{coordinator.close();}
+    }
+    @Test void confirmedOperationsEnqueueExactReadsAndEmptyResultsAreRetried() throws Exception {
+        var f=operationFixture();var settings=new CrmSyncProperties();for(var policy:settings.getDatasets().values())policy.setEnabled(false);
+        var queue=new CrmSyncQueue(jdbc,tx.getTransactionManager(),settings);
+        ReflectionTestUtils.setField(operations,"syncQueue",queue);ReflectionTestUtils.setField(operations,"syncProperties",settings);
+        var op=operations.create(f.project().id(),UUID.randomUUID(),f.request());operations.run(op.id());operations.queueConfirmedReads();
+        assertEquals(2,queue.state(f.project().id()).size());
+        var coordinator=new CrmSyncCoordinator(settings,queue,jdbc,storage,sync,clientSync,appointmentSync,scheduleSync,finance,appointmentTimes,store.guard);
+        var exact=new AtomicInteger();
+        provider.appointmentsReader=read->{
+            boolean targeted=read.query().externalAppointmentId()!=null;
+            int count=targeted?exact.incrementAndGet():0;
+            int day=(int)java.time.temporal.ChronoUnit.DAYS.between(SCHEDULE_DAY,read.query().dateFrom());
+            return new CrmAppointmentPage(count<2?List.of():List.of(appointment("created-record",day,12,"operation-client")),null,Instant.now(),CrmReadResult.Completeness.UNKNOWN,read.project(),read.query());
+        };
+        try{
+            CrmSyncQueue.Job job;while((job=queue.claim())!=null)ReflectionTestUtils.invokeMethod(coordinator,"execute",job);
+            assertEquals(1,exact.get());assertEquals(1,jdbc.queryForObject("select count(*) from crm.syncjob where errorcode='CRM_OBSERVATION_PENDING'",Integer.class));
+            jdbc.update("update crm.syncjob set nextat=clock_timestamp() where enabled");
+            job=queue.claim();assertNotNull(job);ReflectionTestUtils.invokeMethod(coordinator,"execute",job);
+            assertEquals(2,exact.get());assertEquals(1,jdbc.queryForObject("select count(*) from crm.syncstate where jsonb_exists(scope,'observationCompletedAt')",Integer.class));
+        }finally{coordinator.close();}
+    }
+    @Test void legacyObservationsAreImportedButNeverRunUnderANewContext() throws Exception {
+        var f=operationFixture();var op=operations.create(f.project().id(),UUID.randomUUID(),f.request());operations.run(op.id());operations.queueConfirmedReads();
+        var settings=new CrmSyncProperties();for(var policy:settings.getDatasets().values())policy.setEnabled(false);
+        var queue=new CrmSyncQueue(jdbc,tx.getTransactionManager(),settings);
+        var coordinator=new CrmSyncCoordinator(settings,queue,jdbc,storage,sync,clientSync,appointmentSync,scheduleSync,finance,appointmentTimes,store.guard);
+        try{
+            coordinator.plan();assertEquals(2,queue.state(f.project().id()).size());
+            jdbc.update("update crm.project set contextversion=contextversion+1 where id=?",f.project().id());
+            var reads=new AtomicInteger();provider.appointmentsReader=read->{reads.incrementAndGet();throw new AssertionError("Old observation must not call CRM");};
+            CrmSyncQueue.Job job;while((job=queue.claim())!=null)ReflectionTestUtils.invokeMethod(coordinator,"execute",job);
+            assertEquals(0,reads.get());assertEquals(2,jdbc.queryForObject("select count(*) from crm.syncjob where errorcode='CRM_CONTEXT_CHANGED' and not enabled",Integer.class));
+        }finally{coordinator.close();}
+    }
+    @Test void storageUpgradesAnEarlySyncQueueWithoutLosingItsJobs() throws Exception {
+        var project=bind(connection());awaitIdle();
+        var queue=new CrmSyncQueue(jdbc,tx.getTransactionManager(),new CrmSyncProperties());
+        queue.put(project.id(),CrmSyncProperties.Dataset.CLIENTS,"ALL",null,null,null,null,false);
+        var before=jdbc.queryForMap("select id,status,nextat,projectid from crm.syncjob where projectid=?",project.id());
+        jdbc.execute("alter table crm.syncjob drop column crmclientid,drop column force,drop column actorid,drop column plannedat,drop column expectedcontext");
+        storage.initialize();storage.initialize();
+        assertEquals(before,jdbc.queryForMap("select id,status,nextat,projectid from crm.syncjob where projectid=?",project.id()));
+        var job=queue.claim();assertNotNull(job);assertFalse(job.force());assertNull(job.actor());assertTrue(queue.heartbeat(job));queue.finish(job,null,false);
+        assertNotNull(jdbc.queryForObject("select plannedat from crm.syncjob where id=?",java.sql.Timestamp.class,job.id()));
+    }
+    @Test void crmLinkAndCoreDeletionUseTheSameClientBeforeActorLockOrder() throws Exception {
+        var row=importClient();
+        var coreId=coreClient("Lock order","79991234567");
+        var locked=new CountDownLatch(1);
+        var release=new CountDownLatch(1);
+        try(var executor=Executors.newFixedThreadPool(2)) {
+            var deleting=executor.submit(()->tx.executeWithoutResult(status->{
+                // Same FOR UPDATE as ClientRepository.findByIdForUpdate, before the real guard.
+                var core=(ClientEntity)em.createNativeQuery("select * from dbo.client where clientid=:id for update",ClientEntity.class)
+                        .setParameter("id",coreId).getSingleResult();
+                locked.countDown();
+                try { if(!release.await(10,TimeUnit.SECONDS)) throw new AssertionError("Release timed out"); }
+                catch(InterruptedException failure) { Thread.currentThread().interrupt(); throw new AssertionError(failure); }
+                deletion.client(core); em.remove(core); em.flush();
+            }));
+            assertTrue(locked.await(5,TimeUnit.SECONDS));
+            var linking=executor.submit(()->assertThrows(CrmException.class,()->clients.link(row.id(),coreId,row.version())));
+            try {
+                // Observe actual lock contention, rather than assuming a thread reached SQL after a sleep.
+                awaitCondition(()->jdbc.queryForObject("select exists(select 1 from pg_stat_activity where datname=current_database() and pid<>pg_backend_pid() and wait_event_type='Lock' and query like '%client%')",Boolean.class));
+            } finally { release.countDown(); }
+            deleting.get(10,TimeUnit.SECONDS);
+            assertEquals(404,linking.get(10,TimeUnit.SECONDS).status());
+            assertEquals(0,jdbc.queryForObject("select count(*) from dbo.client where clientid=?",Integer.class,coreId));
+            assertNull(clients.client(row.id()).clientId());
+        } finally { release.countDown(); }
+    }
+
+    @Test void overviewPartitionsTasksIncludingExpiredLeasesAndDueSuccesses() throws Exception {
+        var project=bind(connection());awaitIdle();
+        var queue=new CrmSyncQueue(jdbc,tx.getTransactionManager(),new CrmSyncProperties());
+        for(var scope:List.of("future","due","running","failed","expired"))
+            queue.put(project.id(),CrmSyncProperties.Dataset.CATALOG,scope,null,null,null,null,false);
+        jdbc.update("update crm.syncjob set status='SUCCEEDED',nextat=statement_timestamp()+interval '1 hour' where projectid=? and scopekey='future'",project.id());
+        jdbc.update("update crm.syncjob set status='SUCCEEDED',nextat=statement_timestamp()-interval '1 second' where projectid=? and scopekey='due'",project.id());
+        jdbc.update("update crm.syncjob set status='FAILED',nextat=statement_timestamp()-interval '1 second' where projectid=? and scopekey='failed'",project.id());
+        jdbc.update("update crm.syncjob set status='RUNNING',claimtoken=?,claimuntil=statement_timestamp()+interval '1 hour' where projectid=? and scopekey='running'",UUID.randomUUID(),project.id());
+        jdbc.update("update crm.syncjob set status='RUNNING',claimtoken=?,claimuntil=statement_timestamp(),nextat=statement_timestamp() where projectid=? and scopekey='expired'",UUID.randomUUID(),project.id());
+        var rows=(List<Map<String,Object>>)queue.overview(project.id()).get("datasets");
+        assertEquals(1,rows.size());
+        var row=rows.getFirst();
+        assertEquals(5,((Number)row.get("scopes")).intValue());
+        assertEquals(1,((Number)row.get("completed")).intValue());
+        assertEquals(2,((Number)row.get("pending")).intValue());
+        assertEquals(1,((Number)row.get("running")).intValue());
+        assertEquals(1,((Number)row.get("failed")).intValue());
+        assertEquals(3,((Number)row.get("due")).intValue());
+        assertEquals(((Number)row.get("scopes")).intValue(),List.of("completed","pending","running","failed").stream().mapToInt(key->((Number)row.get(key)).intValue()).sum());
+    }
+
+    @Test void durableQueueSerializesConnectionRecoversExpiredClaimsAndFencesLateCompletion() throws Exception {
+        var project=bind(connection());awaitIdle();
+        var settings=new CrmSyncProperties();settings.setRetryJitter(0);
+        var queue=new CrmSyncQueue(jdbc,tx.getTransactionManager(),settings);
+        queue.put(project.id(),CrmSyncProperties.Dataset.CLIENTS,"ALL",null,null,null,null,false);
+        queue.put(project.id(),CrmSyncProperties.Dataset.CATALOG,"ALL",null,null,null,null,false);
+        var first=queue.claim();assertNotNull(first);assertNull(queue.claim());
+        jdbc.update("update crm.syncjob set claimuntil=clock_timestamp()-interval '1 second' where id=?",first.id());
+        jdbc.update("update crm.syncconnectionlease set claimuntil=clock_timestamp()-interval '1 second' where claimtoken=?",first.token());
+        var second=queue.claim();assertNotNull(second);assertEquals(first.id(),second.id());assertNotEquals(first.token(),second.token());
+        queue.finish(first,null,false);
+        assertEquals(second.token(),jdbc.queryForObject("select claimtoken from crm.syncjob where id=?",UUID.class,second.id()));
+        assertTrue(queue.heartbeat(second));queue.finish(second,"CRM_TEMPORARILY_UNAVAILABLE",false);
+        assertEquals(1,jdbc.queryForObject("select failures from crm.syncjob where id=?",Integer.class,second.id()));
+        var third=queue.claim();assertNotNull(third);assertNotEquals(second.id(),third.id());
+        queue.finish(third,null,false);
+        assertNull(queue.claim());
+        var overview=queue.overview(project.id());
+        var datasets=(List<Map<String,Object>>)overview.get("datasets");
+        assertEquals(2,datasets.size());
+        assertEquals(1,datasets.stream().mapToInt(row->((Number)row.get("completed")).intValue()).sum());
+        assertEquals(1,datasets.stream().mapToInt(row->((Number)row.get("failed")).intValue()).sum());
+        assertEquals(0,datasets.stream().mapToInt(row->((Number)row.get("pending")).intValue()+((Number)row.get("running")).intValue()).sum());
+        jdbc.update("update crm.syncjob set nextat=clock_timestamp()-interval '1 hour' where id=?",third.id());
+        var dueDatasets=(List<Map<String,Object>>)queue.overview(project.id()).get("datasets");
+        assertEquals(0,dueDatasets.stream().mapToInt(row->((Number)row.get("completed")).intValue()).sum());
+        assertEquals(1,dueDatasets.stream().mapToInt(row->((Number)row.get("pending")).intValue()).sum());
+        assertEquals(1,dueDatasets.stream().mapToInt(row->((Number)row.get("due")).intValue()).sum());
+        var unrelated=queue.overview(UUID.randomUUID());
+        assertTrue(((List<?>)unrelated.get("datasets")).isEmpty());
+        assertTrue(((Map<?,?>)unrelated.get("stored")).values().stream().allMatch(value->((Number)value).longValue()==0));
+        assertEquals(30000,queue.retryDelay(0));assertEquals(60000,queue.retryDelay(1));assertEquals(1800000,queue.retryDelay(100));
+    }
+    @Test void coordinatorExecutesJobsWithoutSessionAndHonorsTheGlobalSwitch() throws Exception {
+        var project=bind(connection());awaitIdle();
+        var settings=new CrmSyncProperties();settings.setWorkers(1);
+        for(var policy:settings.getDatasets().values())policy.setEnabled(false);
+        settings.policy(CrmSyncProperties.Dataset.CLIENTS).setEnabled(true);
+        provider.clientReader=cursor->clientPage(List.of(externalClient("auto","Automatic")),null);
+        var queue=new CrmSyncQueue(jdbc,tx.getTransactionManager(),settings);
+        var coordinator=new CrmSyncCoordinator(settings,queue,jdbc,storage,sync,clientSync,appointmentSync,scheduleSync,finance,appointmentTimes,store.guard);
+        try{
+            actor.set(null);settings.setEnabled(false);coordinator.poll();assertEquals(0,queue.state(project.id()).size());
+            settings.setEnabled(true);coordinator.poll();
+            awaitCondition(()->jdbc.queryForObject("select count(*) from crm.syncjob where projectid=? and lastsuccessat is not null",Integer.class,project.id())==1);
+            assertEquals("Automatic",jdbc.queryForObject("select displayname from crm.client where projectid=?",String.class,project.id()));
+            assertEquals(1,((Number)((Map<?,?>)queue.overview(project.id()).get("clients")).get("total")).intValue());
+        }finally{coordinator.close();assertTrue(((ThreadPoolExecutor)ReflectionTestUtils.getField(coordinator,"workers")).awaitTermination(5,TimeUnit.SECONDS));}
+    }
+    @Test void manualJobsAreCoalescedRetriedAndDoNotBecomePermanentSubscriptions() throws Exception {
+        var project=bind(connection());awaitIdle();
+        var queue=new CrmSyncQueue(jdbc,tx.getTransactionManager(),new CrmSyncProperties());
+        queue.request(project.id(),CrmSyncProperties.Dataset.CLIENTS,"ALL",null,null,null,null,false,admin);
+        queue.request(project.id(),CrmSyncProperties.Dataset.CLIENTS,"ALL",null,null,null,null,false,admin);
+        assertEquals(1,queue.state(project.id()).size());
+        var job=queue.claim();assertTrue(job.manual());assertEquals(admin,job.actor());
+        queue.finish(job,"CRM_TEMPORARILY_UNAVAILABLE",false);
+        assertTrue(jdbc.queryForObject("select enabled and manual from crm.syncjob where id=?",Boolean.class,job.id()));
+        queue.request(project.id(),CrmSyncProperties.Dataset.CLIENTS,"ALL",null,null,null,null,false,admin);
+        var retry=queue.claim();assertNotNull(retry);queue.finish(retry,null,false);
+        assertEquals(0,queue.state(project.id()).size());
+    }
+    @Test void concurrentQueueInstancesRespectTheConfiguredConnectionSlots() throws Exception {
+        var project=bind(connection());awaitIdle();
+        var settings=new CrmSyncProperties();settings.setConnectionWorkers(2);
+        var queue=new CrmSyncQueue(jdbc,tx.getTransactionManager(),settings);
+        for(var dataset:List.of(CrmSyncProperties.Dataset.CLIENTS,CrmSyncProperties.Dataset.CATALOG,CrmSyncProperties.Dataset.CLIENT_STATISTICS))queue.put(project.id(),dataset,"ALL",null,null,null,null,false);
+        try(var executor=Executors.newFixedThreadPool(3)){
+            var barrier=new CyclicBarrier(3);
+            var tasks=new ArrayList<Future<CrmSyncQueue.Job>>();
+            for(int i=0;i<3;i++)tasks.add(executor.submit(()->{barrier.await(5,TimeUnit.SECONDS);return queue.claim();}));
+            var claimed=new ArrayList<CrmSyncQueue.Job>();
+            for(var task:tasks){var job=task.get(10,TimeUnit.SECONDS);if(job!=null)claimed.add(job);}
+            assertEquals(2,claimed.size());assertNull(queue.claim());
+            for(var job:claimed)queue.finish(job,null,false);
+            assertNotNull(queue.claim());
+        }
+    }
+    @Test void backgroundCatalogScheduleAppointmentsAndFinanceNeedNoUserSession() throws Exception {
+        var project=bind(connection());awaitIdle();var master=first(project.id());
+        provider.scheduleReader=query->new CrmScheduleSnapshot(List.of(shift("m1",0,12)),Instant.now(),CrmReadResult.Completeness.COMPLETE,"100",query);
+        provider.appointmentsReader=request->new CrmAppointmentPage(List.of(appointment("auto-record",0,12,"1")),null,Instant.now(),CrmReadResult.Completeness.COMPLETE,request.project(),request.query());
+        actor.set(null);
+        sync.runBackground(project.id(),organization,null);
+        scheduleSync.runBackground(project.id(),organization,master.id(),SCHEDULE_DAY,SCHEDULE_DAY.plusDays(1),null);
+        appointmentSync.runBackground(project.id(),organization,SCHEDULE_DAY,SCHEDULE_DAY.plusDays(1),null,false,null,new CrmSyncProperties.Policy());
+        assertEquals("SUCCEEDED",jdbc.queryForObject("select status from crm.syncstate where projectid=? and dataset='WORK_INTERVALS'",String.class,project.id()));
+        UUID appointment=jdbc.queryForObject("select id from crm.appointment where externalid='auto-record'",UUID.class);
+        assertNotNull(appointment);finance.runBackground(appointment,organization,null);
+        assertEquals("PARTIAL",jdbc.queryForObject("select status from crm.syncstate where projectid=? and dataset='FINANCE'",String.class,project.id()));
+        assertNotNull(jdbc.queryForObject("select lastsuccessat from crm.syncstate where projectid=? and dataset='FINANCE'",java.sql.Timestamp.class,project.id()));
+    }
+    @Test void manualFinanceRefreshUsesTheQueueAndKeepsTheSavedSnapshotReadable() throws Exception {
+        var project=bind(connection());awaitIdle();
+        loadAppointments(project.id(),CrmReadResult.Completeness.COMPLETE,List.of(appointment("finance-queued",0,12,"1")));
+        UUID appointment=jdbc.queryForObject("select id from crm.appointment where externalid='finance-queued'",UUID.class);
+        var settings=new CrmSyncProperties();for(var policy:settings.getDatasets().values())policy.setEnabled(false);
+        var queue=new CrmSyncQueue(jdbc,tx.getTransactionManager(),settings);
+        ReflectionTestUtils.setField(finance,"syncQueue",queue);ReflectionTestUtils.setField(finance,"syncProperties",settings);
+        var calls=new AtomicInteger();provider.financeReader=query->{calls.incrementAndGet();return financeSnapshot(query);};
+        assertEquals("QUEUED",finance.refresh(appointment).sync().status());assertEquals(0,calls.get());
+        var coordinator=new CrmSyncCoordinator(settings,queue,jdbc,storage,sync,clientSync,appointmentSync,scheduleSync,finance,appointmentTimes,store.guard);
+        try{
+            actor.set(null);coordinator.poll();
+            awaitCondition(()->jdbc.queryForObject("select count(*) from crm.syncjob where projectid=? and lastsuccessat is not null",Integer.class,project.id())==1);
+            assertEquals(1,calls.get());actor.set(admin);assertNotNull(finance.read(appointment).snapshot());
+        }finally{coordinator.close();assertTrue(((ThreadPoolExecutor)ReflectionTestUtils.getField(coordinator,"workers")).awaitTermination(5,TimeUnit.SECONDS));}
+    }
+    @Test void queuedManualWorkRechecksTheInitiatorsAccessBeforeCallingCrm() throws Exception {
+        var project=bind(connection());awaitIdle();
+        var settings=new CrmSyncProperties();for(var policy:settings.getDatasets().values())policy.setEnabled(false);
+        var queue=new CrmSyncQueue(jdbc,tx.getTransactionManager(),settings);
+        var coordinator=new CrmSyncCoordinator(settings,queue,jdbc,storage,sync,clientSync,appointmentSync,scheduleSync,finance,appointmentTimes,store.guard);
+        try{
+            actor.set(member);coordinator.request(project.id(),new RefreshCrmRequest("CLIENTS"));
+            jdbc.update("delete from dbo.employeeworkspace where employeeid=?",member);
+            var calls=new AtomicInteger();provider.clientReader=cursor->{calls.incrementAndGet();return clientPage(List.of(),null);};
+            actor.set(null);coordinator.poll();
+            awaitCondition(()->jdbc.queryForObject("select count(*) from crm.syncjob where projectid=? and errorcode='ACCESS_DENIED'",Integer.class,project.id())==1);
+            assertEquals(0,calls.get());
+        }finally{coordinator.close();assertTrue(((ThreadPoolExecutor)ReflectionTestUtils.getField(coordinator,"workers")).awaitTermination(5,TimeUnit.SECONDS));}
+    }
+    @Test void backgroundClientBatchesResumeWithoutAUserSession() throws Exception {
+        var project=bind(connection());awaitIdle();
+        var settings=new CrmSyncProperties();settings.policy(CrmSyncProperties.Dataset.CLIENTS).setMaxPagesPerRun(1);
+        settings.setLeaseDuration(java.time.Duration.ofMinutes(5));
+        ReflectionTestUtils.setField(clientSync,"syncProperties",settings);
+        var calls=new ArrayList<String>();
+        provider.clientReader=cursor->{
+            calls.add(cursor);
+            double remaining=jdbc.queryForObject("select extract(epoch from claimuntil-clock_timestamp()) from crm.syncstate where projectid=? and dataset='WRITER:CLIENTS'",Double.class,project.id());
+            assertTrue(remaining>290&&remaining<=300,"Configured lease must replace the legacy 120-second interval");
+            return cursor==null ? clientPage(List.of(externalClient("1","First")),"next") : clientPage(List.of(externalClient("2","Second")),null);
+        };
+        actor.set(null);
+        clientSync.runBackground(project.id(),organization,false,null);
+        assertEquals("next",jdbc.queryForObject("select scope->>'continuationCursor' from crm.syncstate where projectid=? and dataset='CLIENTS'",String.class,project.id()));
+        clientSync.runBackground(project.id(),organization,false,null);
+        assertEquals(Arrays.asList(null,"next"),calls);
+        assertEquals(2,jdbc.queryForObject("select count(*) from crm.client where projectid=?",Integer.class,project.id()));
+        assertNull(jdbc.queryForObject("select scope->>'continuationCursor' from crm.syncstate where projectid=? and dataset='CLIENTS'",String.class,project.id()));
+    }
+    @Test void coordinatorPlansCalendarScopesWithoutAnyUiSubscription() throws Exception {
+        var project=bind(connection());awaitIdle();
+        jdbc.update("update crm.project set zoneid='Europe/Moscow' where id=?",project.id());
+        var settings=new CrmSyncProperties();
+        for(var policy:settings.getDatasets().values())policy.setEnabled(false);
+        var appointments=settings.policy(CrmSyncProperties.Dataset.APPOINTMENTS);appointments.setEnabled(true);appointments.setPastDays(0);appointments.setFutureDays(2);appointments.setChunkDays(1);
+        var queue=new CrmSyncQueue(jdbc,tx.getTransactionManager(),settings);
+        var coordinator=new CrmSyncCoordinator(settings,queue,jdbc,storage,sync,clientSync,appointmentSync,scheduleSync,finance,appointmentTimes,store.guard);
+        try {
+            actor.set(null);coordinator.plan();
+            assertEquals(3,queue.state(project.id()).size());
+            coordinator.plan();assertEquals(3,queue.state(project.id()).size());
+            appointments.setEnabled(false);coordinator.plan();assertEquals(0,queue.state(project.id()).size());
+        }finally{coordinator.close();}
+    }
+    @Test void statisticsRefreshSelectsOnlyFiveOldestAndTheNextBatchMovesForward() throws Exception {
+        var project=bind(connection()); awaitIdle();
+        var fields=Set.of("displayName","visitCount","totalSpent","averageCheck","statisticsCurrency");
+        var imported=new ArrayList<CrmClient>();
+        for (int i=1;i<=11;i++) imported.add(new CrmClient(Integer.toString(i),"PROJECT","Client "+i,Map.of(),Map.of(),
+                fields,null,1L,new BigDecimal("3.00"),new BigDecimal("3.00"),"RUB"));
+        imported.add(externalClient("12","No statistics"));
+        provider.clientReader=cursor->clientPage(imported,null);
+        clientSync.refresh(project.id()); awaitClients();
+        for (int i=1;i<=11;i++) jdbc.update("update crm.client set statisticsupdatedat=? where projectid=? and externalid=?",
+                java.sql.Timestamp.from(Instant.now().minusSeconds(i*3600L)),project.id(),Integer.toString(i));
+        var calls=new CopyOnWriteArrayList<List<String>>();
+        provider.statisticsReader=ids -> {
+            calls.add(List.copyOf(ids));
+            return clientPage(ids.stream().map(id->new CrmClient(id,"PROJECT",null,Map.of(),Map.of(),
+                    Set.of("visitCount","totalSpent","averageCheck","statisticsCurrency"),null,
+                    2L,new BigDecimal("10.00"),new BigDecimal("5.00"),"RUB")).toList(),null);
+        };
+        clientSync.refreshStatistics(project.id()); awaitClients();
+        assertEquals(List.of("12","11","10","9","8"),calls.getFirst());
+        var first=clients.clients(project.id(),"No statistics",false,null).items().getFirst();
+        assertNotNull(first.statisticsUpdatedAt()); assertEquals("5.00",first.averageCheck());
+        Instant observed=first.statisticsUpdatedAt();
+        clientSync.refreshStatistics(project.id()); awaitClients();
+        assertEquals(List.of("7","6","5","4","3"),calls.get(1));
+        provider.clientReader=cursor->clientPage(List.of(externalClient("12","Renamed")),null);
+        clientSync.refresh(project.id()); awaitClients();
+        assertEquals(observed,clients.client(first.id()).statisticsUpdatedAt());
+        assertEquals(2,calls.size());
+        provider.statisticsReader=ids->{throw new CrmFailure(CrmFailure.Code.TEMPORARY_FAILURE);};
+        var before=jdbc.queryForMap("select statisticsupdatedat, averagecheck from crm.client where projectid=? and externalid='2'",project.id());
+        clientSync.refreshStatistics(project.id()); awaitClients();
+        assertEquals(before,jdbc.queryForMap("select statisticsupdatedat, averagecheck from crm.client where projectid=? and externalid='2'",project.id()));
+    }
+
     private static CrmClientPage clientPage(List<CrmClient> items, String next) {
         return new CrmClientPage(items,next,Instant.now(),CrmReadResult.Completeness.UNKNOWN,"100:CLIENTS");
     }
@@ -2574,6 +2971,8 @@ class CrmFoundationIntegrationTest {
         assertEquals("CRM_CONTEXT_CHANGED",clientSync.state(project.id()).errorCode());
     }
     @Test void repeatedClientCursorFailsAndImportLimitIsExplicit() throws Exception {
+        assertEquals(1000,ReflectionTestUtils.getField(clientSync,"maxPages"));
+        ReflectionTestUtils.setField(clientSync,"maxPages",100);
         var project=bind(connection()); awaitIdle(); var calls=new AtomicInteger();
         provider.clientReader=cursor -> clientPage(List.of(externalClient(Integer.toString(calls.incrementAndGet()),"Row")),"same");
         clientSync.refresh(project.id()); awaitClients();

@@ -399,7 +399,9 @@ public class ConversationService {
                             .findAllByChannelAccountIdAndClientAccountId(
                                     channelAccount.getId(),
                                     clientAccount.getId()
-                            ),
+                            ).stream()
+                            .filter(candidate -> dialog == null || candidate.getDialogExternalId() == null)
+                            .toList(),
                     channelAccount.getId(),
                     clientAccount.getId()
             );

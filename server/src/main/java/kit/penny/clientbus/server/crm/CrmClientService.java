@@ -23,26 +23,30 @@ public class CrmClientService {
         this.store=store; this.sync=sync; this.events=events; this.tx=new TransactionTemplate(manager);
     }
     public CrmClientPageDto clients(UUID projectId, String query, boolean unlinked, String cursor) {
+        return clients(projectId, query, unlinked, cursor, "NAME", "ASC");
+    }
+    public CrmClientPageDto clients(UUID projectId, String query, boolean unlinked, String cursor, String sort, String direction) {
         store.storage.requireReady();
+        String property=switch (sort) { case "NAME" -> "lower(c.displayName)"; case "VISITS" -> "c.visitCount"; case "SPENT" -> "c.totalSpent"; case "AVERAGE_CHECK" -> "c.averageCheck"; default -> throw CrmException.invalid(); };
+        if (!Set.of("ASC","DESC").contains(direction)) throw CrmException.invalid();
         String search=CrmSearch.normalize(query);
         return tx.execute(status -> {
             var project=store.project(projectId, store.guard.organization());
             store.em.refresh(project, LockModeType.PESSIMISTIC_READ);
             long revision=sync.revision(projectId);
-            String scope=CrmSearch.scope(projectId+"/"+search+"/"+unlinked);
-            UUID after=decode(cursor, scope, revision);
+            String scope=CrmSearch.scope(projectId+"/"+search+"/"+unlinked+"/"+sort+"/"+direction);
+            int after=decode(cursor, scope, revision);
             String hql="from CrmClientEntity c where c.project.id=:project"
-                    +(after==null ? "" : " and c.id>:after")+(unlinked ? " and c.client is null" : "")
+                    +(unlinked ? " and c.client is null" : "")
                     +(search.isEmpty() ? "" : " and (lower(c.displayName) like :search escape '!' or c.normalizedPhone like :phone escape '!')")
-                    +" order by c.id";
-            var request=store.em.createQuery(hql, CrmClientEntity.class).setParameter("project",projectId).setMaxResults(101);
-            if (after!=null) request.setParameter("after",after);
+                    +" order by "+property+" "+direction+" nulls last, c.id";
+            var request=store.em.createQuery(hql, CrmClientEntity.class).setParameter("project",projectId).setFirstResult(after).setMaxResults(101);
             if (!search.isEmpty()) request.setParameter("search",CrmSearch.pattern(search))
                     .setParameter("phone",CrmSearch.pattern(Optional.ofNullable(CrmPhone.normalize(search)).orElse(search)));
             var rows=request.getResultList();
             boolean more=rows.size()>100;
             var items=rows.stream().limit(100).map(CrmClientService::dto).toList();
-            return new CrmClientPageDto(items, more ? encode(scope,revision,items.getLast().id()) : null, more, sync.state(projectId), revision);
+            return new CrmClientPageDto(items, more ? encode(scope,revision,after+100) : null, more, sync.state(projectId), revision);
         });
     }
     public CrmClientDto client(UUID id) {
@@ -102,12 +106,14 @@ public class CrmClientService {
         return tx.execute(status -> {
             UUID organization=store.guard.organization(), actor=store.guard.actor();
             var row=accessible(id,organization);
-            store.lockMappingEmployees(actor,null);
             ClientEntity target=null;
             if (clientId!=null) {
                 target=store.em.find(ClientEntity.class, clientId, LockModeType.PESSIMISTIC_WRITE);
                 if (target==null || !organization.equals(target.getOrganization().getId())) throw CrmStore.notFound();
             }
+            // Core deletion holds the client before locking the mapping author.
+            // Keep that order here too, including concurrent actions by the same admin.
+            store.lockMappingEmployees(actor,null);
             lock(row,expectedVersion);
             UUID previous=row.getClient()==null ? null : row.getClient().getId();
             if (!Objects.equals(previous,clientId)) {
@@ -163,7 +169,10 @@ public class CrmClientService {
                 Map.copyOf(row.getContacts()),row.getNormalizedPhone(),row.getAvatarUrl(),
                 row.getClient()==null ? null : row.getClient().getId(),
                 row.getMappingUpdatedAt(),row.getMappingUpdatedBy()==null ? null : row.getMappingUpdatedBy().getId(),
-                row.getMappingPreviousId(),row.getMappingReason(),row.getLastObservedAt(),row.getVersion());
+                row.getMappingPreviousId(),row.getMappingReason(),row.getLastObservedAt(),row.getVersion(),
+                row.getVisitCount(),row.getTotalSpent()==null ? null : row.getTotalSpent().toPlainString(),
+                row.getStatisticsCurrency()==null ? row.getProject().getCurrency() : row.getStatisticsCurrency(),
+                row.getAverageCheck()==null ? null : row.getAverageCheck().toPlainString(), row.getStatisticsUpdatedAt());
     }
     private static void validate(CreateCrmClientRequest request) {
         if (request==null || request.expectedVersion()==null || request.expectedVersion()<0 || request.firstName()==null
@@ -171,17 +180,19 @@ public class CrmClientService {
                 || request.phoneList()==null || request.phoneList().size()>20
                 || request.phoneList().stream().anyMatch(phone -> phone==null || phone.isBlank() || phone.length()>20)) throw CrmException.invalid();
     }
-    private static String encode(String scope,long revision,UUID after) {
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(("1:"+scope+":"+revision+":"+after).getBytes(StandardCharsets.US_ASCII));
+    private static String encode(String scope,long revision,int after) {
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(("2:"+scope+":"+revision+":"+after).getBytes(StandardCharsets.US_ASCII));
     }
-    private static UUID decode(String cursor,String scope,long revision) {
-        if (cursor==null || cursor.isBlank()) return null;
+    private static int decode(String cursor,String scope,long revision) {
+        if (cursor==null || cursor.isBlank()) return 0;
         try {
             if (cursor.length()>200) throw CrmException.invalid();
             var parts=new String(Base64.getUrlDecoder().decode(cursor),StandardCharsets.US_ASCII).split(":",-1);
-            if (parts.length!=4 || !parts[0].equals("1") || !parts[1].equals(scope)) throw CrmException.invalid();
+            if (parts.length!=4 || !parts[0].equals("2") || !parts[1].equals(scope)) throw CrmException.invalid();
             if (Long.parseLong(parts[2])!=revision) throw CrmException.conflict("CRM_CONTEXT_CHANGED");
-            return UUID.fromString(parts[3]);
+            int offset=Integer.parseInt(parts[3]);
+            if (offset<0 || offset>1000000 || offset%100!=0) throw CrmException.invalid();
+            return offset;
         } catch (IllegalArgumentException error) { throw CrmException.invalid(); }
     }
 }

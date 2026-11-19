@@ -391,6 +391,7 @@ async function installCrm(page: Page, existing = true) {
         clientLinks: 0, coreCreates: 0, appointmentReads: 0, intervalReads: 0, financeReads: 0, historyReads: 0, unknown: [] as string[] }
     const crmClients: CrmClient[] = [0,1].map(i => ({ id: 'crm-client-' + i, projectId: 'crm-project', externalId: 'client-' + i, identityKind: 'PROJECT', displayName: i ? 'Другой клиент CRM' : 'Иван CRM',
         contacts: { phone: '70000000001' }, normalizedPhone: '70000000001', avatarUrl: i ? 'crm/avatars/client-1.gif' : null, clientId: i ? 'client-1' : null,
+        visitCount: null, totalSpent: null, averageCheck: null, currency: null, statisticsUpdatedAt: null,
         mappingUpdatedAt: null, mappingUpdatedBy: null, mappingPreviousId: null, mappingReason: null, lastObservedAt: '2026-11-08T09:00:00Z', version: 0 }))
     const visits: CrmAppointment[] = [{ id: 'visit-1', projectId: 'crm-project', workspaceId: 'workspace-1', externalId: 'visit-external', kind: 'APPOINTMENT', crmClientId: 'crm-client-1', clientId: 'client-1',
         clientIdentityKind: 'PROJECT', externalClientId: 'client-1',

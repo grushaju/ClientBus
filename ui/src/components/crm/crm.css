@@ -61,6 +61,16 @@
 .crm-text-button { border: 0; background: none; color: #2453a6; cursor: pointer; padding: 4px 0; text-align: left; font-weight: 600 !important; }
 .crm-text-button:hover { text-decoration: underline; }
 .crm-masters { gap: 0; }
+.crm-clients-table-scroll { overflow-x: auto; margin-top: 16px; }
+.crm-clients-table.crm-masters { display: table; width: 100%; min-width: 820px; margin: 0; border-collapse: separate; border-spacing: 0; }
+.crm-clients-table th { background: #f5f7fb; color: #475569; font-size: 13px; text-align: left; padding: 12px 16px; border-bottom: 1px solid #dce3ee; }
+.crm-clients-table td { padding: 12px 16px; border-bottom: 1px solid #e2e7ee; vertical-align: middle; }
+.crm-clients-table tr:last-child td { border-bottom: 0; }
+.crm-clients-table td small { display: block; color: #64748b; margin-top: 4px; }
+.crm-clients-table .crm-client-number { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.crm-column-sort { border: 0; background: transparent; padding: 0; color: inherit; font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
+.crm-column-sort:hover { color: #2453a6; text-decoration: underline; }
+.crm-column-sort:focus-visible { outline: 2px solid #2453a6; outline-offset: 4px; }
 .crm-master { border: 0; border-bottom: 1px solid #e2e7ee; padding: 14px 16px; grid-template-columns: minmax(140px, 1fr) minmax(160px, 1fr); min-height: 74px; box-sizing: border-box; }
 .crm-master.mapping { min-height: 82px; padding-top: 10px; padding-bottom: 10px; }
 .crm-role-master { display: inline-block !important; width: fit-content; margin-top: 4px; padding: 1px 10px; border-radius: 999px; background: #dcfce7; color: #15803d; font-weight: 600; }

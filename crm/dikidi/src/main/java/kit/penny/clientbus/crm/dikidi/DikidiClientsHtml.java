@@ -64,6 +64,9 @@ final class DikidiClientsHtml extends HTMLEditorKit.ParserCallback {
     private boolean invalid;
     private boolean phonePresent;
     private final StringBuilder name = new StringBuilder(), phone = new StringBuilder();
+    private final StringBuilder visits = new StringBuilder(), spent = new StringBuilder();
+    private int visitsDepth=-1, spentDepth=-1;
+    private boolean visitsPresent, spentPresent;
     static List<CrmClient> parse(String html) {
         var parser = new DikidiClientsHtml();
         try { new ParserDelegator().parse(new StringReader("<table>"+html+"</table>"), parser, true); }
@@ -81,6 +84,7 @@ final class DikidiClientsHtml extends HTMLEditorKit.ParserCallback {
             // System identity has not been established by the protocol research.
             if ("1".equals(String.valueOf(attrs.getAttribute("data-is-system")))) invalid();
             name.setLength(0); phone.setLength(0); phonePresent=false;
+            visits.setLength(0); spent.setLength(0); visitsPresent=spentPresent=false;
             avatar=null; avatarHinted=false; backgroundSeen=false; iconSlot=false;
         }
         if (id == null) return;
@@ -103,11 +107,16 @@ final class DikidiClientsHtml extends HTMLEditorKit.ParserCallback {
         if (classes.contains("line-name")) nameDepth=depth;
         if (tag == HTML.Tag.A && nameDepth >= 0) anchorDepth=depth;
         if (classes.contains("line-phone")) { phoneDepth=depth; phonePresent=true; }
+        if (tag == HTML.Tag.TD && classes.contains("appointments")) { visitsDepth=depth; visitsPresent=true; }
+        if (tag == HTML.Tag.TD && classes.contains("spent")) { spentDepth=depth; spentPresent=true; }
     }
     @Override public void handleText(char[] text, int pos) {
         if (id == null) return;
         if (anchorDepth >= 0) name.append(text);
         if (phoneDepth >= 0) phone.append(text);
+        if (visitsDepth >= 0) visits.append(text);
+        if (spentDepth >= 0) spent.append(text);
+        if (visits.length()>64 || spent.length()>64) invalid();
         if (name.length()>65536 || phone.length()>256) invalid();
     }
     @Override public void handleEndTag(HTML.Tag tag, int pos) {
@@ -116,19 +125,41 @@ final class DikidiClientsHtml extends HTMLEditorKit.ParserCallback {
             if (displayName.isBlank()) invalid();
             Set<String> fields = new HashSet<>(Set.of("displayName"));
             if (phonePresent) fields.add("phone");
+            if (visitsPresent) fields.add("visitCount");
+            if (spentPresent) fields.add("totalSpent");
             // Маска честнее значения: «аватар наблюдали и его нет» (слот без фона) отличается от
             // «мы ничего не поняли в этой строке» — второе не даёт писателю снимать прежнее зеркало.
             if (avatar != null || (iconSlot && !backgroundSeen)) fields.add("avatar");
             clients.add(new CrmClient(id, "PROJECT", displayName,
                     phonePresent ? Map.of("phone",phone.toString().strip()) : Map.of(), Map.of("source","R08"),
-                    fields, avatar));
+                    fields, avatar, visitsPresent ? visitCount(visits.toString()) : null,
+                    spentPresent ? totalSpent(spent.toString()) : null));
             id=null; avatar=null; nameDepth=anchorDepth=phoneDepth=-1;
+            visitsDepth=spentDepth=-1;
         }
         if (nameDepth==depth) nameDepth=-1;
         if (anchorDepth==depth) anchorDepth=-1;
         if (phoneDepth==depth) phoneDepth=-1;
+        if (visitsDepth==depth) visitsDepth=-1;
+        if (spentDepth==depth) spentDepth=-1;
         depth--;
     }
     // ParserDelegator can swallow callback exceptions. Remember invalid data and fail after parsing.
     private void invalid() { invalid=true; }
+
+    private static String number(String value) {
+        return value.replaceAll("[\\s\\u00a0\\u202f]", "").replace(',', '.');
+    }
+    private Long visitCount(String value) {
+        String text=number(value);
+        if (text.isEmpty() || text.equals("-") || text.equals("—")) return null;
+        if (!text.matches("[0-9]{1,9}")) { invalid(); return null; }
+        return Long.valueOf(text);
+    }
+    private java.math.BigDecimal totalSpent(String value) {
+        String text=number(value);
+        if (text.isEmpty() || text.equals("-") || text.equals("—")) return null;
+        if (!text.matches("[0-9]{1,17}(\\.[0-9]{1,2})?")) { invalid(); return null; }
+        return new java.math.BigDecimal(text);
+    }
 }

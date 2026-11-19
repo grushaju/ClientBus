@@ -55,8 +55,7 @@ public class DikidiChannelConnector implements IChannelConnector {
     private static final int DIALOG_LIST_PAGES = 5;
     /** Потолок загружаемого файла: лимит платформы захватом не подтверждён — страховка памяти. */
     private static final int MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
-    /** Бюджет обхода C05 для C08: тот же порядок, что у начального импорта (5 стр × 20). */
-    private static final int MARK_READ_PAGE_BUDGET = 5;
+    private final Map<java.util.UUID, Long> dialogListCursors = new java.util.concurrent.ConcurrentHashMap<>();
 
     private final DikidiClient client;
     private final DikidiTechnicalCredentials credentials;
@@ -101,6 +100,19 @@ public class DikidiChannelConnector implements IChannelConnector {
      * POST — исход неизвестен: клейм удерживается (13.2b), автоматического повтора нет.
      */
     @Override public ConnectorSendResult handle(SendMessageCommand command) {
+        var dispatched = new java.util.concurrent.atomic.AtomicBoolean();
+        try {
+            return send(command, dispatched);
+        } catch (kit.penny.clientbus.connector.api.error.ConnectorSendRejectedException rejected) {
+            throw rejected;
+        } catch (RuntimeException failure) {
+            if (dispatched.get()) throw failure;
+            throw new kit.penny.clientbus.connector.api.error.ConnectorSendRejectedException(
+                    "DIKIDI failed before message dispatch", failure);
+        }
+    }
+
+    private ConnectorSendResult send(SendMessageCommand command, java.util.concurrent.atomic.AtomicBoolean dispatched) {
         // Текст уходит как есть (веб-клиент не тримит); проверка «пустое сообщение»
         // не должна переписывать пользовательский текст.
         String text = command.content() == null ? "" : command.content();
@@ -129,7 +141,7 @@ public class DikidiChannelConnector implements IChannelConnector {
                             : resolveDialog(session, company, command.recipientExternalId());
                     for (var attachment : command.attachments()) {
                         byte[] bytes;
-                        try (var stream = attachment.content()) { bytes = stream.readAllBytes(); }
+                        try (var stream = attachment.content()) { bytes = stream.readNBytes(MAX_UPLOAD_BYTES + 1); }
                         catch (java.io.IOException unreadable) {
                             throw new kit.penny.clientbus.connector.api.error.ConnectorSendRejectedException(
                                     "DIKIDI outbound attachment is unreadable");
@@ -148,7 +160,10 @@ public class DikidiChannelConnector implements IChannelConnector {
                     throw new kit.penny.clientbus.connector.api.error.ConnectorSendRejectedException(
                             "DIKIDI dialog could not be resolved before send", unresolvedDialog);
                 }
-                var sent = reads.sendMessage(session, company, sendForm(dialog, text, uploads));
+                var sent = reads.sendMessage(session, company, sendForm(dialog, text, uploads),
+                        new kit.penny.clientbus.integration.dikidi.DikidiTransport.Observer() {
+                            @Override public void dispatched() { dispatched.set(true); }
+                        });
                 // Аватар канала зеркалится с владельца подключения. Только после принятого C06:
                 // ответ платформы называет автора НАШЕЙ сессии, и это единственное доказуемое
                 // утверждение «вот кто подключён». Сбой картинки не имеет права испортить
@@ -165,7 +180,7 @@ public class DikidiChannelConnector implements IChannelConnector {
             if (!outcome.accepted())
                 throw new kit.penny.clientbus.connector.api.error.ConnectorSendRejectedException(
                         "DIKIDI rejected outbound, error.code=" + outcome.errorCode());
-            return new ConnectorSendResult(outcome.externalId());
+            return new ConnectorSendResult(outcome.externalId(), command.sendAttemptId(), true);
         }
     }
 
@@ -188,56 +203,51 @@ public class DikidiChannelConnector implements IChannelConnector {
     }
 
     /**
-     * C08 отметка прочтения (POST /api/dialog/read/, поля tabHash/dialog/msg[] — форма
-     * подтверждена публичным backend.js 15.11.2026). msg — конкретные id ВХОДЯЩИХ
-     * сообщений с id не выше lastReadExternalId (нумерация платформы возрастает —
-     * предположение зафиксировано в CRM_DIKIDI_PROTOCOL.md). Страницы C05 (DESC)
-     * обходятся вниз до пересечения курсора прочтения: одна свежая страница не
-     * покрывала бы >20 непрочитанных и старые зависали бы навсегда (ресью N1 15.11);
-     * бюджет обхода — как у начального импорта. Числовой lastReadExternalId обязателен:
-     * нечитаемый курсор — fail-closed без POST (отметить «всё» по мусорному входу
-     * значило бы поставить ложный прочитанный статус). Операция идемпотентна —
-     * допустим auth-повтор (execute), сбой уходит в DLQ честно: отметка не поставлена.
+     * C08 reports unread inbound IDs up to the requested watermark. The Kafka host uses
+     * continueRead for one C05 page per command and durably enqueues the returned cursor.
+     * The direct capability entry point drains these pages while releasing the session between them.
      */
     @Override public void handle(MarkMessagesReadCommand command) {
+        while (command != null) command = continueRead(command);
+    }
+
+    @Override public MarkMessagesReadCommand continueRead(MarkMessagesReadCommand command) {
         var account = accounts.require(command.channelAccountId());
         String company = company(account);
         long last = parseId(command.lastReadExternalId());
         if (last < 0) {
             log.warn("DIKIDI mark-read skipped: unreadable read cursor {} (account={}, dialog={})",
                     command.lastReadExternalId(), account.id(), command.dialogExternalId());
-            return;
+            return null;
         }
         try (DikidiCredential credential = credentials.obtain(account.id())) {
-            client.execute(credential, null, session -> {
+            return client.execute(credential, null, session -> {
                 reads.shell(session, company);
                 String dialog = command.dialogExternalId() != null && !command.dialogExternalId().isBlank()
                         ? command.dialogExternalId()
                         : resolveDialog(session, company, command.recipientExternalId());
+                String cursor = command.beforeExternalId();
+                // One page per durable command releases the session between pages and bounds replay.
+                var current = reads.messages(session, dialog, cursor, DikidiChatReads.MAX_PAGE, company);
+                if (current.messages().isEmpty() || current.historyStartReached()) return null;
                 var ids = new ArrayList<String>();
-                String cursor = null;
-                for (int page = 0; page < MARK_READ_PAGE_BUDGET; page++) {
-                    var current = reads.messages(session, dialog, cursor, DikidiChatReads.MAX_PAGE, company);
-                    if (current.messages().isEmpty() || current.historyStartReached()) break;
-                    long oldest = Long.MAX_VALUE;
-                    for (var message : current.messages()) {
-                        long id = parseId(message.id());
-                        if (id < 0) {
-                            log.warn("DIKIDI mark-read ignores non-numeric message id {} (dialog={})",
-                                    message.id(), dialog);
-                            continue;
-                        }
-                        oldest = Math.min(oldest, id);
-                        if (!message.out() && id <= last) ids.add(message.id());
+                long oldest = Long.MAX_VALUE;
+                for (var message : current.messages()) {
+                    long id = parseId(message.id());
+                    if (id < 0) {
+                        log.warn("DIKIDI mark-read ignores non-numeric message id {} (dialog={})",
+                                message.id(), dialog);
+                        continue;
                     }
-                    // Пересекли курсор: всё старше уже прочитано по смыслу команды,
-                    // дальних страниц не касаемся.
-                    if (oldest <= last) break;
-                    if (cursor != null && oldest >= parseId(cursor)) break; // без прогресса — защита от петли
-                    cursor = Long.toString(oldest);
+                    oldest = Math.min(oldest, id);
+                    if (!message.out() && message.seen() == 0 && id <= last) ids.add(message.id());
                 }
                 reads.markRead(session, company, dialog, List.copyOf(ids));
-                return null;
+                if (oldest == Long.MAX_VALUE || cursor != null && oldest >= parseId(cursor))
+                    throw new DikidiFailure(DikidiFailure.Code.INVALID_RESPONSE);
+                cursor = Long.toString(oldest);
+                return new MarkMessagesReadCommand(account.id(), command.recipientExternalId(),
+                        command.lastReadExternalId(), dialog, cursor);
             });
         }
     }
@@ -259,7 +269,7 @@ public class DikidiChannelConnector implements IChannelConnector {
             var collected = new ArrayList<DikidiChatReads.Dialog>();
             var seenDialogs = new java.util.HashSet<String>();
             Map<String, Integer> unread = Map.of();
-            long cursor = 0L;
+            long cursor = dialogListCursors.getOrDefault(account.id(), 0L);
             // Живой прогон 15.11.2026: обход только первой страницы C02 терял целые диалоги
             // (диалог с текстовой подписью и вложениями не импортировался вовсе — more=true).
             // Курсор time= самый старый date предыдущей страницы; форма курсора протоколом
@@ -279,8 +289,12 @@ public class DikidiChannelConnector implements IChannelConnector {
                     if (seenDialogs.add(dialog.id())) { collected.add(dialog); added++; }
                 long oldest = listing.dialogs().dialogs().stream()
                         .mapToLong(DikidiChatReads.Dialog::dateEpoch).filter(d -> d > 0).min().orElse(0L);
-                if (!listing.dialogs().more() || added == 0 || oldest == 0 || oldest == pageCursor) break;
+                if (!listing.dialogs().more() || added == 0 || oldest == 0 || oldest == pageCursor) {
+                    dialogListCursors.remove(account.id());
+                    break;
+                }
                 cursor = oldest;
+                dialogListCursors.put(account.id(), cursor);
                 if (page == DIALOG_LIST_PAGES)
                     log.info("DIKIDI dialogs list still has more=true after {} pages: account={}, "
                             + "older dialogs wait for the next pass", DIALOG_LIST_PAGES, account.id());
@@ -324,7 +338,8 @@ public class DikidiChannelConnector implements IChannelConnector {
         }
         var checkpoint = checkpoints.load(account.id(), dialog.id());
         if (checkpoint.isPresent() && checkpoint.get().initialSyncDone()
-                && (dialog.dateEpoch() > checkpoint.get().lastDialogEpoch() || dialog.badge() > 0))
+                && (checkpoint.get().liveBeforeId() != null
+                    || dialog.dateEpoch() > checkpoint.get().lastDialogEpoch() || dialog.badge() > 0))
             publishLive(session, account, company, dialog, classified.get(), checkpoint.get());
         var client = classified.get();
         return new ConnectorConversation(account.id(), client.clientId(), client.clientName(), null,
@@ -404,17 +419,19 @@ public class DikidiChannelConnector implements IChannelConnector {
      * дошагивают last-курсором: одна первая страница ≥20 свежих не теряет старых свежих.
      * Курсор сохраняется после полной передачи страницы; падение между публикацией и
      * сохранением даёт повтор, который гасится дедупом сообщений. Если бюджета страниц
-     * не хватило до курсора — ничего не публикуется и не двигается (отставание честно
-     * переживается явным логом; потери молча не происходит, догрузка — history-путём).
+     * не хватило до курсора — сохраняются граница продолжения и верхний id начатого
+     * диапазона; следующий проход продолжает его, не перепрыгивая ещё не переданный хвост.
      */
     private void publishLive(DikidiClient.Session session, HostChannelAccountSnapshot account, String company,
             DikidiChatReads.Dialog dialog, Classified client, ConversationCheckpoint checkpoint) {
         String cursor = checkpoint.newestMessageId();
         var news = new ArrayList<DikidiChatReads.Message>();
-        var page = reads.messages(session, dialog.id(), null, DikidiChatReads.MAX_PAGE, company);
+        var page = reads.messages(session, dialog.id(), checkpoint.liveBeforeId(), DikidiChatReads.MAX_PAGE, company);
         int pages = 1;
         boolean reachedCursor = false;
+        String observedNewest = checkpoint.liveNewestId();
         while (true) {
+            observedNewest = larger(observedNewest, maxId(page.messages()));
             boolean tailOlder = false;
             for (var message : page.messages()) {
                 if (cursor != null && Long.parseLong(message.id()) <= Long.parseLong(cursor)) tailOlder = true;
@@ -424,12 +441,6 @@ public class DikidiChannelConnector implements IChannelConnector {
             if (pages >= initialBudgetPages) break;
             page = reads.messages(session, dialog.id(), minId(page.messages()), DikidiChatReads.MAX_PAGE, company);
             pages++;
-        }
-        if (!reachedCursor) {
-            log.warn("DIKIDI live backlog exceeds per-pass budget; nothing published, cursor unchanged "
-                    + "(deferred to history path): account={}, dialog={}, pages={}",
-                    account.id(), dialog.id(), pages);
-            return;
         }
         news.sort(Comparator.comparingLong(message -> Long.parseLong(message.id())));
         for (var message : news) {
@@ -442,17 +453,18 @@ public class DikidiChannelConnector implements IChannelConnector {
             inbound.publish(toInbound(account, client.clientId(), client.clientName(), dialog.id(), message,
                     EventOrigin.LIVE, stored));
         }
+        String newest = larger(cursor, observedNewest);
+        long epoch = Math.max(checkpoint.lastDialogEpoch(),
+                news.stream().mapToLong(DikidiChatReads.Message::epoch).max().orElse(checkpoint.lastDialogEpoch()));
+        if (news.isEmpty() && checkpoint.liveBeforeId() == null) epoch = Math.max(epoch, dialog.dateEpoch());
+        var next = reachedCursor
+                ? new ConversationCheckpoint(newest, checkpoint.oldestLoadedId(), true, checkpoint.historyStartReached(), epoch)
+                : new ConversationCheckpoint(cursor, checkpoint.oldestLoadedId(), true, checkpoint.historyStartReached(),
+                    checkpoint.lastDialogEpoch(), minId(page.messages()), newest);
+        checkpoints.acknowledge(new HostConversationCheckpoints.Update(account.id(), account.externalId(), dialog.id(), checkpoint, next));
         if (!news.isEmpty()) {
-            String newest = news.get(news.size() - 1).id();
-            long epoch = Math.max(checkpoint.lastDialogEpoch(),
-                    news.stream().mapToLong(DikidiChatReads.Message::epoch).max().orElse(0));
-            checkpoints.save(account.id(), dialog.id(), new ConversationCheckpoint(newest,
-                    checkpoint.oldestLoadedId(), true, checkpoint.historyStartReached(), epoch));
             log.info("DIKIDI live messages published: account={}, dialog={}, count={}",
                     account.id(), dialog.id(), news.size());
-        } else {
-            checkpoints.save(account.id(), dialog.id(), new ConversationCheckpoint(cursor,
-                    checkpoint.oldestLoadedId(), true, checkpoint.historyStartReached(), dialog.dateEpoch()));
         }
     }
 
@@ -487,7 +499,8 @@ public class DikidiChannelConnector implements IChannelConnector {
         boolean startReached = page.historyStartReached();
         collect(collected, session, account, company, command.conversationExternalId(), dialogId, page.messages());
         if (!page.messages().isEmpty()) {
-            newest = larger(newest, maxId(page.messages()));
+            if (!existing.map(ConversationCheckpoint::initialSyncDone).orElse(false))
+                newest = larger(newest, maxId(page.messages()));
             oldest = oldest == null ? minId(page.messages()) : smaller(oldest, minId(page.messages()));
         }
         int pages = 1;
@@ -506,13 +519,17 @@ public class DikidiChannelConnector implements IChannelConnector {
                 : (pages >= initialBudgetPages ? "BUDGET_PARTIAL" : "PAGE_COMPLETE");
         long epoch = collected.isEmpty() ? existing.map(ConversationCheckpoint::lastDialogEpoch).orElse(0L)
                 : collected.stream().mapToLong(m -> m.sentAt().getEpochSecond()).max().orElse(0);
-        checkpoints.save(account.id(), dialogId, new ConversationCheckpoint(newest, oldest, initialDone,
-                startReached || existing.map(ConversationCheckpoint::historyStartReached).orElse(false), epoch));
+        var pending = new HostConversationCheckpoints.Update(account.id(), account.externalId(), dialogId,
+                existing.orElse(null), new ConversationCheckpoint(newest, oldest, initialDone,
+                startReached || existing.map(ConversationCheckpoint::historyStartReached).orElse(false),
+                existing.filter(ConversationCheckpoint::initialSyncDone).map(ConversationCheckpoint::lastDialogEpoch).orElse(epoch),
+                existing.map(ConversationCheckpoint::liveBeforeId).orElse(null),
+                existing.map(ConversationCheckpoint::liveNewestId).orElse(null)));
         if (resuming) log.info("DIKIDI initial import continued: account={}, dialog={}, pages={}, collected={}",
                 account.id(), dialogId, pages, collected.size());
         collected.sort(Comparator.comparing(ConnectorInboundMessage::sentAt)
                 .thenComparing(m -> Long.parseLong(m.externalId())));
-        return new SyncConversationHistoryResult(List.copyOf(collected), startReached, endReason);
+        return new SyncConversationHistoryResult(List.copyOf(collected), startReached, endReason, pending);
     }
 
     /** legacy-путь без ссылки диалога: резолв по списку и участникам (дорого, только совместимость). */
@@ -646,8 +663,7 @@ public class DikidiChannelConnector implements IChannelConnector {
                         kit.penny.clientbus.common.enums.MessageAttachmentType.IMAGE,
                         saved.storageKey(), saved.fileName(), saved.contentType(), saved.size()));
             } catch (java.io.IOException | RuntimeException failure) {
-                log.warn("DIKIDI attachment storage failed, message kept without it: message={}, cause={}",
-                        message.id(), failure.toString());
+                throw new IllegalStateException("DIKIDI attachment storage failed for message " + message.id(), failure);
             }
         }
         return List.copyOf(stored);

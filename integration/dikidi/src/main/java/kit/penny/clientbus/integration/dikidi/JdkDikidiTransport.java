@@ -136,6 +136,10 @@ public final class JdkDikidiTransport implements DikidiTransport {
                         profile == RequestProfile.MEDIA && result.statusCode() == 200 ? result.body() : null);
                 if (!limitedResponse.get()) observer.response(response);
                 if (Set.of(301, 302, 303, 307, 308).contains(result.statusCode())) {
+                    // A redirect is not confirmation of C06. Replaying its POST could duplicate a message.
+                    if (profile == RequestProfile.OWNER_CHAT && "POST".equals(method)
+                            && "/api/dialog/message/".equals(uri.getPath()))
+                        throw new DikidiFailure(INVALID_RESPONSE);
                     String location = result.headers().firstValue("Location").orElseThrow(() -> new DikidiFailure(INVALID_RESPONSE));
                     URI next = uri.resolve(location); destinationGuard.check(next, profile);
                     if (form != null && form.stream().anyMatch(e -> e.getKey().equals("password"))

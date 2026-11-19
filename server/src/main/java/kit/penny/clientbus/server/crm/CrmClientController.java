@@ -28,8 +28,9 @@ public class CrmClientController {
     }
     @GetMapping("/projects/{id}/clients")
     public CrmClientPageDto clients(@PathVariable UUID id,@RequestParam(required=false) String q,
-            @RequestParam(defaultValue="false") boolean unlinked,@RequestParam(required=false) String cursor) {
-        return service.clients(id,q,unlinked,cursor);
+            @RequestParam(defaultValue="false") boolean unlinked,@RequestParam(required=false) String cursor,
+            @RequestParam(defaultValue="NAME") String sort,@RequestParam(defaultValue="ASC") String direction) {
+        return service.clients(id,q,unlinked,cursor,sort,direction);
     }
     @GetMapping("/clients/{id}") public CrmClientDto client(@PathVariable UUID id) { return service.client(id); }
     /** Байты зеркала аватара карточки. Права — как у чтения карточки; нет файла — 404, карточка рисуется с инициалом. */

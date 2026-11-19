@@ -27,6 +27,19 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
 
 class KafkaOutboundMessageConsumerTest {
+    @Test void synchronousFinalResultCompletesTheExactAttempt() {
+        var payload = validCommand();
+        var command = new SendMessageCommand(payload.messageId(), payload.channelAccountId(),
+                payload.recipientExternalId(), payload.type(), payload.content(), List.of(), ATTEMPT_ID);
+        when(messageService.claimOutboundDelivery(payload.messageId(), ATTEMPT_ID)).thenReturn(true);
+        when(channelConnectorRegistry.getConnector(ChannelType.TELEGRAM)).thenReturn(connector);
+        when(commandMapper.toCommand(payload)).thenReturn(command);
+        when(connector.handle(command)).thenReturn(new ConnectorSendResult("final-1", ATTEMPT_ID, true));
+        consumer.consume(outboundEvent(payload), "clientbus.outbound.telegram");
+        verify(messageService).registerAcceptedExternalAttempt(payload.messageId(), ATTEMPT_ID,
+                payload.channelAccountId(), payload.recipientExternalId(), null, "final-1");
+        verify(messageService, never()).releaseOutboundDeliveryClaim(any(), any());
+    }
 
     private static final UUID ATTEMPT_ID = UUID.randomUUID();
 

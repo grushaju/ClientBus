@@ -16,6 +16,59 @@ function load(file) {
 }
 const { SseParser } = load(path.join(__dirname, '../src/api/events/sseParser.ts'))
 const { startUiEventStream } = load(path.join(__dirname, '../src/api/events/uiEventStream.ts'))
+const { createStreamTabIdentity } = load(path.join(__dirname, '../src/api/events/streamTab.ts'))
+
+test('a simulated window does not open the host Node BroadcastChannel', t => {
+    const originalWindow = global.window
+    const originalChannel = global.BroadcastChannel
+    let opened = 0
+    global.window = {}
+    global.BroadcastChannel = class { constructor() { opened++; throw Error('Host channel must not open') } }
+    t.after(() => { global.window = originalWindow; global.BroadcastChannel = originalChannel })
+    const { streamTabIdentity } = load(path.join(__dirname, '../src/api/events/streamTab.ts'))
+    assert.ok(streamTabIdentity().id)
+    assert.equal(opened, 0)
+})
+
+test('copied tab storage converges to distinct stable IDs and reload keeps the released ID', async () => {
+    const peers = new Set()
+    const channel = () => {
+        const peer = { listener: undefined, postMessage(value) {
+            for (const other of peers) if (other !== peer)
+                queueMicrotask(() => { if (peers.has(other)) other.listener?.({ data: value }) })
+        }, addEventListener(_, listener) { peer.listener = listener }, close() { peers.delete(peer) } }
+        peers.add(peer); return peer
+    }
+    const storage = initial => ({ value: initial, getItem() { return this.value }, setItem(_, value) { this.value = value } })
+    const originalStorage = storage(null)
+    const original = createStreamTabIdentity(originalStorage, channel(), 'aaaaaaaa')
+    const originalId = original.id
+    const copiedStorage = storage(originalStorage.value)
+    const copied = createStreamTabIdentity(copiedStorage, channel(), 'zzzzzzzz')
+    let changes = 0
+    copied.subscribe(() => changes++)
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(original.id, originalId)
+    assert.notEqual(copied.id, original.id)
+    assert.equal(changes, 1)
+    assert.equal(copiedStorage.value, copied.id)
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(changes, 1)
+    original.close()
+    const reloaded = createStreamTabIdentity(originalStorage, channel(), 'mmmmmmmm')
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(reloaded.id, originalId)
+    copied.close(); reloaded.close()
+})
+
+test('without cross-document coordination cloned storage cannot duplicate the tab ID', () => {
+    const storage = { getItem: () => 'copied-tab-id', setItem() {} }
+    const first = createStreamTabIdentity(storage)
+    const second = createStreamTabIdentity(storage)
+    assert.notEqual(first.id, 'copied-tab-id')
+    assert.notEqual(first.id, second.id)
+    assert.equal(first.id, first.id)
+})
 
 test('disabled backend endpoint does not cause an endless retry loop', async () => {
     let calls = 0; const states = []
@@ -246,8 +299,6 @@ test('short-lived ready streams keep exponential backoff instead of resetting on
 })
 
 test('stream carries one stable tab id per browser tab', async () => {
-    const store = new Map()
-    globalThis.sessionStorage = { getItem: key => store.has(key) ? store.get(key) : null, setItem: (key, value) => store.set(key, value) }
     const urls = []; let handle
     try {
         handle = startUiEventStream(options({
@@ -255,14 +306,13 @@ test('stream carries one stable tab id per browser tab', async () => {
             onState: state => { if (state === 'backoff' && urls.length >= 2) handle.stop() },
         }))
         await handle.done
-    } finally { delete globalThis.sessionStorage }
+    } finally { handle?.stop() }
     assert.equal(urls.length, 2)
     const tabs = urls.map(url => new URL('http://internal' + url).searchParams.get('tab'))
     assert.match(tabs[0], /^[A-Za-z0-9_-]{8,64}$/)
     assert.equal(new URL('http://internal' + urls[0]).searchParams.get('workspaceId'), id,
         'параметр вкладки не имеет права вытеснять workspaceId: без него поток жил бы wider-областью')
     assert.equal(tabs[0], tabs[1], 'переподключение той же вкладки обязано называть себя тем же id: сервер заменяет свой поток')
-    assert.equal(store.size, 1)
 })
 
 test('429 waits on its own far slower scale than an ordinary failure', async t => {

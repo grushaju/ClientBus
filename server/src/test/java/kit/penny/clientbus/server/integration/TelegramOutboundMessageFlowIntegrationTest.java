@@ -279,6 +279,8 @@ class TelegramOutboundMessageFlowIntegrationTest
                                 clientAccount
                         )
                 );
+        conversation.setAssignedEmployee(authenticatedEmployee);
+        conversationRepository.saveAndFlush(conversation);
 
         OutboundMessageRequest request =
                 new OutboundMessageRequest(
@@ -587,6 +589,8 @@ class TelegramOutboundMessageFlowIntegrationTest
                                 clientAccount
                         )
                 );
+        conversation.setAssignedEmployee(authenticatedEmployee);
+        conversationRepository.saveAndFlush(conversation);
 
         OutboundMessageRequest request =
                 new OutboundMessageRequest(
@@ -839,6 +843,8 @@ class TelegramOutboundMessageFlowIntegrationTest
                                 clientAccount
                         )
                 );
+        conversation.setAssignedEmployee(authenticatedEmployee);
+        conversationRepository.saveAndFlush(conversation);
 
         OutboundMessageRequest request =
                 new OutboundMessageRequest(
@@ -1128,6 +1134,8 @@ class TelegramOutboundMessageFlowIntegrationTest
                                 clientAccount
                         )
                 );
+        conversation.setAssignedEmployee(authenticatedEmployee);
+        conversationRepository.saveAndFlush(conversation);
 
         OutboundMessageRequest request =
                 new OutboundMessageRequest(
@@ -1474,6 +1482,8 @@ class TelegramOutboundMessageFlowIntegrationTest
                                 clientAccount
                         )
                 );
+        conversation.setAssignedEmployee(authenticatedEmployee);
+        conversationRepository.saveAndFlush(conversation);
 
         conversation.setAssignedEmployee(employee);
 
@@ -1937,6 +1947,8 @@ class TelegramOutboundMessageFlowIntegrationTest
         );
     }
 
+    private EmployeeEntity authenticatedEmployee;
+
     private EmployeeEntity authenticateEmployee(
             OrganizationEntity organization,
             WorkspaceEntity workspace
@@ -1970,6 +1982,8 @@ class TelegramOutboundMessageFlowIntegrationTest
                         workspace
                 )
         );
+
+        authenticatedEmployee = employee;
 
         UserPrincipal principal =
                 new UserPrincipal(user);

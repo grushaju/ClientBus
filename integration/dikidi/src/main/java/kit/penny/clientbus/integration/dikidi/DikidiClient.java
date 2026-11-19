@@ -58,14 +58,20 @@ public final class DikidiClient implements AutoCloseable {
         final ReentrantLock lock = new ReentrantLock();
         final DikidiTransport transport;
         final UUID connectionId;
+        final long credentialVersion;
+        volatile boolean retired;
         volatile long lastUsed = System.nanoTime();
         boolean authenticated;
-        Managed(DikidiTransport transport, UUID connectionId) { this.transport = transport; this.connectionId = connectionId; }
+        Managed(DikidiTransport transport, UUID connectionId, long version) {
+            this.transport = transport; this.connectionId = connectionId; this.credentialVersion = version;
+        }
     }
     private final Settings settings;
     private final Supplier<DikidiTransport> factory;
     private final DikidiRequests traffic;
     private final Map<Key, Managed> sessions = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> latestVersions = new ConcurrentHashMap<>();
+    private volatile boolean closed;
     private final JsonMapper json = JsonMapper.builder().build();
     private Semaphore requests = new Semaphore(4);
     private DikidiSessionGate gate = DikidiSessionGate.NOOP;
@@ -102,7 +108,7 @@ public final class DikidiClient implements AutoCloseable {
      * (безопасно лишь для read-only работ — вызывающий обязан это гарантировать).
      */
     public <T> T execute(DikidiCredential access, Instant until, Work<T> work) {
-        gate.requireUsable(access.connectionId());
+        gate.requireUsable(access.connectionId(), access.credentialVersion());
         traffic.check(access.connectionId());
         long started = System.nanoTime(), deadline = started + Duration.ofSeconds(75).toNanos();
         if (until != null) {
@@ -136,7 +142,7 @@ public final class DikidiClient implements AutoCloseable {
      * переотправить намерение).
      */
     public <T> T executeOnce(DikidiCredential access, Instant until, Work<T> work) {
-        gate.requireUsable(access.connectionId());
+        gate.requireUsable(access.connectionId(), access.credentialVersion());
         traffic.check(access.connectionId());
         long started = System.nanoTime(), deadline = started + Duration.ofSeconds(75).toNanos();
         if (until != null) { // ревю 13.4: симметрично execute() — null означает «без caller deadline»
@@ -157,15 +163,18 @@ public final class DikidiClient implements AutoCloseable {
     private Managed session(DikidiCredential access) {
         var key = new Key(access.connectionId(), access.credentialVersion());
         synchronized (sessions) {
+            if (closed || access.credentialVersion() < latestVersions.getOrDefault(access.connectionId(), access.credentialVersion()))
+                throw new DikidiFailure(TEMPORARY_FAILURE, null, true);
+            latestVersions.merge(access.connectionId(), access.credentialVersion(), Math::max);
             sessions.entrySet().removeIf(entry -> {
                 var value = entry.getValue();
                 if (System.nanoTime() - value.lastUsed < Duration.ofMinutes(20).toNanos() || !value.lock.tryLock()) return false;
-                try { value.transport.close(); return true; } finally { value.lock.unlock(); }
+                try { value.retired = true; value.transport.close(); return true; } finally { value.lock.unlock(); }
             });
             var session = sessions.get(key);
             if (session != null) return session;
             if (sessions.size() >= 128) throw new DikidiFailure(CONNECTION_BUSY);
-            session = new Managed(factory.get(), access.connectionId()); sessions.put(key, session); return session;
+            session = new Managed(factory.get(), access.connectionId(), access.credentialVersion()); sessions.put(key, session); return session;
         }
     }
 
@@ -186,6 +195,7 @@ public final class DikidiClient implements AutoCloseable {
             }
             @Override public DikidiTransport.Response upload(String address, String fieldName, String fileName,
                     String contentType, byte[] content, String company, RequestProfile profile) {
+                requireActive(session);
                 long remaining = deadline - System.nanoTime();
                 if (remaining <= 0) throw new DikidiFailure(TEMPORARY_FAILURE);
                 boolean acquired = false;
@@ -217,6 +227,7 @@ public final class DikidiClient implements AutoCloseable {
     private DikidiTransport.Response send(Managed session, String method, String address,
             List<Map.Entry<String, String>> form, boolean ajax, String company,
             RequestProfile profile, long deadline, DikidiTransport.Observer caller) {
+        requireActive(session);
         long remaining = deadline - System.nanoTime();
         if (remaining <= 0) throw new DikidiFailure(TEMPORARY_FAILURE);
         boolean acquired = false;
@@ -272,11 +283,23 @@ public final class DikidiClient implements AutoCloseable {
         synchronized (sessions) {
             sessions.entrySet().removeIf(entry -> {
                 if (!entry.getKey().connectionId().equals(connectionId)) return false;
+                entry.getValue().retired = true;
                 entry.getValue().transport.close(); return true;
             });
         }
     }
     @Override public void close() {
-        synchronized (sessions) { sessions.values().forEach(s -> s.transport.close()); sessions.clear(); }
+        synchronized (sessions) {
+            closed = true;
+            sessions.values().forEach(s -> { s.retired = true; s.transport.close(); });
+            sessions.clear(); latestVersions.clear();
+        }
+    }
+
+    private void requireActive(Managed session) {
+        if (closed || session.retired
+                || session.credentialVersion < latestVersions.getOrDefault(session.connectionId, session.credentialVersion))
+            throw new DikidiFailure(TEMPORARY_FAILURE, null, true);
+        gate.requireUsable(session.connectionId, session.credentialVersion);
     }
 }

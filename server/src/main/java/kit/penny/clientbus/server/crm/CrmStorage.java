@@ -32,6 +32,16 @@ public class CrmStorage implements ApplicationRunner {
                 });
         normalizePrices();
         initializeOperations();
+        new TransactionTemplate(new DataSourceTransactionManager(java.util.Objects.requireNonNull(jdbc.getDataSource())))
+                .executeWithoutResult(status->{
+                    jdbc.execute("select pg_advisory_xact_lock(12663)");
+                    jdbc.execute(CrmSyncQueue.DDL);
+                    jdbc.execute("alter table crm.syncjob add column if not exists crmclientid uuid, add column if not exists force boolean not null default false, add column if not exists actorid uuid, add column if not exists plannedat timestamp with time zone not null default clock_timestamp()");
+                    jdbc.execute("alter table crm.syncjob add column if not exists expectedcontext jsonb");
+                    jdbc.execute("create table if not exists crm.syncconnectionlease(connectionid uuid constraint fksyncleaseconnection references crm.connection(id) on delete cascade, slot integer not null, claimtoken uuid, claimuntil timestamptz, constraint syncconnectionleasepk primary key(connectionid,slot))");
+                    jdbc.execute("create index if not exists ixcrmsyncconnectiontoken on crm.syncconnectionlease(claimtoken)");
+                    jdbc.execute("create index if not exists ixcrmsyncjobdue on crm.syncjob(nextat) where enabled");
+                });
         jdbc.execute("alter table crm.operation add column if not exists retryat timestamp with time zone");
         jdbc.execute("alter table crm.connection add column if not exists requestnotbefore timestamp with time zone");
         jdbc.execute("alter table crm.connection add column if not exists requestbackoff integer not null default 0");

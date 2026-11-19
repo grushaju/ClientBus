@@ -14,6 +14,41 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /** Wire validation/errors. Actual database authorization is covered by CrmFoundationIntegrationTest. */
 class CrmHttpContractTest {
+    @Test void refreshUsesTheCoordinatorAfterProjectAuthorization() throws Exception {
+        var coordinator=mock(CrmSyncCoordinator.class);
+        var controller=new CrmController(service,sync,clientSync,schedules,appointments);
+        org.springframework.test.util.ReflectionTestUtils.setField(controller,"coordinator",coordinator);
+        when(coordinator.enabled()).thenReturn(true);
+        var project=UUID.randomUUID();
+        var queued=new CrmSyncStateDto("CLIENTS","QUEUED",null,null,"STALE","UNKNOWN",null,0);
+        when(coordinator.request(eq(project),any())).thenReturn(queued);
+        MockMvcBuilders.standaloneSetup(controller).build().perform(post("/api/crm/projects/"+project+"/refresh")
+            .contentType(MediaType.APPLICATION_JSON).content("{\"dataset\":\"CLIENTS\"}"))
+            .andExpect(status().isAccepted()).andExpect(jsonPath("$.status").value("QUEUED"));
+        var order=inOrder(service,coordinator);order.verify(service).requireProjectAccess(project);order.verify(coordinator).enabled();order.verify(coordinator).request(eq(project),any());
+        verifyNoInteractions(clientSync);
+    }
+    @Test void statisticsRefreshHasAnExplicitBatchEndpoint() throws Exception {
+        var project=UUID.randomUUID();
+        mvc.perform(post("/api/crm/projects/"+project+"/refresh").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"dataset\":\"CLIENT_STATISTICS\"}"))
+                .andExpect(status().isAccepted());
+        verify(service).requireProjectAccess(project);
+        verify(clientSync).refreshStatistics(project);
+    }
+    @Test void clientSortingAndStatisticsHaveAnExplicitWireContract() throws Exception {
+        var project=UUID.randomUUID();
+        var row=new CrmClientDto(UUID.randomUUID(),project,"1","PROJECT","Client",Map.of(),null,null,null,null,
+                null,null,null,java.time.Instant.now(),0,5L,"3500.25","RUB","700.05");
+        when(clients.clients(project,null,false,null,"SPENT","DESC"))
+                .thenReturn(new CrmClientPageDto(List.of(row),null,false,null,1));
+        mvc.perform(get("/api/crm/projects/"+project+"/clients").param("sort","SPENT").param("direction","DESC"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items[0].visitCount").value(5))
+                .andExpect(jsonPath("$.items[0].totalSpent").value("3500.25"))
+                .andExpect(jsonPath("$.items[0].currency").value("RUB"))
+                .andExpect(jsonPath("$.items[0].averageCheck").value("700.05"));
+        verify(clients).clients(project,null,false,null,"SPENT","DESC");
+    }
     private CrmService service;
     private CrmCatalogSync sync;
     private CrmCatalogReader catalog;

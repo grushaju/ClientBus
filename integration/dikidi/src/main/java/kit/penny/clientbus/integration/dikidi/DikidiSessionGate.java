@@ -13,4 +13,8 @@ public interface DikidiSessionGate {
     DikidiSessionGate NOOP = connectionId -> { };
     /** Бросает DikidiFailure, когда этому runtime нельзя работать с соединением. */
     void requireUsable(UUID connectionId);
+
+    default void requireUsable(UUID connectionId, long credentialVersion) {
+        requireUsable(connectionId);
+    }
 }

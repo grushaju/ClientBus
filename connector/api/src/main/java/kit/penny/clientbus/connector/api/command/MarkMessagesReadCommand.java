@@ -8,8 +8,14 @@ public record MarkMessagesReadCommand(
         String lastReadExternalId,
 
         /** 13.2b: external dialog reference; nullable for legacy counterpart-only payloads. */
-        String dialogExternalId
+        String dialogExternalId,
+        String beforeExternalId
 ) implements ChannelConnectorCommand {
+
+    public MarkMessagesReadCommand(UUID channelAccountId, String recipientExternalId,
+            String lastReadExternalId, String dialogExternalId) {
+        this(channelAccountId, recipientExternalId, lastReadExternalId, dialogExternalId, null);
+    }
 
     public MarkMessagesReadCommand(
             UUID channelAccountId,

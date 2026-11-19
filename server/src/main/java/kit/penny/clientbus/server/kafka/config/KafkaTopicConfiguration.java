@@ -3,9 +3,11 @@ package kit.penny.clientbus.server.kafka.config;
 import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.server.kafka.routing.KafkaTopicNames;
 import org.apache.kafka.clients.admin.NewTopic;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.properties.bind.Bindable;
+import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 import org.springframework.kafka.core.KafkaAdmin;
 
 import java.util.ArrayList;
@@ -19,12 +21,11 @@ public class KafkaTopicConfiguration {
 
     private final List<ChannelType> enabledOutboundChannels;
 
-    public KafkaTopicConfiguration(
-            @Value("${clientbus.kafka.outbound.enabled-channels:}")
-            List<ChannelType> enabledOutboundChannels
-    ) {
-        this.enabledOutboundChannels =
-                enabledOutboundChannels;
+    public KafkaTopicConfiguration(Environment environment) {
+        // YAML lists have indexed keys; @Value of the parent key silently used the empty default.
+        this.enabledOutboundChannels = Binder.get(environment)
+                .bind("clientbus.kafka.outbound.enabled-channels", Bindable.listOf(ChannelType.class))
+                .orElseGet(List::of);
     }
 
     @Bean

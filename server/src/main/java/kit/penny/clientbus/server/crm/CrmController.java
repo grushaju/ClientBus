@@ -15,6 +15,8 @@ import java.util.*;
 @RequestMapping("/api/crm")
 @PreAuthorize("isAuthenticated()")
 public class CrmController {
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private CrmSyncCoordinator coordinator;
     private final CrmService service;
     private final CrmCatalogSync sync;
     private final CrmClientSync clients;
@@ -115,6 +117,8 @@ public class CrmController {
     @PostMapping("/projects/{id}/refresh")
     public ResponseEntity<CrmSyncStateDto> refresh(@PathVariable UUID id, @Valid @RequestBody RefreshCrmRequest request) {
         service.requireProjectAccess(id);
+        if(coordinator!=null && coordinator.enabled()) return ResponseEntity.accepted().body(coordinator.request(id,request));
+        if ("CLIENT_STATISTICS".equals(request.dataset())) return ResponseEntity.accepted().body(clients.refreshStatistics(id));
         if ("CLIENTS".equals(request.dataset())) return ResponseEntity.accepted().body(clients.refresh(id));
         if ("WORK_INTERVALS".equals(request.dataset())) return ResponseEntity.accepted().body(
                 schedules.refresh(id,request.masterId(),request.dateFrom(),request.dateTo()));
@@ -124,6 +128,16 @@ public class CrmController {
         if (!Set.of("MASTERS", "SERVICES", "CATALOG").contains(request.dataset()))
             throw new CrmException(409, "CRM_CAPABILITY_UNVERIFIED", "Этот набор CRM ещё не реализован.");
         return ResponseEntity.accepted().body("MASTERS".equals(request.dataset()) ? sync.refresh(id) : sync.refresh(id, request.dataset()));
+    }
+    @GetMapping("/projects/{id}/sync-jobs")
+    public List<Map<String,Object>> jobs(@PathVariable UUID id) {
+        service.requireProjectAccess(id);
+        return coordinator==null ? List.of() : coordinator.state(id);
+    }
+    @GetMapping("/projects/{id}/sync-overview")
+    public Map<String,Object> overview(@PathVariable UUID id){
+        service.requireProjectAccess(id);
+        return coordinator.overview(id);
     }
     @GetMapping("/projects/{id}/sync-state")
     public List<CrmSyncStateDto> state(@PathVariable UUID id,@RequestParam(required=false) UUID masterId,

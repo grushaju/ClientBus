@@ -9,7 +9,6 @@ import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -172,36 +171,54 @@ public class CrmClientAvatars {
      * аренды писателя. Таймауты короткие: скачивание идёт в цикле синхронизации.
      */
     static final class Remote implements Fetch {
-        private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3))
-                .followRedirects(HttpClient.Redirect.NEVER).build();
+        private final HttpClient http;
+        private final Duration timeout;
+
+        Remote() {
+            this(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3))
+                    .followRedirects(HttpClient.Redirect.NEVER).build(), Duration.ofSeconds(6));
+        }
+
+        Remote(HttpClient http, Duration timeout) { this.http = http; this.timeout = timeout; }
 
         @Override public Image get(String url) throws IOException {
+            java.util.concurrent.CompletableFuture<HttpResponse<byte[]>> exchange = null;
             try {
-                var response = http.send(HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(6))
+                exchange = http.sendAsync(HttpRequest.newBuilder(URI.create(url)).timeout(timeout)
                                 .header("User-Agent", "Mozilla/5.0 ClientBus").GET().build(),
-                        HttpResponse.BodyHandlers.ofInputStream());
+                        info -> new LimitedBody());
+                var response = exchange.get(timeout.toNanos(), java.util.concurrent.TimeUnit.NANOSECONDS);
                 if (response.statusCode() != 200) return null;
-                if (declaredLength(response) > MAX_BYTES) return null;
-                try (InputStream body = response.body()) {
-                    var content = body.readNBytes(MAX_BYTES + 1);
-                    // Поместилось ровно MAX_BYTES+1 — значит файл больше лимита: это не аватар.
-                    if (content.length > MAX_BYTES) return null;
-                    return new Image(content, response.headers().firstValue("content-type").orElse(""));
-                }
+                return new Image(response.body(), response.headers().firstValue("content-type").orElse(""));
             } catch (InterruptedException failure) {
-                // Прерывание потока синхронизации — не повод его терять: помечаем и выходим отказом.
                 Thread.currentThread().interrupt();
                 throw new IOException(failure);
+            } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException failure) {
+                throw new IOException(failure);
+            } finally {
+                if (exchange != null && !exchange.isDone()) exchange.cancel(true);
             }
         }
 
-        /** Честный content-length, если он есть и вменяем; иначе — 0, пусть решает лимит чтения. */
-        private static long declaredLength(HttpResponse<InputStream> response) {
-            try {
-                return Math.max(0L, response.headers().firstValue("content-length").map(Long::parseLong).orElse(0L));
-            } catch (NumberFormatException malformed) {
-                return 0L;
+        private static final class LimitedBody implements HttpResponse.BodySubscriber<byte[]> {
+            private final HttpResponse.BodySubscriber<byte[]> delegate = HttpResponse.BodySubscribers.ofByteArray();
+            private java.util.concurrent.Flow.Subscription subscription;
+            private int size;
+            @Override public java.util.concurrent.CompletionStage<byte[]> getBody() { return delegate.getBody(); }
+            @Override public void onSubscribe(java.util.concurrent.Flow.Subscription value) {
+                subscription = value; delegate.onSubscribe(value);
             }
+            @Override public void onNext(List<java.nio.ByteBuffer> buffers) {
+                for (var buffer : buffers) {
+                    if (buffer.remaining() > MAX_BYTES - size) {
+                        subscription.cancel(); delegate.onError(new IOException("Avatar exceeds size limit")); return;
+                    }
+                    size += buffer.remaining();
+                }
+                delegate.onNext(buffers);
+            }
+            @Override public void onError(Throwable error) { delegate.onError(error); }
+            @Override public void onComplete() { delegate.onComplete(); }
         }
     }
 }

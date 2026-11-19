@@ -7,7 +7,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /** Refreshes project names and their catalogs even when no browser is open. */
-@Component
+@Deprecated // Replaced by CrmSyncCoordinator; retained for migration tests.
 public class CrmCatalogPolling {
     private static final Logger LOG = LoggerFactory.getLogger(CrmCatalogPolling.class);
     private final CrmCatalogSync catalogs;

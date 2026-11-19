@@ -1,5 +1,7 @@
 package kit.penny.clientbus.server.security.config;
 
+import jakarta.servlet.DispatcherType;
+import jakarta.servlet.RequestDispatcher;
 import kit.penny.clientbus.server.security.jwt.JwtAuthenticationFilter;
 import kit.penny.clientbus.server.security.SseRequestSecurity;
 import org.springframework.context.annotation.Bean;
@@ -52,10 +54,19 @@ public class SecurityConfig {
                         // Only continuation of the already authenticated SSE request may bypass JWT re-auth.
                         .requestMatchers(SseRequestSecurity::isContinuation).permitAll()
                         // Error rendering cannot require a fresh JWT: a dependency failure would become
-                        // an unrelated 401 and sign the browser out. Only the container's ERROR dispatch
-                        // to its dedicated error route is allowed, never a new /error or business request.
-                        .requestMatchers(request -> request.getDispatcherType() == jakarta.servlet.DispatcherType.ERROR
-                                && request.getRequestURI().equals(request.getContextPath() + errorPath)).permitAll()
+                        // an unrelated 401 and sign the browser out. Tomcat includes the error page when
+                        // the response is already committed; its request URI still names the original route.
+                        // Match the include target and error attributes, never all INCLUDE dispatches.
+                        .requestMatchers(request -> {
+                            String target = request.getContextPath() + errorPath;
+                            return request.getDispatcherType() == DispatcherType.ERROR
+                                    && target.equals(request.getRequestURI())
+                                    || request.getDispatcherType() == DispatcherType.INCLUDE
+                                    && target.equals(request.getAttribute(RequestDispatcher.INCLUDE_REQUEST_URI))
+                                    && request.getAttribute(RequestDispatcher.ERROR_REQUEST_URI) instanceof String
+                                    && request.getAttribute(RequestDispatcher.ERROR_STATUS_CODE) instanceof Integer status
+                                    && status >= 400 && status <= 599;
+                        }).permitAll()
 
                         // React SPA
                         .requestMatchers(

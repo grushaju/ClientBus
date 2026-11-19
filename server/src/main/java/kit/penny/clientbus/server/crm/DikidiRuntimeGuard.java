@@ -44,7 +44,7 @@ public class DikidiRuntimeGuard implements DikidiSessionGate {
     }
     String ownerIdentity() { return owner; }
     @Override public void requireUsable(java.util.UUID connectionId) {
-        if (!isReady()) return; // До готовности хранилища guard не может ни подтвердить, ни опровергнуть.
+        if (!isReady()) throw new DikidiFailure(DikidiFailure.Code.TEMPORARY_FAILURE, null, true);
         try {
             // Ревю 13.4: heartbeat сдвигает только владеющая (или перехватываемая по TTL)
             // строка. Иначе непрерывный ретрай проигравшего standby вечно грел бы строку
@@ -72,9 +72,20 @@ public class DikidiRuntimeGuard implements DikidiSessionGate {
         } catch (DikidiFailure failure) {
             throw failure;
         } catch (RuntimeException error) {
-            // Ошибка самой проверки не должна глушить CRM; она видна по логу.
-            log.warn("DIKIDI runtime lease check unavailable ({}); proceeding without degradation.", error.toString());
+            log.warn("DIKIDI runtime lease check unavailable ({}); external request refused.", error.toString());
+            throw new DikidiFailure(DikidiFailure.Code.TEMPORARY_FAILURE, null, true);
         }
+    }
+
+    @Override public void requireUsable(UUID connectionId, long credentialVersion) {
+        requireUsable(connectionId);
+        try {
+            Boolean current = jdbc.queryForObject("select exists(select 1 from crm.connection "
+                    + "where id=? and credentialversion=? and status<>'DISABLED')", Boolean.class,
+                    connectionId, credentialVersion);
+            if (!Boolean.TRUE.equals(current)) throw new DikidiFailure(DikidiFailure.Code.ACCESS_DENIED, null, true);
+        } catch (DikidiFailure failure) { throw failure; }
+        catch (RuntimeException failure) { throw new DikidiFailure(DikidiFailure.Code.TEMPORARY_FAILURE, null, true); }
     }
     /** Поддержание heartbeat только для строк, которыми реально владеет этот runtime. */
     @Scheduled(fixedDelay = 30000, initialDelay = 30000)

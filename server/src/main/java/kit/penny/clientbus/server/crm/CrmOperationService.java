@@ -21,6 +21,8 @@ import java.util.*;
 /** Durable local acceptance. No database transaction spans external I/O. */
 @Service
 public class CrmOperationService {
+    @org.springframework.beans.factory.annotation.Autowired(required=false) private CrmSyncQueue syncQueue;
+    @org.springframework.beans.factory.annotation.Autowired(required=false) private CrmSyncProperties syncProperties;
     private static final JsonMapper JSON=JsonMapper.builder().build();
     private static final String SELECT="select o.*,p.organizationid,p.workspaceid,p.provider from crm.operation o join crm.project p on p.id=o.projectid";
     private final CrmStore store;
@@ -289,6 +291,8 @@ public class CrmOperationService {
                         scopes.add(new CrmAppointmentScope("APPOINTMENTS",null,day,day,row.dto().externalAppointmentId()));
                     }
                     for (var scope:scopes) {
+                        if(syncQueue!=null && syncProperties!=null && syncProperties.isEnabled()
+                                && !syncQueue.observation(project.getId(),scope,row.dto().initiatorEmployeeId())) return;
                         var fields=new LinkedHashMap<>(scope.fields()); fields.put("refreshActorId",row.dto().initiatorEmployeeId().toString());
                         jdbc.update("""
                                 insert into crm.syncstate(id,version,createdat,updatedat,projectid,statekind,writedomain,dataset,scopekey,scope,

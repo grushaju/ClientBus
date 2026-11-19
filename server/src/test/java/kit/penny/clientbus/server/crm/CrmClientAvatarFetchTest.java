@@ -72,7 +72,9 @@ class CrmClientAvatarFetchTest {
 
     @Test void oversizedBodyIsRefusedWithoutReadingItIntoMemory() throws Exception {
         // Тело больше лимита без content-length: читатель останавливается на MAX_BYTES+1 и отказывает.
-        assertNull(new CrmClientAvatars.Remote().get(base + "/huge?size=s"));
+        var failure = assertThrows(java.io.IOException.class,
+                () -> new CrmClientAvatars.Remote().get(base + "/huge?size=s"));
+        assertTrue(failure.getMessage().contains("Avatar exceeds size limit"));
     }
 
     private static kit.penny.clientbus.crm.api.CrmClient row(String avatar) {

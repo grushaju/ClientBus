@@ -215,6 +215,8 @@ class OutboundMessageAsyncFlowIntegrationTest
                                 clientAccount
                         )
                 );
+        conversation.setAssignedEmployee(authenticatedEmployee);
+        conversationRepository.saveAndFlush(conversation);
 
         OutboundMessageRequest request =
                 new OutboundMessageRequest(
@@ -268,6 +270,8 @@ class OutboundMessageAsyncFlowIntegrationTest
         );
     }
 
+    private EmployeeEntity authenticatedEmployee;
+
     private void authenticateEmployee(
             OrganizationEntity organization,
             WorkspaceEntity workspace
@@ -302,6 +306,8 @@ class OutboundMessageAsyncFlowIntegrationTest
                         workspace
                 )
         );
+
+        authenticatedEmployee = employee;
 
         UserPrincipal principal =
                 new UserPrincipal(user);

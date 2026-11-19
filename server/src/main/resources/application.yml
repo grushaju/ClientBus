@@ -19,6 +19,82 @@ management:
 
 clientbus:
   crm:
+    sync:
+      enabled: true
+      scheduler-tick: 10s
+      planning-interval: 1m
+      workers: 4
+      connection-workers: 1
+      manual-priority: 100
+      lease-duration: 2m
+      heartbeat-interval: 20s
+      retry-initial-delay: 30s
+      retry-max-delay: 30m
+      retry-multiplier: 2
+      retry-jitter: 0.2
+      aging-interval: 1m
+      retired-job-retention: 30d
+      datasets:
+        # DIKIDI returns masters, services, categories and project metadata together.
+        catalog:
+          enabled: true
+          refresh-interval: 15m
+          stale-after: 15m
+          priority: 70
+        clients:
+          enabled: true
+          refresh-interval: 1h
+          stale-after: 1h
+          max-pages-per-run: 10
+          max-run-duration: 1m
+          continuation-delay: 5s
+          priority: 40
+        client-statistics:
+          enabled: true
+          refresh-interval: 1m
+          stale-after: 24h
+          item-retry-delay: 15m
+          batch-size: 5
+          max-run-duration: 1m
+          priority: 30
+        appointments:
+          enabled: true
+          refresh-interval: 3m
+          stale-after: 3m
+          max-pages-per-run: 31
+          max-run-duration: 90s
+          past-days: 7
+          future-days: 30
+          priority: 90
+        schedules:
+          enabled: true
+          refresh-interval: 15m
+          stale-after: 15m
+          past-days: 1
+          future-days: 30
+          chunk-days: 7
+          priority: 60
+        history:
+          enabled: true
+          refresh-interval: 24h
+          max-pages-per-run: 31
+          max-run-duration: 90s
+          past-days: 365
+          future-days: 0
+          priority: 10
+        client-history:
+          enabled: false
+          max-pages-per-run: 31
+          max-run-duration: 90s
+          priority: 80
+        finance:
+          enabled: false
+          refresh-interval: 1h
+          stale-after: 1h
+          batch-size: 5
+          past-days: 30
+          future-days: 0
+          priority: 20
     secret-key: ${CLIENTBUS_CRM_SECRET_KEY:}
     secret-key-id: ${CLIENTBUS_CRM_SECRET_KEY_ID:primary}
     connect-timeout-ms: 5000
@@ -63,6 +139,13 @@ clientbus:
     secret: ${CLIENTBUS_JWT_SECRET:}
     expiration: 1800000
 
+  schema:
+    phone:
+      # На рабочем окружении выключить вне окна обслуживания: только проверка схемы.
+      repair-on-startup: ${CLIENTBUS_PHONE_SCHEMA_REPAIR_ON_STARTUP:true}
+      lock-timeout: ${CLIENTBUS_PHONE_SCHEMA_LOCK_TIMEOUT:5s}
+      statement-timeout: ${CLIENTBUS_PHONE_SCHEMA_STATEMENT_TIMEOUT:2m}
+
   bootstrap:
     organization:
       name: Penny Kit's Company ©
@@ -80,11 +163,8 @@ clientbus:
     outbound:
       enabled-channels:
         - TELEGRAM
-        # 13.5: канал добавляется в список вместе с его коннектор-модулем.
         - DIKIDI
-        # 13.3: WHATSAPP/VK убраны — коннекторов нет. ВНИМАНИЕ (ревю 14.11.2026): сами топики
-        # этой группы приложением сейчас не создаются — см. бэклог (KafkaAdmin не
-        # видит бины List<NewTopic>).
+        # KafkaAdmin создаёт топики команд и DLQ для перечисленных каналов при старте.
 
 
 

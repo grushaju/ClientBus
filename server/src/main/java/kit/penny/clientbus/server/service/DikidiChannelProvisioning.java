@@ -45,7 +45,9 @@ public class DikidiChannelProvisioning {
     public void provisionOnBind(CrmProjectEntity project) {
         if (project.getProvider() != kit.penny.clientbus.common.enums.CrmType.DIKIDI) return;
         var workspace = project.getWorkspace();
-        var known = channels.findAllByWorkspaceIdAndType(workspace.getId(), ChannelType.DIKIDI);
+        var known = channels.findAllByWorkspaceIdAndType(workspace.getId(), ChannelType.DIKIDI).stream()
+                .filter(channel -> channel.getAccount() != null
+                        && project.getExternalId().equals(channel.getAccount().getExternalId())).toList();
         ChannelEntity channel;
         if (known.isEmpty()) {
             channel = new ChannelEntity(workspace, ChannelType.DIKIDI, cut(project.getDisplayName(), 100));
@@ -75,7 +77,9 @@ public class DikidiChannelProvisioning {
     public void retireOnDetach(CrmProjectEntity project) {
         if (project.getProvider() != kit.penny.clientbus.common.enums.CrmType.DIKIDI) return;
         var workspace = project.getWorkspace();
-        var known = channels.findAllByWorkspaceIdAndType(workspace.getId(), ChannelType.DIKIDI);
+        var known = channels.findAllByWorkspaceIdAndType(workspace.getId(), ChannelType.DIKIDI).stream()
+                .filter(channel -> channel.getAccount() != null
+                        && project.getExternalId().equals(channel.getAccount().getExternalId())).toList();
         if (known.isEmpty()) return;
         var channel = known.get(0);
         var accountId = channel.getAccount().getId();

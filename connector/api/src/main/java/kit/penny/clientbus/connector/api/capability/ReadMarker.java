@@ -8,4 +8,10 @@ public interface ReadMarker {
     void handle(
             MarkMessagesReadCommand command
     );
+
+    /** One bounded unit of work; the host must durably enqueue a non-null continuation. */
+    default MarkMessagesReadCommand continueRead(MarkMessagesReadCommand command) {
+        handle(command);
+        return null;
+    }
 }

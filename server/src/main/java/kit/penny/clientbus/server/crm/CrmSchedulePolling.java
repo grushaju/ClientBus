@@ -7,7 +7,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /** Polling has its own thread and never holds up message/notification scheduling. */
-@Component
+@Deprecated // Replaced by CrmSyncCoordinator; retained for migration tests.
 public class CrmSchedulePolling {
     private static final Logger LOG=LoggerFactory.getLogger(CrmSchedulePolling.class);
     private final CrmScheduleSync schedules;

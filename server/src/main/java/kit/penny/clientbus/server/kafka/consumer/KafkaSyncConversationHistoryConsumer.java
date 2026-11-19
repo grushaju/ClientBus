@@ -28,6 +28,8 @@ import java.util.UUID;
 
 @Component
 public class KafkaSyncConversationHistoryConsumer {
+    @org.springframework.beans.factory.annotation.Autowired
+    private kit.penny.clientbus.connector.api.host.HostConversationCheckpoints checkpoints;
 
     private final ChannelConnectorRegistry
             channelConnectorRegistry;
@@ -174,6 +176,7 @@ public class KafkaSyncConversationHistoryConsumer {
                     command.dialogExternalId()
             );
         }
+        if (result.checkpoint() != null) checkpoints.acknowledge(result.checkpoint());
     }
 
     private void processSynchronousHistory(
@@ -216,6 +219,8 @@ public class KafkaSyncConversationHistoryConsumer {
                         result.historyStartReached(),
                         result.endReason()
                 );
+
+        if (result.checkpoint() != null) checkpoints.acknowledge(result.checkpoint());
 
         KafkaEvent<
                 SyncConversationHistoryKafkaCommand.Result

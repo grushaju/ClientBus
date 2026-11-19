@@ -581,7 +581,7 @@ public class ClientService {
     ) {
 
         ClientEntity client =
-                getAccessibleClient(clientId);
+                getAccessibleClientForLink(clientId);
 
         boolean alreadyExists =
                 clientAccountRepository
@@ -638,7 +638,7 @@ public class ClientService {
     ) {
 
         ClientEntity client =
-                getAccessibleClient(clientId);
+                getAccessibleClientForLink(clientId);
 
         ClientAccountEntity account =
                 getAccessibleAccount(accountId);
@@ -681,7 +681,7 @@ public class ClientService {
         requireAccountAccess(account);
 
         ClientEntity newClient =
-                getAccessibleClient(newClientId);
+                getAccessibleClientForLink(newClientId);
 
         ClientEntity oldClient =
                 account.getClient();
@@ -1011,6 +1011,13 @@ public class ClientService {
 
         requireClientAccess(client);
 
+        return client;
+    }
+
+    private ClientEntity getAccessibleClientForLink(UUID clientId) {
+        var client = clientRepository.findByIdForUpdate(clientId)
+                .orElseThrow(() -> new EntityNotFoundException("Client not found: " + clientId));
+        requireClientAccess(client);
         return client;
     }
 

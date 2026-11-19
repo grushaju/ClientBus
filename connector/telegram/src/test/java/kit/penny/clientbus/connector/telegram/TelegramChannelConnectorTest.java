@@ -1,5 +1,7 @@
 package kit.penny.clientbus.connector.telegram;
 
+import kit.penny.clientbus.connector.api.error.ConnectorSendRejectedException;
+
 import kit.penny.clientbus.common.enums.ChannelType;
 import kit.penny.clientbus.common.enums.MessageAttachmentType;
 import kit.penny.clientbus.common.enums.MessageType;
@@ -333,9 +335,9 @@ class TelegramChannelConnectorTest {
 
     @Test
     void shouldRejectNullRequest() {
-        IllegalArgumentException exception =
+        ConnectorSendRejectedException exception =
                 assertThrows(
-                        IllegalArgumentException.class,
+                        ConnectorSendRejectedException.class,
                         () -> connector.handle((SendMessageCommand)null)
                 );
 
@@ -360,7 +362,7 @@ class TelegramChannelConnectorTest {
                 );
 
         assertThrows(
-                IllegalArgumentException.class,
+                ConnectorSendRejectedException.class,
                 () -> connector.handle(request)
         );
 
@@ -380,7 +382,7 @@ class TelegramChannelConnectorTest {
                 );
 
         assertThrows(
-                IllegalArgumentException.class,
+                ConnectorSendRejectedException.class,
                 () -> connector.handle(request)
         );
 
@@ -399,9 +401,9 @@ class TelegramChannelConnectorTest {
                         List.of()
                 );
 
-        IllegalArgumentException exception =
+        ConnectorSendRejectedException exception =
                 assertThrows(
-                        IllegalArgumentException.class,
+                        ConnectorSendRejectedException.class,
                         () -> connector.handle(request)
                 );
 
@@ -428,7 +430,7 @@ class TelegramChannelConnectorTest {
                 );
 
         assertThrows(
-                IllegalArgumentException.class,
+                ConnectorSendRejectedException.class,
                 () -> connector.handle(request)
         );
 
@@ -448,7 +450,7 @@ class TelegramChannelConnectorTest {
                 );
 
         assertThrows(
-                IllegalArgumentException.class,
+                ConnectorSendRejectedException.class,
                 () -> connector.handle(request)
         );
 
@@ -476,7 +478,7 @@ class TelegramChannelConnectorTest {
                 );
 
         assertThrows(
-                IllegalArgumentException.class,
+                ConnectorSendRejectedException.class,
                 () -> connector.handle(request)
         );
 
@@ -496,7 +498,7 @@ class TelegramChannelConnectorTest {
                 );
 
         assertThrows(
-                IllegalArgumentException.class,
+                ConnectorSendRejectedException.class,
                 () -> connector.handle(request)
         );
 
@@ -532,7 +534,7 @@ class TelegramChannelConnectorTest {
                 );
 
         assertThrows(
-                IllegalArgumentException.class,
+                ConnectorSendRejectedException.class,
                 () -> connector.handle(request)
         );
 
@@ -559,9 +561,9 @@ class TelegramChannelConnectorTest {
                         List.of(attachment)
                 );
 
-        IllegalArgumentException exception =
+        ConnectorSendRejectedException exception =
                 assertThrows(
-                        IllegalArgumentException.class,
+                        ConnectorSendRejectedException.class,
                         () -> connector.handle(request)
                 );
 
@@ -593,9 +595,9 @@ class TelegramChannelConnectorTest {
                         List.of(attachment)
                 );
 
-        IllegalArgumentException exception =
+        ConnectorSendRejectedException exception =
                 assertThrows(
-                        IllegalArgumentException.class,
+                        ConnectorSendRejectedException.class,
                         () -> connector.handle(request)
                 );
 
@@ -623,9 +625,9 @@ class TelegramChannelConnectorTest {
                         List.of()
                 );
 
-        IllegalArgumentException exception =
+        ConnectorSendRejectedException exception =
                 assertThrows(
-                        IllegalArgumentException.class,
+                        ConnectorSendRejectedException.class,
                         () -> connector.handle(request)
                 );
 
@@ -651,9 +653,9 @@ class TelegramChannelConnectorTest {
         SendMessageCommand request =
                 textRequest("Hello");
 
-        IllegalStateException exception =
+        ConnectorSendRejectedException exception =
                 assertThrows(
-                        IllegalStateException.class,
+                        ConnectorSendRejectedException.class,
                         () -> connector.handle(request)
                 );
 
@@ -724,9 +726,9 @@ class TelegramChannelConnectorTest {
                         List.of(attachment)
                 );
 
-        IllegalStateException exception =
+        ConnectorSendRejectedException exception =
                 assertThrows(
-                        IllegalStateException.class,
+                        ConnectorSendRejectedException.class,
                         () -> connector.handle(request)
                 );
 
@@ -737,7 +739,7 @@ class TelegramChannelConnectorTest {
 
         assertInstanceOf(
                 IOException.class,
-                exception.getCause()
+                exception.getCause().getCause()
         );
 
         verifyNoInteractions(telegramClient);

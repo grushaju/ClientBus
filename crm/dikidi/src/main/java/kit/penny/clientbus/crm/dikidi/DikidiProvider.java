@@ -365,7 +365,7 @@ public final class DikidiProvider implements CrmProvider, AutoCloseable {
             // Establish and verify the selected owner project on every portion.
             catalog(session, externalProjectId, deadline);
             var result = tree(call(session, "POST", "https://dikidi.ru/ru/owner/ajax/clients/filter/?company="+externalProjectId,
-                    List.of(Map.entry("company",externalProjectId), Map.entry("limit","50"), Map.entry("offset",Integer.toString(offset)),
+                    List.of(Map.entry("company",externalProjectId), Map.entry("limit","5"), Map.entry("offset",Integer.toString(offset)),
                             Map.entry("filter","username"), Map.entry("order","asc"), Map.entry("more","1"), Map.entry("query","")),
                     true, externalProjectId));
             String html = null;
@@ -386,10 +386,37 @@ public final class DikidiProvider implements CrmProvider, AutoCloseable {
             }
             if (html == null) throw new CrmFailure(INVALID_RESPONSE);
             var clients = DikidiClientsHtml.parse(html);
-            if (clients.size()>50 || clients.isEmpty() && !DikidiClientsHtml.emptyPage(html)) throw new CrmFailure(INVALID_RESPONSE);
+            if (clients.size()>5 || clients.isEmpty() && !DikidiClientsHtml.emptyPage(html)) throw new CrmFailure(INVALID_RESPONSE);
+            // Directory reads must not refresh statistics in alphabetical order.
+            var directory=clients.stream().map(client -> {
+                var fields=new HashSet<>(client.presentFields());
+                fields.removeAll(Set.of("visitCount","totalSpent"));
+                return new CrmClient(client.externalId(),client.identityKind(),client.displayName(),client.contacts(),client.profile(),fields,client.avatarUrl());
+            }).toList();
             // Offset paging has no snapshot token. Even a terminal page cannot prove a complete snapshot.
-            return new CrmClientPage(clients, clients.isEmpty() ? null : Integer.toString(offset+clients.size()), Instant.now(),
+            return new CrmClientPage(directory, clients.isEmpty() ? null : Integer.toString(offset+clients.size()), Instant.now(),
                     CrmReadResult.Completeness.UNKNOWN, externalProjectId+":CLIENTS");
+        });
+    }
+    @Override public CrmClientPage readClientStatistics(CrmAccess access, String externalProjectId, List<String> ids) {
+        projectId(externalProjectId);
+        if (ids.isEmpty() || ids.size()>5 || new HashSet<>(ids).size()!=ids.size()
+                || ids.stream().anyMatch(id -> id==null || !id.matches("[0-9]{1,128}"))) throw new CrmFailure(INVALID_RESPONSE);
+        return execute(access,externalProjectId,(session,deadline) -> {
+            catalog(session,externalProjectId,deadline);
+            var enriched=new ArrayList<CrmClient>();
+            for (String id:ids) {
+                var response=tree(call(session,"POST","https://dikidi.ru/ru/owner/ajax/clients/settings/"+id
+                        +"/?company="+externalProjectId+"&tab=statistics",List.of(Map.entry("tabs","true")),true,externalProjectId));
+                if (!response.path("html").isString()
+                        || !".modal.settings #tab-settings-statistics".equals(response.path("container").asString("")))
+                    throw new CrmFailure(INVALID_RESPONSE);
+                var stats=DikidiClientStatisticsHtml.parse(response.path("html").asString());
+                enriched.add(new CrmClient(id,"PROJECT",null,Map.of(),Map.of(),
+                        Set.of("visitCount","totalSpent","averageCheck","statisticsCurrency"),null,
+                        stats.visits(),stats.totalSpent(),stats.averageCheck(),stats.currency()));
+            }
+            return new CrmClientPage(enriched,null,Instant.now(),CrmReadResult.Completeness.UNKNOWN,externalProjectId+":CLIENTS");
         });
     }
     @Override public CrmCatalogSnapshot readCatalog(CrmAccess access, String externalProjectId) {

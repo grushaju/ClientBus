@@ -1,6 +1,7 @@
 import type { UiEventEnvelope } from '../types/uiEvent'
 import { SseParser } from './sseParser'
 import { retryAfterDelay } from './retryAfter'
+import { streamTabIdentity } from './streamTab'
 
 export type StreamState = 'connecting' | 'reconciling' | 'open' | 'backoff'
     | 'degraded' | 'offline' | 'incompatible' | 'unauthorized' | 'forbidden' | 'session-changed' | 'disabled' | 'closed'
@@ -41,24 +42,6 @@ function envelope(value: unknown, type: string): UiEventEnvelope {
     return e
 }
 
-/**
- * Идентификатор вкладки. sessionStorage живёт до закрытия вкладки и потому переживает
- * перезагрузку страницы — ровно то, что нужно серверу, чтобы ЗАМЕНИТЬ свой же поток вместо
- * того, чтобы занять ещё один слот лимита сотрудника: брошенные при перезагрузке потоки
- * раньше копились и владелец упирался в собственный лимит (429 при одном живом клиенте).
- */
-function tabId(): string {
-    try {
-        const storage = typeof sessionStorage === 'undefined' ? undefined : sessionStorage
-        const key = 'clientbus.stream.tab'
-        const existing = storage?.getItem(key)
-        if (existing && /^[A-Za-z0-9_-]{8,64}$/.test(existing)) return existing
-        const created = globalThis.crypto?.randomUUID?.() ?? `t${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`
-        storage?.setItem(key, created)
-        return created
-    } catch { return '' } // приватный режим без storage: сервер просто не сможет заменить поток
-}
-
 /** Transport layer. Minimal AppLayout/REST integration is provided by UiEventsProvider (11.5). */
 export function startUiEventStream(options: UiStreamOptions): { stop: () => void; done: Promise<void> } {
     const lifetime = new AbortController()
@@ -70,6 +53,8 @@ export function startUiEventStream(options: UiStreamOptions): { stop: () => void
     const isOnline = options.isOnline ?? (() => typeof navigator === 'undefined' || navigator.onLine !== false)
     const connectivity = options.connectivityTarget ?? (typeof window === 'undefined' ? undefined : window)
     let activeAttempt: AbortController | undefined
+    const tabIdentity = streamTabIdentity()
+    const unsubscribeTab = tabIdentity.subscribe(() => activeAttempt?.abort())
     const offline = () => { state('offline'); activeAttempt?.abort() }
     connectivity?.addEventListener('offline', offline)
     const pause = (ms: number) => new Promise<void>(resolve => {
@@ -125,7 +110,7 @@ export function startUiEventStream(options: UiStreamOptions): { stop: () => void
                 state('connecting')
                 const params = new URLSearchParams()
                 if (options.workspaceId) params.set('workspaceId', options.workspaceId)
-                const tab = tabId()
+                const tab = tabIdentity.id
                 if (tab) params.set('tab', tab)
                 const encoded = params.toString()
                 // Не params.size: способ один на весь api-слой, а undefined вместо свойства
@@ -216,6 +201,6 @@ export function startUiEventStream(options: UiStreamOptions): { stop: () => void
             }
         }
         if (lifetime.signal.aborted) state('closed')
-    })().finally(() => { options.signal?.removeEventListener('abort', stop); connectivity?.removeEventListener('offline', offline) })
+    })().finally(() => { unsubscribeTab(); options.signal?.removeEventListener('abort', stop); connectivity?.removeEventListener('offline', offline) })
     return { stop, done }
 }

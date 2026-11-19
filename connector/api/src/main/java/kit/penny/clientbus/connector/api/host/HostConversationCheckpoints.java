@@ -22,6 +22,15 @@ public interface HostConversationCheckpoints {
             ConversationCheckpoint value
     );
 
+    /** Called by the host only after the covered page was persisted or acknowledged by its broker. */
+    default void acknowledge(Update update) {
+        if (java.util.Objects.equals(load(update.channelAccountId(), update.dialogExternalId()).orElse(null), update.expected()))
+            save(update.channelAccountId(), update.dialogExternalId(), update.value());
+    }
+
+    record Update(UUID channelAccountId, String accountExternalId, String dialogExternalId,
+                  ConversationCheckpoint expected, ConversationCheckpoint value) { }
+
     /**
      * Cursor state of one dialog: newest/oldest external message ids already handed over,
      * whether the initial import finished ({@code initialSyncDone}) and whether the external
@@ -33,7 +42,13 @@ public interface HostConversationCheckpoints {
             String oldestLoadedId,
             boolean initialSyncDone,
             boolean historyStartReached,
-            long lastDialogEpoch
+            long lastDialogEpoch,
+            String liveBeforeId,
+            String liveNewestId
     ) {
+        public ConversationCheckpoint(String newestMessageId, String oldestLoadedId, boolean initialSyncDone,
+                boolean historyStartReached, long lastDialogEpoch) {
+            this(newestMessageId, oldestLoadedId, initialSyncDone, historyStartReached, lastDialogEpoch, null, null);
+        }
     }
 }

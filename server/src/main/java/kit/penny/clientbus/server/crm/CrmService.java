@@ -19,6 +19,7 @@ import java.util.function.Function;
 
 @Service
 public class CrmService {
+    @org.springframework.beans.factory.annotation.Autowired(required=false) private CrmSyncCoordinator coordinator;
     private final CrmStore store;
     private final CrmRegistry registry;
     private final CrmSecretCipher cipher;
@@ -314,7 +315,7 @@ public class CrmService {
         return result;
     }
     private void startInitialRead(UUID projectId) {
-        try { sync.refresh(projectId); }
+        try { if(coordinator!=null && coordinator.enabled()) coordinator.request(projectId,new RefreshCrmRequest("CATALOG")); else sync.refresh(projectId); }
         catch (CrmException ignored) { /* Binding is committed; refresh failures remain independently retryable. */ }
     }
     public CrmProjectDto detachProject(UUID projectId, long expectedVersion) {

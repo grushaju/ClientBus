@@ -130,6 +130,33 @@ public class MessageService {
     }
 
     @Transactional
+    public MessageDto registerAcceptedExternalAttempt(UUID messageId, UUID attempt, UUID account,
+            String recipient, String dialog, String externalId) {
+        var original = getMessageEntityForProcessing(messageId);
+        conversationService.findEntityForUpdate(original.getConversation().getId());
+        outboundCallbacks.record(account, dialog == null ? recipient : dialog, externalId, externalId, false);
+        original = lockedMessage(messageId);
+        if (!sameAttempt(original, attempt)) return messageMapper.toDto(original);
+        var echo = messageRepository.findByConversationIdAndExternalId(original.getConversation().getId(), externalId).orElse(null);
+        boolean read = echo != null && echo.getDeliveryStatus() == MessageDeliveryStatus.READ;
+        if (echo != null && !messageId.equals(echo.getId())) {
+            if (echo.getDirection() != MessageDirection.OUTBOUND || echo.getSendAttemptId() != null)
+                throw new IllegalStateException("Final external ID belongs to another outbound attempt");
+            // Exact provider ID proves this is the early echo of this send, never match by text/time.
+            entityManager.createQuery("update MessageEntity set replyToMessage=:target where replyToMessage=:echo")
+                    .setParameter("target", original).setParameter("echo", echo).executeUpdate();
+            entityManager.createQuery("update MessageEntity set forwardedFromMessage=:target where forwardedFromMessage=:echo")
+                    .setParameter("target", original).setParameter("echo", echo).executeUpdate();
+            entityManager.createQuery("delete from MessageAttachmentEntity where message=:echo")
+                    .setParameter("echo", echo).executeUpdate();
+            messageRepository.delete(echo);
+            messageRepository.flush();
+        }
+        var result = registerExternalAttempt(messageId, attempt, account, recipient, dialog, externalId);
+        return read ? markRead(messageId, attempt) : result;
+    }
+
+    @Transactional
     public MessageDto registerExternalAttempt(UUID messageId, UUID attempt, UUID account, String recipient, String dialog, String pending) {
         // Correlation row always precedes the message lock, including in callback transactions.
         var result=outboundCallbacks.bind(account,recipient,dialog,pending,messageId,attempt);
@@ -456,6 +483,11 @@ public class MessageService {
             throw new AccessDeniedException(
                     "Only EMPLOYEE can create outbound messages"
             );
+        }
+
+        if (conversation.getAssignedEmployee() == null
+                || !conversation.getAssignedEmployee().getId().equals(currentUserService.getCurrentEmployeeId())) {
+            throw new AccessDeniedException("Only the assigned EMPLOYEE can create outbound messages");
         }
 
         conversationService.requireExternalOperationsAvailable(

@@ -28,6 +28,7 @@ public class CrmAppointmentSync {
     private record Claim(CrmContext context, CrmAppointmentScope scope, CrmAppointmentQuery query,
                          UUID actorId,UUID token,long generation,long epoch,boolean force,Instant barrier) {}
     private record Subscription(UUID projectId, UUID organizationId, UUID actorId, CrmAppointmentScope scope) {}
+    @org.springframework.beans.factory.annotation.Autowired(required=false) private CrmSyncProperties syncProperties;
     private final CrmStore store;
     private final JdbcTemplate jdbc;
     private final TransactionTemplate tx;
@@ -104,11 +105,27 @@ public class CrmAppointmentSync {
         }
         return started;
     }
+    long runBackground(UUID projectId,UUID organization,java.time.LocalDate from,java.time.LocalDate to,UUID client,boolean force,UUID actor,CrmSyncProperties.Policy policy) {
+        return runBackground(projectId,organization,new CrmAppointmentScope(client==null ? "APPOINTMENTS" : "CLIENT_HISTORY",client,from,to),force,actor,policy);
+    }
+    long runBackground(UUID projectId,UUID organization,CrmAppointmentScope scope,boolean force,UUID actor,CrmSyncProperties.Policy policy) {
+        return runBackground(projectId,organization,scope,force,actor,policy,null);
+    }
+    long runBackground(UUID projectId,UUID organization,CrmAppointmentScope scope,boolean force,UUID actor,CrmSyncProperties.Policy policy,CrmContext expected) {
+        var claim=claim(projectId,organization,actor,scope,0,force,expected);
+        if(claim==null)throw CrmException.conflict("CRM_CONNECTION_BUSY");
+        run(claim,policy);
+        return claim.generation();
+    }
     private Claim claim(UUID projectId,UUID organization,UUID actor,CrmAppointmentScope scope,long intervalMs,boolean force) {
+        return claim(projectId,organization,actor,scope,intervalMs,force,null);
+    }
+    private Claim claim(UUID projectId,UUID organization,UUID actor,CrmAppointmentScope scope,long intervalMs,boolean force,CrmContext expected) {
         return tx.execute(status -> {
             var project=store.projects.findByIdAndOrganizationId(projectId,organization).orElseThrow(CrmStore::notFound);
             store.em.refresh(project, LockModeType.PESSIMISTIC_WRITE);
-            store.guard.workspace(actor,project.getWorkspace().getId());
+            if(expected!=null && !expected.equals(store.context(project)))throw CrmException.conflict("CRM_CONTEXT_CHANGED");
+            if (actor!=null) store.guard.workspace(actor,project.getWorkspace().getId());
             if (!project.isEnabled()) throw new CrmException(409,"CRM_CONFIGURATION_REQUIRED","Проект CRM отключён.");
             store.requireNetwork(project);store.credentials(project.getConnection()); registry.require(project.getProvider());
             if (intervalMs>0 && (!Boolean.TRUE.equals(jdbc.queryForObject("""
@@ -121,19 +138,19 @@ public class CrmAppointmentSync {
                     || project.getConnection().getStatus()==CrmConnectionStatus.REAUTH_REQUIRED)) return null;
             var client=client(projectId, scope.crmClientId());
             CrmContext context=store.context(project);
-            Map<String,Object> subscription=new HashMap<>(scope.fields()); subscription.put("refreshActorId",actor.toString());
+            Map<String,Object> subscription=new HashMap<>(scope.fields()); if(actor!=null) subscription.put("refreshActorId",actor.toString()); else subscription.put("coordinator",true);
             initialize(context, "CONTROL", "WRITER:APPOINTMENTS", "CONTROL", Map.of());
             initialize(context, "SCOPE", scope.dataset(), scope.key(), subscription);
             jdbc.update("update crm.syncstate set scope=cast(? as jsonb) where projectid=? and dataset=? and scopekey=?",
                     JSON.writeValueAsString(subscription),projectId,scope.dataset(),scope.key());
             UUID token=UUID.randomUUID();
-            var generations=jdbc.query("""
+            var generations=jdbc.query(lease("""
                     update crm.syncstate set generation=generation+1,version=version+1,claimtoken=?,
                         claimuntil=clock_timestamp()+interval '120 seconds',connectionid=?,credentialversion=?,
                         contextversion=?,zonerevision=?,status='RUNNING',lastattemptat=clock_timestamp(),updatedat=clock_timestamp()
                     where projectid=? and dataset='WRITER:APPOINTMENTS' and scopekey='CONTROL'
                         and (claimuntil is null or claimuntil<=clock_timestamp()) returning generation
-                    """, (rs,index) -> rs.getLong(1), token, context.connectionId(), context.credentialVersion(),
+                    """), (rs,index) -> rs.getLong(1), token, context.connectionId(), context.credentialVersion(),
                     context.contextVersion(), context.zoneRevision(), projectId);
             if (generations.isEmpty()) {
                 if (intervalMs>0) return null;
@@ -185,26 +202,30 @@ public class CrmAppointmentSync {
                 context.credentialVersion(),context.contextVersion(),context.zoneRevision());
     }
     private void run(Claim claim) {
-        long deadline=nanoTime.getAsLong()+TimeUnit.SECONDS.toNanos(90);
+        var policy=new CrmSyncProperties.Policy();policy.setMaxRunDuration(Duration.ofSeconds(90));policy.setMaxPagesPerRun(31);
+        run(claim,policy);
+    }
+    private void run(Claim claim,CrmSyncProperties.Policy policy) {
+        long deadline=nanoTime.getAsLong()+policy.getMaxRunDuration().toNanos();
         var health=new AtomicReference<CrmHealthCheck>();
         try {
             CrmCredentials credentials=tx.execute(status -> {
                 var project=store.requireContext(claim.context());
-                store.guard.workspace(claim.actorId(),project.getWorkspace().getId()); requireClaim(claim);
+                if (claim.actorId()!=null) store.guard.workspace(claim.actorId(),project.getWorkspace().getId()); requireClaim(claim);
                 return store.credentials(project.getConnection());
             });
             String cursor=null; var cursors=new HashSet<String>(); var observed=new HashSet<String>();
             var origins=new HashMap<String,java.time.LocalDate>();boolean repaired=false;
             boolean allComplete=true,allLive=true; Instant oldestObservation=null; int total=0;
-            for (int number=0;number<31;number++) {
+            for (int number=0;number<policy.getMaxPagesPerRun();number++) {
                 if (Thread.currentThread().isInterrupted() || expired(deadline)) {
                     limited(claim); return;
                 }
                 tx.executeWithoutResult(status -> {
                     var project=store.requireContext(claim.context());
-                    store.guard.workspace(claim.actorId(),project.getWorkspace().getId()); requireClaim(claim);
+                    if (claim.actorId()!=null) store.guard.workspace(claim.actorId(),project.getWorkspace().getId()); requireClaim(claim);
                     health.set(CrmHealthCheck.snapshot(project.getConnection()));
-                    jdbc.update("update crm.syncstate set claimuntil=clock_timestamp()+interval '120 seconds' where projectid=? and dataset='WRITER:APPOINTMENTS' and scopekey='CONTROL' and claimtoken=? and generation=?",
+                    jdbc.update(lease("update crm.syncstate set claimuntil=clock_timestamp()+interval '120 seconds' where projectid=? and dataset='WRITER:APPOINTMENTS' and scopekey='CONTROL' and claimtoken=? and generation=?"),
                             project.getId(),claim.token(),claim.generation());
                 });
                 CrmAppointmentPage page;
@@ -247,7 +268,7 @@ public class CrmAppointmentSync {
                 allLive &= page.observation()==null;
                 oldestObservation=oldestObservation==null || page.observedAt().isBefore(oldestObservation) ? page.observedAt() : oldestObservation;
                 boolean terminal=page.nextCursor()==null;
-                boolean limited=!terminal && (number==30 || expired(deadline));
+                boolean limited=!terminal && (number==policy.getMaxPagesPerRun()-1 || expired(deadline));
                 boolean finished=terminal || limited, complete=terminal && allComplete;
                 // Reused observations must never infer absence using a newer worker generation.
                 boolean markMissing=complete&&allLive;
@@ -260,7 +281,7 @@ public class CrmAppointmentSync {
                 Instant coverageObserved=oldestObservation;
                 tx.executeWithoutResult(status -> {
                     var project=store.requireContext(claim.context());
-                    store.guard.workspace(claim.actorId(),project.getWorkspace().getId()); requireClaim(claim);
+                    if (claim.actorId()!=null) store.guard.workspace(claim.actorId(),project.getWorkspace().getId()); requireClaim(claim);
                     if(page.observation()!=null && (page.observation().epoch()!=journals.epoch(project.getId())||page.observation().epoch()!=claim.epoch()||page.observation().sequence()<1
                             ||page.observation().day()==null||page.observation().day().isBefore(claim.query().dateFrom())||page.observation().day().isAfter(claim.query().dateTo())))throw CrmException.conflict("CRM_CONTEXT_CHANGED");
                     for(var batch:batches){
@@ -327,7 +348,7 @@ public class CrmAppointmentSync {
     private void limited(Claim claim) {
         tx.executeWithoutResult(status -> {
             var project=store.requireContext(claim.context());
-            store.guard.workspace(claim.actorId(),project.getWorkspace().getId());
+            if (claim.actorId()!=null) store.guard.workspace(claim.actorId(),project.getWorkspace().getId());
             if (release(claim,"SUCCEEDED")!=1) throw CrmException.conflict("CRM_CONTEXT_CHANGED");
             jdbc.update("""
                     update crm.syncstate set status='PARTIAL',lasterrorcode='CRM_SYNC_LIMIT_REACHED',claimtoken=null,
@@ -378,6 +399,18 @@ public class CrmAppointmentSync {
         });
     }
     CrmSyncStateDto state(CrmProjectEntity project,CrmAppointmentScope scope) {
+        if(syncProperties!=null && syncProperties.isEnabled() && scope.externalAppointmentId()==null && !scope.dateFrom().equals(scope.dateTo())){
+            var daily=new ArrayList<CrmSyncStateDto>();
+            for(LocalDate day=scope.dateFrom();!day.isAfter(scope.dateTo());day=day.plusDays(1))daily.add(state(project,new CrmAppointmentScope(scope.dataset(),scope.crmClientId(),day,day)));
+            if(daily.stream().anyMatch(s->s.lastAttemptAt()!=null)){
+                String status=daily.stream().anyMatch(s->"FAILED".equals(s.status()))?"FAILED":daily.stream().anyMatch(s->"RUNNING".equals(s.status()))?"RUNNING":daily.stream().allMatch(s->"SUCCEEDED".equals(s.status()))?"SUCCEEDED":"PARTIAL";
+                Instant attempt=daily.stream().map(CrmSyncStateDto::lastAttemptAt).filter(Objects::nonNull).max(Comparator.naturalOrder()).orElse(null);
+                Instant success=daily.stream().allMatch(s->s.lastSuccessAt()!=null)?daily.stream().map(CrmSyncStateDto::lastSuccessAt).min(Comparator.naturalOrder()).orElse(null):null;
+                String completeness=daily.stream().allMatch(s->"COMPLETE".equals(s.completeness()))?"COMPLETE":daily.stream().anyMatch(s->s.lastSuccessAt()==null || "PARTIAL".equals(s.completeness()))?"PARTIAL":"UNKNOWN";
+                String error=daily.stream().map(CrmSyncStateDto::errorCode).filter(Objects::nonNull).findFirst().orElse(null);
+                return store.pauseState(project,new CrmSyncStateDto(scope.dataset(),status,attempt,success,success==null?"NEVER_LOADED":daily.stream().allMatch(s->"CURRENT".equals(s.freshness()))?"CURRENT":"STALE",completeness,error,daily.stream().mapToLong(CrmSyncStateDto::generation).max().orElse(0),scope.fields(),Map.of(),Map.of("days",daily.size(),"completeness",completeness)));
+            }
+        }
         var rows=jdbc.query("""
                 select s.*,exists(select 1 from crm.syncstate c where c.projectid=s.projectid and c.dataset='WRITER:APPOINTMENTS'
                     and c.claimtoken=s.claimtoken and c.generation=s.generation and c.claimuntil>clock_timestamp()) as active
@@ -394,7 +427,7 @@ public class CrmAppointmentSync {
                     && connection.getId().equals(rs.getObject("connectionid",UUID.class))
                     && connection.getCredentialVersion() == rs.getLong("credentialversion")
                     && project.getContextVersion() == rs.getLong("contextversion") && project.getZoneRevision() == rs.getLong("zonerevision")
-                    && "SUCCEEDED".equals(status) && success != null && success.isAfter(Instant.now().minusSeconds(300));
+                    && "SUCCEEDED".equals(status) && success != null && success.isAfter(Instant.now().minus(syncProperties==null ? java.time.Duration.ofSeconds(300) : syncProperties.policy(CrmSyncProperties.Dataset.APPOINTMENTS).getStaleAfter()));
             return new CrmSyncStateDto(scope.dataset(),status,attempt,success,success == null ? "NEVER_LOADED" : current ? "CURRENT" : "STALE",
                     completeness,error,rs.getLong("generation"),scope.fields(),successful,attempted);
         },project.getId(),scope.dataset(),scope.key());
@@ -405,5 +438,6 @@ public class CrmAppointmentSync {
         return jdbc.query("select appointmentdatarevision from crm.project where id=?",
                 (rs,index) -> rs.getLong(1),projectId).stream().findFirst().orElse(0L);
     }
+    private String lease(String sql){return sql.replace("interval '120 seconds'", "("+(syncProperties==null ? 120000L : syncProperties.getLeaseDuration().toMillis())+" * interval '1 millisecond')");}
     @PreDestroy public void close() { executor.shutdownNow(); }
 }

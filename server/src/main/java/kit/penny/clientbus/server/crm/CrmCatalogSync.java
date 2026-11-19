@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public class CrmCatalogSync {
     private record Claim(CrmContext context, UUID actorId, UUID token, long generation) {}
     private record Candidate(UUID projectId, UUID organizationId, UUID actorId) {}
+    @org.springframework.beans.factory.annotation.Autowired(required=false) private CrmSyncProperties syncProperties;
     private final CrmStore store;
     private final JdbcTemplate jdbc;
     private final TransactionTemplate tx;
@@ -84,11 +85,17 @@ public class CrmCatalogSync {
         }
         return started;
     }
+    long runBackground(UUID projectId,UUID organization,UUID actor) {
+        var claim=claim(projectId,organization,actor,0);
+        if(claim==null)throw CrmException.conflict("CRM_CONNECTION_BUSY");
+        run(claim);
+        return claim.generation();
+    }
     private Claim claim(UUID projectId, UUID organization, UUID actor, long intervalMs) {
         return tx.execute(status -> {
             var project = store.projects.findByIdAndOrganizationId(projectId, organization).orElseThrow(CrmStore::notFound);
             store.em.refresh(project, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
-            store.guard.workspace(actor, project.getWorkspace().getId());
+            if (actor!=null) store.guard.workspace(actor, project.getWorkspace().getId());
             if (!project.isEnabled()) throw new CrmException(409, "CRM_CONFIGURATION_REQUIRED", "Проект CRM отключён.");
             store.requireNetwork(project);store.credentials(project.getConnection()); registry.require(project.getProvider());
             if (intervalMs > 0 && (project.getConnection().getStatus() == CrmConnectionStatus.REAUTH_REQUIRED
@@ -104,7 +111,7 @@ public class CrmCatalogSync {
             initialize(context, "CONTROL", "WRITER:CATALOG", "CONTROL");
             initialize(context, "SCOPE", "CATALOG", "ALL");
             UUID token = UUID.randomUUID();
-            var generations = jdbc.query("""
+            var generations = jdbc.query(lease("""
                     update crm.syncstate set generation=generation+1, version=version+1,
                         claimtoken=?, claimuntil=clock_timestamp()+interval '120 seconds',
                         connectionid=?, credentialversion=?, contextversion=?, zonerevision=?,
@@ -112,7 +119,7 @@ public class CrmCatalogSync {
                     where projectid=? and dataset='WRITER:CATALOG' and scopekey='CONTROL'
                         and (claimuntil is null or claimuntil<=clock_timestamp())
                     returning generation
-                    """, (rs, row) -> rs.getLong(1), token, context.connectionId(), context.credentialVersion(),
+                    """), (rs, row) -> rs.getLong(1), token, context.connectionId(), context.credentialVersion(),
                     context.contextVersion(), context.zoneRevision(), projectId);
             if (generations.isEmpty()) return null;
             long generation = generations.getFirst();
@@ -123,7 +130,7 @@ public class CrmCatalogSync {
                         lastattemptat=clock_timestamp(), lasterrorcode=null, updatedat=clock_timestamp()
                     where projectid=? and dataset='CATALOG' and scopekey='ALL'
                     """, generation, token, context.connectionId(), context.credentialVersion(), context.contextVersion(),
-                    context.zoneRevision(), actor.toString(), projectId);
+                    context.zoneRevision(), actor==null ? null : actor.toString(), projectId);
             return new Claim(context, actor, token, generation);
         });
     }
@@ -153,7 +160,7 @@ public class CrmCatalogSync {
         try {
             CrmCredentials credentials = tx.execute(status -> {
                 var project = store.requireContext(claim.context());
-                store.guard.workspace(claim.actorId(), project.getWorkspace().getId());
+                if (claim.actorId()!=null) store.guard.workspace(claim.actorId(), project.getWorkspace().getId());
                 requireClaim(claim);
                 jdbc.update("update crm.syncstate set status='RUNNING',updatedat=clock_timestamp(),version=version+1 where projectid=? and dataset='CATALOG' and generation=? and claimtoken=?",
                         project.getId(), claim.generation(), claim.token());
@@ -164,13 +171,14 @@ public class CrmCatalogSync {
             try (var access = credentials.open(cipher)) {
                 result = registry.require(credentials.provider).readCatalog(access, claim.context().externalProjectId());
             }
+            if(Thread.currentThread().isInterrupted())throw new CrmFailure(CrmFailure.Code.TEMPORARY_FAILURE);
             if (result == null || !(claim.context().externalProjectId() + ":CATALOG").equals(result.scope()))
                 throw new CrmFailure(CrmFailure.Code.CONTEXT_MISMATCH);
             if (result.observedAt() == null || result.completeness() == null)
                 throw new CrmFailure(CrmFailure.Code.INVALID_RESPONSE);
             tx.executeWithoutResult(status -> {
                 var project = store.requireContext(claim.context());
-                store.guard.workspace(claim.actorId(), project.getWorkspace().getId());
+                if (claim.actorId()!=null) store.guard.workspace(claim.actorId(), project.getWorkspace().getId());
                 requireClaim(claim);
                 writer.apply(project, result, claim.generation());
                 var connection = project.getConnection();
@@ -261,7 +269,7 @@ public class CrmCatalogSync {
                         && rs.getObject("connectionid", UUID.class).equals(project.getConnection().getId())
                         && rs.getLong("credentialversion") == project.getConnection().getCredentialVersion()
                         && rs.getLong("contextversion") == project.getContextVersion() && rs.getLong("zonerevision") == project.getZoneRevision()
-                        && "SUCCEEDED".equals(state) && success != null && success.isAfter(Instant.now().minusSeconds(300));
+                        && "SUCCEEDED".equals(state) && success != null && success.isAfter(Instant.now().minus(syncProperties==null ? java.time.Duration.ofSeconds(300) : syncProperties.policy(CrmSyncProperties.Dataset.CATALOG).getStaleAfter()));
                 String completeness = rs.getString("attemptcompleteness");
                 if (completeness == null) completeness = rs.getBoolean("complete") ? "COMPLETE" : "UNKNOWN";
                 String projectError = rs.getString("projecterrorcode");
@@ -292,5 +300,6 @@ public class CrmCatalogSync {
                         +"where projectid=:project and dataset in ('CATALOG','MASTERS') and scopekey='ALL'")
                 .setParameter("project",projectId).executeUpdate();
     }
+    private String lease(String sql){return sql.replace("interval '120 seconds'", "("+(syncProperties==null ? 120000L : syncProperties.getLeaseDuration().toMillis())+" * interval '1 millisecond')");}
     @PreDestroy public void close() { executor.shutdownNow(); }
 }

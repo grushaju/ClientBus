@@ -34,7 +34,15 @@ export interface CrmSyncState {
     attemptCoverage?: { projectErrorCode?: string }
     scope?: Record<string, unknown>; successfulCoverage?: Record<string, unknown>
 }
+export interface CrmSyncOverview {
+    enabled: boolean
+    datasets: { dataset: string; scopes: number; running: number; failed: number; completed: number; pending: number; due: number; lastsuccessat: string | null; lastattemptat: string | null; datefrom: string | null; dateto: string | null; nextat: string | null; errorcode: string | null }[]
+    clients: { total: number; missing: number; fresh: number; oldestat: string | null }
+    stored: { masters: number; services: number; appointments: number; intervals: number }
+}
 export interface CrmClient {
+    visitCount: number | null; totalSpent: string | null; averageCheck: string | null; currency: string | null
+    statisticsUpdatedAt: string | null
     id: string; projectId: string; externalId: string; identityKind: string; displayName: string
     contacts: Record<string, string>; normalizedPhone: string | null; avatarUrl: string | null; clientId: string | null
     mappingUpdatedAt: string | null; mappingUpdatedBy: string | null; mappingPreviousId: string | null
@@ -102,7 +110,7 @@ const queryString = (value: object) => new URLSearchParams(Object.entries(value)
  * молча расширенная выборка.
  */
 const querySuffix = (params: URLSearchParams) => { const encoded = params.toString(); return encoded ? `?${encoded}` : '' }
-export const getCrmClients = async (id: string, query: { q?: string; unlinked?: boolean; cursor?: string }, signal?: AbortSignal): Promise<CrmReadPage<CrmClient>> => {
+export const getCrmClients = async (id: string, query: { q?: string; unlinked?: boolean; cursor?: string; sort?: 'NAME' | 'VISITS' | 'SPENT' | 'AVERAGE_CHECK'; direction?: 'ASC' | 'DESC' }, signal?: AbortSignal): Promise<CrmReadPage<CrmClient>> => {
     const result = await json<Omit<CrmReadPage<CrmClient>, 'dataState'> & { syncState: CrmSyncState }>(`/api/crm/projects/${path(id)}/clients?${queryString(query)}`, { signal })
     return { ...result, dataState: result.syncState }
 }
@@ -122,6 +130,7 @@ export const createLinkedCrmClient = (row: CrmClient, value: { firstName: string
 export const getClientCrmLinks = (id: string, workspaceId?: string, signal?: AbortSignal) => json<CrmClientLink[]>(`/api/crm/clientbus-clients/${path(id)}/links?${queryString({ workspaceId })}`, { signal })
 export const refreshCrmData = (id: string, value: { dataset: string; masterId?: string; crmClientId?: string; force?: boolean } & Partial<CrmPeriod>, signal?: AbortSignal) =>
     json<CrmSyncState>(`/api/crm/projects/${path(id)}/refresh`, body('POST', value, signal))
+export const getCrmSyncOverview = (id: string, signal?: AbortSignal) => json<CrmSyncOverview>(`/api/crm/projects/${path(id)}/sync-overview`, { signal })
 export const getCrmWorkIntervals = (id: string, query: CrmPeriod & { masterId: string; cursor?: string }, signal?: AbortSignal) =>
     json<CrmReadPage<CrmWorkInterval>>(`/api/crm/projects/${path(id)}/work-intervals?${queryString(query)}`, { signal })
 const unknownState: CrmSyncState = { dataset: 'APPOINTMENTS', status: 'IDLE', lastAttemptAt: null, lastSuccessAt: null, freshness: 'NEVER_LOADED', completeness: 'UNKNOWN', errorCode: null, generation: 0 }

@@ -13,6 +13,14 @@ import java.util.List;
 
 @Service
 public class RecentChatsSynchronizationService {
+    private record DialogKey(java.util.UUID account, String client, String dialog) { }
+    private final java.util.concurrent.ConcurrentMap<DialogKey, Long> historySelections =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.concurrent.atomic.AtomicLong selectionSequence = new java.util.concurrent.atomic.AtomicLong();
+
+    private static DialogKey key(PlatformConversationRequest conversation) {
+        return new DialogKey(conversation.channelAccountId(), conversation.clientExternalId(), conversation.dialogExternalId());
+    }
 
     private static final int INITIAL_HISTORY_LIMIT = 20;
 
@@ -60,8 +68,13 @@ public class RecentChatsSynchronizationService {
 
         int historySyncCount = 0;
 
+        var ordered = new java.util.ArrayList<>(conversations);
+        var previousSelections = new java.util.HashMap<>(historySelections);
+        ordered.sort(java.util.Comparator.comparingLong(conversation -> conversation == null
+                ? Long.MIN_VALUE : previousSelections.getOrDefault(key(conversation), Long.MIN_VALUE)));
+
         for (PlatformConversationRequest conversation :
-                conversations) {
+                ordered) {
 
             if (conversation == null) {
                 throw new IllegalArgumentException(
@@ -102,6 +115,7 @@ public class RecentChatsSynchronizationService {
                     )
             );
 
+            historySelections.put(key(conversation), selectionSequence.incrementAndGet());
             historySyncCount++;
         }
     }

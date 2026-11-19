@@ -9,6 +9,7 @@
     "preview": "vite preview --config vite.config.ts",
     "test": "node --test tests",
     "test:e2e": "playwright test",
+    "test:stream-tabs": "playwright test --config playwright.stream.config.ts",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:live": "playwright test --config playwright.live.config.ts",

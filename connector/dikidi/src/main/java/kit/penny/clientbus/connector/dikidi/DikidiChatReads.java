@@ -227,8 +227,14 @@ public final class DikidiChatReads {
      */
     public SendOutcome sendMessage(DikidiClient.Session session, String company,
             List<Map.Entry<String, String>> form) {
+        return sendMessage(session, company, form, null);
+    }
+
+    public SendOutcome sendMessage(DikidiClient.Session session, String company,
+            List<Map.Entry<String, String>> form,
+            kit.penny.clientbus.integration.dikidi.DikidiTransport.Observer observer) {
         var response = session.exchange("POST", "https://chat.dikidi.ru/api/dialog/message/", form,
-                true, company, RequestProfile.OWNER_CHAT, null);
+                true, company, RequestProfile.OWNER_CHAT, observer);
         if (response.status() != 200) throw mapStatus(response.status());
         JsonNode root;
         try { root = JSON.readTree(response.body()); }

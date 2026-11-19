@@ -7,6 +7,7 @@ import { isAccessEvent, useUiScope } from '../../api/events/uiScope'
 import { getApiErrorCode } from '../../api/apiClient'
 import * as api from '../../api/crmApi'
 import { ReturnToCrm } from './CrmShared'
+import CrmSyncOverview from './CrmSyncOverview'
 import './crm.css'
 
 function CrmConnectionsContent() {
@@ -150,7 +151,9 @@ function CrmConnectionsContent() {
             <div><strong>{api.crmAccountName(connection)}</strong><span className="crm-state">{api.crmConnectionLabel(connection.status)}</span></div>
             <small>{connection.provider} · {connection.loginHint}{connection.lastCheckedAt && ' · Проверено: ' + new Date(connection.lastCheckedAt).toLocaleString('ru-RU')}</small>
             <ul className="crm-project-links">{projects.filter(row => row.connectionId === connection.id).map(row => <li key={row.id}>
-                <Link to={`/workspaces/${encodeURIComponent(row.workspaceId)}#crm`}>{row.displayName} · {workspaces.find(workspace => workspace.id === row.workspaceId)?.name ?? 'Рабочее пространство'}{row.archived ? ' · архив' : !row.enabled ? ' · обновление выключено' : ''}</Link></li>)}</ul>
+                <Link to={`/workspaces/${encodeURIComponent(row.workspaceId)}#crm`}>{row.displayName} · {workspaces.find(workspace => workspace.id === row.workspaceId)?.name ?? 'Рабочее пространство'}{row.archived ? ' · архив' : !row.enabled ? ' · обновление выключено' : ''}</Link>
+                {!row.archived && <CrmSyncOverview key={row.id + ':' + row.contextVersion} project={row} />}
+            </li>)}</ul>
             {!projects.some(row => row.connectionId === connection.id) && <span>Проекты пока не подключены.</span>}
             <div className="crm-actions">
                 <button type="button" className="ui-button ui-button-secondary" disabled={busy || connection.status === 'DISABLED'} onClick={() => void run(signal => api.verifyCrmConnection(connection.id, signal))}>Проверить</button>

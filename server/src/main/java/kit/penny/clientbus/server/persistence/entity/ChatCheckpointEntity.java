@@ -36,6 +36,16 @@ public class ChatCheckpointEntity {
     @Column(name = "oldestloadedid", length = 64)
     private String oldestLoadedId;
 
+    @Column(name = "livebeforeid", length = 64)
+    private String liveBeforeId;
+    @Column(name = "livenewestid", length = 64)
+    private String liveNewestId;
+
+    public String getLiveBeforeId() { return liveBeforeId; }
+    public void setLiveBeforeId(String value) { liveBeforeId = value; }
+    public String getLiveNewestId() { return liveNewestId; }
+    public void setLiveNewestId(String value) { liveNewestId = value; }
+
     @Column(name = "initialsyncdone", nullable = false)
     private boolean initialSyncDone;
 

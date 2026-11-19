@@ -48,6 +48,6 @@ public class KafkaPlatformMessagePublisher
                 KafkaTopicNames.platformMessages(),
                 message.channelAccountId().toString(),
                 event
-        );
+        ).join();
     }
 }

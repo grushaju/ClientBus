@@ -1,5 +1,7 @@
 package kit.penny.clientbus.connector.dikidi;
 
+import kit.penny.clientbus.integration.dikidi.DikidiFailure;
+
 import kit.penny.clientbus.common.notification.EventOrigin;
 import kit.penny.clientbus.connector.api.command.SyncConversationHistoryCommand;
 import kit.penny.clientbus.connector.api.command.SyncRecentChatsCommand;
@@ -32,6 +34,105 @@ import static org.junit.jupiter.api.Assertions.*;
  * чекпойнту, направление по out (эхо — sender аккаунта), Employee не приписывается.
  */
 class DikidiChatReaderTest {
+    @Test void readTraversalReturnsContinuationAndResumesWithoutRescanningTheHead() {
+        try (var harness = new Harness(1)) {
+            String cursor = null;
+            for (int id = 200; id >= 194; id--) {
+                harness.site.pages.put("7|" + cursor, page(message(Integer.toString(id), "21", "read", 0, 1700000200)));
+                cursor = Integer.toString(id);
+            }
+            var command = new kit.penny.clientbus.connector.api.command.MarkMessagesReadCommand(ACCOUNT, "21", "200", "7");
+            var next = harness.connector.continueRead(command);
+            assertNotNull(next);
+            assertEquals("200", next.beforeExternalId());
+            assertEquals(1, harness.site.readForms.size());
+            harness.site.uris.clear();
+            int continuations = 0;
+            while (next != null && continuations++ < 10) next = harness.connector.continueRead(next);
+            assertNull(next);
+            assertTrue(harness.site.uris.stream().filter(uri -> uri.contains("/api/dialog/messages/"))
+                    .allMatch(uri -> uri.contains("last=")));
+            assertEquals(List.of("200", "199", "198", "197", "196", "195", "194"), harness.site.readForms.stream()
+                    .flatMap(form -> allValues(form, "msg[]").stream()).toList());
+        }
+    }
+
+    @Test void storageFailureLeavesHistoryAndLiveCheckpointsReplayable() {
+        try (var harness = new Harness(5)) {
+            fleet(harness.site);
+            String joining = "[[\"image\",\"[2,100000002,\\\"c01\\\\/v00001\\\\/aaaaaaaaaa\\\",960,1280]\",\"joincode0002\"]]";
+            harness.site.pages.put("7|null", "{\"data\":{\"list\":[{\"id\":102,\"date\":1700000600,"
+                    + "\"user_id\":21,\"text\":\"caption\",\"joining\":" + joining + ",\"out\":0}]}}");
+            harness.site.media.put("https://f2.dikidi.ru/c01/v00001/aaaaaaaaaa.jpg?size=b", new byte[]{1, 2, 3});
+            harness.failStorage = true;
+            var history = new SyncConversationHistoryCommand(ACCOUNT, "21", null, 50, "7");
+            assertThrows(IllegalStateException.class, () -> harness.connector.handle(history));
+            assertTrue(harness.checkpoints.load(ACCOUNT, "7").isEmpty());
+            var checkpoint = new ConversationCheckpoint("101", "100", true, true, 1700000000);
+            harness.checkpoints.save(ACCOUNT, "7", checkpoint);
+            assertThrows(IllegalStateException.class, () -> harness.connector.handle(new SyncRecentChatsCommand(ACCOUNT)));
+            assertEquals(checkpoint, harness.checkpoints.load(ACCOUNT, "7").orElseThrow());
+            assertTrue(harness.published.isEmpty());
+            harness.failStorage = false;
+            harness.connector.handle(new SyncRecentChatsCommand(ACCOUNT));
+            assertEquals(1, harness.published.size());
+            assertEquals(1, harness.published.getFirst().attachments().size());
+            assertEquals("102", harness.checkpoints.load(ACCOUNT, "7").orElseThrow().newestMessageId());
+        }
+    }
+
+    @Test void finalSendKeepsAttemptAndGateFailureBeforeSendIsRejected() {
+        try (var harness = new Harness(1)) {
+            var attempt = UUID.randomUUID();
+            var command = new kit.penny.clientbus.connector.api.command.SendMessageCommand(UUID.randomUUID(),
+                    ACCOUNT, "21", kit.penny.clientbus.common.enums.MessageType.TEXT, "hello", List.of(), attempt, "7");
+            var result = harness.connector.handle(command);
+            assertEquals(attempt, result.sendAttemptId());
+            assertTrue(result.completed());
+            harness.client.sessionGate(id -> { throw new DikidiFailure(DikidiFailure.Code.CONNECTION_BUSY); });
+            assertThrows(kit.penny.clientbus.connector.api.error.ConnectorSendRejectedException.class,
+                    () -> harness.connector.handle(command));
+            assertEquals(1, harness.site.sendForms.size());
+        }
+    }
+
+    @Test void readMarkContinuesBelowTheFirstPageContainingTheUpperCursor() {
+        try (var harness = new Harness(1)) {
+            harness.site.pages.put("7|null", page(message("200", "21", "new", 0, 1700000200)));
+            harness.site.pages.put("7|200", page(message("100", "21", "old", 0, 1700000100)));
+            harness.connector.handle(new kit.penny.clientbus.connector.api.command.MarkMessagesReadCommand(ACCOUNT, "21", "200", "7"));
+            assertEquals(List.of("200", "100"), harness.site.readForms.stream()
+                    .flatMap(form -> allValues(form, "msg[]").stream()).toList());
+        }
+    }
+    @Test void gateRefusalImmediatelyBeforeC06IsStillAPreDispatchRejection() {
+        try (var harness = new Harness(1)) {
+            harness.client.sessionGate(id -> {
+                if (harness.site.uris.stream().anyMatch(uri -> uri.contains("/owner/chat/")))
+                    throw new DikidiFailure(DikidiFailure.Code.CONNECTION_BUSY);
+            });
+            var command = new kit.penny.clientbus.connector.api.command.SendMessageCommand(UUID.randomUUID(), ACCOUNT,
+                    "21", kit.penny.clientbus.common.enums.MessageType.TEXT, "hello", List.of(), UUID.randomUUID(), "7");
+            assertThrows(kit.penny.clientbus.connector.api.error.ConnectorSendRejectedException.class,
+                    () -> harness.connector.handle(command));
+            assertTrue(harness.site.sendForms.isEmpty());
+        }
+    }
+
+    @Test void dialogListingContinuesPastThePerPassPageBudget() {
+        try (var harness = new Harness(1)) {
+            for (int page = 0; page < 6; page++) {
+                int cursor = page == 0 ? 0 : 700 - page * 100;
+                int date = 600 - page * 100;
+                harness.site.dialogsByTime.put(Integer.toString(cursor), "{\"data\":{\"list\":[{\"id\":\""
+                        + (page + 7) + "\",\"date\":" + date + "}],\"more\":" + (page < 5) + "}}");
+            }
+            harness.connector.handle(new SyncRecentChatsCommand(ACCOUNT));
+            assertFalse(harness.site.uris.stream().anyMatch(uri -> uri.contains("&time=200&")));
+            harness.connector.handle(new SyncRecentChatsCommand(ACCOUNT));
+            assertTrue(harness.site.uris.stream().anyMatch(uri -> uri.contains("&time=200&")));
+        }
+    }
     private static final UUID ACCOUNT = UUID.randomUUID();
     private static final String COMPANY = "100";
 
@@ -139,6 +240,7 @@ class DikidiChatReaderTest {
                         Duration.ofMinutes(15), 1e9, 100000), DikidiRequests.memory()));
         final DikidiChannelConnector connector;
         final DikidiChatAccessTest.Accounts accounts;
+        boolean failStorage;
         Harness(int budget) {
             DikidiTechnicalCredentials credentials = accountId -> new DikidiCredential(UUID.randomUUID(), 1,
                     "owner", "secret".toCharArray());
@@ -150,6 +252,7 @@ class DikidiChatReaderTest {
             var storage = new kit.penny.clientbus.connector.api.host.HostAttachmentStorage() {
                 @Override public kit.penny.clientbus.connector.api.host.HostStoredAttachment store(
                         java.io.InputStream content, String fileName, long size, String contentType) {
+                    if (failStorage) throw new IllegalStateException("storage unavailable");
                     storedFiles.add(fileName);
                     return new kit.penny.clientbus.connector.api.host.HostStoredAttachment(
                             "stored/" + fileName, fileName, contentType, size);
@@ -276,7 +379,7 @@ class DikidiChatReaderTest {
         }
     }
 
-    @Test void liveBacklogBeyondBudgetFailsHonestWithoutCursorLoss() {
+    @Test void liveBacklogBeyondBudgetResumesWithoutSkippingTheUnvisitedRange() {
         try (var harness = new Harness(1)) {
             harness.site.detail.put("7", USERS_7);
             harness.site.pages.put("7|null", page(message("102", "21", "а", 0, 1700001020),
@@ -284,9 +387,15 @@ class DikidiChatReaderTest {
             harness.checkpoints.rows.put(ACCOUNT + "/7", new ConversationCheckpoint("100", "50", true, false, 1700001000));
             harness.site.dialogs = "{\"data\":{\"list\":[{\"id\":\"7\",\"name\":\"Ким\",\"date\":1700001020,\"msg\":\"а\",\"badge\":2}],\"more\":false}}";
             harness.connector.handle(new SyncRecentChatsCommand(ACCOUNT));
-            assertTrue(harness.published.isEmpty(), "хвост до курсора не доказан — публикации нет");
+            assertEquals(List.of("101", "102"), harness.published.stream().map(ConnectorInboundMessage::externalId).toList());
             assertEquals("100", harness.checkpoints.rows.get(ACCOUNT + "/7").newestMessageId(),
-                    "курсор не перепрыгивает недоказанный диапазон");
+                      "курсор не перепрыгивает недоказанный диапазон");
+            assertEquals("101", harness.checkpoints.rows.get(ACCOUNT + "/7").liveBeforeId());
+            harness.site.pages.put("7|101", page(message("100", "21", "old", 0, 1700001000)));
+            harness.connector.handle(new SyncRecentChatsCommand(ACCOUNT));
+            assertEquals("102", harness.checkpoints.rows.get(ACCOUNT + "/7").newestMessageId());
+            assertNull(harness.checkpoints.rows.get(ACCOUNT + "/7").liveBeforeId());
+            assertEquals(2, harness.published.size(), "resume must not republish the first chunk");
         }
     }
 
@@ -305,6 +414,8 @@ class DikidiChatReaderTest {
             assertEquals(List.of("101", "110", "111", "119", "120"),
                     result.messages().stream().map(ConnectorInboundMessage::externalId).toList());
             assertTrue(result.messages().stream().allMatch(m -> m.origin() == EventOrigin.HISTORY_IMPORT));
+            assertTrue(harness.checkpoints.rows.isEmpty(), "reading alone must not advance the checkpoint");
+            harness.checkpoints.acknowledge(result.checkpoint());
             var saved = harness.checkpoints.rows.get(ACCOUNT + "/7");
             assertEquals("120", saved.newestMessageId());
             assertEquals("99", saved.oldestLoadedId(), "курсор — по сырой странице, включая отфильтрованные id");
@@ -323,16 +434,21 @@ class DikidiChatReaderTest {
             var first = harness.connector.handle(new SyncConversationHistoryCommand(ACCOUNT, "21", null, 20, "7"));
             assertFalse(first.historyStartReached(), "частичная история не объявляется полной");
             assertEquals("BUDGET_PARTIAL", first.endReason());
+            var replay = harness.connector.handle(new SyncConversationHistoryCommand(ACCOUNT, "21", null, 20, "7"));
+            assertEquals(first.messages(), replay.messages(), "a failed handoff must replay the same page");
+            harness.checkpoints.acknowledge(first.checkpoint());
             var partial = harness.checkpoints.rows.get(ACCOUNT + "/7");
             assertFalse(partial.initialSyncDone());
             assertEquals("111", partial.oldestLoadedId());
             // продолжение: без явного before — с внутреннего курсора, снова одним тиком бюджета
             var second = harness.connector.handle(new SyncConversationHistoryCommand(ACCOUNT, "21", null, 20, "7"));
             assertFalse(second.historyStartReached());
+            harness.checkpoints.acknowledge(second.checkpoint());
             assertEquals(List.of("110"), second.messages().stream().map(ConnectorInboundMessage::externalId).toList());
             assertTrue(harness.site.uris.stream().anyMatch(u -> u.contains("dialog=7") && u.contains("last=111")),
                     "страница продолжения взята с чекпойнт-курсора");
             var third = harness.connector.handle(new SyncConversationHistoryCommand(ACCOUNT, "21", null, 20, "7"));
+            harness.checkpoints.acknowledge(third.checkpoint());
             assertTrue(third.historyStartReached());
             assertTrue(harness.checkpoints.rows.get(ACCOUNT + "/7").initialSyncDone());
         }

@@ -36,6 +36,19 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class MessageServiceTest {
+    @Test void outboundRequiresCurrentAssignmentIncludingReplies() {
+        when(conversationRepository.findById(conversationId)).thenReturn(Optional.of(conversation));
+        when(currentUserService.isEmployee()).thenReturn(true);
+        var request = new kit.penny.clientbus.common.dto.message.CreateOutboundMessageRequest(
+                conversationId, MessageType.TEXT, "hello", null, UUID.randomUUID());
+        assertThrows(AccessDeniedException.class, () -> messageService.createOutboundMessage(request));
+        var assigned = new EmployeeEntity();
+        assigned.setId(UUID.randomUUID());
+        conversation.setAssignedEmployee(assigned);
+        when(currentUserService.getCurrentEmployeeId()).thenReturn(UUID.randomUUID());
+        assertThrows(AccessDeniedException.class, () -> messageService.createOutboundMessage(request));
+        verify(messageRepository, never()).save(any());
+    }
     @Mock private kit.penny.clientbus.server.notification.outbox.UiOutboxWriter uiOutbox;
 
     @Mock

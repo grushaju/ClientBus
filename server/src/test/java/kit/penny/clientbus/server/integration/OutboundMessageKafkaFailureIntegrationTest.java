@@ -286,6 +286,8 @@ class OutboundMessageKafkaFailureIntegrationTest
                                 clientAccount
                         )
                 );
+        conversation.setAssignedEmployee(authenticatedEmployee);
+        conversationRepository.saveAndFlush(conversation);
 
         OutboundMessageRequest request =
                 new OutboundMessageRequest(
@@ -331,6 +333,8 @@ class OutboundMessageKafkaFailureIntegrationTest
         );
     }
 
+    private EmployeeEntity authenticatedEmployee;
+
     private void authenticateEmployee(
             OrganizationEntity organization,
             WorkspaceEntity workspace
@@ -365,6 +369,8 @@ class OutboundMessageKafkaFailureIntegrationTest
                         workspace
                 )
         );
+
+        authenticatedEmployee = employee;
 
         UserPrincipal principal =
                 new UserPrincipal(user);

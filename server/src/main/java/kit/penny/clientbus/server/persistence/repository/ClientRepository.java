@@ -6,7 +6,6 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -72,8 +71,9 @@ public interface ClientRepository
      * успеть увидеть привязку, заведённую параллельно с удалением. Считать связи без неё —
      * значит пообещать отказ по причине и получить вместо него нарушение целостности (500).
      */
-    @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT c FROM ClientEntity c WHERE c.id = :id")
+    // PostgreSQL dialect may translate PESSIMISTIC_WRITE to FOR NO KEY UPDATE,
+    // which is compatible with the FK's KEY SHARE. Require the stronger lock explicitly.
+    @Query(value = "SELECT c.* FROM dbo.client c WHERE c.clientid = :id FOR UPDATE", nativeQuery = true)
     Optional<ClientEntity> findByIdForUpdate(
             @Param("id") UUID id
     );

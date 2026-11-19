@@ -11,8 +11,27 @@ import java.util.*;
 @Table(name="client", schema="crm", uniqueConstraints={@UniqueConstraint(name="clientpk", columnNames="id"),
         @UniqueConstraint(name="uqclientexternal", columnNames={"projectid","identitykind","externalid"})},
         indexes={@Index(name="ixcrmclientlink", columnList="clientid"), @Index(name="ixcrmclientphone", columnList="projectid,normalizedphone"),
-                @Index(name="ixcrmclientauthor", columnList="mappingupdatedby")})
+                @Index(name="ixcrmclientauthor", columnList="mappingupdatedby"),
+                @Index(name="ixcrmclientstatistics", columnList="projectid,statisticsupdatedat,id")})
 public class CrmClientEntity extends CrmRecord {
+    @Column(name="statisticsretryat") private Instant statisticsRetryAt;
+    public Instant getStatisticsRetryAt() { return statisticsRetryAt; }
+    public void setStatisticsRetryAt(Instant value) { statisticsRetryAt=value; }
+    @Column(name="statisticsupdatedat") private Instant statisticsUpdatedAt;
+    public Instant getStatisticsUpdatedAt() { return statisticsUpdatedAt; }
+    public void setStatisticsUpdatedAt(Instant value) { statisticsUpdatedAt=value; }
+    @Column(name="visitcount") private Long visitCount;
+    @Column(name="totalspent", precision=19, scale=2) private java.math.BigDecimal totalSpent;
+    @Column(name="averagecheck", precision=19, scale=2) private java.math.BigDecimal averageCheck;
+    @Column(name="statisticscurrency", length=3) private String statisticsCurrency;
+    public java.math.BigDecimal getAverageCheck() { return averageCheck; }
+    public void setAverageCheck(java.math.BigDecimal value) { averageCheck=value; }
+    public String getStatisticsCurrency() { return statisticsCurrency; }
+    public void setStatisticsCurrency(String value) { statisticsCurrency=value; }
+    public Long getVisitCount() { return visitCount; }
+    public void setVisitCount(Long value) { visitCount=value; }
+    public java.math.BigDecimal getTotalSpent() { return totalSpent; }
+    public void setTotalSpent(java.math.BigDecimal value) { totalSpent=value; }
     @ManyToOne(fetch=FetchType.LAZY, optional=false)
     @JoinColumn(name="projectid", nullable=false, foreignKey=@ForeignKey(name="fkclientproject"))
     private CrmProjectEntity project;
