@@ -81,6 +81,10 @@ class CrmFoundationIntegrationTest {
         jdbc = new JdbcTemplate(datasource);
         jdbc.execute("create schema dbo"); jdbc.execute("create schema crm");
         factory = buildFactory();
+        // Нормализованные колонки телефона заводит производственный бутстрап: harness поднимает
+        // свою фабрику сессий вне Spring, и без этого вызова запрос кандидатов читал бы колонку,
+        // которой в его базе нет.
+        new kit.penny.clientbus.server.bootstrap.CorePhoneColumnBootstrap(jdbc).run(null);
     }
     private static SessionFactory buildFactory() {
         hibernate = new StandardServiceRegistryBuilder()

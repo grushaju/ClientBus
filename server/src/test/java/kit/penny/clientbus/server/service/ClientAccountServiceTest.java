@@ -299,7 +299,7 @@ class ClientAccountServiceTest {
 
         UUID matched = UUID.randomUUID();
         UUID other = UUID.randomUUID();
-        when(clientRepository.searchLinkCandidateIds(eq(organizationId), eq(""), eq("%%"), eq("9991234567"), anyString()))
+        when(clientRepository.searchLinkCandidateIds(eq(organizationId), eq(""), eq("%%"), eq("9991234567")))
                 .thenReturn(java.util.List.of(other, matched));
         when(clientRepository.findAllById(java.util.List.of(other, matched)))
                 .thenReturn(java.util.List.of(
@@ -335,7 +335,7 @@ class ClientAccountServiceTest {
         dialog.setId(UUID.randomUUID());
         when(conversationRepository.findAllByClientAccountIdAndEmployeeIdOrderByLastMessageAtDesc(eq(accountId), any()))
                 .thenReturn(java.util.List.of(dialog));
-        when(clientRepository.searchLinkCandidateIds(eq(organizationId), eq("анна"), eq("%анна%"), eq(""), anyString()))
+        when(clientRepository.searchLinkCandidateIds(eq(organizationId), eq("анна"), eq("%анна%"), eq("")))
                 .thenReturn(java.util.List.of());
 
         assertTrue(clientAccountService.clientLinkCandidates(accountId, " Анна ").isEmpty());
@@ -358,7 +358,7 @@ class ClientAccountServiceTest {
 
         assertThrows(org.springframework.security.access.AccessDeniedException.class,
                 () -> clientAccountService.clientLinkCandidates(accountId, "Иван"));
-        verify(clientRepository, never()).searchLinkCandidateIds(any(), any(), any(), any(), any());
+        verify(clientRepository, never()).searchLinkCandidateIds(any(), any(), any(), any());
     }
 
     private static kit.penny.clientbus.server.persistence.entity.ClientEntity client(

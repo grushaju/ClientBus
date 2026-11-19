@@ -158,10 +158,13 @@ public interface ClientRepository
     /**
      * Кандидаты Client для ручной привязки учётной записи чата (Stage 13.9, пункт 3 плана):
      * дословный поиск по имени, фамилии и телефону плюс совпадение последних десяти цифр телефона
-     * учётки. Хвост считается в SQL так же, как его считает признак phoneMatch в сервисе: после
-     * снятия форматирования остаются только цифры длиной 7..15, иначе ряд попал бы в список без
-     * пометки и запутал оператора. Первыми идут совпавшие по телефону — подсказка затем и нужна,
-     * что человек листал список, а не угадывал в нём нужную строку.
+     * учётки. Хвост берётся из вычисляемой колонки {@code phonetail}, которую база считает сама
+     * (CorePhoneColumnBootstrap): тем же правилом, каким признак phoneMatch считает сервис, —
+     * после снятия форматирования остаются только цифры длиной 7..15, иначе ряд попал бы в список
+     * без пометки и запутал оператора. Сравнение с параметром по вычисляемому выражению индекс
+     * использовать не умеет, поэтому здесь колонка, а не translate(). Первыми идут совпавшие по
+     * телефону — подсказка затем и нужна, что человек листал список, а не угадывал в нём нужную
+     * строку.
      */
     @Query(value = """
             select c.clientid from dbo.client c
@@ -171,11 +174,10 @@ public interface ClientRepository
                         or exists (select 1 from dbo.clientphone p where p.clientid = c.clientid
                                    and lower(p.phone) like :pattern escape '!')))
                or (:tail <> '' and exists (select 1 from dbo.clientphone p where p.clientid = c.clientid
-                        and translate(p.phone, :formatting, '') ~ '^[0-9]{7,15}$'
-                        and right(translate(p.phone, :formatting, ''), 10) = :tail))
+                        and p.phonetail = :tail))
             )
             order by exists (select 1 from dbo.clientphone p where p.clientid = c.clientid and :tail <> ''
-                        and right(translate(p.phone, :formatting, ''), 10) = :tail) desc,
+                        and p.phonetail = :tail) desc,
                      c.clientid
             limit 50
             """, nativeQuery = true)
@@ -183,8 +185,7 @@ public interface ClientRepository
             @Param("organizationId") UUID organizationId,
             @Param("search") String search,
             @Param("pattern") String pattern,
-            @Param("tail") String tail,
-            @Param("formatting") String formatting
+            @Param("tail") String tail
     );
 
     @Query("""

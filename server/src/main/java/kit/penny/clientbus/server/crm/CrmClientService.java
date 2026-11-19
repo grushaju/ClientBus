@@ -77,14 +77,14 @@ public class CrmClientService {
                         (:search<>'' and lower(c.firstname||' '||c.lastname) like :pattern escape '!')
                         or exists(select 1 from dbo.clientphone p where p.clientid=c.clientid and (
                             (:search<>'' and lower(p.phone) like :pattern escape '!')
-                            or (:queryPhone<>'' and translate(p.phone,:formatting,'')=:queryPhone)
-                            or (:phone<>'' and translate(p.phone,:formatting,'')=:phone))))
+                            or (:queryPhone<>'' and p.normalizedphone=:queryPhone)
+                            or (:phone<>'' and p.normalizedphone=:phone))))
                     order by exists(select 1 from dbo.clientphone p where p.clientid=c.clientid and :phone<>''
-                        and translate(p.phone,:formatting,'')=:phone) desc,
+                        and p.normalizedphone=:phone) desc,
                         c.clientid limit 50
                     """,UUID.class).setParameter("org",organization).setParameter("search",search)
                     .setParameter("pattern",CrmSearch.pattern(search)).setParameter("phone",phone)
-                    .setParameter("queryPhone",queryPhone).setParameter("formatting",CrmPhone.FORMATTING_CHARACTERS).getResultList();
+                    .setParameter("queryPhone",queryPhone).getResultList();
             if (ids.isEmpty()) return List.of();
             // Один запрос на весь список вместо обращения по каждому идентификатору: этот
             // поиск живёт в форме привязки и вызывается на каждое действие оператора, а

@@ -240,8 +240,7 @@ public class ClientAccountService {
         String tail = phoneTail(account.getPhone());
 
         var ids = clientRepository
-                .searchLinkCandidateIds(currentUserService.getCurrentOrganizationId(), search, pattern, tail,
-                        kit.penny.clientbus.crm.api.CrmPhone.FORMATTING_CHARACTERS);
+                .searchLinkCandidateIds(currentUserService.getCurrentOrganizationId(), search, pattern, tail);
         if (ids.isEmpty()) return List.of();
         // Один запрос на весь список вместо обращения по каждому идентификатору: поиск
         // вызывается из формы привязки на каждое действие оператора, строк здесь до
@@ -259,8 +258,10 @@ public class ClientAccountService {
 
     /**
      * Хвост для телефонной подсказки: только цифры и только последние десять. Меньше десяти цифр —
-     * не подсказка: по «12345» совпал бы пол-базы. Форматирование снимает то же правило, что и SQL
-     * (CrmPhone.FORMATTING_CHARACTERS), а номер с непривычными символами не считается номером вовсе.
+     * не подсказка: по «12345» совпал бы пол-базы. Форматирование снимается общей константой
+     * (CrmPhone.FORMATTING_CHARACTERS), тем же правилом база считает колонку phonetail, по которой
+     * и идёт сравнение в запросе, — иначе Java-пометка и SQL-выдача разошлись бы молча. Номер с
+     * непривычными символами не считается номером вовсе.
      */
     private static String phoneTail(String value) {
         var digits = kit.penny.clientbus.crm.api.CrmPhone.normalize(value);
