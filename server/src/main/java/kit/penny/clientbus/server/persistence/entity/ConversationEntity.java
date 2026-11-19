@@ -15,7 +15,8 @@ import java.util.UUID;
         /*
          * 13.2b: жёсткое 1:1 (канал-аккаунт, клиент) снято — диалог определяется внешней
          * ссылкой диалога платформы (dialogexternalid). Ограничения создают частичные
-         * уникальные индексы миграции V2:
+         * уникальные индексы: на существующей базе — миграция V2, на чистой — CoreIndexBootstrap
+         * после DDL (Flyway выполняется раньше Hibernate и на пустой схеме является no-op):
          *   unique (channelaccountid, dialogexternalid) WHERE dialogexternalid IS NOT NULL;
          *   unique (channelaccountid, clientaccountid) WHERE dialogexternalid IS NULL
          * (легаси-строки без ссылки остаются одними на участника до самолечения).
