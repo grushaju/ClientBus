@@ -41,6 +41,24 @@ function envelope(value: unknown, type: string): UiEventEnvelope {
     return e
 }
 
+/**
+ * Идентификатор вкладки. sessionStorage живёт до закрытия вкладки и потому переживает
+ * перезагрузку страницы — ровно то, что нужно серверу, чтобы ЗАМЕНИТЬ свой же поток вместо
+ * того, чтобы занять ещё один слот лимита сотрудника: брошенные при перезагрузке потоки
+ * раньше копились и владелец упирался в собственный лимит (429 при одном живом клиенте).
+ */
+function tabId(): string {
+    try {
+        const storage = typeof sessionStorage === 'undefined' ? undefined : sessionStorage
+        const key = 'clientbus.stream.tab'
+        const existing = storage?.getItem(key)
+        if (existing && /^[A-Za-z0-9_-]{8,64}$/.test(existing)) return existing
+        const created = globalThis.crypto?.randomUUID?.() ?? `t${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`
+        storage?.setItem(key, created)
+        return created
+    } catch { return '' } // приватный режим без storage: сервер просто не сможет заменить поток
+}
+
 /** Transport layer. Minimal AppLayout/REST integration is provided by UiEventsProvider (11.5). */
 export function startUiEventStream(options: UiStreamOptions): { stop: () => void; done: Promise<void> } {
     const lifetime = new AbortController()
@@ -71,6 +89,7 @@ export function startUiEventStream(options: UiStreamOptions): { stop: () => void
     })
     const done = (async () => {
         let failures = 0
+        let limitedFailures = 0
         let terminal = false
         while (!lifetime.signal.aborted && !terminal) {
             if (!isOnline()) { state('offline'); await waitForNetwork(); if (lifetime.signal.aborted) break }
@@ -88,6 +107,7 @@ export function startUiEventStream(options: UiStreamOptions): { stop: () => void
             let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
             const buffered: UiEventEnvelope[] = []
             let retryAfter = 0
+            let limited = false
             let resyncOnFailure = false
             const current = () => {
                 if (!active || attempt.signal.aborted || lifetime.signal.aborted) return false
@@ -103,7 +123,11 @@ export function startUiEventStream(options: UiStreamOptions): { stop: () => void
             }, options.watchdogIntervalMs ?? 1000)
             try {
                 state('connecting')
-                const query = options.workspaceId ? '?' + new URLSearchParams({ workspaceId: options.workspaceId }) : ''
+                const params = new URLSearchParams()
+                if (options.workspaceId) params.set('workspaceId', options.workspaceId)
+                const tab = tabId()
+                if (tab) params.set('tab', tab)
+                const query = params.size ? `?${params}` : ''
                 const response = await (options.fetcher ?? fetch)('/api/events' + query, {
                     headers: { Authorization: `Bearer ${token}`, Accept: 'text/event-stream' },
                     signal: attempt.signal, cache: 'no-store', credentials: 'omit',
@@ -114,6 +138,7 @@ export function startUiEventStream(options: UiStreamOptions): { stop: () => void
                     terminal = true; state(response.status === 401 ? 'unauthorized' : 'forbidden'); continue
                 }
                 if (!response.ok) {
+                    limited = response.status === 429
                     retryAfter = retryAfterDelay(response.headers.get('Retry-After'))
                     throw new Error('Stream unavailable')
                 }
@@ -174,10 +199,16 @@ export function startUiEventStream(options: UiStreamOptions): { stop: () => void
                 if (!isOnline()) continue
                 if (resyncOnFailure) options.onResync()
                 state('backoff')
-                if (openedAt !== undefined && Date.now() - openedAt >= 10_000) failures = 0
+                if (openedAt !== undefined && Date.now() - openedAt >= 10_000) { failures = 0; limitedFailures = 0 }
                 const base = options.reconnectBaseMs ?? 1000
-                const delay = Math.min(30_000, base * 2 ** Math.min(failures++, 5))
-                await pause(Math.max(retryAfter, delay + Math.random() * delay * 0.2))
+                // 429 — не «сеть плохая», а «у тебя слишком много потоков»: своя, заметно более
+                // медленная шкала (старт с 8 шагов основания), иначе клиент вереницей стучится
+                // в тот же отказ, удваивая частоту. Retry-After сервера учитывается ниже.
+                const delay = limited
+                    ? Math.min(120_000, base * 2 ** Math.min(limitedFailures + 3, 7) * (1 + Math.random() * 0.2))
+                    : Math.min(30_000, base * 2 ** Math.min(failures++, 5) * (1 + Math.random() * 0.2))
+                if (limited) limitedFailures++
+                await pause(Math.max(retryAfter, delay))
             }
         }
         if (lifetime.signal.aborted) state('closed')

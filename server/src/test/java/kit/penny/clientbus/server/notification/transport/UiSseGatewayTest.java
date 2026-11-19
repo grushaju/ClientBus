@@ -10,6 +10,9 @@ import org.junit.jupiter.api.*;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.server.ResponseStatusException;
 import tools.jackson.databind.json.JsonMapper;
@@ -37,6 +40,9 @@ class UiSseGatewayTest {
     }
     AccessSubject subject() { return AccessSubject.session(employee,Instant.now().plusSeconds(60)); }
     void create(int queue,int workers,int executorQueue,Duration writeTimeout) {
+        create(queue,workers,executorQueue,writeTimeout,8);
+    }
+    void create(int queue,int workers,int executorQueue,Duration writeTimeout,int perEmployee) {
         var limits=new Binder(new MapConfigurationPropertySource(Map.of("clientbus.notifications.queue-capacity",queue)))
                 .bindOrCreate("clientbus.notifications",NotificationProperties.class);
         when(jdbc.queryForObject(anyString(),anyMap(),eq(UUID.class))).thenReturn(org);
@@ -45,8 +51,9 @@ class UiSseGatewayTest {
             UiInvalidation e=invocation.getArgument(1);
             return Optional.of(new UiEventEnvelope(e.eventId(),1,e.type(),e.occurredAt(),null,e.resource(),null,null));
         });
-        var config=new UiGatewayProperties("test",8,8,workers,executorQueue,writeTimeout,
-                Duration.ofMillis(50),Duration.ofMillis(50),Duration.ofSeconds(10));
+        // stream-ttl 600 с: отличимо и от зашитых раньше 30 минут, и от короткого токена в probe.
+        var config=new UiGatewayProperties("test",8,perEmployee,workers,executorQueue,writeTimeout,
+                Duration.ofMillis(50),Duration.ofMillis(50),Duration.ofSeconds(10),100,1048576,true,600,120,5);
         gateway=new UiSseGateway(limits,config,access,routing,jdbc,JsonMapper.builder().build(),new UiTransportMetrics(metrics,config,limits));
     }
     UiInvalidation event(UUID selected,UiInvalidation.Audience audience) {
@@ -189,6 +196,52 @@ class UiSseGatewayTest {
         assertEquals(429,assertThrows(ResponseStatusException.class,()->gateway.register(subject(),workspace,new Sink())).getStatusCode().value());
         assertEquals(8,gateway.connectionCount());
         assertEquals(1,metrics.get("clientbus.notification.sse.admissions").tag("result","limit").counter().count());
+    }
+    /**
+     * Лимит потоков на сотрудника больше не отказывает: брошенные им же вкладки (перезагрузка
+     * страницы, abort watchdog клиента) отнимали слоты, и оператор оставался без обновлений с 429
+     * при единственном живом клиенте («employee streams 4/4» в логах 15.11). Теперь вытесняется
+     * древнейший поток того же сотрудника.
+     */
+    @Test void ownLimitDisplacesTheOldestStreamInsteadOfRefusing() {
+        create(4,2,16,Duration.ofSeconds(2),2);gateway.pipelineHealthy();
+        var oldest=new Sink();var kept=new Sink();
+        gateway.register(subject(),workspace,oldest,"tab-one");until(()->oldest.events.size()==1);
+        gateway.register(subject(),workspace,kept,"tab-two");until(()->kept.events.size()==1);
+        var fresh=new Sink();
+        gateway.register(subject(),workspace,fresh,"tab-three");
+        until(()->oldest.closed);
+        assertEquals(2,gateway.connectionCount());
+        assertFalse(kept.closed);until(()->fresh.events.size()==1);
+        assertClosedReason("displaced");
+        assertNull(metrics.find("clientbus.notification.sse.admissions").tag("result","limit").counter(),
+                "вытеснение не должно учитываться как отказ лимита");
+    }
+    /** Переподключение той же вкладки заменяет свой поток, а не занимает второй слот лимита. */
+    @Test void sameTabReconnectReplacesItsOwnStream() {
+        create(4,2,16,Duration.ofSeconds(2),2);gateway.pipelineHealthy();
+        var first=new Sink();gateway.register(subject(),workspace,first,"tab-a");until(()->first.events.size()==1);
+        var second=new Sink();gateway.register(subject(),workspace,second,"tab-a");
+        until(()->first.closed);
+        assertEquals(1,gateway.connectionCount());
+        until(()->second.events.size()==1);
+        assertClosedReason("replaced");
+    }
+    /** Потолок жизни потока читается из конфигурации, а не зашит получасовым значением. */
+    @Test void streamLifetimeComesFromConfiguration() {
+        create(4,1,8,Duration.ofMillis(50),4);gateway.pipelineHealthy();
+        var longSession=AccessSubject.session(employee,Instant.now().plus(Duration.ofHours(1)));
+        assertEquals(600_000,gateway.open(longSession,workspace,new MockHttpServletResponse(),"tab-a").getTimeout());
+        var boundByToken=gateway.open(subject(),workspace,new MockHttpServletResponse(),"tab-b").getTimeout();
+        assertTrue(boundByToken>55_000 && boundByToken<=60_000,
+                "токен короче конфигурации — граница остаётся за токеном, а не за настройкой");
+    }
+    /** Собственный 429 обязан называть срок: без Retry-After клиент удваивает свою экспоненту вслепую. */
+    @Test void refusedStreamAnswersWithRetryAfter() {
+        create(4,1,8,Duration.ofSeconds(2));
+        var headers=new UiEventsController(gateway,mock(HttpAccessPolicy.class))
+                .status(new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,"Stream limit reached")).getHeaders();
+        assertEquals(List.of("5"),headers.get(HttpHeaders.RETRY_AFTER));
     }
     @Test void malformedKafkaRecordTriggersMinimalRecoveryInsteadOfPoisonLoop() {
         create(4,1,8,Duration.ofSeconds(2));gateway.pipelineHealthy();Sink sink=new Sink();

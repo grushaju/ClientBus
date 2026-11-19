@@ -14,7 +14,13 @@ import java.util.function.LongSupplier;
 @Component
 @ConditionalOnProperty(prefix="clientbus.notifications", name="sse-enabled", havingValue="true")
 public class UiTransportMetrics {
-    enum CloseReason { NORMAL, PIPELINE, EXPIRED, OVERFLOW, MALFORMED, WRITE_TIMEOUT, WRITE_ERROR, ACCESS, EXECUTOR, OVERSIZE, SHUTDOWN }
+    enum CloseReason { NORMAL, PIPELINE, EXPIRED, OVERFLOW, MALFORMED, WRITE_TIMEOUT, WRITE_ERROR, ACCESS, EXECUTOR, OVERSIZE, SHUTDOWN,
+        /** Поток сотрудника вытеснен его же новым подключением, потому что лимит на сотрудника исчерпан. */
+        DISPLACED,
+        /** То же подключение той же вкладки (перезагрузка страницы, abort watchdog): старый поток снят. */
+        REPLACED,
+        /** Непустая очередь не двигалась дольше stalled-after: писатель не дошёл до сокета. */
+        STALLED }
     enum ResyncReason { OVERFLOW, MALFORMED }
     enum Admission { OPENED, PIPELINE, EXPIRED, CLEANUP_BUSY, LIMIT }
     enum KafkaResult { RECEIVED, MALFORMED, ERROR, CLEANED, CLEANUP_FAILED }

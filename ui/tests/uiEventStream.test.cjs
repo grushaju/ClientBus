@@ -86,7 +86,8 @@ test('stream decodes split UTF-8 and sends Bearer outside URL', async () => {
     let handle, called = 0
     handle = startUiEventStream(options({
         fetcher: async (url, init) => {
-            assert.equal(url, '/api/events?workspaceId=' + id); assert.ok(!url.includes('secret'))
+            const requested = new URL('http://internal' + url)
+            assert.equal(requested.searchParams.get('workspaceId'), id); assert.ok(!url.includes('secret'))
             assert.equal(init.headers.Authorization, 'Bearer secret'); assert.equal(init.cache, 'no-store')
             return response(frame(event()) + frame(incoming), init.signal, true)
         },
@@ -242,4 +243,57 @@ test('short-lived ready streams keep exponential backoff instead of resetting on
         const gaps=starts.slice(1).map((value,index)=>value-starts[index])
         assert.ok(gaps[1]>gaps[0]);assert.ok(gaps[2]>gaps[1])
     } finally {handle.stop()}
+})
+
+test('stream carries one stable tab id per browser tab', async () => {
+    const store = new Map()
+    globalThis.sessionStorage = { getItem: key => store.has(key) ? store.get(key) : null, setItem: (key, value) => store.set(key, value) }
+    const urls = []; let handle
+    try {
+        handle = startUiEventStream(options({
+            fetcher: async url => { urls.push(url); return new Response('', { status: 503 }) },
+            onState: state => { if (state === 'backoff' && urls.length >= 2) handle.stop() },
+        }))
+        await handle.done
+    } finally { delete globalThis.sessionStorage }
+    assert.equal(urls.length, 2)
+    const tabs = urls.map(url => new URL('http://internal' + url).searchParams.get('tab'))
+    assert.match(tabs[0], /^[A-Za-z0-9_-]{8,64}$/)
+    assert.equal(tabs[0], tabs[1], 'переподключение той же вкладки обязано называть себя тем же id: сервер заменяет свой поток')
+    assert.equal(store.size, 1)
+})
+
+test('429 waits on its own far slower scale than an ordinary failure', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'] }); t.mock.method(Math, 'random', () => 0)
+    let handle, tries = 0; const stamps = []
+    handle = startUiEventStream(options({
+        reconnectBaseMs: 1000,
+        fetcher: async () => { tries++; stamps.push(Date.now()); return new Response('', { status: 429, headers: { 'Retry-After': '7' } }) },
+        onState: state => { if (state === 'backoff' && tries >= 2) handle.stop() },
+    }))
+    try {
+        for (let i = 0; i < 900 && tries < 2; i++) { t.mock.timers.tick(10); for (let j = 0; j < 15; j++) await Promise.resolve() }
+        await handle.done
+        assert.equal(tries, 2)
+        // 8 шагов основания (8000 мс) вместо обычного одного (1000 мс): 429 — это «у тебя слишком
+        // много потоков», а не «сеть плохая»; Retry-After сервера (7 с) короче и паузу не перебивает.
+        // Шаг модельного времени — 10 мс, поэтому верхняя граница с этим же допуском.
+        assert.ok(stamps[1] - stamps[0] >= 8000 && stamps[1] - stamps[0] < 8020, `gap ${stamps[1] - stamps[0]}`)
+    } finally { handle.stop() }
+})
+
+test('ordinary failure still backs off on the base scale', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'] }); t.mock.method(Math, 'random', () => 0)
+    let handle, tries = 0; const stamps = []
+    handle = startUiEventStream(options({
+        reconnectBaseMs: 1000,
+        fetcher: async () => { tries++; stamps.push(Date.now()); return new Response('', { status: 503 }) },
+        onState: state => { if (state === 'backoff' && tries >= 2) handle.stop() },
+    }))
+    try {
+        for (let i = 0; i < 300 && tries < 2; i++) { t.mock.timers.tick(10); for (let j = 0; j < 15; j++) await Promise.resolve() }
+        await handle.done
+        assert.equal(tries, 2)
+        assert.ok(stamps[1] - stamps[0] >= 1000 && stamps[1] - stamps[0] < 1020, `gap ${stamps[1] - stamps[0]}`)
+    } finally { handle.stop() }
 })

@@ -36,7 +36,18 @@ clientbus:
     gateway:
       # Потоков на сотрудника: для shared-стендовых аккаунтов (несколько вкладок, устройства,
       # Playwright-воркеры) поднимать env: CLIENTBUS_NOTIFICATIONS_GATEWAY_MAX_CONNECTIONS_PER_EMPLOYEE=8
+      # Достигнутый лимит больше не отказывает 429: вытесняется древнейший поток того же
+      # сотрудника, а переподключение той же вкладки заменяет свой поток (19.11.2026).
       max-connections-per-employee: ${CLIENTBUS_NOTIFICATIONS_GATEWAY_MAX_CONNECTIONS_PER_EMPLOYEE:4}
+      # Потолок жизни потока: абранный клиентом поток (закрытая вкладка без FIN, abort watchdog
+      # клиента) держит слот не дольше этого срока. 1800 = прежние зашитые полчаса.
+      stream-ttl-seconds: ${CLIENTBUS_NOTIFICATIONS_GATEWAY_STREAM_TTL_SECONDS:1800}
+      # Непустая очередь, из которой ничего не ушло дольше этого срока, — поток закрывается как
+      # вставший (писатель не дошёл до сокета; write-дедлайн на ожидание в очереди не взводится).
+      stalled-after-seconds: ${CLIENTBUS_NOTIFICATIONS_GATEWAY_STALLED_AFTER_SECONDS:120}
+      # Запас в Retry-After собственного 429 — клиент обязан прочитать его, а не удваивать свою
+      # экспоненту и вереницей стучаться в тот же отказ.
+      retry-after-seconds: ${CLIENTBUS_NOTIFICATIONS_GATEWAY_RETRY_AFTER_SECONDS:5}
 
   sync:
     recent-chats:

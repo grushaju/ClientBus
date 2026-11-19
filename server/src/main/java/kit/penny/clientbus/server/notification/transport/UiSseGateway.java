@@ -83,6 +83,8 @@ public class UiSseGateway {
     }
     public boolean ready() { return !stopped && pipeline && System.nanoTime()-lastProbeNanos < config.pipelineStaleAfter().toNanos(); }
     public int connectionCount() { return connections.size(); }
+    /** Запас для Retry-After собственного 429 (клиент обязан прочитать его, а не свою экспоненту). */
+    public int retryAfterSeconds() { return config.retryAfterSeconds(); }
     int queuedEvents() { return connections.values().stream().mapToInt(c->{synchronized(c.pending){return c.pending.size();}}).sum(); }
     int activeWriters() { return writers.getActiveCount(); }
     int queuedWriters() { return writers.getQueue().size(); }
@@ -103,9 +105,20 @@ public class UiSseGateway {
         connections.values().forEach(c->c.close(stopped?UiTransportMetrics.CloseReason.SHUTDOWN:UiTransportMetrics.CloseReason.PIPELINE));
     }
 
-    public SseEmitter open(AccessSubject subject, UUID workspace, jakarta.servlet.http.HttpServletResponse response) {
+    /**
+     * @param tab стабильный идентификатор вкладки браузера (sessionStorage клиента). Он нужен,
+     *        чтобы перезагрузка страницы или переподключение после abort watchdog ЗАМЕНИЛИ свой
+     *        же поток: без него каждая такая попытка занимала ещё один слот лимита сотрудника,
+     *        и сотрудник упирался в собственный лимит своими же брошенными вкладками (15.11 —
+     *        «employee streams 4/4» при одном живом клиенте).
+     */
+    public SseEmitter open(AccessSubject subject, UUID workspace, jakarta.servlet.http.HttpServletResponse response,
+            String tab) {
         if (subject.expiresAt()==null || subject.expired(Instant.now())) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
-        long timeout=Math.max(1, Math.min(Duration.ofMinutes(30).toMillis(), Duration.between(Instant.now(),subject.expiresAt()).toMillis()));
+        // Потолок жизни потока — из конфигурации (stream-ttl-seconds); раньше было зашито 30 минут,
+        // и абранный клиентом поток держал слот полчаса. Токен сотрудника короче — он и граница.
+        long timeout=Math.max(1, Math.min(config.streamTtl().toMillis(),
+                Duration.between(Instant.now(),subject.expiresAt()).toMillis()));
         var emitter=new SseEmitter(timeout);
         var connection=register(subject,workspace,new Sink() {
             private boolean first=true;
@@ -123,13 +136,15 @@ public class UiSseGateway {
                 }
             }
             public void close() { emitter.complete(); }
-        });
+        },tab);
         emitter.onCompletion(connection::close); emitter.onTimeout(connection::close); emitter.onError(e -> connection.close());
         return emitter;
     }
 
     /** Sink seam also permits deterministic slow-client tests without network timing. */
-    Connection register(AccessSubject subject, UUID workspace, Sink sink) {
+    Connection register(AccessSubject subject, UUID workspace, Sink sink) { return register(subject,workspace,sink,null); }
+
+    Connection register(AccessSubject subject, UUID workspace, Sink sink, String tab) {
         if (!ready()) { metrics.admission(UiTransportMetrics.Admission.PIPELINE);throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"UI pipeline unavailable"); }
         if (subject.expiresAt()==null || subject.expired(Instant.now())) { metrics.admission(UiTransportMetrics.Admission.EXPIRED);throw new ResponseStatusException(HttpStatus.UNAUTHORIZED); }
         UUID organization=jdbc.queryForObject("select e.organizationid from dbo.employee e join dbo.users u on u.userid=e.userid where e.employeeid=:employee and u.isenabled and u.role in ('EMPLOYEE','SUPER_ADMIN')",
@@ -141,15 +156,36 @@ public class UiSseGateway {
         synchronized (this) {
             if (!ready()) { metrics.admission(UiTransportMetrics.Admission.PIPELINE);throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE); }
             if (closers.getQueue().remainingCapacity()==0) { metrics.admission(UiTransportMetrics.Admission.CLEANUP_BUSY);throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"Stream cleanup busy"); }
-            long employeeStreams = connections.values().stream()
-                    .filter(c -> c.subject.employeeId().equals(subject.employeeId())).count();
-            if (connections.size()>=config.maxConnections() || employeeStreams>=config.maxConnectionsPerEmployee())
+            // Та же вкладка, переподключившаяся после перезагрузки страницы или abort watchdog,
+            // обязана заменить свой поток, а не занимать второй слот: именно так один живой
+            // клиент и собирал «employee streams 4/4».
+            if (tab != null) connections.values().stream()
+                    .filter(c -> c.subject.employeeId().equals(subject.employeeId()) && tab.equals(c.tab))
+                    .forEach(c -> c.close(UiTransportMetrics.CloseReason.REPLACED));
+            // Глобальный предел по-прежнему отказывает: он бережёт процесс, а не сотрудника.
+            if (connections.size() >= config.maxConnections())
                 { metrics.admission(UiTransportMetrics.Admission.LIMIT);
                   LOG.log(System.Logger.Level.WARNING, "SSE admission refused for employee " + subject.employeeId()
                         + ": live streams " + connections.size() + "/" + config.maxConnections()
-                        + ", employee streams " + employeeStreams + "/" + config.maxConnectionsPerEmployee());
+                        + " (instance limit)");
                   throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,"Stream limit reached"); }
-            connection=new Connection(subject,organization,workspace,sink,epoch);
+            long employeeStreams = connections.values().stream()
+                    .filter(c -> c.subject.employeeId().equals(subject.employeeId())).count();
+            // Лимит сотрудника отказывать больше не может: брошенные им же вкладки отнимали
+            // слоты, и оператор оставался без обновлений с 429 при единственном живом клиенте.
+            // Вытесняется древнейший поток того же сотрудника — новый получает слот.
+            while (employeeStreams >= config.maxConnectionsPerEmployee()) {
+                var oldest = connections.values().stream()
+                        .filter(c -> c.subject.employeeId().equals(subject.employeeId()))
+                        .min(java.util.Comparator.comparingLong(c -> c.admittedNanos)).orElse(null);
+                if (oldest == null) break;
+                LOG.log(System.Logger.Level.INFO, "SSE stream displaced for employee " + subject.employeeId()
+                        + ": own limit " + employeeStreams + "/" + config.maxConnectionsPerEmployee()
+                        + ", live streams " + connections.size() + "/" + config.maxConnections());
+                oldest.close(UiTransportMetrics.CloseReason.DISPLACED);
+                employeeStreams--;
+            }
+            connection=new Connection(subject,organization,workspace,sink,epoch,tab);
             connection.pending.put("ready",new Pending(null,new UiEventEnvelope(UUID.randomUUID(),1,"stream.ready",Instant.now(),null,null,null,
                     new StreamReadyDto(connection.id,alertsAfter,limits.heartbeatSeconds())),null));
             connections.put(connection.id,connection);
@@ -169,10 +205,19 @@ public class UiSseGateway {
         try {
             if (!ready()) { pipelineLost(); return; }
             Instant now=Instant.now();
+            long stalledNanos=config.stalledAfter().toNanos();
             connections.values().forEach(c -> {
                 if (c.subject.expired(now)) c.close(UiTransportMetrics.CloseReason.EXPIRED);
                 else if (Duration.between(c.lastHeartbeat,now).getSeconds()>=limits.heartbeatSeconds()) {
                     c.lastHeartbeat=now; c.control("heartbeat","stream.heartbeat",false);
+                }
+                // Вставший поток: очередь есть, а писатель до неё не дошёл (задача drain стоит в
+                // очереди исполнителя — write-дедлайн при этом не взводится вовсе). Копить молча
+                // нельзя: поток закрывается, клиент после reconnect сверится через REST.
+                if (!c.closed && c.backlogged() && System.nanoTime()-c.lastProgressNanos > stalledNanos) {
+                    LOG.log(System.Logger.Level.WARNING, "SSE stream closed as stalled: pending backlog without"
+                            + " progress for " + config.stalledAfterSeconds() + "s");
+                    c.close(UiTransportMetrics.CloseReason.STALLED);
                 }
             });
         } catch (RuntimeException ignored) { pipelineLost(); }
@@ -180,12 +225,19 @@ public class UiSseGateway {
 
     final class Connection {
         final UUID id=UUID.randomUUID(); final AccessSubject subject; final UUID organization,workspace; final Sink sink; final long generation;
+        /** Идентификатор вкладки клиента (null — клиент его не прислал: замены своего потока нет). */
+        final String tab;
+        /** Момент приёма потока — по нему вытесняется древнейший поток сотрудника. */
+        final long admittedNanos=System.nanoTime();
         final LinkedHashMap<String,Pending> pending=new LinkedHashMap<>();
         final AtomicBoolean running=new AtomicBoolean();
         volatile boolean closed,finishing; volatile Instant lastHeartbeat=Instant.now();
-        Connection(AccessSubject subject,UUID organization,UUID workspace,Sink sink,long generation) {
-            this.subject=subject;this.organization=organization;this.workspace=workspace;this.sink=sink;this.generation=generation;
+        /** Момент последней отдаченной очереди: по нему вставший поток отличается от спокойного. */
+        volatile long lastProgressNanos=System.nanoTime();
+        Connection(AccessSubject subject,UUID organization,UUID workspace,Sink sink,long generation,String tab) {
+            this.subject=subject;this.organization=organization;this.workspace=workspace;this.sink=sink;this.generation=generation;this.tab=tab;
         }
+        boolean backlogged() { synchronized (pending) { return !pending.isEmpty(); } }
         void offer(UiInvalidation event) {
             if (!organization.equals(event.organizationId())) return;
             boolean personal=event.audience()==UiInvalidation.Audience.PERSONAL || event.audience()==UiInvalidation.Audience.FORMER_SCOPE;
@@ -237,6 +289,8 @@ public class UiSseGateway {
                         next=iterator.next().getValue(); iterator.remove();
                     }
                     metrics.queueWait(System.nanoTime()-next.enqueuedNanos());
+                    // Очередь сдвинулась: это единственное, что отличает спокойный поток от вставшего.
+                    lastProgressNanos=System.nanoTime();
                     if (!ready() || generation!=epoch) { close(UiTransportMetrics.CloseReason.PIPELINE);break; }
                     if (subject.expired(Instant.now())) { close(UiTransportMetrics.CloseReason.EXPIRED);break; }
                     access.require(subject,ORGANIZATION,organization);
