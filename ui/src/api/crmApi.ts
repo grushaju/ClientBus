@@ -94,6 +94,12 @@ const json = async <T>(url: string, init?: RequestInit): Promise<T> => (await ap
 const body = (method: string, value: unknown, signal?: AbortSignal): RequestInit => ({ method, body: JSON.stringify(value), signal })
 const path = (id: string) => encodeURIComponent(id)
 const queryString = (value: object) => new URLSearchParams(Object.entries(value).filter(([, item]) => item !== undefined && item !== null && item !== '').map(([key, item]) => [key, String(item)]))
+/**
+ * Хвост `?…` для условно заполняемых параметров. Намеренно через toString(): у
+ * URLSearchParams.size поздно появившаяся поддержка (Firefox 139), а молча потерянный
+ * параметр здесь означает молча расширенную выборку.
+ */
+const querySuffix = (params: URLSearchParams) => { const encoded = params.toString(); return encoded ? `?${encoded}` : '' }
 export const getCrmClients = async (id: string, query: { q?: string; unlinked?: boolean; cursor?: string }, signal?: AbortSignal): Promise<CrmReadPage<CrmClient>> => {
     const result = await json<Omit<CrmReadPage<CrmClient>, 'dataState'> & { syncState: CrmSyncState }>(`/api/crm/projects/${path(id)}/clients?${queryString(query)}`, { signal })
     return { ...result, dataState: result.syncState }
@@ -181,7 +187,7 @@ export const getCrmMasters = (id: string, signal?: AbortSignal, cursor?: string 
     if (query.includeNotObserved !== undefined) params.set('includeNotObserved', String(query.includeNotObserved))
     if (query.mastersOnly) params.set('mastersOnly', 'true')
     if (query.accountsOnly) params.set('accountsOnly', 'true')
-    return json<CrmMasterPage>(`/api/crm/projects/${path(id)}/masters${params.size ? '?' + params : ''}`, { signal })
+    return json<CrmMasterPage>(`/api/crm/projects/${path(id)}/masters${querySuffix(params)}`, { signal })
 }
 export const getCrmMaster = (id: string, signal?: AbortSignal) => json<CrmMaster>(`/api/crm/masters/${path(id)}`, { signal })
 export const getCrmEmployeeCandidates = (id: string, signal?: AbortSignal) =>
@@ -197,7 +203,7 @@ export const getCrmServices = (id: string, query: { masterId?: string; serviceId
     if (query.includeNotObserved) params.set('includeNotObserved', 'true')
     if (query.cursor) params.set('cursor', query.cursor)
     if (query.q) params.set('q', query.q)
-    return json<CrmServicePage>(`/api/crm/projects/${path(id)}/services${params.size ? '?' + params : ''}`, { signal })
+    return json<CrmServicePage>(`/api/crm/projects/${path(id)}/services${querySuffix(params)}`, { signal })
 }
 export const linkCrmMaster = (master: CrmMaster, employeeId: string | null, signal?: AbortSignal) =>
     employeeId ? json<CrmMaster>(`/api/crm/masters/${path(master.id)}/employee-link`, body('PUT', { employeeId, expectedVersion: master.version }, signal))
