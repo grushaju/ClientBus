@@ -2,7 +2,6 @@ package kit.penny.clientbus.server.service;
 
 import kit.penny.clientbus.common.enums.ChannelConnectionStatus;
 import kit.penny.clientbus.common.enums.ChannelType;
-import kit.penny.clientbus.connector.api.capability.DialogReader;
 import kit.penny.clientbus.server.connector.ChannelConnectorRegistry;
 import kit.penny.clientbus.server.persistence.repository.ChannelAccountRepository;
 import org.slf4j.Logger;
@@ -55,16 +54,16 @@ public class RecentChatsSyncScheduler {
         int failed = 0;
         int candidates = 0;
 
-        // 13.3: отбор по зарегистрированным возможностям (DialogReader) и состоянию
-        // аккаунта — планировщик не знает конкретных платформ.
+        // 13.3: отбор по зарегистрированному коннектору и состоянию аккаунта — планировщик не
+        // знает конкретных платформ. Проверяемой возможности здесь нет: IChannelConnector
+        // наследует все интерфейсы возможностей, поэтому «connector instanceof DialogReader»
+        // истинно для любого коннектора, а чтение диалогов обязано быть реализовано иначе
+        // коннектор не собирается. Значимый признак один: под тип есть коннектор или нет.
         for (ChannelType channelType : ChannelType.values()) {
 
-            var connector =
-                    channelConnectorRegistry
-                            .findConnector(channelType)
-                            .orElse(null);
-
-            if (!(connector instanceof DialogReader)) {
+            if (channelConnectorRegistry
+                    .findConnector(channelType)
+                    .isEmpty()) {
                 continue;
             }
 
