@@ -2421,7 +2421,8 @@ class CrmFoundationIntegrationTest {
      */
     @Test void mirroredCardAvatarNeverReachesTheCoreClientAvatar() throws Exception {
         var row=importClient(); var core=coreClient("Хозяин аватара","70000000001");
-        clients.link(row.id(),core,row.version());
+        // Связь обязана состояться: иначе проверка ниже проходила бы пустым ходом, ничего не защищая.
+        assertEquals(core, clients.link(row.id(),core,row.version()).clientId());
         var objects=new java.util.HashMap<String,byte[]>();
         var mirror=new kit.penny.clientbus.server.storage.IAttachmentStorage(){
             @Override public kit.penny.clientbus.server.storage.StoredAttachmentMetadata store(java.io.InputStream content,String fileName,long size,String contentType){

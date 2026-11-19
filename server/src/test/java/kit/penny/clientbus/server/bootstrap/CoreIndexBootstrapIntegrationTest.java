@@ -50,6 +50,7 @@ class CoreIndexBootstrapIntegrationTest extends AbstractIntegrationTest {
     private static final String PROBE = "core-index-bootstrap-" + UUID.randomUUID();
 
     @Autowired private JdbcTemplate jdbc;
+    @Autowired private CoreIndexBootstrap bootstrap;
     @Autowired private OrganizationRepository organizations;
     @Autowired private WorkspaceRepository workspaces;
     @Autowired private ChannelRepository channels;
@@ -65,6 +66,11 @@ class CoreIndexBootstrapIntegrationTest extends AbstractIntegrationTest {
     @AfterEach
     void cleanGraph() {
         jdbc.update("delete from dbo.conversation where dialogexternalid like ?", PROBE + "%");
+        // Легаси-пробы создаются без ссылки диалога — по префиксу ссылки они не находятся.
+        jdbc.update("""
+                delete from dbo.conversation
+                 where clientaccountid in (select clientaccountid from dbo.clientaccount where externalid like ?)
+                """, PROBE + "%");
         jdbc.update("delete from dbo.outboundsendcallback where pendingexternalid like ?", PROBE + "%");
         if (channelAccount != null) {
             jdbc.update("delete from dbo.clientaccount where externalid like ?", PROBE + "%");
@@ -74,6 +80,10 @@ class CoreIndexBootstrapIntegrationTest extends AbstractIntegrationTest {
             jdbc.update("delete from dbo.organization where organizationid = ?", organization.getId());
         }
         organization = null; workspace = null; channel = null; channelAccount = null;
+        // Класс работает с одним общим контейнером: неверная форма индекса, оставленная одним тестом,
+        // иначе валит соседний тест просто из-за порядка методов.
+        jdbc.execute("drop index if exists dbo.conversation_channel_client_nodialog_uix");
+        jdbc.execute(CoreIndexBootstrap.ONE_DIALOG_PER_PARTICIPANT.create());
     }
 
     /**
@@ -168,6 +178,33 @@ class CoreIndexBootstrapIntegrationTest extends AbstractIntegrationTest {
         assertEquals(2, jdbc.queryForObject(
                 "select count(*) from dbo.outboundsendcallback where pendingexternalid = ?",
                 Integer.class, pending));
+    }
+
+    /**
+     * Индекс с верным именем, но не той формы — это другой запрет, и проверка по имени пропустила бы
+     * его молча. Сюда же попадает будущее изменение предиката: старые свежие базы обязаны получить
+     * новую форму, а не остаться с старой под тем же именем.
+     */
+    @Test
+    void canonicalIndexOfTheWrongShapeIsRebuiltOnTheNextStartup() {
+        graph();
+        var counterpart = client(PROBE + "-repair");
+        conversations.saveAndFlush(conversation(counterpart, null));
+
+        jdbc.execute("drop index dbo.conversation_channel_client_nodialog_uix");
+        // Обычный индекс без уникальности и без предиката: имя каноническое, ограничения нет.
+        jdbc.execute("create index conversation_channel_client_nodialog_uix"
+                + " on dbo.conversation (channelaccountid, clientaccountid)");
+
+        bootstrap.run(null);
+
+        assertTrue(jdbc.queryForList("""
+                        select indexdef from pg_indexes where schemaname='dbo'
+                         and indexname='conversation_channel_client_nodialog_uix'
+                        """, String.class).get(0).toUpperCase(Locale.ROOT)
+                        .contains("WHERE (DIALOGEXTERNALID IS NULL)"));
+        assertThrows(DataIntegrityViolationException.class,
+                () -> conversations.saveAndFlush(conversation(counterpart, null)));
     }
 
     private void graph() {

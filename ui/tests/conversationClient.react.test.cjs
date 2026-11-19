@@ -182,7 +182,7 @@ test('link candidates ignore obsolete searches and bind the row the operator pre
     const calls = []
     const rows = renderer => renderer.root.findAllByProps({ className: 'conversation-client-candidate' })
     const ui = await panel(t, {
-        getClientLinkCandidates: async query => query ? [candidate('new')] : old.promise,
+        getClientLinkCandidates: async query => query ? [candidate('new'), candidate('other', { phoneMatch: false })] : old.promise,
         assignClientAccount: async (...args) => { calls.push(args); return account({ clientId: args[0] }) },
     })
     await click(ui.renderer, 'Привязать к клиенту')
@@ -190,11 +190,13 @@ test('link candidates ignore obsolete searches and bind the row the operator pre
     await type(ui.renderer, 'Поиск клиента', 'new')
     await ui.flush()
     await act(async () => old.resolve([candidate('old')]))
-    // Устаревший ответ не дорисовывается: в списке осталась только строка последнего запроса.
-    assert.equal(rows(ui.renderer).length, 1)
-    assert.match(content(ui.renderer), /телефон совпадает/)
+    // Устаревший ответ не дорисовывается: в списке остались только строки последнего запроса.
+    assert.equal(rows(ui.renderer).length, 2)
+    // Пометка носится только на совпавшую строку: «телефон совпадает» у каждой подрядки
+    // выглядела бы как подтверждение, а это ровно то, чем она не является.
+    assert.equal(ui.renderer.root.findAllByProps({ className: 'conversation-client-candidate-hit' }).length, 1)
     assert.match(content(ui.renderer), /Совпадение телефона — подсказка/)
-    await act(async () => button(ui.renderer, 'Привязать').props.onClick())
+    await act(async () => buttons(ui.renderer, 'Привязать')[0].props.onClick())
     assert.deepEqual(calls, [['new', 'account']])
     assert.equal(ui.changes[0].clientId, 'new')
 })
