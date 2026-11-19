@@ -518,7 +518,7 @@ public class ClientService {
         currentUserService.requireSuperAdmin();
 
         ClientEntity entity =
-                clientRepository.findById(id)
+                clientRepository.findByIdForUpdate(id)
                         .orElseThrow(() ->
                                 new EntityNotFoundException(
                                         "Client not found: "
@@ -531,7 +531,9 @@ public class ClientService {
         // Проверка стоит ДО CRM-guard'а: отказ не должен ни снимать сопоставления CRM, ни
         // поднимать события инвалидации. Учётки чатов удерживают клиента внешним ключом,
         // поэтому без отказа здесь оператор получил бы нарушение целостности (500) вместо
-        // причины, а снять привязку можно только отдельной операцией.
+        // причины, а снять привязку можно только отдельной операцией. Строка при этом
+        // прочитана под блокировкой на запись: вставка учётки берёт на ней FOR KEY SHARE,
+        // и только так успевает быть замеченной привязка, заведённая параллельно с удалением.
         long linkedAccounts = clientAccountRepository.countByClientId(id);
         if (linkedAccounts > 0)
             throw new kit.penny.clientbus.server.exception.ClientInUseException(

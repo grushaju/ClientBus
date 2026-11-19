@@ -469,7 +469,7 @@ class ClientServiceTest {
         var crm = mock(kit.penny.clientbus.server.crm.CrmDeletionGuard.class);
         org.springframework.test.util.ReflectionTestUtils.setField(clientService, "crmDeletionGuard", crm);
 
-        when(clientRepository.findById(clientId))
+        when(clientRepository.findByIdForUpdate(clientId))
                 .thenReturn(Optional.of(client));
 
         when(currentUserService.getCurrentOrganizationId())
@@ -481,7 +481,7 @@ class ClientServiceTest {
                 .requireSuperAdmin();
 
         verify(clientRepository)
-                .findById(clientId);
+                .findByIdForUpdate(clientId);
 
         verify(currentUserService)
                 .getCurrentOrganizationId();
@@ -494,11 +494,14 @@ class ClientServiceTest {
     /**
      * Привязанного клиента удалять нельзя, и отказ обязан прийти ДО CRM-guard'а: иначе
      * попытка удаления уже успела бы снять сопоставления карточек и поднять инвалидации.
+     * Порядок «сначала строка под блокировкой, потом счётчик» — не педантизм: без блокировки
+     * привязка, заведённая параллельно, уходит мимо проверки, и вместо отказа по причине
+     * оператор получает нарушение внешнего ключа (500).
      */
     @Test void deleteClientRefusesWhileChatAccountsAreLinked() {
         var crm = mock(kit.penny.clientbus.server.crm.CrmDeletionGuard.class);
         org.springframework.test.util.ReflectionTestUtils.setField(clientService, "crmDeletionGuard", crm);
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
+        when(clientRepository.findByIdForUpdate(clientId)).thenReturn(Optional.of(client));
         when(currentUserService.getCurrentOrganizationId()).thenReturn(organizationId);
         when(clientAccountRepository.countByClientId(clientId)).thenReturn(2L);
 
@@ -506,6 +509,9 @@ class ClientServiceTest {
                 () -> clientService.deleteClient(clientId));
 
         assertTrue(failure.getMessage().contains("(2)"), "причина обязана называть число мешающих привязок");
+        var order = inOrder(clientRepository, clientAccountRepository);
+        order.verify(clientRepository).findByIdForUpdate(clientId);
+        order.verify(clientAccountRepository).countByClientId(clientId);
         verify(crm, never()).client(any());
         verify(clientRepository, never()).delete(any());
     }
@@ -513,7 +519,7 @@ class ClientServiceTest {
     @Test void crmDeletionFailurePreventsCoreDeletion() {
         var crm = mock(kit.penny.clientbus.server.crm.CrmDeletionGuard.class);
         org.springframework.test.util.ReflectionTestUtils.setField(clientService, "crmDeletionGuard", crm);
-        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client));
+        when(clientRepository.findByIdForUpdate(clientId)).thenReturn(Optional.of(client));
         when(currentUserService.getCurrentOrganizationId()).thenReturn(organizationId);
         doThrow(new IllegalStateException("storage unavailable")).when(crm).client(client);
         assertThrows(IllegalStateException.class, () -> clientService.deleteClient(clientId));
@@ -523,7 +529,7 @@ class ClientServiceTest {
     @Test
     void deleteClient_notFound() {
 
-        when(clientRepository.findById(clientId))
+        when(clientRepository.findByIdForUpdate(clientId))
                 .thenReturn(Optional.empty());
 
         EntityNotFoundException exception =
@@ -541,7 +547,7 @@ class ClientServiceTest {
                 .requireSuperAdmin();
 
         verify(clientRepository)
-                .findById(clientId);
+                .findByIdForUpdate(clientId);
 
         verify(clientRepository, never())
                 .delete(any());
@@ -560,7 +566,7 @@ class ClientServiceTest {
         );
 
         verify(currentUserService).requireSuperAdmin();
-        verify(clientRepository, never()).findById(any());
+        verify(clientRepository, never()).findByIdForUpdate(any());
     }
 
     // =========================================================

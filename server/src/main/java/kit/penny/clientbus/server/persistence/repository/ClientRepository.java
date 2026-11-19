@@ -6,6 +6,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -63,6 +64,18 @@ public interface ClientRepository
             UUID organizationId,
             String firstName,
             String lastName
+    );
+
+    /**
+     * Строка клиента под блокировкой на запись. Вставка учётной записи чата берёт на строке
+     * клиента FOR KEY SHARE (внешний ключ), поэтому такая блокировка — единственный способ
+     * успеть увидеть привязку, заведённую параллельно с удалением. Считать связи без неё —
+     * значит пообещать отказ по причине и получить вместо него нарушение целостности (500).
+     */
+    @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT c FROM ClientEntity c WHERE c.id = :id")
+    Optional<ClientEntity> findByIdForUpdate(
+            @Param("id") UUID id
     );
 
     @Query("""
