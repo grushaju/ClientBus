@@ -304,8 +304,7 @@ function ChannelsPageContent() {
 
     function handleEnable(
         channel: ChannelDto,
-    ) {
-        if (!channel.account) {
+    ) {        if (!channel.account) {
             setError(
                 'У канала отсутствует подключённый аккаунт.',
             )
@@ -333,6 +332,46 @@ function ChannelsPageContent() {
             .finally(() => {
                 togglingAccountsRef.current.delete(channel.account!.id)
             })
+    }
+
+    /**
+     * Подключение канала — это сценарий конкретной платформы: диалог авторизации
+     * Telegram или проверка доступа DIKIDI. Каналу без такого сценария показывается
+     * причина, а не чужой вход: иначе следующий тип канала унаследовал бы форму
+     * платформы, к которой отношения не имеет.
+     */
+    function connectControl(
+        channel: ChannelDto,
+        label: string,
+    ) {
+        if (
+            channel.type !== 'TELEGRAM' &&
+            channel.type !== 'DIKIDI'
+        ) {
+            return (
+                <div className="channel-card-action-note">
+                    Управление этим каналом ещё не настроено
+                </div>
+            )
+        }
+
+        return (
+            <button
+                type="button"
+                className="ui-button ui-button-primary"
+                onClick={() =>
+                    channel.type === 'DIKIDI'
+                        ? handleDikidiConnect(
+                            channel,
+                        )
+                        : setConnectionChannel(
+                            channel,
+                        )
+                }
+            >
+                {label}
+            </button>
+        )
     }
 
     function handleDelete() {
@@ -552,79 +591,31 @@ function ChannelsPageContent() {
                                     </button>
 
                                     {channel.status ===
-                                        'CREATED' && (
-                                            <button
-                                                type="button"
-                                                className="ui-button ui-button-primary"
-                                                onClick={() =>
-                                                    channel.type === 'DIKIDI'
-                                                        ? handleDikidiConnect(
-                                                            channel,
-                                                        )
-                                                        : setConnectionChannel(
-                                                            channel,
-                                                        )
-                                                }
-                                            >
-                                                Подключить
-                                            </button>
+                                        'CREATED' &&
+                                        connectControl(
+                                            channel,
+                                            'Подключить',
                                         )}
 
                                     {channel.status ===
-                                        'DISCONNECTED' && (
-                                            <button
-                                                type="button"
-                                                className="ui-button ui-button-primary"
-                                                onClick={() =>
-                                                    channel.type === 'DIKIDI'
-                                                        ? handleDikidiConnect(
-                                                            channel,
-                                                        )
-                                                        : setConnectionChannel(
-                                                            channel,
-                                                        )
-                                                }
-                                            >
-                                                Подключить
-                                            </button>
+                                        'DISCONNECTED' &&
+                                        connectControl(
+                                            channel,
+                                            'Подключить',
                                         )}
 
                                     {channel.status ===
-                                        'ERROR' && (
-                                            <button
-                                                type="button"
-                                                className="ui-button ui-button-primary"
-                                                onClick={() =>
-                                                    channel.type === 'DIKIDI'
-                                                        ? handleDikidiConnect(
-                                                            channel,
-                                                        )
-                                                        : setConnectionChannel(
-                                                            channel,
-                                                        )
-                                                }
-                                            >
-                                                Подключить снова
-                                            </button>
+                                        'ERROR' &&
+                                        connectControl(
+                                            channel,
+                                            'Подключить снова',
                                         )}
 
                                     {channel.status ===
-                                        'CONNECTING' && (
-                                            <button
-                                                type="button"
-                                                className="ui-button ui-button-primary"
-                                                onClick={() =>
-                                                    channel.type === 'DIKIDI'
-                                                        ? handleDikidiConnect(
-                                                            channel,
-                                                        )
-                                                        : setConnectionChannel(
-                                                            channel,
-                                                        )
-                                                }
-                                            >
-                                                Подключение...
-                                            </button>
+                                        'CONNECTING' &&
+                                        connectControl(
+                                            channel,
+                                            'Подключение...',
                                         )}
 
                                     {channel.status ===

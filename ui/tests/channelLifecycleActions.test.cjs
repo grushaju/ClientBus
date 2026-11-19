@@ -84,22 +84,44 @@ test('a disabled telegram channel is still enabled through its own route', async
 
 /**
  * Белый список важнее чёрного: «не DIKIDI» означает, что любой следующий канал молча
- * получает чужой маршрут. Канал без маршрута обязан получить пояснение, а не запрос.
+ * получает чужой маршрут — не только включения, но и диалог авторизации чужой платформы.
+ * Канал без своего сценария обязан получить пояснение, а не запрос.
  */
-test('a channel without its own route is offered neither enable nor disable', async t => {
+test('a channel without its own route is offered neither connect, enable nor disable', async t => {
     const { renderer, calls } = await page(t, [
+        channel({ id: 'created', type: 'WHATSAPP', status: 'CREATED' }),
+        channel({ id: 'connecting', type: 'WHATSAPP', status: 'CONNECTING' }),
+        channel({ id: 'error', type: 'WHATSAPP', status: 'ERROR' }),
         channel({ id: 'off', type: 'WHATSAPP', status: 'DISABLED' }),
         channel({ id: 'on', type: 'WHATSAPP', status: 'CONNECTED' }),
     ])
 
-    assert.equal(button(renderer, 'Включить'), undefined)
-    assert.equal(button(renderer, 'Отключить'), undefined)
-    assert.deepEqual(notes(renderer), [
-        'Управление этим каналом ещё не настроено',
-        'Управление этим каналом ещё не настроено',
-    ])
+    for (const label of ['Подключить', 'Подключить снова', 'Подключение...', 'Включить', 'Отключить']) {
+        assert.equal(button(renderer, label), undefined, `каналу без маршрута предложено «${label}»`)
+    }
+    assert.deepEqual(notes(renderer), new Array(5).fill('Управление этим каналом ещё не настроено'))
     assert.deepEqual(calls.telegramEnable, [])
     assert.deepEqual(calls.telegramDisable, [])
+})
+
+/** Достигимые статусы telegram-канала обязаны остаться с кнопкой: правки ничего не отняли. */
+test('a telegram channel still gets its connect action in every connectable status', async t => {
+    const { renderer } = await page(t, [
+        channel({ id: 'created', status: 'CREATED' }),
+        channel({ id: 'reconnect', status: 'ERROR' }),
+    ])
+
+    assert.ok(button(renderer, 'Подключить'), 'у telegram-канала пропало подключение')
+    assert.ok(button(renderer, 'Подключить снова'), 'у telegram-канала пропало повторное подключение')
+    assert.deepEqual(notes(renderer), [])
+})
+
+/** DIKIDI подключается своим сценарием: белый список не должен был его отрезать. */
+test('a dikidi channel still gets its own connect action', async t => {
+    const { renderer } = await page(t, [channel({ type: 'DIKIDI', status: 'CREATED' })])
+
+    assert.ok(button(renderer, 'Подключить'), 'у DIKIDI-канала пропало подключение')
+    assert.deepEqual(notes(renderer), [], 'DIKIDI-канал получил пояснение вместо своего сценария')
 })
 
 /** У DIKIDI отключение своим маршрутом было и раньше — новый белый список его не отменил. */
