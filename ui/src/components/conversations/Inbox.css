@@ -305,6 +305,59 @@
     margin-top: var(--ui-space-1);
 }
 
+/* Кандидаты на ручную привязку учётки к клиенту: телефон — подсказка, решение за сотрудником. */
+.conversation-client-hint {
+    margin: 0;
+
+    color: var(--ui-color-text-secondary);
+}
+
+.conversation-client-candidates {
+    display: flex;
+    flex-direction: column;
+
+    gap: var(--ui-space-2);
+}
+
+.conversation-client-candidate {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+
+    align-items: center;
+
+    gap: var(--ui-space-2);
+
+    padding: var(--ui-space-2);
+    border: 1px solid var(--ui-color-border-light);
+    border-radius: var(--ui-radius-md);
+}
+
+.conversation-client-candidate-main {
+    display: flex;
+    flex-direction: column;
+
+    gap: 2px;
+
+    min-width: 0;
+}
+
+.conversation-client-candidate-main span {
+    color: var(--ui-color-text-secondary);
+    font-size: 12px;
+
+    overflow-wrap: anywhere;
+}
+
+.conversation-client-candidate-hit {
+    padding: 2px 6px;
+    border: 1px solid var(--ui-color-success-border);
+    border-radius: var(--ui-radius-md);
+
+    background: var(--ui-color-success-background);
+    color: var(--ui-color-success);
+    font-size: 11px;
+}
+
 .conversation-client-section-header {
     display: flex;
     align-items: center;

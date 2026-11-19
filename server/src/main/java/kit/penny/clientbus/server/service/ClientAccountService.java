@@ -1,6 +1,7 @@
 package kit.penny.clientbus.server.service;
 
 import jakarta.persistence.EntityNotFoundException;
+import kit.penny.clientbus.common.dto.client.ClientLinkCandidateDto;
 import kit.penny.clientbus.common.dto.clientaccount.ClientAccountDto;
 import kit.penny.clientbus.common.dto.clientaccount.CreateClientAccountRequest;
 import kit.penny.clientbus.common.dto.clientaccount.UpdateClientAccountRequest;
@@ -210,6 +211,61 @@ public class ClientAccountService {
         requireAccountAccess(entity);
 
         return clientAccountMapper.toDto(entity);
+    }
+
+    /**
+     * Кандидаты Client для ручной привязки учётной записи чата (Stage 13.9, пункт 3 плана).
+     *
+     * <p>Подсказка одна — телефон: последние десять цифр телефона учётки против последних десяти
+     * цифр телефонов клиента. Ни аватар, ни совпадение имени основанием не считаются: связь ставит
+     * и снимает только человек (CRM_SEMANTICS §4). Телефон берётся из самой учётной записи, а не из
+     * параметра запроса, — иначе endpoint стал бы инструментом подбора людей по номеру: подсказку
+     * получает тот, кто уже видит диалог с этой учёткой (requireAccountAccess).
+     *
+     * @param query дословный поиск по имени, фамилии или телефону; пусто — только телефонная подсказка
+     * @return не больше 50 строк, совпавшие по телефону — первыми
+     */
+    @Transactional(readOnly = true)
+    public List<ClientLinkCandidateDto> clientLinkCandidates(
+            UUID accountId,
+            String query
+    ) {
+        ClientAccountEntity account = clientAccountRepository.findById(accountId)
+                .orElseThrow(() -> new EntityNotFoundException("Account not found: " + accountId));
+
+        requireAccountAccess(account);
+
+        String search = query == null ? "" : query.strip().toLowerCase(java.util.Locale.ROOT);
+        String pattern = likePattern(search);
+        String tail = phoneTail(account.getPhone());
+
+        return clientRepository
+                .searchLinkCandidateIds(currentUserService.getCurrentOrganizationId(), search, pattern, tail,
+                        kit.penny.clientbus.crm.api.CrmPhone.FORMATTING_CHARACTERS)
+                .stream()
+                .map(clientRepository::findById)
+                .flatMap(java.util.Optional::stream)
+                .map(target -> new ClientLinkCandidateDto(target.getId(), target.getFirstName(), target.getLastName(),
+                        List.copyOf(target.getPhoneList()),
+                        !tail.isEmpty() && target.getPhoneList().stream().anyMatch(value -> tail.equals(phoneTail(value)))))
+                .sorted(java.util.Comparator.comparing(ClientLinkCandidateDto::phoneMatch).reversed()
+                        .thenComparing(ClientLinkCandidateDto::id))
+                .toList();
+    }
+
+    /**
+     * Хвост для телефонной подсказки: только цифры и только последние десять. Меньше десяти цифр —
+     * не подсказка: по «12345» совпал бы пол-базы. Форматирование снимает то же правило, что и SQL
+     * (CrmPhone.FORMATTING_CHARACTERS), а номер с непривычными символами не считается номером вовсе.
+     */
+    private static String phoneTail(String value) {
+        var digits = kit.penny.clientbus.crm.api.CrmPhone.normalize(value);
+        return digits == null || digits.length() < 10 ? "" : digits.substring(digits.length() - 10);
+    }
+
+    /** Поиск дословный: метасимволы LIKE экранируются, иначе запрос пользователя стал бы маской. */
+    private static String likePattern(String value) {
+        return "%" + value.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%";
     }
 
     /**

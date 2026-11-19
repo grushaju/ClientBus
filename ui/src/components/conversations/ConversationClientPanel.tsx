@@ -6,10 +6,11 @@ import {
     getClient,
     getClientAccountsByClient,
     getClientAvatarContent,
-    searchClients,
     unassignClientAccount,
 } from '../../api/clientApi'
-import type { ClientDto, ClientListItemDto } from '../../api/types/client'
+import { getClientLinkCandidates } from '../../api/clientAccountApi'
+import type { ClientLinkCandidate } from '../../api/clientAccountApi'
+import type { ClientDto } from '../../api/types/client'
 import type { ChannelSummary, ClientAccountSummary, ConversationDto } from '../../api/types/conversation'
 import type { ClientAccountDto } from '../../api/types/clientAccount'
 import type { UiEventEnvelope } from '../../api/types/uiEvent'
@@ -75,11 +76,10 @@ function ConversationClientDetails({
     const [showOtherAccounts, setShowOtherAccounts] = useState(false)
     const [showAccountPicker, setShowAccountPicker] = useState(false)
     const [clientQuery, setClientQuery] = useState('')
-    const [clients, setClients] = useState<ClientListItemDto[]>([])
+    const [clients, setClients] = useState<ClientLinkCandidate[]>([])
     const [loadingClients, setLoadingClients] = useState(false)
     const [clientsError, setClientsError] = useState<string | null>(null)
     const [clientsReload, setClientsReload] = useState(0)
-    const [selectedClientId, setSelectedClientId] = useState('')
     const clientId = clientAccount?.clientId
     const avatarLifetime = useUiLifetime('client-avatar:' + (clientId ?? ''))
 
@@ -129,14 +129,14 @@ function ConversationClientDetails({
     }, [client?.id, client?.avatarUrl, avatarLifetime])
 
     useEffect(() => {
-        if (form !== 'link') return
+        if (form !== 'link' || !clientAccount) return
         const controller = new AbortController()
         setLoadingClients(true)
         setClients([])
         setClientsError(null)
         const timer = window.setTimeout(async () => {
             try {
-                const result = await searchClients(clientQuery.trim(), controller.signal)
+                const result = await getClientLinkCandidates(clientAccount.id, clientQuery.trim(), controller.signal)
                 if (!controller.signal.aborted) setClients(result)
             } catch (err) {
                 if (!controller.signal.aborted) setClientsError(errorMessage(err, 'Не удалось загрузить клиентов'))
@@ -145,7 +145,7 @@ function ConversationClientDetails({
             }
         }, 250)
         return () => { window.clearTimeout(timer); controller.abort() }
-    }, [form, clientQuery, clientsReload])
+    }, [form, clientQuery, clientsReload, clientAccount])
 
     async function mutate(operation: () => Promise<ClientAccountSummary>, fallback: string) {
         if (actionPending.current || !alive.current) return
@@ -188,9 +188,9 @@ function ConversationClientDetails({
         }, 'Не удалось создать клиента')
     }
 
-    function handleLinkClient() {
-        if (!clientAccount || clientId || !selectedClientId || loadingClients || clientsError || refreshingDetails) return
-        void mutate(() => assignClientAccount(selectedClientId, clientAccount.id), 'Не удалось привязать аккаунт')
+    function handleLinkClient(targetClientId: string) {
+        if (!clientAccount || clientId || !targetClientId || loadingClients || clientsError || refreshingDetails) return
+        void mutate(() => assignClientAccount(targetClientId, clientAccount.id), 'Не удалось привязать аккаунт')
     }
 
     function handleAssignAnotherAccount(account: ClientAccountDto) {
@@ -258,20 +258,28 @@ function ConversationClientDetails({
                                 <button type="button" className="ui-button ui-button-sm ui-button-secondary ui-button-block" disabled={disabled} onClick={() => { setForm(null); setError(null) }}>Отмена</button>
                             </div>
                         </form>}
-                        {form === 'link' && <form className="conversation-client-form" onSubmit={event => { event.preventDefault(); handleLinkClient() }}>
+                        {form === 'link' && <form className="conversation-client-form" onSubmit={event => event.preventDefault()}>
                             <label className="ui-form-field"><span className="ui-form-label">Поиск клиента</span>
-                                <input type="search" className="ui-input ui-input-sm" value={clientQuery} onChange={event => { setClientQuery(event.target.value); setSelectedClientId('') }} disabled={disabled} placeholder="Имя, фамилия или телефон" />
+                                <input type="search" className="ui-input ui-input-sm" value={clientQuery} onChange={event => setClientQuery(event.target.value)} disabled={disabled} placeholder="Имя, фамилия или телефон" />
                             </label>
-                            <label className="ui-form-field"><span className="ui-form-label">Клиент</span>
-                                <select className="ui-select ui-select-sm" value={selectedClientId} onChange={event => setSelectedClientId(event.target.value)} disabled={disabled || loadingClients || !!clientsError}>
-                                    <option value="">{loadingClients ? 'Загрузка…' : clients.length ? 'Выберите клиента' : 'Клиенты не найдены'}</option>
-                                    {clients.map(item => <option key={item.id} value={item.id}>{[item.firstName, item.lastName].filter(Boolean).join(' ') || 'Без имени'}</option>)}
-                                </select>
-                            </label>
+                            <p className="conversation-client-hint"><small>Привязка ручная. Совпадение телефона — подсказка, а не основание: связь подтверждает сотрудник.</small></p>
+                            {loadingClients && <div className="conversation-client-panel-state">Поиск клиентов…</div>}
                             {clientsError && <div className="conversation-client-panel-error" role="alert">{clientsError}<button type="button" className="ui-button ui-button-sm ui-button-secondary" disabled={disabled} onClick={() => setClientsReload(value => value + 1)}>Повторить поиск</button></div>}
+                            {!loadingClients && !clientsError && !clients.length && <div className="conversation-client-panel-state">{clientQuery.trim() ? 'Клиенты не найдены.'
+                                : clientAccount?.phone ? 'Клиентов с таким телефоном не найдено — поищите по имени или фамилии.'
+                                : 'Введите имя, фамилию или телефон клиента.'}</div>}
+                            <div className="conversation-client-candidates">
+                                {clients.map(item => <div key={item.id} className="conversation-client-candidate">
+                                    <div className="conversation-client-candidate-main">
+                                        <strong>{[item.firstName, item.lastName].filter(Boolean).join(' ') || 'Без имени'}</strong>
+                                        <span>{item.phoneList.filter(Boolean).join(', ') || 'Телефон неизвестен'}</span>
+                                    </div>
+                                    {item.phoneMatch && <span className="conversation-client-candidate-hit">телефон совпадает</span>}
+                                    <button type="button" className="ui-button ui-button-sm ui-button-primary" disabled={disabled || actionLoading} onClick={() => handleLinkClient(item.id)}>Привязать</button>
+                                </div>)}
+                            </div>
                             <div className="conversation-client-form-actions">
-                                <button type="submit" className="ui-button ui-button-sm ui-button-primary ui-button-block" disabled={disabled || loadingClients || !!clientsError || !selectedClientId}>{actionLoading ? 'Привязка…' : 'Привязать'}</button>
-                                <button type="button" className="ui-button ui-button-sm ui-button-secondary ui-button-block" disabled={disabled} onClick={() => { setForm(null); setSelectedClientId(''); setError(null) }}>Отмена</button>
+                                <button type="button" className="ui-button ui-button-sm ui-button-secondary ui-button-block" disabled={disabled} onClick={() => { setForm(null); setError(null) }}>Отмена</button>
                             </div>
                         </form>}
                     </>

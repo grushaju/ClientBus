@@ -3,6 +3,7 @@ package kit.penny.clientbus.server.controller;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import kit.penny.clientbus.common.dto.client.ClientLinkCandidateDto;
 import kit.penny.clientbus.common.dto.clientaccount.ClientAccountDto;
 import kit.penny.clientbus.common.dto.clientaccount.CreateClientAccountRequest;
 import kit.penny.clientbus.common.dto.clientaccount.UpdateClientAccountRequest;
@@ -161,6 +162,25 @@ public class ClientAccountController {
                 clientAccountService.getClientAccountsByClient(
                         clientId
                 )
+        );
+    }
+
+    /**
+     * Кандидаты Client для ручной привязки этой учётной записи (Stage 13.9, пункт 3 плана).
+     *
+     * Доступ: EMPLOYEE или SUPER_ADMIN, и Service требует, чтобы учётка была видна в диалогах
+     * текущего сотрудника: телефонная подсказка не должна превращать endpoint в подбор людей
+     * по номеру.
+     */
+    @GetMapping("/{id}/client-candidates")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SUPER_ADMIN')")
+    public ResponseEntity<List<ClientLinkCandidateDto>> clientLinkCandidates(
+            @PathVariable UUID id,
+            @RequestParam(required = false) String query
+    ) {
+
+        return ResponseEntity.ok(
+                clientAccountService.clientLinkCandidates(id, query)
         );
     }
 

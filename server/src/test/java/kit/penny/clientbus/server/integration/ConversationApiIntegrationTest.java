@@ -5,6 +5,7 @@ import kit.penny.clientbus.server.fixture.TestDataFactory;
 import kit.penny.clientbus.server.persistence.entity.ChannelAccountEntity;
 import kit.penny.clientbus.server.persistence.entity.ChannelEntity;
 import kit.penny.clientbus.server.persistence.entity.ClientAccountEntity;
+import kit.penny.clientbus.server.persistence.entity.ClientEntity;
 import kit.penny.clientbus.server.persistence.entity.ConversationEntity;
 import kit.penny.clientbus.server.persistence.entity.EmployeeEntity;
 import kit.penny.clientbus.server.persistence.entity.EmployeeWorkspaceEntity;
@@ -88,6 +89,9 @@ class ConversationApiIntegrationTest
 
     @Autowired
     private ConversationGroupMembershipRepository membershipRepository;
+
+    @Autowired
+    private kit.penny.clientbus.server.persistence.repository.ClientRepository clientRepository;
 
     @Test
     void getConversation_returnsConversationFromDatabase() throws Exception {
@@ -348,5 +352,94 @@ class ConversationApiIntegrationTest
                         jsonPath("$[0].id")
                                 .value(conversation.getId().toString())
                 );
+    }
+
+    /**
+     * Подсказка по телефону при ручной привязке учётки чата к клиенту (Stage 13.9, пункт 3 плана).
+     *
+     * Проверяется то, что невозможно проверить на моках: настоящий SQL находит клиента по последним
+     * десяти цифрам, записанным другим форматом и с другим префиксом; текст поиска добавляется к
+     * подсказке, а не заменяет её; и ничего не видит тот, кто не видит диалог с этой учёткой.
+     */
+    @Test
+    void clientLinkCandidatesRankByPhoneTailAndStayBehindDialogAccess()
+            throws Exception {
+
+        OrganizationEntity organization =
+                organizationRepository.saveAndFlush(TestDataFactory.organization());
+
+        WorkspaceEntity workspace =
+                workspaceRepository.saveAndFlush(TestDataFactory.workspace(organization));
+
+        UserEntity user = userRepository.saveAndFlush(
+                TestDataFactory.user("link_" + UUID.randomUUID(), "link_" + UUID.randomUUID() + "@example.com", "$2a$10$test"));
+        user.setRole(UserRole.EMPLOYEE);
+
+        EmployeeEntity employee = employeeRepository.saveAndFlush(
+                new EmployeeEntity(organization, user, "Link", "Employee", "+79990000011"));
+        employeeWorkspaceRepository.saveAndFlush(new EmployeeWorkspaceEntity(employee, workspace));
+
+        ChannelEntity channel = channelRepository.saveAndFlush(TestDataFactory.channel(workspace));
+        ChannelAccountEntity channelAccount =
+                channelAccountRepository.saveAndFlush(TestDataFactory.channelAccount(channel));
+
+        ClientAccountEntity prepared =
+                TestDataFactory.clientAccount(null, channel.getType(), "link-" + UUID.randomUUID());
+        prepared.setPhone("8 (999) 123-45-67");
+        ClientAccountEntity account = clientAccountRepository.saveAndFlush(prepared);
+
+        ConversationEntity dialog = TestDataFactory.conversation(workspace, channelAccount, account);
+        dialog.setAssignedEmployee(employee);
+        conversationRepository.saveAndFlush(dialog);
+
+        ClientEntity byTail = client(organization, "Мария", "Хвостова", java.util.List.of("+7 (999) 123-45-67"));
+        ClientEntity byName = client(organization, "Иван", "Телефонный", java.util.List.of("79990000000"));
+        client(organization, "Пётр", "Безтелефонов", java.util.List.of());
+
+        String token = jwtService.generateToken(user);
+        String url = "/api/clientaccounts/{id}/client-candidates";
+
+        // Пустая строка поиска: список собирает одна телефонная подсказка. Номер учётки записан
+        // через восьмёрку и со скобками, клиент — через семёрку: совпадают последние десять цифр.
+        mockMvc.perform(get(url, account.getId()).header("Authorization", "Bearer " + token).param("query", ""))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value(byTail.getId().toString()))
+                .andExpect(jsonPath("$[0].firstName").value("Мария"))
+                .andExpect(jsonPath("$[0].phoneMatch").value(true));
+
+        // Текст поиска не отменяет подсказку: совпавший по телефону ряд идёт первым, а совпадение по
+        // имени помечается совпадением по имени — то есть отсутствием телефонной подсказки.
+        mockMvc.perform(get(url, account.getId()).header("Authorization", "Bearer " + token).param("query", "иван"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].id").value(byTail.getId().toString()))
+                .andExpect(jsonPath("$[0].phoneMatch").value(true))
+                .andExpect(jsonPath("$[1].id").value(byName.getId().toString()))
+                .andExpect(jsonPath("$[1].phoneMatch").value(false));
+
+        // Чужой запрос не подбирает людей по номеру: у кого нет диалога с этой учёткой, тот не
+        // получает ни списка, ни подсказки.
+        UserEntity outsider = userRepository.saveAndFlush(
+                TestDataFactory.user("out_" + UUID.randomUUID(), "out_" + UUID.randomUUID() + "@example.com", "$2a$10$test"));
+        outsider.setRole(UserRole.EMPLOYEE);
+        employeeRepository.saveAndFlush(new EmployeeEntity(organization, outsider, "Out", "Side", "+79990000012"));
+
+        mockMvc.perform(get(url, account.getId()).header("Authorization", "Bearer " + jwtService.generateToken(outsider))
+                        .param("query", "Мария"))
+                .andExpect(status().isForbidden());
+    }
+
+    private ClientEntity client(
+            OrganizationEntity organization,
+            String firstName,
+            String lastName,
+            java.util.List<String> phones
+    ) {
+
+        ClientEntity entity = new ClientEntity(firstName, lastName, organization);
+        entity.setPhoneList(new java.util.ArrayList<>(phones));
+
+        return clientRepository.saveAndFlush(entity);
     }
 }

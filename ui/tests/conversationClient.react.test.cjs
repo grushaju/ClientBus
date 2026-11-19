@@ -11,6 +11,7 @@ function deferred() {
 }
 const account = (extra = {}) => ({ id: 'account', clientId: null, channelType: 'TELEGRAM', externalId: '123', displayName: 'Account', username: '@account', phone: '79990000000', avatarUrl: null, ...extra })
 const client = (id = 'client', extra = {}) => ({ id, firstName: id, lastName: '', phoneList: ['79991111111'], enabled: true, avatarUrl: null, ...extra })
+const candidate = (id = 'client', extra = {}) => ({ id, firstName: id, lastName: 'Кандидатов', phoneList: ['+7 (999) 123-45-67'], phoneMatch: true, ...extra })
 const conversation = (id = 'a') => ({ id, clientAccountId: 'account', channelAccountId: 'channel-account', workspaceId: 'workspace', unreadCount: 0, assignedEmployeeId: 'employee' })
 const channel = { id: 'channel', workspaceId: 'workspace', type: 'TELEGRAM', name: 'Channel', account: { id: 'channel-account', username: null, phone: null, displayName: null, avatarUrl: null } }
 
@@ -52,7 +53,9 @@ async function panel(t, overrides = {}, initial = {}) {
     const clock = browser(t)
     const changes = []
     const api = { getClient: async id => client(id), getClientAccountsByClient: async () => [], searchClients: async () => [], ...overrides }
-    const Panel = load('ConversationClientPanel.tsx', { '../../api/clientApi': api, ...visualMocks }).default
+    const Panel = load('ConversationClientPanel.tsx', { '../../api/clientApi': api,
+        '../../api/clientAccountApi': { getClientLinkCandidates: api.getClientLinkCandidates ?? (async () => []) },
+        ...visualMocks }).default
     let props = { conversation: conversation(), clientAccount: account(), channel, onRetryDetails() {}, ...initial }
     let renderer, session = 0
     const tree = () => {
@@ -174,41 +177,44 @@ test('successful creation remains linked even when the subsequent client read fa
     assert.match(content(ui.renderer), /Отвязать аккаунт/)
 })
 
-test('client search ignores obsolete responses and links only the current selection', async t => {
+test('link candidates ignore obsolete searches and bind the row the operator pressed', async t => {
     const old = deferred()
     const calls = []
+    const rows = renderer => renderer.root.findAllByProps({ className: 'conversation-client-candidate' })
     const ui = await panel(t, {
-        searchClients: async query => query ? [client('new')] : old.promise,
+        getClientLinkCandidates: async query => query ? [candidate('new')] : old.promise,
         assignClientAccount: async (...args) => { calls.push(args); return account({ clientId: args[0] }) },
     })
     await click(ui.renderer, 'Привязать к клиенту')
     await ui.flush()
     await type(ui.renderer, 'Поиск клиента', 'new')
     await ui.flush()
-    await act(async () => old.resolve([client('old')]))
-    assert.deepEqual(ui.renderer.root.findAllByType('option').map(node => node.props.value), ['', 'new'])
-    await act(async () => ui.renderer.root.findByType('select').props.onChange({ target: { value: 'new' } }))
-    await submit(ui.renderer)
+    await act(async () => old.resolve([candidate('old')]))
+    // Устаревший ответ не дорисовывается: в списке осталась только строка последнего запроса.
+    assert.equal(rows(ui.renderer).length, 1)
+    assert.match(content(ui.renderer), /телефон совпадает/)
+    assert.match(content(ui.renderer), /Совпадение телефона — подсказка/)
+    await act(async () => button(ui.renderer, 'Привязать').props.onClick())
     assert.deepEqual(calls, [['new', 'account']])
     assert.equal(ui.changes[0].clientId, 'new')
 })
 
-test('client search errors are retryable and a failed link preserves the selected client', async t => {
+test('candidate search errors are retryable and a failed link changes nothing', async t => {
     let fail = true
+    const rows = renderer => renderer.root.findAllByProps({ className: 'conversation-client-candidate' })
     const ui = await panel(t, {
-        searchClients: async () => { if (fail) throw Error('Search offline'); return [client()] },
+        getClientLinkCandidates: async () => { if (fail) throw Error('Search offline'); return [candidate('client')] },
         assignClientAccount: async () => { throw Error('Link denied') },
     })
     await click(ui.renderer, 'Привязать к клиенту')
     await ui.flush()
     assert.match(content(ui.renderer), /Search offline/)
-    assert.equal(button(ui.renderer, 'Привязать').props.disabled, true)
+    assert.equal(rows(ui.renderer).length, 0)
     fail = false
     await click(ui.renderer, 'Повторить поиск')
     await ui.flush()
-    await act(async () => ui.renderer.root.findByType('select').props.onChange({ target: { value: 'client' } }))
-    await submit(ui.renderer)
-    assert.equal(ui.renderer.root.findByType('select').props.value, 'client')
+    assert.equal(rows(ui.renderer).length, 1)
+    await act(async () => button(ui.renderer, 'Привязать').props.onClick())
     assert.match(content(ui.renderer), /Link denied/)
     assert.equal(ui.changes.length, 0)
 })

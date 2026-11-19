@@ -69,6 +69,35 @@ export async function searchUnassignedClientAccounts(
     return response.json()
 }
 
+/**
+ * Кандидаты Client для ручной привязки этой учётной записи (Stage 13.9, пункт 3 плана).
+ * phoneMatch — подсказка по последним десяти цифрам телефона, а не основание привязки:
+ * решение всегда остаётся за сотрудником.
+ */
+export interface ClientLinkCandidate {
+    id: string
+    firstName: string
+    lastName: string
+    phoneList: string[]
+    phoneMatch: boolean
+}
+
+export async function getClientLinkCandidates(
+    accountId: string,
+    query: string,
+    signal?: AbortSignal,
+): Promise<ClientLinkCandidate[]> {
+    const params = new URLSearchParams()
+    params.set('query', query)
+
+    const response = await apiFetch(
+        `/api/clientaccounts/${accountId}/client-candidates?${params.toString()}`,
+        { signal },
+    )
+
+    return response.json()
+}
+
 export async function updateClientAccount(
     id: string,
     request: UpdateClientAccountRequest,
