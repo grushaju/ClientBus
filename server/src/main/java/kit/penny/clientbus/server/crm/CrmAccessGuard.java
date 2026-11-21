@@ -33,6 +33,9 @@ public class CrmAccessGuard {
     public void workspace(UUID actorId, UUID workspaceId) {
         access.require(AccessSubject.recipient(actorId), AccessPolicy.Resource.WORKSPACE, workspaceId);
     }
+    public void manageWorkspace(UUID actorId, UUID workspaceId) {
+        access.require(AccessSubject.recipient(actorId), AccessPolicy.Resource.WORKSPACE_MANAGEMENT, workspaceId);
+    }
     public void employee(UUID employeeId) {
         access.require(AccessSubject.recipient(actor()), AccessPolicy.Resource.EMPLOYEE, employeeId);
     }

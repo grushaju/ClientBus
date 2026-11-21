@@ -68,6 +68,7 @@ public class DikidiChannelConnector implements IChannelConnector {
     private final int initialBudgetPages;
     /** Кто подключён (по ответу C06) и какая его иконка уже отражена в канале. */
     private final Map<java.util.UUID, OwnerAvatar> owners = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<java.util.UUID, String> shellAvatars = new java.util.concurrent.ConcurrentHashMap<>();
 
     public DikidiChannelConnector(DikidiClient client, DikidiTechnicalCredentials credentials,
             HostChannelAccounts accounts, HostConversationCheckpoints checkpoints,
@@ -88,7 +89,8 @@ public class DikidiChannelConnector implements IChannelConnector {
 
     /** Успешный CRM-health этой проверкой не считается: канал входит в CONNECTED только после успеха. */
     public DikidiChatAccess.Result verifyChatAccess(java.util.UUID channelAccountId) {
-        return chatAccess.verify(channelAccountId);
+        var account = accounts.require(channelAccountId);
+        return chatAccess.verify(channelAccountId, (session, icon) -> mirrorShellAvatar(account, session, account.externalId(), icon));
     }
 
     @Override public boolean supports(ChannelType channelType) { return channelType == ChannelType.DIKIDI; }
@@ -135,7 +137,7 @@ public class DikidiChannelConnector implements IChannelConnector {
                 // а не вечное удержание UNKNOWN (ресью N1 15.11: хвост бэклога
                 // «pre-dispatch hang» закрыт на отправке — первом боевом write-пути).
                 try {
-                    reads.shell(session, company);
+                    openShell(account, session, company);
                     dialog = command.dialogExternalId() != null && !command.dialogExternalId().isBlank()
                             ? command.dialogExternalId()
                             : resolveDialog(session, company, command.recipientExternalId());
@@ -222,7 +224,7 @@ public class DikidiChannelConnector implements IChannelConnector {
         }
         try (DikidiCredential credential = credentials.obtain(account.id())) {
             return client.execute(credential, null, session -> {
-                reads.shell(session, company);
+                openShell(account, session, company);
                 String dialog = command.dialogExternalId() != null && !command.dialogExternalId().isBlank()
                         ? command.dialogExternalId()
                         : resolveDialog(session, company, command.recipientExternalId());
@@ -278,7 +280,7 @@ public class DikidiChannelConnector implements IChannelConnector {
                 final long pageCursor = cursor;
                 final boolean firstPage = page == 1;
                 var listing = client.execute(credential, null, session -> {
-                    reads.shell(session, company);
+                    openShell(account, session, company);
                     var result = reads.dialogs(session, company, pageCursor);
                     return firstPage ? new Listing(result, reads.unread(session, company))
                             : new Listing(result, Map.of());
@@ -323,10 +325,26 @@ public class DikidiChannelConnector implements IChannelConnector {
 
     private record Listing(DikidiChatReads.DialogsPage dialogs, Map<String, Integer> unread) {}
 
+    private void openShell(HostChannelAccountSnapshot account, DikidiClient.Session session, String company) {
+        mirrorShellAvatar(account, session, company, reads.shell(session, company));
+    }
+
+    private void mirrorShellAvatar(HostChannelAccountSnapshot account, DikidiClient.Session session, String company, String icon) {
+        if (icon == null || icon.equals(shellAvatars.get(account.id()))) return;
+        try {
+            String key = storeIcon(session, company, icon);
+            if (key == null) return;
+            accounts.updateAvatar(account.id(), key);
+            shellAvatars.put(account.id(), icon);
+        } catch (RuntimeException failure) {
+            log.debug("DIKIDI owner menu avatar not stored: {}", failure.toString());
+        }
+    }
+
     /** Один lock-hop: участники, пробник, классификация, LIVE-пасс и карточка диалога. */
     private ConnectorConversation conversation(DikidiClient.Session session, HostChannelAccountSnapshot account,
             String company, DikidiChatReads.Dialog dialog, Map<String, Integer> unread) {
-        reads.shell(session, company);
+        openShell(account, session, company);
         var participants = reads.participantsDetailed(session, dialog.id(), company);
         var sample = reads.messages(session, dialog.id(), null, 5, company).messages();
         refreshOwnerAvatar(account, session, company, sample);
@@ -352,9 +370,9 @@ public class DikidiChannelConnector implements IChannelConnector {
 
     /**
      * Аватар канала = аватар владельца DIKIDI, от которого выполняется подключение
-     * (решение пользователя 19.11.2026). Доказуемый источник — ответ C06: платформа сама
+     * (решение пользователя 19.11.2026). Запасной источник — ответ C06: платформа сама
      * называет автора сообщения, отправленного нашей сессией, то есть владельца. Никакой
-     * другой признак для этого не годится: out=1 в диалоге бывает у нескольких сотрудников
+     * out=1 в диалоге бывает у нескольких сотрудников
      * салона, а иконки участников C04 — это люди, не подключение.
      * Скачивание — профиль MEDIA, в канал кладётся storageKey (удалённый URL в avatarUrl
      * не живёт: байты отдаёт хост).
@@ -372,12 +390,12 @@ public class DikidiChannelConnector implements IChannelConnector {
     }
 
     /**
-     * Смена фото владельца замечается из страниц, которые всё равно читаются: отдельного
-     * запроса ради аватара нет. Пока владельца не видели (сообщений наружу не было), ничего
-     * не угадывается — канал остаётся с буквенной заглушкой.
+     * Запасное обновление по ранее подтверждённому автору C06, если меню профиля
+     * не дало фото. Текущее фото из оболочки приоритетнее исторических сообщений.
      */
     private void refreshOwnerAvatar(HostChannelAccountSnapshot account, DikidiClient.Session session, String company,
             List<DikidiChatReads.Message> sample) {
+        if (shellAvatars.containsKey(account.id())) return; // current profile takes precedence over historical messages
         var known = owners.get(account.id());
         if (known == null) return;
         for (var message : sample)
@@ -479,7 +497,7 @@ public class DikidiChannelConnector implements IChannelConnector {
 
     private SyncConversationHistoryResult history(DikidiClient.Session session, HostChannelAccountSnapshot account,
             String company, SyncConversationHistoryCommand command) {
-        reads.shell(session, company);
+        openShell(account, session, company);
         String dialogId = command.dialogExternalId() != null ? command.dialogExternalId()
                 : resolveDialog(session, company, command.conversationExternalId());
         var existing = checkpoints.load(account.id(), dialogId);

@@ -77,6 +77,8 @@ public class CrmStore {
     CrmProjectDto projectDto(CrmProjectEntity row) {
         List<CrmCapabilityDto> capabilities = new ArrayList<>();
         var commands=registry.require(row.getProvider()).commandCapabilities();
+        capabilities.add(new CrmCapabilityDto("CREATE_CLIENT", !registry.require(row.getProvider()).canCreateClient() ? "UNVERIFIED"
+                : row.isArchived() || !row.isEnabled() || row.getConnection().getStatus()!=CrmConnectionStatus.CONNECTED ? "CONFIGURATION_REQUIRED" : "AVAILABLE", null));
         for (String code : List.of("LIST_PROJECTS", "READ_MASTERS", "READ_SERVICES", "READ_CLIENTS", "READ_APPOINTMENTS",
                 "READ_CLIENT_HISTORY", "READ_WORK_INTERVALS", "READ_AVAILABILITY", "READ_FINANCIAL_CONTEXT",
                 "CREATE_APPOINTMENT", "MOVE_APPOINTMENT", "CANCEL_APPOINTMENT")) {
@@ -95,7 +97,13 @@ public class CrmStore {
         }
         return new CrmProjectDto(row.getId(), row.getConnection().getId(), row.getWorkspace().getId(), row.getProvider(),
                 row.getExternalId(), row.getDisplayName(), row.getCurrency(), row.getZoneId(), row.getZoneSource(),
-                row.getZoneRevision(), row.getContextVersion(), row.isEnabled(), row.getConnection().getStatus(), capabilities, row.getVersion(), row.isArchived());
+                row.getZoneRevision(), row.getContextVersion(), row.isEnabled(), row.getConnection().getStatus(), capabilities, row.getVersion(), row.isArchived(),
+                row.getProvider()==CrmType.DIKIDI ? sendingAccountLabel(row.getConnection()) : null);
+    }
+    private static String sendingAccountLabel(CrmConnectionEntity connection) {
+        var safe = dto(connection);
+        return connection.getDisplayName()==null || connection.getDisplayName().isBlank() ? safe.loginHint()
+                : connection.getDisplayName()+" · "+safe.loginHint();
     }
     static CrmMasterDto dto(CrmEmployeeEntity row) {
         return new CrmMasterDto(row.getId(), row.getProject().getId(), row.getExternalId(), row.getDisplayName(),
@@ -125,6 +133,7 @@ public class CrmStore {
         return new CrmException(status, code, switch (error.code()) {
             case AUTH_REQUIRED -> "Не удалось авторизоваться в DIKIDI. Проверьте вход с номером и паролем, указанными в подключении.";
             case ACCESS_DENIED -> "У подключения нет доступа к выбранным данным DIKIDI.";
+            case CLIENT_PHONE_INVALID -> "DIKIDI отклонила номер телефона. Укажите международный формат, например +7 вместо российской 8.";
             case RATE_LIMITED -> "Лимит обращений к CRM. Повторите позже.";
             case COOLDOWN -> "DIKIDI временно приостановил обращения. Повторите после указанного времени.";
             case CONNECTION_BUSY -> "Подключение CRM занято другим запросом. Повторите позже.";

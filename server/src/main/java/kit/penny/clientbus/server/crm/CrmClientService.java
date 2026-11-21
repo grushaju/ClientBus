@@ -117,6 +117,9 @@ public class CrmClientService {
             lock(row,expectedVersion);
             UUID previous=row.getClient()==null ? null : row.getClient().getId();
             if (!Objects.equals(previous,clientId)) {
+                if(clientId!=null && ((Number)store.em.createNativeQuery("select count(*) from crm.clientprovision where projectid=:project and clientid=:client and status in ('REQUESTED','IN_FLIGHT','UNKNOWN','CREATED')")
+                        .setParameter("project",row.getProject().getId()).setParameter("client",clientId).getSingleResult()).longValue()>0)
+                    throw new CrmException(409,"CRM_CLIENT_CREATION_PENDING","Создание клиента CRM ещё не завершено. Проверьте результат через форму создания.");
                 if (previous!=null) store.guard.workspace(row.getProject().getWorkspace().getId(),true);
                 map(row,target,actor,clientId==null ? "UNLINK" : previous==null ? "LINK" : "RELINK");
             }

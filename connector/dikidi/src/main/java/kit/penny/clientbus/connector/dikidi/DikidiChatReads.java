@@ -61,10 +61,11 @@ public final class DikidiChatReads {
      * все запросы chat.dikidi.ru отвечают 400 при валидной сессии (доказано 13.1).
      * Дёшево: один GET на логическую операцию, кэш здесь противоречил бы Evidence-семантике.
      */
-    public void shell(DikidiClient.Session session, String company) {
+    public String shell(DikidiClient.Session session, String company) {
         var response = session.exchange("GET", "https://dikidi.ru/ru/owner/chat/?company=" + enc(company),
                 List.of(), false, company, RequestProfile.OWNER_CHAT, null);
         if (response.status() != 200) throw mapStatus(response.status());
+        return DikidiOwnerAvatar.parse(response.body());
     }
 
     /**

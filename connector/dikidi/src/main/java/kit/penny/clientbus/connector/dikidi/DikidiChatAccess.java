@@ -32,19 +32,23 @@ public final class DikidiChatAccess {
     }
     /** Дёшево и безопасно: только GET, никаких изменяющих обращений. */
     public Result verify(UUID channelAccountId) {
+        return verify(channelAccountId, (session, icon) -> {});
+    }
+    public Result verify(UUID channelAccountId, java.util.function.BiConsumer<DikidiClient.Session, String> avatar) {
         String company = accounts.require(channelAccountId).externalId();
         if (company == null || company.isBlank()) return Result.denied("CHAT_NO_COMPANY");
         try (DikidiCredential credential = credentials.obtain(channelAccountId)) {
             return client.execute(credential, java.time.Instant.now().plusSeconds(60),
-                    session -> probe(session, company));
+                    session -> probe(session, company, avatar));
         } catch (DikidiFailure failure) {
             return Result.denied("CHAT_" + failure.code().name());
         }
     }
-    private Result probe(DikidiClient.Session session, String company) {
+    private Result probe(DikidiClient.Session session, String company, java.util.function.BiConsumer<DikidiClient.Session, String> avatar) {
         try {
-            reads.shell(session, company);
+            String icon = reads.shell(session, company);
             reads.dialogs(session, company);
+            avatar.accept(session, icon);
             return Result.ok();
         } catch (DikidiFailure failure) {
             // AUTH_REQUIRED выпускаем наружу: только так execute увидит сигнал и долечит

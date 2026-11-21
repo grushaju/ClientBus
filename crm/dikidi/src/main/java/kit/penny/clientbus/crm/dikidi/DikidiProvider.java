@@ -61,6 +61,70 @@ public final class DikidiProvider implements CrmProvider, AutoCloseable {
     }
     @Override public String code() { return "DIKIDI"; }
 
+    @Override public boolean canCreateClient() { return true; }
+    @Override public String transferClientAvatar(CrmAccess access,String project,String clientId,byte[] png,Instant until,Runnable beforeSave) {
+        projectId(project);projectId(clientId);
+        if(png==null || png.length==0 || png.length>5*1024*1024 || beforeSave==null)throw new CrmFailure(INVALID_RESPONSE,null,true);
+        var state=new Effect();effect.set(state);
+        try{return executeOnce(access,project,until,(session,deadline)->{
+            catalog(session,project,deadline);
+            String address="https://dikidi.ru/ru/owner/ajax/clients/settings/"+clientId+"/?company="+project;
+            var first=DikidiClientPhoto.profile(tree(call(session,"GET",address,null,true,project)).path("html").asString(""),project,clientId);
+            var upload=session.upload("https://f2.dikidi.ru/upload/?v=2","file","avatar.png","image/png",png,project,RequestProfile.UPLOAD);
+            if(upload.status()!=200)throw new CrmFailure(INVALID_RESPONSE);
+            var data=tree(upload.body()).path("data");String image=data.path(0).asString("");String url=CrmAvatarUrl.canonical(data.path(2).asString(""));
+            if(!data.isArray() || !image.matches("[1-9][0-9]{0,18}") || !"image".equals(data.path(1).asString("")) || url==null)throw new CrmFailure(INVALID_RESPONSE);
+            var fresh=DikidiClientPhoto.profile(tree(call(session,"GET",address,null,true,project)).path("html").asString(""),project,clientId);
+            if(!first.equals(fresh))throw new CrmFailure(OBSERVATION_CONFLICT);
+            var fields=new ArrayList<>(fresh);fields.removeIf(e->e.getKey().equals("image_id"));fields.add(Map.entry("image_id",image));
+            beforeSave.run();state.changing=true;
+            try {tree(call(session,"POST","https://dikidi.ru/ru/owner/ajax/clients/save/"+clientId+"/?company="+project,fields,true,project));}
+            finally {state.changing=false;}
+            // Verify the resulting image from the independent directory read, never infer success from HTTP 200.
+            var result=tree(call(session,"POST","https://dikidi.ru/ru/owner/ajax/clients/filter/?company="+project,
+                    List.of(Map.entry("company",project),Map.entry("limit","50"),Map.entry("offset","0"),Map.entry("filter","username"),Map.entry("order","asc"),Map.entry("more","1"),Map.entry("query",DikidiClientPhoto.value(fresh,"number"))),true,project));
+            var found=DikidiClientsHtml.parse(DikidiClientCreation.rowsHtml(result));
+            if(found.stream().noneMatch(c->"PROJECT".equals(c.identityKind()) && clientId.equals(c.externalId()) && Objects.equals(CrmAvatarUrl.key(url),CrmAvatarUrl.key(c.avatarUrl()))))throw new CrmFailure(INVALID_RESPONSE);
+            return url;
+        });}catch(CrmFailure failure){throw new CrmFailure(failure.code(),failure.retryAt(),!state.started);}
+        finally{effect.remove();}
+    }
+    @Override public CrmClientProvisioningPort.Search findClients(CrmAccess access,String project,String query,Instant until) {
+        projectId(project);
+        if(query==null || query.isBlank() || query.length()>160)throw new CrmFailure(INVALID_RESPONSE);
+        return execute(access,project,(session,deadline)->{
+            catalog(session,project,deadline);
+            var response=tree(call(session,"POST","https://dikidi.ru/ru/owner/ajax/clients/filter/?company="+project,
+                    List.of(Map.entry("company",project),Map.entry("limit","50"),Map.entry("offset","0"),
+                            Map.entry("filter","username"),Map.entry("order","asc"),Map.entry("more","1"),Map.entry("query",query)),true,project));
+            var html=DikidiClientCreation.rowsHtml(response);var rows=DikidiClientsHtml.parse(html);
+            if(rows.size()>50 || rows.isEmpty() && !DikidiClientsHtml.emptyPage(html))throw new CrmFailure(INVALID_RESPONSE);
+            return new CrmClientProvisioningPort.Search(rows.stream().map(DikidiProvider::directoryClient).toList(),rows.size()==50);
+        },until);
+    }
+    @Override public void createClient(CrmAccess access,String project,CrmClientDraft draft,Instant until,java.util.function.Consumer<CrmClient> confirmed) {
+        projectId(project);
+        if(draft==null || draft.firstName()==null || draft.firstName().isBlank() || draft.lastName()==null
+                || CrmPhone.normalize(draft.phone())==null || confirmed==null)throw new CrmFailure(INVALID_RESPONSE,null,true);
+        var state=new Effect();effect.set(state);
+        try {
+            executeOnce(access,project,until,(session,deadline)->{
+                catalog(session,project,deadline);
+                var form=tree(call(session,"GET","https://dikidi.ru/ru/owner/ajax/clients/add/?company="+project,null,true,project));
+                if(!form.path("html").isString())throw new CrmFailure(INVALID_RESPONSE);
+                var fields=DikidiClientCreation.form(form.path("html").asString(),project,draft);
+                state.changing=true;
+                try {
+                    var response=clientSaveTree(call(session,"POST","https://dikidi.ru/ru/owner/ajax/clients/save/?company="+project,fields,true,project));
+                    confirmed.accept(DikidiClientCreation.created(response,draft));
+                } finally { state.changing=false; }
+                return null;
+            });
+        } catch(CrmFailure failure) {
+            throw new CrmFailure(failure.code(),failure.retryAt(),!state.started);
+        } finally { effect.remove(); }
+    }
+
     @Override public Set<CrmCommand.Type> commandCapabilities(){return Set.of(CrmCommand.Type.CREATE,CrmCommand.Type.MOVE,CrmCommand.Type.CANCEL);}
     @Override public void prepareCommand(CrmAccess access,String project,CrmCommand command,Instant until) {
         projectId(project);DikidiCommands.validate(command);if(until==null)throw new CrmFailure(INVALID_RESPONSE);
@@ -388,11 +452,7 @@ public final class DikidiProvider implements CrmProvider, AutoCloseable {
             var clients = DikidiClientsHtml.parse(html);
             if (clients.size()>5 || clients.isEmpty() && !DikidiClientsHtml.emptyPage(html)) throw new CrmFailure(INVALID_RESPONSE);
             // Directory reads must not refresh statistics in alphabetical order.
-            var directory=clients.stream().map(client -> {
-                var fields=new HashSet<>(client.presentFields());
-                fields.removeAll(Set.of("visitCount","totalSpent"));
-                return new CrmClient(client.externalId(),client.identityKind(),client.displayName(),client.contacts(),client.profile(),fields,client.avatarUrl());
-            }).toList();
+            var directory=clients.stream().map(DikidiProvider::directoryClient).toList();
             // Offset paging has no snapshot token. Even a terminal page cannot prove a complete snapshot.
             return new CrmClientPage(directory, clients.isEmpty() ? null : Integer.toString(offset+clients.size()), Instant.now(),
                     CrmReadResult.Completeness.UNKNOWN, externalProjectId+":CLIENTS");
@@ -418,6 +478,11 @@ public final class DikidiProvider implements CrmProvider, AutoCloseable {
             }
             return new CrmClientPage(enriched,null,Instant.now(),CrmReadResult.Completeness.UNKNOWN,externalProjectId+":CLIENTS");
         });
+    }
+    private static CrmClient directoryClient(CrmClient client) {
+        var fields=new HashSet<>(client.presentFields());
+        fields.removeAll(Set.of("visitCount","totalSpent","averageCheck","statisticsCurrency"));
+        return new CrmClient(client.externalId(),client.identityKind(),client.displayName(),client.contacts(),client.profile(),fields,client.avatarUrl());
     }
     @Override public CrmCatalogSnapshot readCatalog(CrmAccess access, String externalProjectId) {
         projectId(externalProjectId);
@@ -658,6 +723,16 @@ public final class DikidiProvider implements CrmProvider, AutoCloseable {
         };
         // 13.4: сбой транспорта остаётся техническим до границы execute — там единый маппинг.
         return session.call(method, address, form, ajax, project, observer);
+    }
+    private JsonNode clientSaveTree(String body) {
+        JsonNode response;
+        try { response=json.readTree(body); } catch(RuntimeException malformed) { return tree(body); }
+        // Exact rejection observed from owner save; other errors remain uncertain.
+        if("1".equals(response.path("error").asString(""))
+                && "Видимо вы неверно ввели номер".equals(response.path("message").asString(""))
+                && !response.has("client_info") && !response.has("html") && !response.has("callback"))
+            throw new CrmFailure(CLIENT_PHONE_INVALID);
+        return tree(body);
     }
     private JsonNode tree(String body) {
         try {

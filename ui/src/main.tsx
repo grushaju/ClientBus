@@ -19,6 +19,7 @@ import './components/layout/Sidebar.css'
 import './components/employees/Employees.css'
 import './components/channels/Channels.css'
 import './components/clients/Clients.css'
+import './components/crm/crm.css'
 import './components/workspaces/Workspaces.css'
 
 import './components/conversations/Inbox.css'

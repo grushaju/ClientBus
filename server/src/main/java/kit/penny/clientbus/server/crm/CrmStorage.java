@@ -34,6 +34,16 @@ public class CrmStorage implements ApplicationRunner {
         initializeOperations();
         new TransactionTemplate(new DataSourceTransactionManager(java.util.Objects.requireNonNull(jdbc.getDataSource())))
                 .executeWithoutResult(status->{
+                    jdbc.execute("select pg_advisory_xact_lock(12664)");
+                    jdbc.execute(CrmClientProvisioning.DDL);
+                    jdbc.execute("create index if not exists ixclientprovisionpending on crm.clientprovision(projectid,clientid) where status in ('REQUESTED','IN_FLIGHT','UNKNOWN','CREATED')");
+                    jdbc.execute("create index if not exists ixclientprovisionphone on crm.clientprovision(projectid,normalizedphone) where status in ('REQUESTED','IN_FLIGHT','UNKNOWN','CREATED')");
+                    jdbc.execute("create index if not exists ixclientprovisionlatest on crm.clientprovision(projectid,clientid,createdat desc,id desc)");
+                    jdbc.execute("create index if not exists ixclientprovisionactor on crm.clientprovision(actorid)");
+                    jdbc.execute("create index if not exists ixclientprovisiondue on crm.clientprovision(createdat,id) where status='REQUESTED' or status='CREATED' and errorcode is null");
+                });
+        new TransactionTemplate(new DataSourceTransactionManager(java.util.Objects.requireNonNull(jdbc.getDataSource())))
+                .executeWithoutResult(status->{
                     jdbc.execute("select pg_advisory_xact_lock(12663)");
                     jdbc.execute(CrmSyncQueue.DDL);
                     jdbc.execute("alter table crm.syncjob add column if not exists crmclientid uuid, add column if not exists force boolean not null default false, add column if not exists actorid uuid, add column if not exists plannedat timestamp with time zone not null default clock_timestamp()");

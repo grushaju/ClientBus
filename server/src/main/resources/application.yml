@@ -313,7 +313,7 @@ spring:
 #      api-hash: b956f4f74f8c2f6510e38d9f767b5640
       # 16.11: абсолютный каталог TDLib-сессий (был ./data/telegram — относительный путь
       # зависел от каталога запуска процесса). Переопределение — TELEGRAM_DATA_DIRECTORY.
-      database-directory: ${TELEGRAM_DATA_DIRECTORY:D:/Projects/Java/ClientBus/connector/telegram/data}
+      database-directory: ${TELEGRAM_DATA_DIRECTORY:D:/Project/Java/ClientBus/connector/telegram/data}
       database-encryption-key: TELEGRAM_DATABASE_SECRET
 
       use-test-dc: false

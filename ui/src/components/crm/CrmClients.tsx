@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import * as api from '../../api/crmApi'
 import { CrmClientAvatar } from './CrmClientAvatar'
+import { CrmClientAvatarTransfer } from './CrmClientAvatarTransfer'
 import { useCrmPages } from './useCrmPages'
 import { CrmDialog, CrmPageStatus, CrmStatus, useCrmAction, useCrmRead, useCrmSearch } from './CrmReadShared'
 
@@ -24,17 +25,26 @@ export function CrmClientCard({ project, id, canManage, close, changed }: { proj
     const action = useCrmAction('crm-client:' + id, project.workspaceId)
     const [mode, setMode] = useState<'link' | 'create' | null>(null), [selected, setSelected] = useState<api.CrmClientCandidate | null | undefined>()
     const [baseVersion, setBaseVersion] = useState(0)
+    const [notice, setNotice] = useState('')
     const [firstName, setFirstName] = useState(''), [lastName, setLastName] = useState(''), [phones, setPhones] = useState('')
     const row = data.data, mutable = row && !project.archived && (!row.clientId || canManage)
     const saved = () => { setMode(null); setSelected(undefined); data.reload(); changed() }
     return <CrmDialog title="Клиент CRM" close={close}>
         {(data.error || action.error) && <p role="alert" className="crm-error">{action.error || data.error} <button type="button" onClick={data.reload}>Перечитать карточку</button></p>}
-        {row ? <><div className="crm-client-card-head"><CrmClientAvatar id={row.id} avatarUrl={row.avatarUrl} displayName={row.displayName} size={56} /><h3>{row.displayName}</h3></div><p>{project.displayName} · ID {row.externalId}</p>
-            {Object.entries(row.contacts).map(([key, value]) => <p key={key}>{key}: {value}</p>)}
-            <p>Визиты: {row.visitCount ?? 'Нет данных'} · Средний чек: {clientMoney(row, row.averageCheck)} · Потрачено: {clientMoney(row, row.totalSpent)}</p>
-            {row.clientId ? <p>Связан с <Link to={'/clients/' + encodeURIComponent(row.clientId)}>клиентом ClientBus</Link></p> : <p>Без связи с ClientBus</p>}
-            {row.mappingUpdatedAt && <p>Связь изменена: {new Date(row.mappingUpdatedAt).toLocaleString('ru-RU')} · {row.mappingReason} · автор {row.mappingUpdatedBy}</p>}
-            <Link to={'/crm?' + new URLSearchParams({ tab: 'appointments', workspace: project.workspaceId, project: project.id, crmClientId: row.id })}>Визиты клиента</Link>
+        {row ? <><div className="crm-client-card-head"><CrmClientAvatar id={row.id} avatarUrl={row.avatarUrl} displayName={row.displayName} size={56} /><div><h3>{row.displayName}</h3><p className="crm-client-project">{project.displayName}</p></div></div>
+            <section className="crm-client-section" aria-label="Контакты"><h3>Контакты</h3>
+                <dl className="crm-client-facts">{Object.entries(row.contacts).filter(([, value]) => value).map(([key, value]) => <div key={key}><dt>{contactLabel(key)}</dt><dd>{value}</dd></div>)}</dl>
+                {!Object.values(row.contacts).some(Boolean) && <p>Контакты не указаны</p>}
+            </section>
+            <section className="crm-client-section" aria-label="Статистика клиента"><h3>Статистика</h3>
+                <dl className="crm-client-stats"><div><dt>Визиты</dt><dd>{row.visitCount ?? 'Нет данных'}</dd></div><div><dt>Средний чек</dt><dd>{clientMoney(row, row.averageCheck)}</dd></div><div><dt>Потрачено</dt><dd>{clientMoney(row, row.totalSpent)}</dd></div></dl>
+                {row.statisticsUpdatedAt && <p className="crm-client-note">Обновлено: {new Date(row.statisticsUpdatedAt).toLocaleString('ru-RU')}</p>}
+                <Link to={'/crm?' + new URLSearchParams({ tab: 'appointments', workspace: project.workspaceId, project: project.id, crmClientId: row.id })}>Открыть визиты клиента →</Link>
+            </section>
+            <section className="crm-client-section" aria-label="Связь с ClientBus"><h3>Клиент в ClientBus</h3>
+            {row.clientId ? <p>Связь установлена · <Link to={'/clients/' + encodeURIComponent(row.clientId)}>Открыть карточку клиента</Link></p> : <p>Карточка ClientBus не связана</p>}
+            {row.mappingUpdatedAt && <p className="crm-client-note">{mappingLabel(row.mappingReason)} · {new Date(row.mappingUpdatedAt).toLocaleString('ru-RU')}</p>}
+            {notice && <p role="status">{notice}</p>}
             {mutable && <div className="crm-actions"><button type="button" className="ui-button ui-button-secondary" disabled={action.busy || data.loading} onClick={() => { setBaseVersion(row.version); setMode('link'); setSelected(undefined) }}>{row.clientId ? 'Изменить связь' : 'Выбрать клиента ClientBus'}</button>
                 {!row.clientId && <button type="button" className="ui-button ui-button-secondary" disabled={action.busy || data.loading} onClick={() => { setBaseVersion(row.version); setMode('create'); setSelected(undefined) }}>Создать клиента ClientBus</button>}
                 {row.clientId && <button type="button" className="ui-button ui-button-danger" disabled={action.busy || data.loading} onClick={() => { setBaseVersion(row.version); setMode('link'); setSelected(null) }}>Снять связь</button>}</div>}
@@ -50,9 +60,21 @@ export function CrmClientCard({ project, id, canManage, close, changed }: { proj
                 <button className="ui-button ui-button-primary" disabled={action.busy || data.loading || !firstName.trim()}>Создать и связать</button>
             </form>}
             {mode && <button type="button" className="ui-button ui-button-secondary" disabled={action.busy} onClick={() => { setMode(null); setSelected(undefined) }}>Отмена</button>}
+            {canManage && !project.archived && project.enabled && project.provider === 'DIKIDI' && row.clientId && !mode &&
+                <CrmClientAvatarTransfer key={row.clientId} row={row} action={action} disabled={data.loading}
+                    done={() => { setNotice('Аватар перенесён в DIKIDI'); data.reload() }} />}
+            </section>
+            <details className="crm-client-source"><summary>Данные CRM</summary><dl className="crm-client-facts"><div><dt>Номер клиента в CRM</dt><dd>{row.externalId}</dd></div></dl></details>
             {project.archived && <p>Архив: доступен только просмотр.</p>}
         </> : !data.error && <p>Загрузка клиента…</p>}
     </CrmDialog>
+}
+
+function contactLabel(key: string) {
+    return ({ phone: 'Телефон', mobile: 'Мобильный телефон', email: 'Электронная почта', telegram: 'Telegram', whatsapp: 'WhatsApp', vk: 'ВКонтакте' } as Record<string, string>)[key.toLowerCase()] ?? 'Другой контакт'
+}
+function mappingLabel(reason: string | null) {
+    return ({ LINK: 'Связь установлена', RELINK: 'Связь изменена', UNLINK: 'Связь снята', CREATE: 'Карточка создана и связана', CLIENT_DELETED: 'Связь снята при удалении клиента' } as Record<string, string>)[reason ?? ''] ?? 'Связь обновлена'
 }
 type ClientSort = 'NAME' | 'VISITS' | 'SPENT' | 'AVERAGE_CHECK'
 function clientMoney(row: api.CrmClient, value: string | null | undefined) {
@@ -74,8 +96,10 @@ function ClientRows({ project, query, unlinked, canManage, sort, direction, chan
         {action.error && <p role="alert" className="crm-error">{action.error}</p>}<CrmStatus state={data.page?.dataState} archived={project.archived} />
         {data.page && data.page.items.length > 0 && <div className="crm-clients-table-scroll"><table className="crm-masters crm-clients-table">
             <thead><tr>{sortHeader('NAME', 'Клиент')}{sortHeader('VISITS', 'Кол-во визитов')}{sortHeader('AVERAGE_CHECK', 'Средний чек')}{sortHeader('SPENT', 'Потраченная сумма')}<th scope="col">Связь и обновление</th></tr></thead>
-            <tbody>{data.page.items.map(row => <tr key={row.id}><td><button type="button" className="crm-text-button" onClick={() => setSelected(row.id)}>{row.displayName}</button>
-                <small>{Object.values(row.contacts).join(' · ') || 'Контакты не указаны'}</small></td>
+            <tbody>{data.page.items.map(row => <tr key={row.id}><td><div className="crm-client-table-identity">
+                <CrmClientAvatar id={row.id} avatarUrl={row.avatarUrl} displayName={row.displayName} size={36} />
+                <div><button type="button" className="crm-text-button" onClick={() => setSelected(row.id)}>{row.displayName}</button>
+                <small>{Object.values(row.contacts).join(' · ') || 'Контакты не указаны'}</small></div></div></td>
                 <td className="crm-client-number">{row.visitCount ?? 'Нет данных'}</td><td className="crm-client-number">{clientMoney(row, row.averageCheck)}</td><td className="crm-client-number">{clientMoney(row, row.totalSpent)}</td>
                 <td><span>{row.clientId ? 'Связан с ClientBus' : 'Без связи'}</span>{row.statisticsUpdatedAt
                     ? <small>Статистика: {new Date(row.statisticsUpdatedAt).toLocaleString('ru-RU')}</small>

@@ -7,10 +7,11 @@ import * as api from '../../api/crmApi'
 
 export function useCrmRead<T>(key: string, workspaceId: string | undefined, read: (signal: AbortSignal) => Promise<T>) {
     const [data, setData] = useState<T | null>(null), [error, setError] = useState<string | null>(null), [loading, setLoading] = useState(true)
+    const [loaded, setLoaded] = useState(false)
     const resource = useUiResource(key, true,
         event => affectsWorkspace(event, workspaceId) && (isAccessEvent(event) || ['crm.invalidated', 'clients.invalidated'].includes(event.type)),
-        read, value => { setData(value); setError(null) }, failure => setError(api.crmError(failure)), () => setData(null), setLoading)
-    return { ...resource, data, error, loading }
+        read, value => { setData(value); setError(null); setLoaded(true) }, failure => setError(api.crmError(failure)), () => { setData(null); setLoaded(false) }, setLoading)
+    return { ...resource, data, error, loading, loaded }
 }
 export function useCrmAction(key: string, workspaceId?: string) {
     const lifetime = useUiLifetime(key), pending = useRef<AbortController>()
@@ -30,7 +31,7 @@ export function useCrmAction(key: string, workspaceId?: string) {
             if (current() && !controller.signal.aborted) { setError(api.crmError(failure)); fail?.() }
         } finally { if (pending.current === controller) { pending.current = undefined; if (current()) setBusy(false) } }
     }
-    return { busy, error, run }
+    return { busy, error, run, clearError: () => setError(null) }
 }
 export function useCrmSearch(value: string) {
     const [query, setQuery] = useState(value)

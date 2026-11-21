@@ -22,6 +22,8 @@ public class ChannelAccountsHostAdapter
     private final ChannelAccountRepository channelAccountRepository;
     private final ClientAccountRepository clientAccountRepository;
     private final CurrentUserService currentUserService;
+    @org.springframework.beans.factory.annotation.Autowired
+    private kit.penny.clientbus.server.notification.outbox.UiDomainEvents uiEvents;
 
     public ChannelAccountsHostAdapter(
             ChannelAccountRepository channelAccountRepository,
@@ -101,6 +103,7 @@ public class ChannelAccountsHostAdapter
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional
     public void updateAvatar(
             UUID channelAccountId,
             String avatarStorageKey
@@ -117,6 +120,7 @@ public class ChannelAccountsHostAdapter
             return;
         account.setAvatarUrl(avatarStorageKey);
         channelAccountRepository.save(account);
+        if (uiEvents != null) uiEvents.workspace(account.getChannel().getWorkspace(), "channels.invalidated");
     }
 
     @Override

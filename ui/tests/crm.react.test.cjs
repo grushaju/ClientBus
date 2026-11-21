@@ -646,7 +646,9 @@ test('the staff table maps a cabinet access record to an operator account and th
     const staff = await setup(t, 'CrmStaff', {
         getCrmMasters: async () => page([catalogMaster, { ...master, id: 'staff-row', externalId: 's1', displayName: 'Reception Rita', isMaster: false }]),
         getCrmStaffAccesses: async () => [access],
-    }, { mapping: true })
+    }, { mapping: true, project: { ...project, sendingAccountLabel: 'Main account · ••••6001' } })
+    assert.match(text(staff.ui), /Main account · ••••6001/)
+    assert.match(text(staff.ui), /пока не переключают отправителя/)
     assert.match(text(staff.ui), /Irina/)
     assert.match(text(staff.ui), /Administrator/)
     assert.match(text(staff.ui), /Мастер Master One · ID m1/)

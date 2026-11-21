@@ -58,7 +58,7 @@ Escape/возврат фокуса и отсутствие горизонтал�
 
 Ответы API в этом наборе не подтверждают серверные ACL, транзакции, отправку
 в Telegram или взаимодействие реальных пользователей. Эти проверки входят
-в серверную регрессию и ручную приёмку [10.10](../INBOX_ACCEPTANCE.md).
+в серверную регрессию и ручную приёмку [10.10](../../MD/INBOX/INBOX_ACCEPTANCE.md).
 
 ## Окно браузера, отладка и отчёт
 
@@ -115,7 +115,7 @@ Workspace/Organization, запоздалые ответы A → B → A и см�
 проверки в обычном браузере: используемый headless Chromium сохраняет её
 `visibilityState=visible` даже при переключении страниц/сворачивании окна.
 Для этапа 10 эта ручная проверка подтверждена пользователем; этап закрыт
-19.10.2026. Итоговый протокол — [INBOX_ACCEPTANCE.md](../INBOX_ACCEPTANCE.md).
+19.10.2026. Итоговый протокол — [INBOX_ACCEPTANCE.md](../../MD/INBOX/INBOX_ACCEPTANCE.md).
 Для каждого сценария создаются отдельные организация, Workspace,
 пользователи и диалоги.
 
@@ -176,19 +176,19 @@ mvn process-resources
 Node/React-тесты из `ui/tests` и браузерные сценарии из `ui/e2e` запускаются
 отдельными командами. Перед переносом ресурсов UI уже собран основным набором.
 
-CRM 12.6: `npm run test:e2e -- crm.spec.ts --grep '12.6:' --reporter=line` проверяет закрытые непроверенные команды, ленивое чтение журнала, сохранение ключа до POST, восстановление после потери ответа/reload, явную сверку и 404 lookup без новой команды. Сценарии выполняются на desktop/mobile с API-фикстурами, без изменения DIKIDI. Ограничения и оставшиеся живые проверки — [CRM_OPERATIONS.md](../../CRM_OPERATIONS.md).
+CRM 12.6: `npm run test:e2e -- crm.spec.ts --grep '12.6:' --reporter=line` проверяет закрытые непроверенные команды, ленивое чтение журнала, сохранение ключа до POST, восстановление после потери ответа/reload, явную сверку и 404 lookup без новой команды. Сценарии выполняются на desktop/mobile с API-фикстурами, без изменения DIKIDI. Ограничения и оставшиеся живые проверки — [CRM_OPERATIONS.md](../../MD/CRM/CRM_OPERATIONS.md).
 
 После ревью добавлены закрытие формы во время ожидания Web Lock с последующей успешной отправкой и восстановление формы после удаления, выключения или потери цены/длительности выбранного предложения. Целевой набор 12.6 содержит 14 desktop/mobile прогонов.
 
 ## Notification vertical (11.5)
 
-Приёмка 11.12: `mvn -o -pl server -am '-Dtest=NotificationStageBrowserAcceptance' '-Dsurefire.failIfNoSpecifiedTests=false' test-compile surefire:test` поднимает два полных BE, запускает desktop/mobile и удаляет временный manifest с тестовыми credentials. Отдельный нагрузочный профиль: такой же вызов с `-Dtest=NotificationLoadBrowserAcceptance`. Команды выполняются последовательно; фиксированные Docker имена/порт несовместимы с параллельным Maven-прогоном. Основной mock config исключает `notification-acceptance`; собственные конфиги — `playwright.notification-acceptance.config.ts` и `playwright.notification-load.config.ts`. Профиль длится более пяти минут, JSON/логи находятся в `server/target`, результаты и ограничения — [NOTIFICATION_ACCEPTANCE.md](../../NOTIFICATION_ACCEPTANCE.md).
+Приёмка 11.12: `mvn -o -pl server -am '-Dtest=NotificationStageBrowserAcceptance' '-Dsurefire.failIfNoSpecifiedTests=false' test-compile surefire:test` поднимает два полных BE, запускает desktop/mobile и удаляет временный manifest с тестовыми credentials. Отдельный нагрузочный профиль: такой же вызов с `-Dtest=NotificationLoadBrowserAcceptance`. Команды выполняются последовательно; фиксированные Docker имена/порт несовместимы с параллельным Maven-прогоном. Основной mock config исключает `notification-acceptance`; собственные конфиги — `playwright.notification-acceptance.config.ts` и `playwright.notification-load.config.ts`. Профиль длится более пяти минут, JSON/логи находятся в `server/target`, результаты и ограничения — [NOTIFICATION_ACCEPTANCE.md](../../MD/NOTIFICATION/NOTIFICATION_ACCEPTANCE.md).
 
-Изолированный реальный Kafka/PostgreSQL/SSE/browser E2E: mvn -o -pl server -am '-Dtest=NotificationBrowserAcceptance' '-Dsurefire.failIfNoSpecifiedTests=false' test-compile surefire:test. Перед запуском проверить TypeScript и собрать Vite. Отдельный конфиг — playwright.notifications.config.ts; test-only manifest создаёт и удаляет Java harness. Сценарии/ограничения — [NOTIFICATION_OUTBOX.md](../../NOTIFICATION_OUTBOX.md). Основной mock-набор явно отвечает 404 на optional /api/events и исключает папку notifications из discovery.
+Изолированный реальный Kafka/PostgreSQL/SSE/browser E2E: mvn -o -pl server -am '-Dtest=NotificationBrowserAcceptance' '-Dsurefire.failIfNoSpecifiedTests=false' test-compile surefire:test. Перед запуском проверить TypeScript и собрать Vite. Отдельный конфиг — playwright.notifications.config.ts; test-only manifest создаёт и удаляет Java harness. Сценарии/ограничения — [NOTIFICATION_OUTBOX.md](../../MD/NOTIFICATION/NOTIFICATION_OUTBOX.md). Основной mock-набор явно отвечает 404 на optional /api/events и исключает папку notifications из discovery.
 
-В 11.6 набор расширен до 4 desktop/mobile проверок: смена аккаунта и storage logout между вкладками, очистка старой переписки, сохранение черновика и обновление мобильного списка при возвращении. Ожидание SSE привязано к ready выбранного Workspace. Протокол — [NOTIFICATION_UI.md](../../NOTIFICATION_UI.md).
+В 11.6 набор расширен до 4 desktop/mobile проверок: смена аккаунта и storage logout между вкладками, очистка старой переписки, сохранение черновика и обновление мобильного списка при возвращении. Ожидание SSE привязано к ready выбранного Workspace. Протокол — [NOTIFICATION_UI.md](../../MD/NOTIFICATION/NOTIFICATION_UI.md).
 
-В 11.7 набор расширен до 8 проверок: добавлены SSE 404 с REST fallback и остановленный publisher relay при живом heartbeat. Последний сценарий на каждой платформе ждёт настоящую контрольную сверку 120–144 секунд и проверяет отсутствие нового messages.invalidated, сохранение черновика и ограниченное число GET. Общий прогон занимает около 5–6 минут; один такой тест имеет timeout 180 секунд, Java harness — 10 минут. Профиль notification-browser включает test-only publisher gate; runtime artifact этих контролов не содержит. Политика, конфигурация и результаты — [NOTIFICATION_RECOVERY.md](../../NOTIFICATION_RECOVERY.md).
+В 11.7 набор расширен до 8 проверок: добавлены SSE 404 с REST fallback и остановленный publisher relay при живом heartbeat. Последний сценарий на каждой платформе ждёт настоящую контрольную сверку 120–144 секунд и проверяет отсутствие нового messages.invalidated, сохранение черновика и ограниченное число GET. Общий прогон занимает около 5–6 минут; один такой тест имеет timeout 180 секунд, Java harness — 10 минут. Профиль notification-browser включает test-only publisher gate; runtime artifact этих контролов не содержит. Политика, конфигурация и результаты — [NOTIFICATION_RECOVERY.md](../../MD/NOTIFICATION/NOTIFICATION_RECOVERY.md).
 
 Проверка 12.6 от 09.11.2026: 16 целевых desktop/mobile сценариев, включая успешные перенос и отмену на API-фикстурах. Реальный цикл Java-адаптера DIKIDI запускается отдельно и описан в CRM_OPERATIONS_ACCEPTANCE.md.
 

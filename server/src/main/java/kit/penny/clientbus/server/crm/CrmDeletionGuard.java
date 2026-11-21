@@ -24,6 +24,9 @@ public class CrmDeletionGuard {
     public void employee(EmployeeEntity employee) {
         store.storage.requireReady();
         store.em.lock(employee, LockModeType.PESSIMISTIC_WRITE);
+        if (((Number)store.em.createNativeQuery("select count(*) from crm.clientprovision where actorid=:id")
+                .setParameter("id",employee.getId()).getSingleResult()).longValue()>0)
+            throw new CrmException(409,"CRM_RESOURCE_IN_USE","Сотрудник указан автором создания клиентов CRM. Отключите его учётную запись.");
         if (store.em.createQuery("select count(o) from CrmOperationEntity o where o.initiatorEmployee.id=:id",Long.class)
                 .setParameter("id",employee.getId()).getSingleResult()>0)
             throw new CrmException(409,"CRM_RESOURCE_IN_USE","Сотрудник указан автором операций CRM. Отключите его учётную запись.");
@@ -57,6 +60,9 @@ public class CrmDeletionGuard {
         var actorId=store.guard.actor();
         store.lockMappingEmployees(actorId,null);
         store.em.refresh(client,LockModeType.PESSIMISTIC_WRITE);
+        if (((Number)store.em.createNativeQuery("select count(*) from crm.clientprovision where clientid=:id and status in ('REQUESTED','IN_FLIGHT','UNKNOWN','CREATED')")
+                .setParameter("id",client.getId()).getSingleResult()).longValue()>0)
+            throw new CrmException(409,"CRM_RESOURCE_IN_USE","Дождитесь завершения создания клиента CRM или проверьте результат операции.");
         var projectIds=store.em.createQuery("select distinct c.project.id from CrmClientEntity c where c.client.id=:id order by c.project.id",java.util.UUID.class)
                 .setParameter("id",client.getId()).getResultList();
         for (var projectId : projectIds) {

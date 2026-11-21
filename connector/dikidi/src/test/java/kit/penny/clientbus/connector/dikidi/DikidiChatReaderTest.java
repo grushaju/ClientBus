@@ -34,6 +34,35 @@ import static org.junit.jupiter.api.Assertions.*;
  * чекпойнту, направление по out (эхо — sender аккаунта), Employee не приписывается.
  */
 class DikidiChatReaderTest {
+    @Test void ownerAvatarIsMirroredAtConnectAndUpdatedByPollingWithoutSending() {
+        try (var harness = new Harness(5)) {
+            String first = "https://f2.dikidi.net/c01/v00001/aaaaaaaaaa.jpg";
+            String second = "https://f2.dikidi.net/c01/v00001/bbbbbbbbbb.jpg";
+            harness.site.shell = "<li class='dropdown user'><div class='icon img-circle'><img src='" + first + "'></div></li>";
+            harness.site.media.put(first, new byte[]{1, 2, 3});
+            assertTrue(harness.connector.verifyChatAccess(ACCOUNT).available());
+            assertEquals(1, harness.accounts.avatars.size());
+            harness.connector.handle(new SyncRecentChatsCommand(ACCOUNT));
+            assertEquals(1, harness.accounts.avatars.size(), "unchanged profile is not downloaded again");
+            harness.site.shell = harness.site.shell.replace(first, second);
+            harness.site.media.put(second, new byte[]{4, 5, 6});
+            harness.connector.handle(new SyncRecentChatsCommand(ACCOUNT));
+            assertEquals(2, harness.accounts.avatars.size());
+            assertTrue(String.valueOf(harness.accounts.avatars.get(1)[1]).endsWith("bbbbbbbbbb.jpg"));
+            assertTrue(harness.site.sendForms.isEmpty());
+        }
+    }
+    @Test void ownerAvatarDownloadFailureDoesNotPreventConnectingAndIsRetried() {
+        try (var harness = new Harness(5)) {
+            String icon = "https://f2.dikidi.net/c01/v00001/aaaaaaaaaa.jpg";
+            harness.site.shell = "<li class='dropdown user'><div class='icon img-circle'><img src='" + icon + "'></div></li>";
+            assertTrue(harness.connector.verifyChatAccess(ACCOUNT).available());
+            assertTrue(harness.accounts.avatars.isEmpty());
+            harness.site.media.put(icon, new byte[]{1, 2, 3});
+            harness.connector.handle(new SyncRecentChatsCommand(ACCOUNT));
+            assertEquals(1, harness.accounts.avatars.size());
+        }
+    }
     @Test void readTraversalReturnsContinuationAndResumesWithoutRescanningTheHead() {
         try (var harness = new Harness(1)) {
             String cursor = null;
@@ -142,6 +171,7 @@ class DikidiChatReaderTest {
                 "<html><input type=\"hidden\" name=\"telegram_csrf\" value=\"t1\"></html>"));
         final List<String> uris = java.util.Collections.synchronizedList(new ArrayList<>());
         String dialogs = "{\"data\":{\"list\":[],\"more\":false}}";
+        String shell = "<html>owner chat</html>";
         final Map<String, String> dialogsByTime = new HashMap<>();
         String unread = "{\"data\":{}}";
         final Map<String, String> detail = new HashMap<>();
@@ -194,7 +224,7 @@ class DikidiChatReaderTest {
                     "<html><input type=\"hidden\" name=\"telegram_csrf\" value=\"t1\"></html>"); // каждая новая connection входит заново
             if (address.equals("https://auth.dikidi.ru/ajax/check/auth/")) return new Response(200, "{\"html\":\"<input type=\\\"hidden\\\" name=\\\"csrf\\\" value=\\\"c1\\\">\"}");
             if (address.equals("https://auth.dikidi.ru/ajax/user/auth/")) return new Response(200, "{\"callback\":\"sw.auth.complete\"}");
-            if (address.startsWith("https://dikidi.ru/ru/owner/chat/")) return new Response(200, "<html>owner chat</html>");
+            if (address.startsWith("https://dikidi.ru/ru/owner/chat/")) return new Response(200, shell);
             if (address.startsWith("https://chat.dikidi.ru/api/dialogs/list/")) {
                 for (var part : URI.create(address).getQuery().split("&"))
                     if (part.startsWith("time="))

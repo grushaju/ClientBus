@@ -421,6 +421,11 @@ async function installCrm(page: Page, existing = true) {
         if (path === '/api/clients/client-1/conversations') return reply([])
         if (path === '/api/clients/client-1/crm/appointments') { counters.historyReads++; return reply(appointmentPage(visits, url.searchParams)) }
         if (!path.startsWith('/api/crm/')) return route.fallback()
+        if (path === '/api/crm/projects/crm-project/client-provisions/latest') return reply({ operation: null })
+        if (path === '/api/crm/projects/crm-project/client-search') {
+            const q = url.searchParams.get('q')?.toLocaleLowerCase() ?? ''
+            return reply({ items: crmClients.filter(row => (row.displayName + ' ' + row.normalizedPhone).toLocaleLowerCase().includes(q)), hasMore: false })
+        }
         if (path === '/api/crm/clientbus-clients/client-1/links') return reply(crmClients.filter(row => row.clientId === 'client-1').map(client => ({ client, project: projects().find(row => row.id === client.projectId) })))
         if (path === '/api/crm/projects/crm-project/appointment-clients') {
             const q = url.searchParams.get('q')?.toLocaleLowerCase() ?? '', exact = url.searchParams.get('externalClientId')
@@ -570,14 +575,14 @@ test('CRM 12.5: сотрудник ищет клиентов, подтвержд
     await expect(dialog.getByText(/Связать с Иван Клиент/)).toBeVisible()
     await page.screenshot({ path: test.info().outputPath('crm-125-client-link.png') })
     await dialog.getByRole('button', { name: 'Подтвердить связь', exact: true }).click()
-    await expect(dialog.getByRole('link', { name: 'клиентом ClientBus' })).toBeVisible()
+    await expect(dialog.getByRole('link', { name: 'Открыть карточку клиента', exact: true })).toBeVisible()
     await expect(dialog.getByRole('button', { name: 'Изменить связь' })).toHaveCount(0)
     expect(fixture.counters.clientLinks).toBe(1)
     await dialog.getByRole('button', { name: 'Закрыть', exact: true }).click()
     await page.getByRole('button', { name: 'Показать ещё', exact: true }).click()
     await expect(page.getByRole('button', { name: 'Другой клиент CRM', exact: true })).toBeVisible()
     await page.getByLabel('Найти клиента CRM', { exact: true }).fill('Другой')
-    await expect(page.locator('.crm-master')).toHaveCount(1)
+    await expect(page.locator('.crm-clients-table tbody tr')).toHaveCount(1)
     await expect(page.getByRole('button', { name: 'Другой клиент CRM', exact: true })).toBeVisible()
     expect(fixture.counters.unknown).toEqual([])
 })
@@ -591,7 +596,7 @@ test('CRM 12.5: супервизор снимает связь только по
     await dialog.getByRole('button', { name: 'Снять связь', exact: true }).click()
     expect(fixture.counters.clientLinks).toBe(0)
     await dialog.getByRole('button', { name: 'Подтвердить снятие', exact: true }).click()
-    await expect(dialog.getByText('Без связи с ClientBus', { exact: true })).toBeVisible()
+    await expect(dialog.getByText('Карточка ClientBus не связана', { exact: true })).toBeVisible()
     expect(fixture.counters.clientLinks).toBe(1); expect(fixture.counters.unknown).toEqual([])
 })
 
@@ -606,7 +611,7 @@ test('CRM 12.5: создание ClientBus со связью требует вв
     await dialog.getByLabel('Фамилия', { exact: true }).fill('Клиент')
     await dialog.getByLabel('Телефоны через запятую').fill('70000000001')
     await dialog.getByRole('button', { name: 'Создать и связать', exact: true }).click()
-    await expect(dialog.getByRole('link', { name: 'клиентом ClientBus' })).toBeVisible()
+    await expect(dialog.getByRole('link', { name: 'Открыть карточку клиента', exact: true })).toBeVisible()
     expect(fixture.counters.coreCreates).toBe(1); expect(fixture.counters.unknown).toEqual([])
 })
 
@@ -912,12 +917,128 @@ test('CRM 13.9: секция «CRM» панели диалога показыв�
     // Визиты из панели убраны: ни строк, ни обращений за историей.
     await expect(panel.locator('.crm-appointment-row')).toHaveCount(0)
     expect(fixture.counters.historyReads).toBe(0)
-    await crm.getByRole('button', { name: 'Привязать клиента CRM' }).click()
+    await expect(crm.getByRole('button', { name: 'Найти или создать в CRM' })).toHaveCount(0)
+    await crm.getByRole('button', { name: 'Отвязать', exact: true }).click()
+    await expect(crm.getByText(/Карточка и данные в DIKIDI сохранятся/)).toBeVisible()
+    expect(fixture.counters.clientLinks).toBe(0)
+    await crm.getByRole('button', { name: 'Подтвердить отвязку', exact: true }).click()
+    await crm.getByRole('button', { name: 'Найти или создать в CRM' }).click()
     await expect(crm.getByText('Иван CRM · 70000000001 · ID client-0')).toBeVisible()
-    await crm.getByRole('button', { name: 'Привязать' }).first().click()
-    await expect(crm.getByText('Иван CRM')).toBeVisible()
-    expect(fixture.counters.clientLinks).toBe(1)
+    await crm.getByRole('button', { name: 'Выбрать', exact: true }).first().click()
+    await crm.getByRole('button', { name: 'Связать существующего', exact: true }).click()
+    await expect(crm.getByText('Иван CRM', { exact: true })).toBeVisible()
+    expect(fixture.counters.clientLinks).toBe(2)
     expect(fixture.counters.unknown).toEqual([])
+})
+
+test('CRM: создание клиента из ClientBus копирует контакты и восстанавливает серверный статус', async ({ page, api }, info) => {
+    api.role = 'supervisor'
+    const fixture = await installCrm(page)
+    fixture.project!.capabilities.push({ code: 'CREATE_CLIENT', availability: 'AVAILABLE', reasonCode: null })
+    fixture.crmClients.forEach(row => { row.clientId = null })
+    let operation: { id: string; projectId: string; clientId: string; status: string; crmClientId: string | null; errorCode: string | null; updatedAt: string } | null = null
+    const requests: Record<string, unknown>[] = []
+    await page.route('**/api/crm/projects/crm-project/client-search?*', route => route.fulfill({ json: { items: [], hasMore: false } }))
+    await page.route('**/api/crm/projects/crm-project/client-provisions/latest?*', route => route.fulfill({ json: { operation } }))
+    await page.route('**/api/crm/projects/crm-project/client-provisions', route => {
+        const body = route.request().postDataJSON(); requests.push(body)
+        expect(route.request().headers()['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/)
+        operation = { id: 'op', projectId: 'crm-project', clientId: 'client-1', status: 'UNKNOWN', crmClientId: null, errorCode: 'CRM_RESULT_UNKNOWN', updatedAt: new Date().toISOString() }
+        return route.fulfill({ status: 202, json: operation })
+    })
+    await page.goto('/clients/client-1')
+    await page.getByText('CRM и визиты', { exact: true }).click()
+    await page.getByRole('button', { name: 'Найти или создать в CRM', exact: true }).click()
+    const form = page.getByRole('region', { name: 'Найти или создать в CRM' })
+    await expect(form.getByText('DIKIDI · Салон №17', { exact: true })).toBeVisible()
+    await form.getByRole('button', { name: 'Создать нового клиента CRM', exact: true }).click()
+    await expect(form.getByLabel('Имя', { exact: true })).toHaveValue(api.client.firstName)
+    await expect(form.getByLabel('Фамилия', { exact: true })).toHaveValue(api.client.lastName)
+    await expect(form.getByLabel('Телефон для CRM', { exact: true })).toHaveValue(api.client.phoneList[0])
+    await page.screenshot({ path: info.outputPath('crm-client-create.png'), fullPage: true })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+    await form.getByRole('button', { name: 'Создать и связать', exact: true }).click()
+    await expect(form.getByText(/Повторное создание заблокировано/)).toBeVisible()
+    expect(requests).toEqual([{ clientId: api.client.id, firstName: api.client.firstName, lastName: api.client.lastName, phone: api.client.phoneList[0], differentPerson: false, contextVersion: 1 }])
+    await form.getByRole('button', { name: 'Закрыть', exact: true }).click()
+    await page.getByRole('button', { name: 'Найти или создать в CRM', exact: true }).click()
+    await expect(form.getByText(/Повторное создание заблокировано/)).toBeVisible()
+    await expect(form.getByRole('button', { name: 'Создать нового клиента CRM', exact: true })).toHaveCount(0)
+    expect(requests).toHaveLength(1)
+    expect(fixture.counters.unknown).toEqual([])
+})
+
+test('CRM: перенос аватара требует предпросмотра и явного подтверждения', async ({ page, api }) => {
+    api.role = 'supervisor'
+    const fixture = await installCrm(page)
+    await page.route('**/api/clients/client-1', route => route.fulfill({ json: { ...api.client, avatarUrl: 'source.png' } }))
+    await page.route('**/api/clients/client-1/avatar/content', route => route.fulfill({ contentType: 'image/gif', body: Buffer.from('R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==', 'base64') }))
+    let writes = 0
+    await page.route('**/api/crm/clients/crm-client-1/avatar/from-clientbus', route => {
+        const row = fixture.crmClients[1], body = route.request().postDataJSON()
+        expect(body).toEqual({ clientId: 'client-1', expectedVersion: row.version, sourceAvatarUrl: 'source.png' })
+        writes++; row.avatarUrl = 'crm/avatars/transferred.png'; row.version++
+        return route.fulfill({ json: row })
+    })
+    await page.goto('/clients/client-1')
+    await page.getByText('CRM и визиты', { exact: true }).click()
+    await page.getByRole('button', { name: 'Карточка', exact: true }).click()
+    await page.getByRole('button', { name: 'Аватар из ClientBus', exact: true }).click()
+    const preview = page.getByRole('group', { name: 'Перенос аватара в CRM' })
+    await expect(preview.getByRole('img')).toBeVisible()
+    expect(writes).toBe(0)
+    await preview.getByRole('button', { name: 'Перенести в DIKIDI', exact: true }).click()
+    await expect(page.getByText('Аватар перенесён в DIKIDI', { exact: true })).toBeVisible()
+    await expect(preview).toHaveCount(0); expect(writes).toBe(1)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+})
+
+test('CRM: выбор после поиска переживает изменение версии фоновым чтением', async ({ page, api }) => {
+    api.role = 'supervisor'
+    const fixture = await installCrm(page)
+    fixture.crmClients.forEach(row => { row.clientId = null })
+    const row = fixture.crmClients[0], versions: number[] = []
+    await page.route('**/api/crm/projects/crm-project/client-search?*', route => route.fulfill({ json: { items: [row], hasMore: false } }))
+    await page.route('**/api/crm/clients/crm-client-0/client-link', async route => {
+        versions.push(route.request().postDataJSON().expectedVersion)
+        if (versions.length === 1) {
+            row.version++
+            row.lastObservedAt = new Date().toISOString()
+            return route.fulfill({ status: 409, json: { code: 'CRM_VERSION_CONFLICT', message: 'Состояние CRM изменилось. Обновите данные.' } })
+        }
+        return route.fallback()
+    })
+    await page.goto('/clients/client-1')
+    await page.getByText('CRM и визиты', { exact: true }).click()
+    await page.getByRole('button', { name: 'Найти или создать в CRM', exact: true }).click()
+    const form = page.getByRole('region', { name: 'Найти или создать в CRM' })
+    await form.getByLabel('Поиск в CRM', { exact: true }).fill('993')
+    await expect(form.getByText('Иван CRM · 70000000001 · ID client-0', { exact: true })).toBeVisible()
+    await form.getByRole('button', { name: 'Выбрать', exact: true }).first().click()
+    await form.getByRole('button', { name: 'Связать существующего', exact: true }).click()
+    await expect(form).toHaveCount(0)
+    await expect(page.getByText('Карточка CRM связана с клиентом ClientBus · Салон №17', { exact: true })).toBeVisible()
+    expect(versions).toEqual([0, 1]); expect(fixture.counters.clientLinks).toBe(1)
+})
+
+test('CRM: совпадение телефона требует явного подтверждения другого человека', async ({ page, api }) => {
+    api.role = 'supervisor'
+    const fixture = await installCrm(page)
+    fixture.project!.capabilities.push({ code: 'CREATE_CLIENT', availability: 'AVAILABLE', reasonCode: null })
+    fixture.crmClients.forEach(row => { row.clientId = null })
+    await page.goto('/clients/client-1')
+    await page.getByText('CRM и визиты', { exact: true }).click()
+    await page.getByRole('button', { name: 'Найти или создать в CRM', exact: true }).click()
+    const form = page.getByRole('region', { name: 'Найти или создать в CRM' })
+    await form.getByRole('button', { name: 'Создать нового клиента CRM', exact: true }).click()
+    const create = form.getByRole('button', { name: 'Создать и связать', exact: true })
+    await expect(create).toBeDisabled()
+    const checkbox = form.getByRole('checkbox', { name: 'Это другой человек, несмотря на совпадение телефона' })
+    await expect(checkbox).toBeVisible()
+    expect((await checkbox.boundingBox())!.width).toBeLessThanOrEqual(24)
+    await checkbox.check()
+    await expect(create).toBeEnabled()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
 })
 
 test('CRM: health и нотификации сохраняют доступность списка проектов и не повторяют чтение DIKIDI', async ({ page, api }) => {

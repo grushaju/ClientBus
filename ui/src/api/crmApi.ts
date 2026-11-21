@@ -8,6 +8,7 @@ export interface CrmConnection {
     lastCheckedAt: string | null; errorCode: string | null; version: number
 }
 export interface CrmProject {
+    sendingAccountLabel?: string | null
     id: string; connectionId: string; workspaceId: string; provider: CrmType; externalId: string
     displayName: string; currency: string | null; zoneId: string | null; zoneSource: string | null
     zoneRevision: number; contextVersion: number; enabled: boolean; archived: boolean; connectionState: CrmConnection['status']
@@ -125,9 +126,27 @@ export const getCrmClientCandidates = (id: string, q: string, signal?: AbortSign
 export const linkCrmClient = (row: CrmClient, clientId: string | null, signal?: AbortSignal) => clientId
     ? json<CrmClient>(`/api/crm/clients/${path(row.id)}/client-link`, body('PUT', { clientId, expectedVersion: row.version }, signal))
     : json<CrmClient>(`/api/crm/clients/${path(row.id)}/client-link?expectedVersion=${row.version}`, { method: 'DELETE', signal })
+export const transferCrmClientAvatar = (row: CrmClient, source: { id: string; avatarUrl: string | null }, signal?: AbortSignal) =>
+    json<CrmClient>(`/api/crm/clients/${path(row.id)}/avatar/from-clientbus`, body('POST', { clientId: source.id, expectedVersion: row.version, sourceAvatarUrl: source.avatarUrl }, signal))
 export const createLinkedCrmClient = (row: CrmClient, value: { firstName: string; lastName: string; phoneList: string[] }, signal?: AbortSignal) =>
     json<CrmClient>(`/api/crm/clients/${path(row.id)}/client`, body('POST', { ...value, expectedVersion: row.version }, signal))
 export const getClientCrmLinks = (id: string, workspaceId?: string, signal?: AbortSignal) => json<CrmClientLink[]>(`/api/crm/clientbus-clients/${path(id)}/links?${queryString({ workspaceId })}`, { signal })
+export interface CrmClientProvision {
+    phone?: string | null
+    id: string; projectId: string; clientId: string
+    status: 'REQUESTED' | 'IN_FLIGHT' | 'UNKNOWN' | 'CREATED' | 'CONFIRMED' | 'REJECTED'
+    crmClientId: string | null; errorCode: string | null; updatedAt: string
+}
+export const searchCrmClients = (projectId: string, clientId: string, q: string, signal?: AbortSignal) =>
+    json<{ items: CrmClient[]; hasMore: boolean }>(`/api/crm/projects/${path(projectId)}/client-search?${queryString({ clientId, q })}`, { signal })
+export const getLatestClientProvision = async (projectId: string, clientId: string, signal?: AbortSignal) =>
+    (await json<{ operation: CrmClientProvision | null }>(`/api/crm/projects/${path(projectId)}/client-provisions/latest?${queryString({ clientId })}`, { signal })).operation
+export const provisionCrmClient = (project: CrmProject, key: string, value: { clientId: string; firstName: string; lastName: string; phone: string; differentPerson: boolean }, signal?: AbortSignal) =>
+    json<CrmClientProvision>(`/api/crm/projects/${path(project.id)}/client-provisions`, { ...body('POST', { ...value, contextVersion: project.contextVersion }, signal), headers: { 'Idempotency-Key': key } })
+export const recoverClientProvision = (id: string, signal?: AbortSignal) =>
+    json<CrmClientProvision>(`/api/crm/client-provisions/${path(id)}/recover`, body('POST', {}, signal))
+export const resolveClientProvision = (id: string, row: CrmClient, signal?: AbortSignal) =>
+    json<CrmClientProvision>(`/api/crm/client-provisions/${path(id)}/resolve`, body('POST', { crmClientId: row.id, expectedVersion: row.version }, signal))
 export const refreshCrmData = (id: string, value: { dataset: string; masterId?: string; crmClientId?: string; force?: boolean } & Partial<CrmPeriod>, signal?: AbortSignal) =>
     json<CrmSyncState>(`/api/crm/projects/${path(id)}/refresh`, body('POST', value, signal))
 export const getCrmSyncOverview = (id: string, signal?: AbortSignal) => json<CrmSyncOverview>(`/api/crm/projects/${path(id)}/sync-overview`, { signal })

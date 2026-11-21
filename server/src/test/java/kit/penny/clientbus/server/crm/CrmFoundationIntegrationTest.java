@@ -62,6 +62,7 @@ class CrmFoundationIntegrationTest {
     private CrmAppointmentTimes appointmentTimes;
     private CrmStore store;
     private CrmOperationService operations;
+    private CrmClientProvisioning provisioning;
     private UiDomainEvents events;
     private CrmDeletionGuard deletion;
     private FakeProvider provider;
@@ -175,6 +176,7 @@ class CrmFoundationIntegrationTest {
         appointmentTimes=new CrmAppointmentTimes(store,jdbc,manager,events);
         service = new CrmService(store, registry, cipher, sync, manager, events, null, null);
         operations=new CrmOperationService(store,registry,cipher,events,jdbc,manager);
+        provisioning=new CrmClientProvisioning(store,registry,cipher,new CrmClientWriter(store),events,jdbc,manager);
         deletion = new CrmDeletionGuard(store, events);
     }
     private EmployeeEntity employee(OrganizationEntity org, UserRole role, String name) {
@@ -1127,7 +1129,177 @@ class CrmFoundationIntegrationTest {
         assertEquals("CRM_VERSION_CONFLICT",assertThrows(CrmException.class,()->operations.moveAvailability(row.id(),request)).code());
         assertEquals(0,provider.effects.get());assertEquals(0,jdbc.queryForObject("select count(*) from crm.operation",Integer.class));
     }
+    @Test void clientPhotoTransferRequiresSupervisorAndCopiesOnlyTheLinkedSourcePhoto() throws Exception {
+        var project=bind(connection());awaitIdle();UUID core=coreClient("Anna","79991234567");
+        tx.executeWithoutResult(s->em.find(ClientEntity.class,core).setAvatarUrl("source.png"));
+        provider.clientMatches=List.of(new CrmClient("photo-target","PROJECT","Anna",Map.of("phone","79991234567"),Map.of(),Set.of("displayName","phone")));
+        var row=provisioning.search(project.id(),core,"Anna").items().getFirst();var linked=clients.link(row.id(),core,row.version());
+        var files=mock(kit.penny.clientbus.server.storage.IAttachmentStorage.class);
+        var image=new java.awt.image.BufferedImage(2,2,java.awt.image.BufferedImage.TYPE_INT_RGB);var bytes=new java.io.ByteArrayOutputStream();javax.imageio.ImageIO.write(image,"png",bytes);
+        when(files.load("source.png")).thenAnswer(invocation->new java.io.ByteArrayInputStream(bytes.toByteArray()));
+        when(files.store(any(),anyString(),anyLong(),anyString())).thenReturn(new kit.penny.clientbus.server.storage.StoredAttachmentMetadata("mirror.png","avatar.png","image/png",1));
+        var photos=new CrmClientAvatarTransfer(store,new CrmRegistry(List.of(provider)),cipher,files,events,tx.getTransactionManager());
+        var request=new CrmClientAvatarTransfer.Request(core,linked.version(),"source.png");
+        actor.set(member);assertThrows(AccessDeniedException.class,()->photos.transfer(linked.id(),request));assertEquals(0,provider.photoWrites.get());actor.set(admin);
+        var result=photos.transfer(linked.id(),request);assertEquals("mirror.png",result.avatarUrl());assertEquals(core,result.clientId());assertEquals(linked.contacts(),result.contacts());assertEquals(1,provider.photoWrites.get());
+        assertEquals("source.png",tx.execute(s->em.find(ClientEntity.class,core).getAvatarUrl()));
+        verify(files).store(any(),eq("crm-avatar.png"),anyLong(),eq("image/png"));
+    }
+    @Test void projectSendingAccountUsesTheConnectionNameAndMaskedLogin() throws Exception {
+        var connection=connection();var project=bind(connection);awaitIdle();
+        jdbc.update("update crm.connection set displayname='Sender account' where id=?",connection.id());
+        var actual=service.projects(workspace,null).stream().filter(row->row.id().equals(project.id())).findFirst().orElseThrow();
+        assertEquals("Sender account · "+connection.loginHint(),actual.sendingAccountLabel());
+    }
+    @Test void clientPhotoTransferStopsWhenSourceChangesDuringUpload() throws Exception {
+        var project=bind(connection());awaitIdle();UUID core=coreClient("Anna","79991234567");
+        tx.executeWithoutResult(s->em.find(ClientEntity.class,core).setAvatarUrl("source.png"));
+        provider.clientMatches=List.of(new CrmClient("photo-target","PROJECT","Anna",Map.of("phone","79991234567"),Map.of(),Set.of("displayName","phone")));
+        var row=provisioning.search(project.id(),core,"Anna").items().getFirst();var linked=clients.link(row.id(),core,row.version());
+        var files=mock(kit.penny.clientbus.server.storage.IAttachmentStorage.class);var bytes=new java.io.ByteArrayOutputStream();javax.imageio.ImageIO.write(new java.awt.image.BufferedImage(2,2,java.awt.image.BufferedImage.TYPE_INT_RGB),"png",bytes);
+        when(files.load("source.png")).thenAnswer(invocation->new java.io.ByteArrayInputStream(bytes.toByteArray()));
+        provider.beforePhoto=()->tx.executeWithoutResult(s->em.find(ClientEntity.class,core).setAvatarUrl("changed.png"));
+        var photos=new CrmClientAvatarTransfer(store,new CrmRegistry(List.of(provider)),cipher,files,events,tx.getTransactionManager());
+        assertEquals("CRM_VERSION_CONFLICT",assertThrows(CrmException.class,()->photos.transfer(linked.id(),new CrmClientAvatarTransfer.Request(core,linked.version(),"source.png"))).code());
+        assertEquals(0,provider.photoWrites.get());verify(files,never()).store(any(),anyString(),anyLong(),anyString());
+    }
+    @Test void provisionClientCopiesSnapshotAndLinksWithoutChangingCoreOrCreatingChat() throws Exception {
+        var project=bind(connection());awaitIdle();UUID core=coreClient("Anna","79991234567"),key=UUID.randomUUID();
+        var request=new CrmProvisionClientRequest(core,project.contextVersion(),"Anna","Surname","+7 (999) 123-45-67",false);
+        var accepted=provisioning.create(project.id(),key,request);
+        assertEquals(accepted.id(),provisioning.create(project.id(),key,request).id());
+        actor.set(null);provisioning.run(accepted.id());actor.set(admin);
+        var result=provisioning.latest(project.id(),core);assertEquals("CONFIRMED",result.status());
+        assertEquals(core,clients.client(result.crmClientId()).clientId());
+        assertEquals("Anna",tx.execute(s->em.find(ClientEntity.class,core).getFirstName()));
+        assertEquals(0,jdbc.queryForObject("select count(*) from dbo.clientaccount where clientid=?",Integer.class,core));
+        provisioning.run(accepted.id());assertEquals(1,provider.clientEffects.get());
+    }
+    @Test void provisionClientDuplicatePreflightRejectsWithoutExternalWrite() throws Exception {
+        var project=bind(connection());awaitIdle();UUID core=coreClient("Anna","79991234567");
+        provider.clientMatches=List.of(new CrmClient("match","PROJECT","Existing",Map.of("phone","79991234567"),Map.of(),Set.of("displayName","phone")));
+        var op=provisioning.create(project.id(),UUID.randomUUID(),new CrmProvisionClientRequest(core,project.contextVersion(),"Anna","Surname","79991234567",false));
+        provisioning.run(op.id());var result=provisioning.latest(project.id(),core);
+        assertEquals("REJECTED",result.status());assertEquals("CRM_CLIENT_DUPLICATE",result.errorCode());assertEquals(0,provider.clientEffects.get());
+    }
+    @Test void provisionClientRepeatedSearchAdvancesObservationVersionWithoutChangingTheLinkChoice() throws Exception {
+        var project=bind(connection());awaitIdle();UUID core=coreClient("Anna","79991234567");
+        provider.clientMatches=List.of(new CrmClient("match","PROJECT","Anna",Map.of("phone","79991234567"),Map.of(),Set.of("displayName","phone")));
+        var first=provisioning.search(project.id(),core,"993").items().getFirst();
+        var fresh=provisioning.search(project.id(),core,"993").items().getFirst();
+        assertTrue(fresh.version()>first.version());assertEquals(first.displayName(),fresh.displayName());assertEquals(first.contacts(),fresh.contacts());
+        assertEquals("CRM_VERSION_CONFLICT",assertThrows(CrmException.class,()->clients.link(first.id(),core,first.version())).code());
+        assertEquals(core,clients.link(fresh.id(),core,fresh.version()).clientId());
+    }
+    @Test void provisionClientExplicitPhoneRejectionAllowsCorrectionWithoutAutomaticRetry() throws Exception {
+        var project=bind(connection());awaitIdle();UUID core=coreClient("Anna","89991234567");
+        provider.clientCreation=callback->{throw new CrmFailure(CrmFailure.Code.CLIENT_PHONE_INVALID);};
+        var request=new CrmProvisionClientRequest(core,project.contextVersion(),"Anna","Surname","89991234567",false);
+        var op=provisioning.create(project.id(),UUID.randomUUID(),request);provisioning.run(op.id());
+        var result=provisioning.latest(project.id(),core);
+        assertEquals("REJECTED",result.status());assertEquals("CRM_CLIENT_PHONE_INVALID",result.errorCode());
+        provisioning.run(op.id());assertEquals(1,provider.clientEffects.get());
+        assertEquals("REQUESTED",provisioning.create(project.id(),UUID.randomUUID(),new CrmProvisionClientRequest(core,project.contextVersion(),"Anna","Surname","79991234567",false)).status());
+    }
+    @Test void provisionClientUnknownBlocksNewKeysAndAllowsExplicitResolution() throws Exception {
+        var project=bind(connection());awaitIdle();UUID core=coreClient("Anna","79991234567");
+        provider.clientCreation=callback->{throw new CrmFailure(CrmFailure.Code.TEMPORARY_FAILURE);};
+        var request=new CrmProvisionClientRequest(core,project.contextVersion(),"Anna","Surname","79991234567",false);
+        var op=provisioning.create(project.id(),UUID.randomUUID(),request);provisioning.run(op.id());
+        assertEquals("UNKNOWN",provisioning.latest(project.id(),core).status());
+        assertEquals("CRM_CLIENT_CREATION_PENDING",assertThrows(CrmException.class,()->provisioning.create(project.id(),UUID.randomUUID(),request)).code());
+        provisioning.run(op.id());assertEquals(1,provider.clientEffects.get());
+        provider.clientMatches=List.of(new CrmClient("recovered","PROJECT","Anna Surname",Map.of("phone","79991234567"),Map.of(),Set.of("displayName","phone")));
+        var candidate=provisioning.search(project.id(),core,"79991234567").items().getFirst();
+        assertEquals("CONFIRMED",provisioning.resolve(op.id(),candidate.id(),candidate.version()).status());
+        assertEquals("CONFIRMED",provisioning.resolve(op.id(),candidate.id(),candidate.version()).status()); // Lost resolution response is replayable.
+        assertEquals(core,clients.client(candidate.id()).clientId());assertEquals(1,provider.clientEffects.get());
+    }
+    @Test void provisionClientKnownIdentitySurvivesLocalFailureAndRecoveryNeverWritesAgain() throws Exception {
+        var project=bind(connection());awaitIdle();UUID core=coreClient("Anna","79991234567");
+        var op=provisioning.create(project.id(),UUID.randomUUID(),new CrmProvisionClientRequest(core,project.contextVersion(),"Anna","Surname","79991234567",false));
+        provider.clientCreation=callback->{
+            callback.accept(new CrmClient("recover-known","PROJECT","Anna Surname",Map.of("phone","79991234567"),Map.of(),Set.of("displayName","phone")));
+            throw new CrmFailure(CrmFailure.Code.TEMPORARY_FAILURE); // Identity was committed before the remaining work failed.
+        };
+        provisioning.run(op.id());assertEquals("CREATED",jdbc.queryForObject("select status from crm.clientprovision where id=?",String.class,op.id()));
+        provider.clientMatches=List.of(new CrmClient("recover-known","PROJECT","Updated in CRM",Map.of("phone","79997654321"),Map.of(),Set.of("displayName","phone")));
+        provisioning.search(project.id(),core,"79997654321");
+        jdbc.update("update dbo.client set isenabled=false where clientid=?",core);
+        jdbc.update("update crm.connection set credentialversion=credentialversion+1 where id=?",project.connectionId());
+        jdbc.update("update crm.project set contextversion=contextversion+1,archived=true,enabled=false where id=?",project.id());
+        assertEquals("CONFIRMED",provisioning.recover(op.id()).status());assertEquals(1,provider.clientEffects.get());
+        var recovered=clients.links(core,workspace).getFirst().client();
+        assertEquals("Updated in CRM",recovered.displayName());assertEquals("79997654321",recovered.normalizedPhone());
+    }
+    @Test void provisionClientRightsAndIdempotencyAreCheckedBeforeAcceptance() throws Exception {
+        var project=bind(connection());awaitIdle();UUID core=coreClient("Anna","79991234567"),key=UUID.randomUUID();
+        var request=new CrmProvisionClientRequest(core,project.contextVersion(),"Anna","Surname","79991234567",false);
+        actor.set(member);assertThrows(AccessDeniedException.class,()->provisioning.create(project.id(),key,request));
+        actor.set(admin);provisioning.create(project.id(),key,request);
+        assertEquals("CRM_IDEMPOTENCY_CONFLICT",assertThrows(CrmException.class,()->provisioning.create(project.id(),key,
+                new CrmProvisionClientRequest(core,project.contextVersion(),"Changed","Surname","79991234567",false))).code());
+        assertEquals(0,provider.clientEffects.get());
+    }
+    @Test void provisionClientRevokedAuthorIsRejectedByWorkerAndCannotDeletePendingCore() throws Exception {
+        var project=bind(connection());awaitIdle();UUID core=coreClient("Anna","79991234567");
+        var op=provisioning.create(project.id(),UUID.randomUUID(),new CrmProvisionClientRequest(core,project.contextVersion(),"Anna","Surname","79991234567",false));
+        assertEquals("CRM_RESOURCE_IN_USE",assertThrows(CrmException.class,()->tx.executeWithoutResult(s->deletion.client(em.find(ClientEntity.class,core)))).code());
+        jdbc.update("update dbo.users set isenabled=false where userid=(select userid from dbo.employee where employeeid=?)",admin);
+        actor.set(null);provisioning.run(op.id());
+        assertEquals("REJECTED",jdbc.queryForObject("select status from crm.clientprovision where id=?",String.class,op.id()));
+        assertEquals(0,provider.clientEffects.get());
+    }
+    @Test void provisionClientCannotBeBypassedByAnOrdinaryLink() throws Exception {
+        var project=bind(connection());awaitIdle();UUID core=coreClient("Anna","79991234567");
+        provider.clientMatches=List.of(new CrmClient("candidate","PROJECT","Anna Surname",Map.of("phone","79991234567"),Map.of(),Set.of("displayName","phone")));
+        var candidate=provisioning.search(project.id(),core,"79991234567").items().getFirst();
+        provisioning.create(project.id(),UUID.randomUUID(),new CrmProvisionClientRequest(core,project.contextVersion(),"Anna","Surname","79991234567",true));
+        assertEquals("CRM_CLIENT_CREATION_PENDING",assertThrows(CrmException.class,()->clients.link(candidate.id(),core,candidate.version())).code());
+        assertNull(clients.client(candidate.id()).clientId());
+    }
+    @Test void provisionClientIncompleteSearchCannotBeOverriddenByDifferentPerson() throws Exception {
+        var project=bind(connection());awaitIdle();UUID core=coreClient("Anna","79991234567");
+        provider.incompleteClientSearch=true;
+        var op=provisioning.create(project.id(),UUID.randomUUID(),new CrmProvisionClientRequest(core,project.contextVersion(),"Anna","Surname","79991234567",true));
+        provisioning.run(op.id());
+        assertEquals("CRM_CLIENT_SEARCH_INCOMPLETE",provisioning.latest(project.id(),core).errorCode());assertEquals(0,provider.clientEffects.get());
+    }
+    @Test void provisionClientSecondWorkerCannotRejectTheFirstWorkersDispatchedEffect() throws Exception {
+        var project=bind(connection());awaitIdle();UUID core=coreClient("Anna","79991234567");
+        var op=provisioning.create(project.id(),UUID.randomUUID(),new CrmProvisionClientRequest(core,project.contextVersion(),"Anna","Surname","79991234567",false));
+        var entered=new CountDownLatch(1);var release=new CountDownLatch(1);
+        provider.clientCreation=callback->{
+            entered.countDown();try{if(!release.await(10,TimeUnit.SECONDS))throw new AssertionError("Save latch timed out");}catch(InterruptedException error){throw new AssertionError(error);}
+            callback.accept(new CrmClient("one-effect","PROJECT","Anna Surname",Map.of("phone","79991234567"),Map.of(),Set.of("displayName","phone")));
+        };
+        var first=CompletableFuture.runAsync(()->provisioning.run(op.id()));
+        try {
+            assertTrue(entered.await(10,TimeUnit.SECONDS));
+            jdbc.update("update crm.project set contextversion=contextversion+1 where id=?",project.id());
+            provisioning.run(op.id());
+            assertEquals("IN_FLIGHT",provisioning.latest(project.id(),core).status());
+            assertEquals(1,provider.clientEffects.get());
+        }finally{release.countDown();first.get(10,TimeUnit.SECONDS);}
+        assertEquals("CONFIRMED",provisioning.latest(project.id(),core).status());assertEquals(1,provider.clientEffects.get());
+    }
     private static final class FakeProvider implements CrmProvider {
+        volatile List<CrmClient> clientMatches=List.of();
+        volatile boolean incompleteClientSearch;
+        final AtomicInteger clientEffects=new AtomicInteger();
+        volatile java.util.function.Consumer<java.util.function.Consumer<CrmClient>> clientCreation=callback->callback.accept(
+                new CrmClient("created-client","PROJECT","Anna Surname",Map.of("phone","79991234567"),Map.of(),Set.of("displayName","phone")));
+        @Override public boolean canCreateClient(){return true;}
+        @Override public CrmClientProvisioningPort.Search findClients(CrmAccess access,String project,String query,Instant until){
+            assertFalse(TransactionSynchronizationManager.isActualTransactionActive());return new CrmClientProvisioningPort.Search(clientMatches,incompleteClientSearch);
+        }
+        final AtomicInteger photoWrites=new AtomicInteger();volatile Runnable beforePhoto=()->{};
+        @Override public String transferClientAvatar(CrmAccess access,String project,String client,byte[] png,Instant until,Runnable beforeSave){
+            assertFalse(TransactionSynchronizationManager.isActualTransactionActive());beforePhoto.run();beforeSave.run();photoWrites.incrementAndGet();return "https://f2.dikidi.ru/c01/v00001/avatar123.jpg";
+        }
+        @Override public void createClient(CrmAccess access,String project,CrmClientDraft draft,Instant until,java.util.function.Consumer<CrmClient> confirmed){
+            assertFalse(TransactionSynchronizationManager.isActualTransactionActive());clientEffects.incrementAndGet();clientCreation.accept(confirmed);
+        }
         volatile String reserveReference;
         volatile String observedSnapshot;
         @Override public CrmCommandResult command(CrmAccess access,String project,CrmCommand command,Instant deadline,CrmCommandPort.Progress progress) {
@@ -2245,7 +2417,7 @@ class CrmFoundationIntegrationTest {
     @Test void hibernateUpdatePreservesExistingDboAndCrmAndNamesHaveNoUnderscores() throws Exception {
         var connection = connection(); var project = bind(connection); awaitIdle();
         var mapped = first(project.id()); service.linkEmployee(mapped.id(), target, mapped.version());
-        assertEquals(Set.of("connection","project","employee","service","masterservice","staffaccess","syncstate","client","workinterval","appointment","appointmentservice","appointmentmaster","operation","connectionruntime","syncjob","syncconnectionlease"),
+        assertEquals(Set.of("connection","project","employee","service","masterservice","staffaccess","syncstate","client","workinterval","appointment","appointmentservice","appointmentmaster","operation","connectionruntime","syncjob","syncconnectionlease","clientprovision"),
                 new HashSet<>(jdbc.queryForList("select tablename from pg_tables where schemaname='crm'",String.class)));
         for (String sql : List.of("select column_name from information_schema.columns where table_schema='crm'",
                 "select indexname from pg_indexes where schemaname='crm'",
@@ -2254,6 +2426,7 @@ class CrmFoundationIntegrationTest {
         sync.close(); assertTrue(((ThreadPoolExecutor)ReflectionTestUtils.getField(sync,"executor")).awaitTermination(3,TimeUnit.SECONDS));
         factory.close(); StandardServiceRegistryBuilder.destroy(hibernate);
         // Reproduce the deployed 12.3 shape before allowing Hibernate to add 12.4.1.
+        jdbc.execute("drop table crm.clientprovision"); // Added after the simulated legacy schema.
         jdbc.execute("drop table crm.operation");
         jdbc.execute("drop table crm.appointmentservice"); jdbc.execute("drop table crm.appointmentmaster"); jdbc.execute("drop table crm.appointment");
         jdbc.execute("alter table crm.connection drop column healthgeneration, drop column healthappliedgeneration");
@@ -2274,7 +2447,7 @@ class CrmFoundationIntegrationTest {
         assertEquals(1,jdbc.queryForObject("select count(*) from dbo.workspace where workspaceid=?",Integer.class,workspace));
         assertEquals(target, jdbc.queryForObject("select employeeid from crm.employee where id=?", UUID.class, mapped.id()));
         assertEquals("initial one", jdbc.queryForObject("select displayname from crm.employee where id=?", String.class, mapped.id()));
-        assertEquals(16, jdbc.queryForObject("select count(*) from pg_tables where schemaname='crm'", Integer.class));
+        assertEquals(17, jdbc.queryForObject("select count(*) from pg_tables where schemaname='crm'", Integer.class));
     }
     private static CrmClient externalClient(String id, String name) {
         return new CrmClient(id,"PROJECT",name,Map.of("phone","+7 (999) 123-45-67"),Map.of("source","R08"),Set.of("displayName","phone"));

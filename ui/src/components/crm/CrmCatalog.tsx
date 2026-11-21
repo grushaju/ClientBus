@@ -184,6 +184,10 @@ function MasterRows({ project, query, mapping, unlinked, onMaster, refresh, mast
     }
     return <>
         <CrmFreshness state={data.page?.dataState} archived={project.archived} />
+        {staff && mapping && project.provider === 'DIKIDI' && <div className="crm-notice" role="note">
+            <strong>Аккаунт отправки DIKIDI: {project.sendingAccountLabel || 'CRM-подключение этого проекта'}</strong>
+            <p>Сообщения отправляются под учётной записью CRM-подключения. Выбор оператора и привязка сотрудника ClientBus ниже пока не переключают отправителя. Отдельная авторизация операторов ещё не реализована.</p>
+        </div>}
         {mapping && <details className="crm-candidate-search"><summary>Найти сотрудника по имени или логину</summary><label>Поиск сотрудника в списках<input type="search" value={candidateQuery} maxLength={160} onChange={event => setCandidateQuery(event.target.value)} placeholder="Имя или логин" /></label></details>}
         {mapping && candidateError && <p role="alert" className="crm-error">{candidateError} <button type="button" onClick={candidateResource.reload}>Повторить загрузку сотрудников</button></p>}
         {saveError && <p role="alert" className="crm-error">{saveError}</p>}

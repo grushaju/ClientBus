@@ -5,7 +5,7 @@ const { act, create } = require('react-test-renderer')
 const load = require('./loadInboxModule.cjs')
 const scope = load('../../api/events/uiScope.ts')
 const state = { dataset: 'CLIENTS', status: 'PARTIAL', freshness: 'CURRENT', completeness: 'UNKNOWN', lastSuccessAt: '2026-11-08T10:00:00Z', generation: 1 }
-const project = { id: 'p', workspaceId: 'w', displayName: 'Салон', zoneId: 'Europe/Moscow', archived: false, enabled: true, connectionState: 'CONNECTED' }
+const project = { id: 'p', workspaceId: 'w', provider: 'DIKIDI', displayName: 'Салон', zoneId: 'Europe/Moscow', archived: false, enabled: true, connectionState: 'CONNECTED', capabilities: [{ code: 'CREATE_CLIENT', availability: 'AVAILABLE' }] }
 const client = { id: 'external', projectId: 'p', displayName: 'Внешний клиент', contacts: { phone: '+79991234567' }, externalId: '1', clientId: null, version: 7 }
 const visit = { id: 'a', projectId: 'p', workspaceId: 'w', kind: 'APPOINTMENT', clientSnapshot: { displayName: 'Гость' }, localStart: '2026-11-08T12:00:00', localEnd: '2026-11-08T13:00:00', zoneId: 'Europe/Moscow',
     appointmentState: 'SCHEDULED', confirmationState: 'CONFIRMED', attendanceState: 'ARRIVED', paymentState: 'UNKNOWN',
@@ -21,10 +21,14 @@ const change = (ui, label, value) => act(async () => field(ui, label).props.onCh
 async function fixture(t, name, props = {}, overrides = {}, admin = false, intentMocks) {
     const invalidations = new Map(), calls = []
     const api = { crmError: error => error.message,
+        getCrmProjects: async () => [],
+        getLatestClientProvision: async () => null,
+        searchCrmClients: async () => ({ items: [], hasMore: false }),
         getCrmClients: async () => page([client]), getCrmClient: async () => client,
         getCrmClientCandidates: async () => [{ id: 'core', firstName: 'Кандидат', lastName: 'Клиент', phoneList: ['+79991234567'], phoneMatch: true }],
         linkCrmClient: async (row, id) => { calls.push(['link', row.version, id]); return { ...row, clientId: id, version: 8 } },
         createLinkedCrmClient: async (...args) => { calls.push(['create', ...args]); return client },
+        getLatestClientProvision: async () => null,
         getCrmMasters: async () => page([{ id: 'master', displayName: 'Анна' }]),
         getCrmMaster: async () => ({ id: 'master', displayName: 'Анна' }),
         getCrmWorkIntervals: async () => page([{ id: 'shift', localStart: '2026-11-08T10:00:00', localEnd: '2026-11-08T18:00:00', kind: 'WORK' }]),
@@ -39,6 +43,7 @@ async function fixture(t, name, props = {}, overrides = {}, admin = false, inten
     const auth = { currentEmployee: { id: 'actor', role: admin ? 'SUPER_ADMIN' : 'EMPLOYEE' }, sessionEpoch: 1, isSuperAdmin: admin, employeeWorkspaces: [] }
     const invalidation = { useUiInvalidation: (key, enabled, matches, read, reset) => { if (enabled) invalidations.set(key, { read, reset }) } }
     const mocks = { '../../api/crmApi': api, './InvalidationContext': invalidation, '../../api/events/InvalidationContext': invalidation,
+        '../../api/clientApi': { getClient: async id => ({ id, firstName: 'Кандидат', lastName: 'Клиент', phoneList: ['+7 999 123-45-67'], avatarUrl: overrides.sourceAvatar ?? null }), getClientAvatarContent: async () => new Blob(['image'], { type: 'image/png' }) },
         './uiScope': scope, '../../api/events/uiScope': scope,
         '../../auth/AuthContext': { useAuth: () => auth }, '../../workspace/WorkspaceContext': { useWorkspace: () => ({ currentWorkspace: { id: 'w' }, workspaces: [{ id: 'w', name: 'Рабочее пространство' }] }) },
         'react-router-dom': { Link: props => React.createElement('a', props) },
@@ -57,6 +62,52 @@ async function fixture(t, name, props = {}, overrides = {}, admin = false, inten
         update: async value => { attributes = { ...attributes, ...value }; await act(async () => ui.update(render())) },
     }
 }
+
+for (const component of ['ClientCrmPanel', 'ClientCrmSection']) {
+    for (const unavailable of [{ archived: true }, { enabled: false }, { connectionState: 'REAUTH_REQUIRED' }]) {
+        test(`${component} recovers a CREATED client locally when project is ${JSON.stringify(unavailable)}`, async t => {
+            let recoveries = 0, searches = 0, creates = 0, completed = false
+            const f = await fixture(t, component, { clientId: 'core', workspaceId: 'w', compact: true, phones: [] }, {
+                getClientCrmLinks: async () => [],
+                getCrmProjects: async () => [{ ...project, ...unavailable }],
+                getLatestClientProvision: async () => ({ id: 'saved', status: completed ? 'CONFIRMED' : 'CREATED' }),
+                recoverClientProvision: async id => { assert.equal(id, 'saved'); recoveries++; completed = true; return { id, status: 'CONFIRMED' } },
+                searchCrmClients: async () => { searches++; throw new Error('external search forbidden') },
+                provisionCrmClient: async () => { creates++; throw new Error('external creation forbidden') },
+            }, true)
+            await act(async () => f.ui.root.findByType('details').props.onToggle({ currentTarget: { open: true } }))
+            assert.match(text(f.ui), /Клиент уже создан в CRM/)
+            await click(f.ui, 'Восстановить связь')
+            assert.equal(recoveries, 1); assert.equal(searches, 0); assert.equal(creates, 0)
+            assert.match(text(f.ui), /Связь CRM восстановлена/)
+            assert.equal(button(f.ui, 'Восстановить связь'), undefined)
+        })
+    }
+    test(`${component} does not read recovery operations for an ordinary member`, async t => {
+        let reads = 0
+        const f = await fixture(t, component, { clientId: 'core', workspaceId: 'w', compact: true, phones: [] }, {
+            getClientCrmLinks: async () => [], getCrmProjects: async () => [{ ...project, archived: true }],
+            getLatestClientProvision: async () => { reads++; return { id: 'saved', status: 'CREATED' } },
+        })
+        await act(async () => f.ui.root.findByType('details').props.onToggle({ currentTarget: { open: true } }))
+        assert.equal(reads, 0)
+        assert.equal(button(f.ui, 'Восстановить связь'), undefined)
+    })
+}
+
+test('CRM client card groups contacts, statistics and link history without technical codes or actor IDs', async t => {
+    const actor = 'abcfc013-2101-4cab-9326-861404e8d578'
+    const f = await fixture(t, 'CrmClientCard', {}, { getCrmClient: async () => ({ ...client,
+        visitCount: 5, averageCheck: '10000.00', totalSpent: '50000.00', currency: 'RUB',
+        mappingUpdatedAt: '2026-11-20T05:39:17Z', mappingReason: 'UNLINK', mappingUpdatedBy: actor }) })
+    const content = text(f.ui)
+    assert.match(content, /Телефон/)
+    assert.match(content, /Связь снята/)
+    assert.match(content, /50.?000,00 RUB/)
+    assert.doesNotMatch(content, /UNLINK|phone:|abcfc013/)
+    assert.deepEqual(f.ui.root.findAllByType('section').map(section => section.props['aria-label']), ['Контакты', 'Статистика клиента', 'Связь с ClientBus'])
+    assert.equal(f.ui.root.findByType('details').props.open, undefined)
+})
 
 test('CRM clients show provider aggregates and send sort changes to the paged API', async t => {
     const reads = []
@@ -291,19 +342,75 @@ test('«CRM» section of the inbox panel shows linked crm clients and never read
 test('a member cannot link crm clients from the inbox panel; a supervisor links a free card by hand', async t => {
     const member = await fixture(t, 'ClientCrmSection', { clientId: 'core', workspaceId: 'w', phones: [] }, { getCrmProjects: async () => [project] })
     await act(async () => member.ui.root.findByType('details').props.onToggle({ currentTarget: { open: true } }))
-    assert.equal(button(member.ui, 'Привязать клиента CRM'), undefined)
+    assert.equal(button(member.ui, 'Найти или создать в CRM'), undefined)
     const boss = await fixture(t, 'ClientCrmSection', { clientId: 'core', workspaceId: 'w', phones: ['+7 999 123-45-67'] }, {
         getCrmProjects: async () => [project],
-        getCrmClients: async (...args) => { boss.calls.push(['clients', ...args]); return page([{ ...client, normalizedPhone: '79991234567' }]) },
+        getClientCrmLinks: async () => [],
+        searchCrmClients: async (...args) => { boss.calls.push(['clients', ...args]); return { items: [{ ...client, normalizedPhone: '79991234567' }], hasMore: false } },
     }, true)
     await act(async () => boss.ui.root.findByType('details').props.onToggle({ currentTarget: { open: true } }))
-    await click(boss.ui, 'Привязать клиента CRM')
+    await click(boss.ui, 'Найти или создать в CRM')
     const requested = boss.calls.find(row => row[0] === 'clients')
-    assert.equal(requested[1], 'p'); assert.deepEqual(requested[2], { q: '', unlinked: true })
+    assert.equal(requested[1], 'p'); assert.equal(requested[2], 'core'); assert.equal(requested[3], '79991234567')
     assert.match(text(boss.ui), /Внешний клиент/); assert.match(text(boss.ui), /79991234567/); assert.match(text(boss.ui), /телефон совпадает/)
     assert.deepEqual(boss.calls.filter(row => row[0] === 'link'), [])
-    await click(boss.ui, 'Привязать')
+    await click(boss.ui, 'Выбрать')
+    assert.deepEqual(boss.calls.filter(row => row[0] === 'link'), [])
+    await click(boss.ui, 'Связать существующего')
     assert.deepEqual(boss.calls.find(row => row[0] === 'link'), ['link', 7, 'core'])
+})
+
+test('a linked CRM card has explicit unlink confirmation and does not open an empty search', async t => {
+    let linked = true
+    const row = { ...client, clientId: 'core', mappingUpdatedAt: null, mappingUpdatedBy: null, mappingReason: null }
+    const f = await fixture(t, 'ClientCrmSection', { clientId: 'core', workspaceId: 'w', phones: [] }, {
+        getCrmProjects: async () => [project], getCrmClient: async () => row,
+        getClientCrmLinks: async () => linked ? [{ client: row, project }] : [],
+        linkCrmClient: async (_, id) => { f.calls.push(['unlink', id]); linked = false },
+    }, true)
+    await act(async () => f.ui.root.findByType('details').props.onToggle({ currentTarget: { open: true } }))
+    assert.equal(button(f.ui, 'Найти или создать в CRM'), undefined)
+    await click(f.ui, 'Отвязать')
+    assert.deepEqual(f.calls, [])
+    assert.match(f.ui.root.findByProps({ className: 'crm-unlink-confirm' }).findByType('p').children.join(''), /Карточка и данные в DIKIDI сохранятся/)
+    await click(f.ui, 'Подтвердить отвязку')
+    assert.deepEqual(f.calls, [['unlink', null]])
+    assert.ok(button(f.ui, 'Найти или создать в CRM'))
+})
+
+test('unlink never removes a concurrently changed association', async t => {
+    const row = { ...client, clientId: 'core', mappingUpdatedAt: null, mappingUpdatedBy: null, mappingReason: null }
+    const f = await fixture(t, 'ClientCrmSection', { clientId: 'core', workspaceId: 'w', phones: [] }, {
+        getCrmProjects: async () => [project], getCrmClient: async () => ({ ...row, clientId: 'other-core' }),
+        getClientCrmLinks: async () => [{ client: row, project }],
+    }, true)
+    await act(async () => f.ui.root.findByType('details').props.onToggle({ currentTarget: { open: true } }))
+    await click(f.ui, 'Отвязать'); await click(f.ui, 'Подтвердить отвязку')
+    assert.equal(f.calls.filter(row => row[0] === 'link').length, 0)
+    assert.match(text(f.ui), /Связь уже изменена/)
+})
+
+test('avatar transfer previews the source and writes only after explicit confirmation', async t => {
+    const row = { ...client, clientId: 'core' }
+    const f = await fixture(t, 'CrmClientCard', {}, {
+        sourceAvatar: 'source.png', getCrmProjects: async () => [project], getCrmClient: async () => ({ ...row, version: 9 }),
+        getClientCrmLinks: async () => [{ client: row, project }],
+        transferCrmClientAvatar: async (target, source) => { f.calls.push(['photo', target.version, source.id, source.avatarUrl]); return row },
+    }, true)
+    await click(f.ui, 'Аватар из ClientBus'); assert.deepEqual(f.calls, [])
+    const section = f.ui.root.findByProps({ 'aria-label': 'Связь с ClientBus' })
+    assert.ok(section.findAllByType('button').some(node => node.children.join('') === 'Перенести в DIKIDI'))
+    assert.match(text(f.ui), /Текущий аватар CRM будет заменён/)
+    await click(f.ui, 'Перенести в DIKIDI')
+    assert.deepEqual(f.calls, [['photo', 9, 'core', 'source.png']]); assert.match(text(f.ui), /Аватар перенесён в DIKIDI/)
+})
+
+test('missing source photo is reported before any external transfer', async t => {
+    const f = await fixture(t, 'CrmClientCard', {}, {
+        getCrmClient: async () => ({ ...client, clientId: 'core' }),
+    }, true)
+    await click(f.ui, 'Аватар из ClientBus')
+    assert.equal(button(f.ui, 'Перенести в DIKIDI'), undefined); assert.match(text(f.ui), /У клиента ClientBus нет аватара/)
 })
 
 for (const core of [false, true]) test(`changing appointment project preserves dates and states${core ? ' and core client' : ''} but clears project IDs`, async t => {

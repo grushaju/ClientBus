@@ -296,7 +296,7 @@ function ConversationClientDetails({
                         <button type="button" className="ui-button ui-button-sm ui-button-secondary ui-button-block" disabled={disabled || !client} onClick={() => { setError(null); setShowAccountPicker(true) }}>Привязать еще аккаунт</button>
                         {otherAccounts.length > 0 && <button type="button" className="ui-button ui-button-sm ui-button-secondary ui-button-block" aria-expanded={showOtherAccounts} onClick={() => setShowOtherAccounts(value => !value)}>{showOtherAccounts ? 'Скрыть другие аккаунты' : `Другие аккаунты (${otherAccounts.length})`}</button>}
                     </div>
-                    {loadingAccounts && <div className="conversation-client-panel-state">Загрузка аккаунтов…</div>}
+                    {loadingAccounts && !clientAccounts.length && <div className="conversation-client-panel-state">Загрузка аккаунтов…</div>}
                     {accountsError && <div className="conversation-client-panel-error" role="alert">{accountsError}<button type="button" className="ui-button ui-button-sm ui-button-secondary" disabled={loadingAccounts || actionLoading} onClick={accounts.reload}>Повторить загрузку аккаунтов</button></div>}
                     {showOtherAccounts && <div className="conversation-client-other-accounts">{otherAccounts.map(account => <AccountCard key={account.id} account={account} />)}</div>}
                 </>}

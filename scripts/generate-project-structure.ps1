@@ -4,7 +4,7 @@
 # ClientBus project structure generator
 # Windows / PowerShell
 #
-# Generates index.md containing:
+# Generates MD/ARCHITECTURE/index.md containing:
 #   - Maven modules
 #   - src/main/java
 #   - src/main/resources
@@ -19,7 +19,8 @@
 # ------------------------------------------------------------
 
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
-$OutputFile = Join-Path $Root "index.md"
+$OutputFile = Join-Path $Root "MD/ARCHITECTURE/index.md"
+New-Item -ItemType Directory -Path (Split-Path $OutputFile) -Force | Out-Null
 
 Set-Location $Root
 
@@ -412,6 +413,6 @@ $Lines | Set-Content `
     -Encoding UTF8
 
 Write-Host ""
-Write-Host "index.md generated successfully:"
+Write-Host "MD/ARCHITECTURE/index.md generated successfully:"
 Write-Host $OutputFile
 Write-Host ""
